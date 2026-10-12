@@ -98,8 +98,9 @@ func (s *State) Remember(key, hookPath, hookURL string) error {
 }
 
 // writeFileAtomic writes b to a uniquely named temporary file next to path
-// and renames it into place, so neither readers nor concurrent writers see
-// a partial file.
+// and renames it into place, so no reader ever sees a partial file. It does
+// not merge: when two CLIs write concurrently, the last rename wins and the
+// other's entry is lost.
 func writeFileAtomic(path string, b []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
