@@ -60,7 +60,7 @@ type waitResult struct {
 func startWait(ctx context.Context, r *Registry, hookID string) chan waitResult {
 	c := make(chan waitResult, 1)
 	go func() {
-		t, err := r.Wait(ctx, hookID)
+		t, err := r.Wait(ctx, hookID, nil)
 		c <- waitResult{t, err}
 	}()
 	return c
@@ -83,7 +83,23 @@ func TestRegistryWait(t *testing.T) {
 		t.Fatalf("Wait = %+v, want tunnel a", res)
 	}
 	// Already attached: no waiting.
-	if tun, err := r.Wait(context.Background(), "h2"); err != nil || tun != b {
+	if tun, err := r.Wait(context.Background(), "h2", nil); err != nil || tun != b {
+		t.Fatalf("Wait(attached) = %v, %v", tun, err)
+	}
+}
+
+// A hook deleted, and released, before the waiter registered must not
+// leave the waiter blocked: Wait re-checks that the hook exists.
+func TestRegistryWaitRechecksExistence(t *testing.T) {
+	r := NewRegistry()
+	r.Release("h1") // the hook is gone before anyone waits
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, err := r.Wait(ctx, "h1", func() bool { return false }); !errors.Is(err, ErrHookGone) {
+		t.Fatalf("Wait for a deleted hook = %v, want ErrHookGone", err)
+	}
+	r.Attach(&Tunnel{ID: "a"}, []string{"h2"})
+	if tun, err := r.Wait(ctx, "h2", func() bool { return true }); err != nil || tun.ID != "a" {
 		t.Fatalf("Wait(attached) = %v, %v", tun, err)
 	}
 }
@@ -93,7 +109,7 @@ func TestRegistryWaitEnds(t *testing.T) {
 	stop := errors.New("hold timeout")
 	ctx, cancel := context.WithTimeoutCause(context.Background(), 20*time.Millisecond, stop)
 	defer cancel()
-	if _, err := r.Wait(ctx, "h1"); err != stop {
+	if _, err := r.Wait(ctx, "h1", nil); err != stop {
 		t.Fatalf("Wait after timeout = %v, want the context's cause", err)
 	}
 

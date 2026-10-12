@@ -154,9 +154,11 @@ func (r *Registry) DetachFrom(t *Tunnel, hookIDs []string) (detached []string, o
 
 // Wait returns the tunnel serving hookID, waiting for one to attach if
 // necessary. Only an attach for hookID itself wakes it. It fails with
-// ErrHookGone if Release is called for the hook, and with the context's
-// cause when ctx is done.
-func (r *Registry) Wait(ctx context.Context, hookID string) (*Tunnel, error) {
+// ErrHookGone if Release is called for the hook, or if exists (which may be
+// nil) reports it gone once the wait is registered, and with the context's
+// cause when ctx is done. Deleting a hook before releasing it therefore
+// cannot strand a waiter that registers between the two.
+func (r *Registry) Wait(ctx context.Context, hookID string, exists func() bool) (*Tunnel, error) {
 	for {
 		r.mu.Lock()
 		if t, ok := r.byHook[hookID]; ok {
@@ -169,6 +171,9 @@ func (r *Registry) Wait(ctx context.Context, hookID string) (*Tunnel, error) {
 			r.waits[hookID] = w
 		}
 		r.mu.Unlock()
+		if exists != nil && !exists() {
+			return nil, ErrHookGone
+		}
 		select {
 		case <-w.done:
 			if w.gone {

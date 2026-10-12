@@ -344,10 +344,12 @@ func TestDeleteReleasesHeldCalls(t *testing.T) {
 	e.call(moritz, "POST", "/api/v1/hooks", map[string]any{"path": "held"}, &h)
 	waited := make(chan error, 1)
 	go func() {
-		_, err := e.reg.Wait(context.Background(), h.ID)
+		_, err := e.reg.Wait(context.Background(), h.ID, func() bool {
+			_, ok := e.mgr.Get(hooks.ID(h.ID))
+			return ok
+		})
 		waited <- err
 	}()
-	time.Sleep(20 * time.Millisecond) // let Wait block
 	if resp := e.call(moritz, "DELETE", "/api/v1/hooks/"+h.ID, nil, nil); resp.StatusCode != 204 {
 		t.Fatalf("delete = %d", resp.StatusCode)
 	}

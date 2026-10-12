@@ -165,6 +165,8 @@ func TestHeldCallCanceledBySender(t *testing.T) {
 func TestHeldCallsReleasedOnDelete(t *testing.T) {
 	e := newEnv(t)
 	got := e.call("/~moritz/cb", "")
+	// Held counts the call before its Wait registers, so Release may run
+	// first; Wait's existence re-check fails the call all the same.
 	e.waitHeld(1)
 	if err := e.mgr.Delete(context.Background(), e.hook.ID); err != nil {
 		t.Fatal(err)

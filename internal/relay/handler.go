@@ -206,7 +206,7 @@ func (h *Handler) hold(ctx context.Context, hook hooks.Hook, timeout time.Durati
 	}
 	ctx, cancel := context.WithTimeoutCause(ctx, timeout, cause)
 	defer cancel()
-	return h.Tunnels.Wait(ctx, string(hook.ID))
+	return h.Tunnels.Wait(ctx, string(hook.ID), func() bool { return h.hookExists(hook.ID) })
 }
 
 func (h *Handler) enqueue(id hooks.ID) bool {
