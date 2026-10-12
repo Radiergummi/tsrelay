@@ -168,3 +168,24 @@ func TestClientSessionAndResume(t *testing.T) {
 		t.Fatalf("resume flags = %v %v %v, want false false true", first.Resume, second.Resume, third.Resume)
 	}
 }
+
+// Revoked hooks are dropped like replaced ones and reported through
+// OnControl, so the CLI stops instead of reattaching them.
+func TestClientDropsRevokedHooks(t *testing.T) {
+	f := newFakeRelay(t, 0, 0)
+	c := f.client(make(chan bool, 16))
+	controls := make(chan tunnel.Control, 1)
+	c.OnControl = func(ctl tunnel.Control) { controls <- ctl }
+	_, done := run(t, c)
+	tun := recv(t, f.tunnels)
+	if err := tun.Send(context.Background(), tunnel.Control{Type: tunnel.ControlRevoked, Hooks: []tunnel.HookInfo{{ID: "h1"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := recv(t, controls); got.Type != tunnel.ControlRevoked || len(got.Hooks) != 1 || got.Hooks[0].ID != "h1" {
+		t.Fatalf("OnControl got %+v, want the revoked control", got)
+	}
+	tun.Close()
+	if err := recv(t, done); !errors.Is(err, tunnel.ErrNoHooks) {
+		t.Fatalf("Run = %v, want ErrNoHooks", err)
+	}
+}

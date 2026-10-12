@@ -28,6 +28,8 @@ const (
 	ControlAttached    ControlType = "attached"
 	ControlReplaced    ControlType = "replaced"
 	ControlHookDeleted ControlType = "hook-deleted"
+	// ControlRevoked means the owner's grants no longer cover the hooks.
+	ControlRevoked ControlType = "revoked"
 )
 
 type HookInfo struct {

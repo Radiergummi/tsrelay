@@ -56,6 +56,9 @@ type Tunnel struct {
 	Owner authz.Identity
 	// Session identifies the client process that opened the tunnel.
 	Session string
+	// RemoteAddr is the client's address as the relay saw it when the
+	// tunnel attached. The revalidator identifies it again.
+	RemoteAddr string
 
 	cc   *http2.ClientConn
 	conn *watchedConn

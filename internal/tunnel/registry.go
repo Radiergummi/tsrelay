@@ -120,6 +120,38 @@ func (r *Registry) CountOwner(user tailcfg.UserID, taking ...string) int {
 	return n
 }
 
+// Snapshot returns every attached tunnel with the hooks it serves.
+func (r *Registry) Snapshot() map[*Tunnel][]string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make(map[*Tunnel][]string, len(r.hooks))
+	for t, hs := range r.hooks {
+		out[t] = slices.Clone(hs)
+	}
+	return out
+}
+
+// DetachFrom stops t serving those of hookIDs it still serves, and returns
+// them. Hooks another tunnel has taken over meanwhile stay with that
+// tunnel. orphaned reports whether t now serves no hooks.
+func (r *Registry) DetachFrom(t *Tunnel, hookIDs []string) (detached []string, orphaned bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, h := range hookIDs {
+		if r.byHook[h] != t {
+			continue
+		}
+		delete(r.byHook, h)
+		r.hooks[t] = slices.DeleteFunc(r.hooks[t], func(x string) bool { return x == h })
+		detached = append(detached, h)
+	}
+	if len(detached) > 0 && len(r.hooks[t]) == 0 {
+		delete(r.hooks, t)
+		orphaned = true
+	}
+	return detached, orphaned
+}
+
 // Wait returns the tunnel serving hookID, waiting for one to attach if
 // necessary. Only an attach for hookID itself wakes it. It fails with
 // ErrHookGone if Release is called for the hook, and with the context's

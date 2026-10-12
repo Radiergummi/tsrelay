@@ -17,13 +17,13 @@ import (
 
 // ErrNoHooks means every hook of the client was taken over by another
 // tunnel or deleted, so there is nothing left to reconnect for.
-var ErrNoHooks = errors.New("tunnel: no hooks left to serve (taken over by another tunnel or deleted)")
+var ErrNoHooks = errors.New("tunnel: no hooks left to serve (taken over by another tunnel, revoked, or deleted)")
 
 var errTunnelLost = errors.New("tunnel lost")
 
 // Client keeps a tunnel attached, redialing with exponential backoff and
-// full jitter. Hooks the relay reports as replaced or deleted are dropped
-// from later attach attempts.
+// full jitter. Hooks the relay reports as replaced, revoked or deleted are
+// dropped from later attach attempts.
 type Client struct {
 	Hooks      []string
 	Dial       func(ctx context.Context, hooks []string, a Attach) (net.Conn, error)
@@ -89,7 +89,7 @@ func (c *Client) current() []string {
 }
 
 func (c *Client) handleControl(ctl Control) {
-	if ctl.Type == ControlReplaced || ctl.Type == ControlHookDeleted {
+	if ctl.Type == ControlReplaced || ctl.Type == ControlRevoked || ctl.Type == ControlHookDeleted {
 		c.mu.Lock()
 		for _, h := range ctl.Hooks {
 			c.hooks = slices.DeleteFunc(c.hooks, func(x string) bool { return x == h.ID })

@@ -45,6 +45,7 @@ type env struct {
 	base string
 	log  *syncBuf
 	api  *client.API
+	srv  *Server
 }
 
 func newEnv(t *testing.T, cfg Config) *env {
@@ -64,6 +65,7 @@ func newEnv(t *testing.T, cfg Config) *env {
 	cfg.AllowedHosts = []string{"127.0.0.1"}
 	s := New(cfg, e.fake, mgr, audit.New(slog.New(slog.NewJSONHandler(e.log, nil))))
 	h = s.Handler()
+	e.srv = s
 	ts.Start()
 	t.Cleanup(func() { s.Close(); ts.Close() })
 

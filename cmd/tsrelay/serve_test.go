@@ -54,3 +54,12 @@ func TestServeRejectsEmptyHoldQueue(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q", code, out)
 	}
 }
+
+func TestServeRejectsBadRevalidateInterval(t *testing.T) {
+	for _, v := range []string{"0", "-1s"} {
+		// An unknown flag also exits 2, so check the message too.
+		if code, out := serveExit(t, "--revalidate-interval="+v); code != 2 || !strings.Contains(out, "--revalidate-interval must be positive") {
+			t.Errorf("--revalidate-interval=%s: exit %d, stderr %q", v, code, out)
+		}
+	}
+}

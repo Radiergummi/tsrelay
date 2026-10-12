@@ -34,6 +34,9 @@ type Server struct {
 	audit   *audit.Logger
 	relay   *relay.Handler // serves callbacks; its Held() feeds the held-calls gauge
 	handler http.Handler
+
+	// identifier re-identifies tunnel owners during revalidation.
+	identifier identify.Identifier
 }
 
 func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logger) *Server {
@@ -41,6 +44,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 		cfg.EphemeralGrace = DefaultEphemeralGrace
 	}
 	s := &Server{cfg: cfg, hooks: mgr, tunnels: tunnel.NewRegistry(), audit: al}
+	s.identifier = id
 	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue}
 
 	mux := http.NewServeMux()

@@ -14,6 +14,7 @@ const (
 	TunnelAttach   = "tunnel.attach"
 	TunnelDetach   = "tunnel.detach"
 	TunnelReplaced = "tunnel.replaced"
+	TunnelRevoked  = "tunnel.revoked"
 	HookCreate     = "hook.create"
 	HookUpdate     = "hook.update"
 	HookDelete     = "hook.delete"

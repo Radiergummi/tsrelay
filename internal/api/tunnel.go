@@ -77,6 +77,7 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 		return
 	}
 	t.Session = session
+	t.RemoteAddr = r.RemoteAddr
 	// r.Context() ends when this handler returns; the tunnel outlives it.
 	a.register(context.WithoutCancel(r.Context()), t, id, requested)
 }

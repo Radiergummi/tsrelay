@@ -47,6 +47,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	policyFlags := registerPolicyFlags(fs)
 	legacyResponseTimeout := fs.Duration("response-timeout", 0, "deprecated: use --hook-response-timeout-default")
 	concurrency := fs.Int("tunnel-concurrency", tunnel.DefaultConcurrency, "concurrent calls per tunnel")
+	revalidate := fs.Duration("revalidate-interval", time.Minute, "how often attached tunnels are re-authorized")
 	holdQueue := fs.Int("hold-queue", relay.DefaultHoldQueue, "calls per hook that may wait for a tunnel at once")
 	logFormat := fs.String("log-format", "json", `"json" or "text"`)
 	logLevel := fs.String("log-level", "info", "debug, info, warn or error")
@@ -64,6 +65,10 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	}
 	if *slugMode != string(hooks.SlugLocalPart) && *slugMode != string(hooks.SlugLogin) {
 		fmt.Fprintf(stderr, "tsrelay serve: --user-slug must be %q or %q\n", hooks.SlugLocalPart, hooks.SlugLogin)
+		return 2
+	}
+	if *revalidate <= 0 {
+		fmt.Fprintln(stderr, "tsrelay serve: --revalidate-interval must be positive")
 		return 2
 	}
 	if *holdQueue < 1 {
@@ -95,11 +100,12 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 
 	err = runRelay(ctx, logger, relayConfig{
 		hostname: *hostname, stateDir: *stateDir, tls: *useTLS, tags: tags.Values, verbose: *verbose,
-		cap:    peercap.Cap(*capName),
-		slugs:  hooks.SlugConfig{Mode: hooks.SlugMode(*slugMode), Overrides: overrides},
-		limits: authz.Limits{MaxHooks: *maxHooks, MaxTunnels: *maxTunnels, MaxHookTTL: *maxTTL},
-		policy: policy,
-		server: server.Config{EphemeralGrace: *grace, HoldQueue: *holdQueue, Tunnel: tunnel.Options{Concurrency: *concurrency}},
+		cap:        peercap.Cap(*capName),
+		slugs:      hooks.SlugConfig{Mode: hooks.SlugMode(*slugMode), Overrides: overrides},
+		limits:     authz.Limits{MaxHooks: *maxHooks, MaxTunnels: *maxTunnels, MaxHookTTL: *maxTTL},
+		policy:     policy,
+		server:     server.Config{EphemeralGrace: *grace, HoldQueue: *holdQueue, Tunnel: tunnel.Options{Concurrency: *concurrency}},
+		revalidate: *revalidate,
 	})
 	if err != nil {
 		logger.Error("relay stopped", "error", err)
@@ -117,6 +123,7 @@ type relayConfig struct {
 	limits             authz.Limits
 	policy             hooks.Policy
 	server             server.Config
+	revalidate         time.Duration
 }
 
 func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
@@ -176,6 +183,7 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 		mgr, al)
 	defer srv.Close()
 	go srv.RunReaper(ctx, 30*time.Second)
+	go srv.RunRevalidator(ctx, cfg.revalidate)
 
 	hs := &http.Server{
 		Handler:           srv.Handler(),

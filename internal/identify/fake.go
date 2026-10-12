@@ -29,6 +29,18 @@ func (f *Fake) Identify(_ context.Context, remoteAddr string) (authz.Identity, e
 	return id, nil
 }
 
+// Update replaces the identity of every connection from id's node, as if
+// the node's grants had changed in the tailnet policy file.
+func (f *Fake) Update(id authz.Identity) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for addr, cur := range f.byAddr {
+		if cur.NodeID == id.NodeID {
+			f.byAddr[addr] = id
+		}
+	}
+}
+
 // Dial returns a DialContext function whose connections are identified as id.
 func (f *Fake) Dial(id authz.Identity) func(ctx context.Context, network, addr string) (net.Conn, error) {
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {

@@ -145,3 +145,32 @@ func TestRegistryCountOwner(t *testing.T) {
 		t.Errorf("after Detach(b): CountOwner(1) = %d, want 1", got)
 	}
 }
+
+func TestRegistrySnapshotAndDetachFrom(t *testing.T) {
+	r := NewRegistry()
+	a, b := &Tunnel{ID: "a"}, &Tunnel{ID: "b"}
+	r.Attach(a, []string{"h1", "h2"})
+	snap := r.Snapshot()
+	if len(snap) != 1 || !slices.Equal(snap[a], []string{"h1", "h2"}) {
+		t.Fatalf("Snapshot = %v", snap)
+	}
+	snap[a][0] = "changed"
+	if got, ok := r.Lookup("h1"); !ok || got != a {
+		t.Fatal("changing a snapshot must not change the registry")
+	}
+
+	r.Attach(b, []string{"h1"}) // b takes h1 over after the snapshot
+	detached, orphaned := r.DetachFrom(a, []string{"h1", "h2"})
+	if !slices.Equal(detached, []string{"h2"}) || !orphaned {
+		t.Fatalf("DetachFrom = %v %v, want [h2] and orphaned", detached, orphaned)
+	}
+	if got, ok := r.Lookup("h1"); !ok || got != b {
+		t.Fatal("a stale DetachFrom detached the hook from its new tunnel")
+	}
+	if detached, _ := r.DetachFrom(a, []string{"h1"}); len(detached) != 0 {
+		t.Fatalf("DetachFrom of a tunnel that serves nothing = %v", detached)
+	}
+	if s := r.Snapshot(); len(s) != 1 || !slices.Equal(s[b], []string{"h1"}) {
+		t.Fatalf("Snapshot after DetachFrom = %v", s)
+	}
+}
