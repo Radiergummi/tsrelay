@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"github.com/Radiergummi/tsrelay/internal/tunnel/tunneltest"
 )
 
 var (
@@ -332,5 +334,108 @@ func TestDeleteReleasesHeldCalls(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the held call was not released")
+	}
+}
+
+func TestAttachPolicyReject(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/api/v1/hooks", map[string]any{"path": "cb", "settings": map[string]any{"attachPolicy": "reject"}}, &h)
+	c1, _, err := e.openTunnelQ(moritz, "session=s_a", h.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next(t, c1) // attached: the tunnel is registered
+
+	_, _, err = e.openTunnelQ(moritz, "session=s_b", h.ID)
+	var p *problem.Problem
+	if !errors.As(err, &p) || p.Status != 409 || p.Code != problem.Conflict || !strings.Contains(p.Detail, `"reject"`) {
+		t.Fatalf("second session under reject: err = %v, want 409 conflict naming the policy", err)
+	}
+	// The serving session may still replace its own stale tunnel.
+	if _, _, err := e.openTunnelQ(moritz, "session=s_a&resume=1", h.ID); err != nil {
+		t.Fatalf("redial of the serving session: %v", err)
+	}
+}
+
+func TestMaxTunnels(t *testing.T) {
+	e := newEnv(t)
+	limited := identify.User("lim", "lim@example.com", 7, `{"roles":["receiver"]}`)
+	limited.Grants.Limits.MaxTunnels = 2
+	var a, b, c Hook
+	e.call(limited, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "a"}, &a)
+	e.call(limited, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "b"}, &b)
+	e.call(limited, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "c"}, &c)
+	for i, h := range []Hook{a, b} {
+		controls, _, err := e.openTunnelQ(limited, fmt.Sprintf("session=s%d", i), h.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next(t, controls) // attached: the tunnel is registered
+	}
+
+	_, _, err := e.openTunnelQ(limited, "session=s2", c.ID)
+	var p *problem.Problem
+	if !errors.As(err, &p) || p.Status != 403 || p.Code != problem.Forbidden || !strings.Contains(p.Detail, "maxTunnels 2") {
+		t.Fatalf("third tunnel: err = %v, want 403 naming the limit", err)
+	}
+	// Taking over your own tunnel's only hook orphans it, so it does not count.
+	if _, _, err := e.openTunnelQ(limited, "session=s2", a.ID); err != nil {
+		t.Fatalf("takeover at the limit: %v", err)
+	}
+	// Other users' tunnels never count.
+	var o Hook
+	e.call(other, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "o"}, &o)
+	if _, _, err := e.openTunnel(other, o.ID); err != nil {
+		t.Fatalf("another user's attach: %v", err)
+	}
+}
+
+// A hook deleted while its tunnel attaches must not stay in the registry
+// (plan 1 minor 8). register runs after the attach checks. Here the hook is
+// deleted between the two, so its deletion found no tunnel to detach.
+func TestAttachRechecksDeletedHooks(t *testing.T) {
+	e := newEnv(t)
+	a := &API{Hooks: e.mgr, Tunnels: e.reg, Audit: audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))), BaseURL: "https://r"}
+	var keep, gone Hook
+	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "keep"}, &keep)
+	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "gone"}, &gone)
+	hk, _ := e.mgr.Get(hooks.ID(keep.ID))
+	hg, _ := e.mgr.Get(hooks.ID(gone.ID))
+	if err := e.mgr.Delete(context.Background(), hg.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	controls := make(chan tunnel.Control, 4)
+	tun, _ := tunneltest.Pair(t, http.NotFoundHandler(), tunnel.Options{}, func(c tunnel.Control) { controls <- c })
+	a.register(context.Background(), tun, moritz, []hooks.Hook{hk, hg})
+	if _, ok := e.reg.Lookup(gone.ID); ok {
+		t.Fatal("the deleted hook stayed attached")
+	}
+	if cur, ok := e.reg.Lookup(keep.ID); !ok || cur != tun {
+		t.Fatal("the remaining hook was not attached")
+	}
+	got := map[tunnel.ControlType][]tunnel.HookInfo{}
+	for range 2 {
+		c := next(t, controls)
+		got[c.Type] = c.Hooks
+	}
+	if hs := got[tunnel.ControlAttached]; len(hs) != 1 || hs[0].ID != keep.ID {
+		t.Errorf("attached = %+v, want only the remaining hook", hs)
+	}
+	if hs := got[tunnel.ControlHookDeleted]; len(hs) != 1 || hs[0].ID != gone.ID {
+		t.Errorf("hook-deleted = %+v, want the deleted hook", hs)
+	}
+
+	// A tunnel left with no hooks at all is closed.
+	tun2, _ := tunneltest.Pair(t, http.NotFoundHandler(), tunnel.Options{}, nil)
+	a.register(context.Background(), tun2, moritz, []hooks.Hook{hg})
+	select {
+	case <-tun2.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("a tunnel whose only hook was deleted was not closed")
+	}
+	if _, ok := e.reg.Lookup(gone.ID); ok {
+		t.Fatal("the deleted hook stayed attached")
 	}
 }

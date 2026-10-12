@@ -5,6 +5,8 @@ import (
 	"errors"
 	"slices"
 	"sync"
+
+	"tailscale.com/tailcfg"
 )
 
 // ErrHookGone is returned by Wait when the hook was deleted while waiting.
@@ -100,6 +102,22 @@ func (r *Registry) DetachHook(hookID string) (t *Tunnel, orphaned, ok bool) {
 		orphaned = true
 	}
 	return t, orphaned, true
+}
+
+// CountOwner returns how many tunnels of user serve hooks. A tunnel whose
+// hooks are all among taking is left out: attaching those hooks to a new
+// tunnel takes them over and orphans it.
+func (r *Registry) CountOwner(user tailcfg.UserID, taking ...string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for t, hs := range r.hooks {
+		keeps := slices.ContainsFunc(hs, func(h string) bool { return !slices.Contains(taking, h) })
+		if t.Owner.UserID == user && keeps {
+			n++
+		}
+	}
+	return n
 }
 
 // Wait returns the tunnel serving hookID, waiting for one to attach if

@@ -31,7 +31,7 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 	}
 	session := r.URL.Query().Get("session")
 	resume := r.URL.Query().Get("resume") == "1"
-	attached := make([]hooks.Hook, 0, len(hookIDs))
+	requested := make([]hooks.Hook, 0, len(hookIDs))
 	for _, hid := range hookIDs {
 		h, ok := a.Hooks.Get(hooks.ID(hid))
 		if !ok || h.Owner != id.UserID {
@@ -42,12 +42,27 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 			problem.New(http.StatusForbidden, problem.Forbidden, fmt.Sprintf("your grants no longer cover channel %q", h.Channel)).Write(w)
 			return
 		}
-		if cur, ok := a.Tunnels.Lookup(hid); ok && resume && cur.Session != session {
-			problem.New(http.StatusConflict, problem.Conflict,
-				fmt.Sprintf("hook %s is now served by another tunnel; start tsrelay again to take it over", hid)).Write(w)
-			return
+		if cur, ok := a.Tunnels.Lookup(hid); ok {
+			if resume && cur.Session != session {
+				problem.New(http.StatusConflict, problem.Conflict,
+					fmt.Sprintf("hook %s is now served by another tunnel; start tsrelay again to take it over", hid)).Write(w)
+				return
+			}
+			// Under "reject", only the serving session may replace its own
+			// (stale) tunnel.
+			if a.Hooks.Effective(h).AttachPolicy == hooks.AttachReject && (session == "" || cur.Session != session) {
+				problem.New(http.StatusConflict, problem.Conflict,
+					fmt.Sprintf("hook %s is served by another tunnel, and its attach policy is %q; stop that tunnel first", hid, hooks.AttachReject)).Write(w)
+				return
+			}
 		}
-		attached = append(attached, h)
+		requested = append(requested, h)
+	}
+	if n, limit := a.Tunnels.CountOwner(id.UserID, hookIDs...), id.Grants.Limits.MaxTunnels; n >= limit {
+		a.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(id), slog.String("action", "tunnel.attach"), slog.String("reason", "maxTunnels"))
+		problem.New(http.StatusForbidden, problem.Forbidden,
+			fmt.Sprintf("you already have %d tunnels attached, the most your grants allow (maxTunnels %d); stop one first", n, limit)).Write(w)
+		return
 	}
 
 	conn, err := tunnel.Accept(w, r)
@@ -63,7 +78,16 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 	}
 	t.Session = session
 	// r.Context() ends when this handler returns; the tunnel outlives it.
-	ctx := context.WithoutCancel(r.Context())
+	a.register(context.WithoutCancel(r.Context()), t, id, requested)
+}
+
+// register attaches t to the requested hooks, tells the client, and
+// detaches t again once it ends.
+func (a *API) register(ctx context.Context, t *tunnel.Tunnel, id authz.Identity, requested []hooks.Hook) {
+	hookIDs := make([]string, len(requested))
+	for i, h := range requested {
+		hookIDs[i] = string(h.ID)
+	}
 	for _, rep := range a.Tunnels.Attach(t, hookIDs) {
 		a.Audit.Log(ctx, audit.TunnelReplaced, slog.String("tunnel", rep.Tunnel.ID), slog.String("by", t.ID), slog.Any("hooks", rep.Hooks))
 		infos := make([]tunnel.HookInfo, len(rep.Hooks))
@@ -72,13 +96,36 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 		}
 		rep.Tunnel.Notify(tunnel.Control{Type: tunnel.ControlReplaced, Hooks: infos}, rep.Orphaned)
 	}
-	infos := make([]tunnel.HookInfo, len(attached))
-	for i, h := range attached {
-		a.Hooks.SetAttached(h.ID, true)
-		infos[i] = tunnel.HookInfo{ID: string(h.ID), URL: a.BaseURL + h.Route()}
+
+	// A hook deleted (or expired) after the checks above but before Attach
+	// found no tunnel to detach, so it would stay in the registry for good.
+	// Look again now that t is registered.
+	var live []string
+	var infos, gone []tunnel.HookInfo
+	orphaned := false
+	for _, h := range requested {
+		if _, ok := a.Hooks.Get(h.ID); ok {
+			a.Hooks.SetAttached(h.ID, true)
+			live = append(live, string(h.ID))
+			infos = append(infos, tunnel.HookInfo{ID: string(h.ID), URL: a.BaseURL + h.Route()})
+			continue
+		}
+		dt, o, ok := a.Tunnels.DetachHook(string(h.ID))
+		switch {
+		case !ok:
+		case dt == t:
+			gone, orphaned = append(gone, tunnel.HookInfo{ID: string(h.ID)}), o
+		default: // another tunnel took the hook over meanwhile
+			dt.Notify(tunnel.Control{Type: tunnel.ControlHookDeleted, Hooks: []tunnel.HookInfo{{ID: string(h.ID)}}}, o)
+		}
 	}
-	a.Audit.Log(ctx, audit.TunnelAttach, audit.Actor(id), slog.String("tunnel", t.ID), slog.Any("hooks", hookIDs))
-	t.Notify(tunnel.Control{Type: tunnel.ControlAttached, Hooks: infos}, false)
+	a.Audit.Log(ctx, audit.TunnelAttach, audit.Actor(id), slog.String("tunnel", t.ID), slog.Any("hooks", live))
+	if len(infos) > 0 {
+		t.Notify(tunnel.Control{Type: tunnel.ControlAttached, Hooks: infos}, false)
+	}
+	if len(gone) > 0 {
+		t.Notify(tunnel.Control{Type: tunnel.ControlHookDeleted, Hooks: gone}, orphaned)
+	}
 
 	go func() {
 		<-t.Done()

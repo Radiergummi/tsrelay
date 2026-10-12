@@ -6,6 +6,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/Radiergummi/tsrelay/internal/authz"
 )
 
 func TestRegistryTakeover(t *testing.T) {
@@ -110,5 +112,36 @@ func TestRegistryWaitEnds(t *testing.T) {
 	r.Attach(&Tunnel{ID: "c"}, []string{"h2"})
 	if res := <-other; res.err != nil {
 		t.Fatal(res.err)
+	}
+}
+
+func TestRegistryCountOwner(t *testing.T) {
+	r := NewRegistry()
+	me, other := authz.Identity{UserID: 1}, authz.Identity{UserID: 2}
+	a, b, c := &Tunnel{ID: "a", Owner: me}, &Tunnel{ID: "b", Owner: me}, &Tunnel{ID: "c", Owner: other}
+	r.Attach(a, []string{"h1", "h2"})
+	r.Attach(b, []string{"h3"})
+	r.Attach(c, []string{"h4"})
+	cases := []struct {
+		taking []string
+		want   int
+	}{
+		{nil, 2},
+		{[]string{"h3"}, 1},             // b would be orphaned
+		{[]string{"h1"}, 2},             // a keeps h2
+		{[]string{"h1", "h2", "h3"}, 0}, // both would be orphaned
+		{[]string{"h4"}, 2},             // other users' tunnels never count
+	}
+	for _, c := range cases {
+		if got := r.CountOwner(1, c.taking...); got != c.want {
+			t.Errorf("CountOwner(1, %v) = %d, want %d", c.taking, got, c.want)
+		}
+	}
+	if got := r.CountOwner(2); got != 1 {
+		t.Errorf("CountOwner(2) = %d, want 1", got)
+	}
+	r.Detach(b)
+	if got := r.CountOwner(1); got != 1 {
+		t.Errorf("after Detach(b): CountOwner(1) = %d, want 1", got)
 	}
 }
