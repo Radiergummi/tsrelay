@@ -20,6 +20,7 @@ const typeBase = "https://tsrelay.mazetti.me/errors/"
 const (
 	SenderForbidden     = "sender_forbidden"
 	HookNotFound        = "hook_not_found"
+	BodyTooLarge        = "body_too_large"
 	TunnelUnavailable   = "tunnel_unavailable"
 	TunnelOverloaded    = "tunnel_overloaded"
 	UpstreamUnreachable = "upstream_unreachable"

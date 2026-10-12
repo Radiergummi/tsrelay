@@ -93,8 +93,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		slugs:  hooks.SlugConfig{Mode: hooks.SlugMode(*slugMode), Overrides: overrides},
 		limits: authz.Limits{MaxHooks: *maxHooks, MaxTunnels: *maxTunnels, MaxHookTTL: *maxTTL},
 		policy: policy,
-		server: server.Config{EphemeralGrace: *grace, ResponseTimeout: policy.Defaults.ResponseTimeout.Std(),
-			Tunnel: tunnel.Options{Concurrency: *concurrency}},
+		server: server.Config{EphemeralGrace: *grace, Tunnel: tunnel.Options{Concurrency: *concurrency}},
 	})
 	if err != nil {
 		logger.Error("relay stopped", "error", err)

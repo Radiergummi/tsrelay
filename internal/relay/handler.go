@@ -2,7 +2,9 @@
 package relay
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -28,16 +30,15 @@ const (
 	HeaderSenderLogin = "Tsrelay-Sender-Login"
 	HeaderHook        = "Tsrelay-Hook"
 	HeaderCallID      = "Tsrelay-Call-Id"
-
-	DefaultResponseTimeout = 2 * time.Minute
 )
 
+// Handler serves callbacks. Each call uses the effective settings of its
+// hook at the time the call arrives, so updates apply from the next call.
 type Handler struct {
-	Identifier      identify.Identifier
-	Hooks           *hooks.Manager
-	Tunnels         *tunnel.Registry
-	Audit           *audit.Logger
-	ResponseTimeout time.Duration
+	Identifier identify.Identifier
+	Hooks      *hooks.Manager
+	Tunnels    *tunnel.Registry
+	Audit      *audit.Logger
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +46,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	callID := ids.New("c_")
 	w.Header().Set(HeaderCallID, callID)
 	rec := &recorder{ResponseWriter: w}
+	// Limits cancel the call with a cause that selects the error reported.
+	ctx, cancel := context.WithCancelCause(r.Context())
+	defer cancel(nil)
+	r = r.WithContext(ctx)
 	body := &countingReader{ReadCloser: r.Body}
 	r.Body = body
 	var hook hooks.Hook
@@ -57,7 +62,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		code := rec.Header().Get(problem.HeaderError)
 		if aborted && code == "" {
-			code = problem.TunnelLost
+			switch context.Cause(ctx) {
+			case errIdleTimeout:
+				code = problem.UpstreamTimeout
+			case errBodyTooLarge:
+				code = problem.BodyTooLarge
+			default:
+				code = problem.TunnelLost
+			}
 		}
 		h.Audit.Log(r.Context(), audit.Call,
 			slog.String("callID", callID), slog.String("kind", "sender"),
@@ -96,6 +108,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 		return
 	}
+	eff := h.Hooks.Effective(hook)
+	if eff.MaxBodyBytes > 0 && r.ContentLength > eff.MaxBodyBytes {
+		problem.New(http.StatusRequestEntityTooLarge, problem.BodyTooLarge,
+			fmt.Sprintf("the request body is larger than this hook's limit of %d bytes", eff.MaxBodyBytes)).Write(rec)
+		return
+	}
 	tun, attached := h.Tunnels.Lookup(string(hook.ID))
 	if !attached {
 		rec.Header().Set("Retry-After", "5")
@@ -103,18 +121,30 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	idle := newIdleWatch(eff.IdleTimeout.Std(), func() {
+		cancel(errIdleTimeout)
+		// Unblock a pending read from a stalled sender, so the error can be sent.
+		_ = http.NewResponseController(rec).SetReadDeadline(time.Now())
+	})
+	defer idle.stop()
+	r.Body = &callBody{ReadCloser: r.Body, max: eff.MaxBodyBytes, idle: idle, cancel: cancel}
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			h.rewrite(pr, hook, sender, callID, 1+segs)
+			h.rewrite(pr, hook, eff, sender, callID, 1+segs)
 		},
-		Transport:     timeoutTransport{rt: tun, timeout: h.responseTimeout()},
+		// The relay's call ID replaces any the local app set.
+		ModifyResponse: func(resp *http.Response) error {
+			resp.Header.Del(HeaderCallID)
+			return nil
+		},
+		Transport:     timeoutTransport{rt: tun, timeout: eff.ResponseTimeout.Std()},
 		FlushInterval: -1,
 		ErrorHandler:  proxyError,
 	}
-	proxy.ServeHTTP(rec, r)
+	proxy.ServeHTTP(&idleWriter{ResponseWriter: rec, idle: idle}, r)
 }
 
-func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, sender authz.Identity, callID string, segments int) {
+func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.Effective, sender authz.Identity, callID string, segments int) {
 	// Not pr.SetXForwarded: it appends to a sender-supplied X-Forwarded-For,
 	// which would let senders spoof it. These come from the connection only.
 	out := pr.Out
@@ -127,10 +157,21 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, sender aut
 		proto = "https"
 	}
 	out.Header.Set("X-Forwarded-Proto", proto)
+	// Only the connection may say where a call came from.
+	out.Header.Del("X-Real-Ip")
+	out.Header.Del("X-Forwarded-Port")
 	for k := range out.Header {
 		if strings.HasPrefix(http.CanonicalHeaderKey(k), "Tsrelay-") {
 			out.Header.Del(k)
 		}
+	}
+	for k := range out.Trailer {
+		if strings.HasPrefix(http.CanonicalHeaderKey(k), "Tsrelay-") {
+			delete(out.Trailer, k)
+		}
+	}
+	if eff.HostHeader == hooks.HostRewrite {
+		out.Header.Set(tunnel.HeaderTunnelHost, "rewrite")
 	}
 	out.Header.Set("X-Forwarded-Prefix", hook.Route())
 	out.Header.Set(HeaderSenderNode, sender.NodeName)
@@ -155,16 +196,13 @@ func proxyError(w http.ResponseWriter, r *http.Request, err error) {
 		problem.New(http.StatusServiceUnavailable, problem.TunnelOverloaded, "the tunnel is at its concurrency limit").Write(w)
 	case errors.Is(err, errResponseTimeout):
 		problem.New(http.StatusGatewayTimeout, problem.UpstreamTimeout, "the local application did not respond in time").Write(w)
+	case context.Cause(r.Context()) == errIdleTimeout:
+		problem.New(http.StatusGatewayTimeout, problem.UpstreamTimeout, "the request body stalled for longer than the hook's idle timeout").Write(w)
+	case context.Cause(r.Context()) == errBodyTooLarge:
+		problem.New(http.StatusRequestEntityTooLarge, problem.BodyTooLarge, "the request body is larger than this hook's limit").Write(w)
 	case r.Context().Err() != nil:
 		// The sender went away; nobody is left to answer.
 	default:
 		problem.New(http.StatusBadGateway, problem.TunnelLost, "the tunnel was lost while delivering the call").Write(w)
 	}
-}
-
-func (h *Handler) responseTimeout() time.Duration {
-	if h.ResponseTimeout > 0 {
-		return h.ResponseTimeout
-	}
-	return DefaultResponseTimeout
 }

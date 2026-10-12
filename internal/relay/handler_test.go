@@ -34,6 +34,7 @@ type env struct {
 	t      *testing.T
 	fake   *identify.Fake
 	reg    *tunnel.Registry
+	mgr    *hooks.Manager
 	hook   hooks.Hook
 	srv    *httptest.Server
 	logMu  sync.Mutex
@@ -56,21 +57,30 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { store.Close() })
-	mgr, _ := hooks.NewManager(context.Background(), store, hooks.SlugConfig{})
-	e.hook, err = mgr.Create(context.Background(), receiver, hooks.CreateRequest{Path: "cb"})
+	e.mgr, _ = hooks.NewManager(context.Background(), store, hooks.SlugConfig{})
+	e.hook, err = e.mgr.Create(context.Background(), receiver, hooks.CreateRequest{Path: "cb"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	h := &Handler{
-		Identifier:      e.fake,
-		Hooks:           mgr,
-		Tunnels:         e.reg,
-		Audit:           audit.New(slog.New(slog.NewJSONHandler(e, nil))),
-		ResponseTimeout: 500 * time.Millisecond,
+		Identifier: e.fake,
+		Hooks:      e.mgr,
+		Tunnels:    e.reg,
+		Audit:      audit.New(slog.New(slog.NewJSONHandler(e, nil))),
 	}
 	e.srv = httptest.NewServer(h)
 	t.Cleanup(e.srv.Close)
 	return e
+}
+
+func ptr[T any](v T) *T { return &v }
+
+// patch updates the hook's settings the way PATCH /api/v1/hooks/{id} does.
+func (e *env) patch(p hooks.SettingsPatch) {
+	e.t.Helper()
+	if _, _, err := e.mgr.Update(context.Background(), receiver, e.hook.ID, hooks.UpdateRequest{Settings: p}); err != nil {
+		e.t.Fatal(err)
+	}
 }
 
 // attach serves the hook through an in-process tunnel to local.
@@ -248,6 +258,7 @@ func TestErrors(t *testing.T) {
 
 func TestResponseTimeout(t *testing.T) {
 	e := newEnv(t)
+	e.patch(hooks.SettingsPatch{ResponseTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: ptr(hooks.Duration(500 * time.Millisecond))}})
 	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-time.After(5 * time.Second):

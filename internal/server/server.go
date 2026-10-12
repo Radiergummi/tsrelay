@@ -20,11 +20,10 @@ import (
 const DefaultEphemeralGrace = 10 * time.Minute
 
 type Config struct {
-	BaseURL         string   // public URL of the relay on the tailnet, no trailing slash
-	AllowedHosts    []string // Host header values the relay answers to
-	EphemeralGrace  time.Duration
-	ResponseTimeout time.Duration
-	Tunnel          tunnel.Options
+	BaseURL        string   // public URL of the relay on the tailnet, no trailing slash
+	AllowedHosts   []string // Host header values the relay answers to
+	EphemeralGrace time.Duration
+	Tunnel         tunnel.Options
 }
 
 type Server struct {
@@ -40,7 +39,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 		cfg.EphemeralGrace = DefaultEphemeralGrace
 	}
 	s := &Server{cfg: cfg, hooks: mgr, tunnels: tunnel.NewRegistry(), audit: al}
-	callbacks := &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, ResponseTimeout: cfg.ResponseTimeout}
+	callbacks := &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al}
 
 	mux := http.NewServeMux()
 	(&api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, BaseURL: cfg.BaseURL, Tunnel: cfg.Tunnel}).Register(mux)

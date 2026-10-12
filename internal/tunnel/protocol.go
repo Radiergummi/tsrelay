@@ -12,6 +12,9 @@ const (
 	HeaderHook = "Tsrelay-Tunnel-Hook"
 	// HeaderControl marks a request as a control message for the client.
 	HeaderControl = "Tsrelay-Control"
+	// HeaderTunnelHost, set to "rewrite", asks the client to set Host to
+	// its local target's host. Only the relay sets it; the client removes it.
+	HeaderTunnelHost = "Tsrelay-Tunnel-Host"
 
 	DefaultConcurrency = 32
 	pingInterval       = 15 * time.Second

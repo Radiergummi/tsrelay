@@ -24,7 +24,12 @@ func (t timeoutTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx, cancel := context.WithCancelCause(req.Context())
 	timer := time.AfterFunc(t.timeout, func() { cancel(errResponseTimeout) })
 	resp, err := t.rt.RoundTrip(req.WithContext(ctx))
-	timer.Stop()
+	if !timer.Stop() && err == nil {
+		// The timeout fired as the headers arrived. The context is
+		// cancelled, so the body would fail; report the timeout instead.
+		resp.Body.Close()
+		err = errResponseTimeout
+	}
 	if err != nil {
 		if context.Cause(ctx) == errResponseTimeout {
 			err = errResponseTimeout
