@@ -37,10 +37,22 @@ func TestDockerfile(t *testing.T) {
 		"distroless/static-debian12:nonroot",
 		"TSRELAY_STATE_DIR=/var/lib/tsrelay",
 		`ENTRYPOINT ["/tsrelay", "serve"]`,
+		// The Go build runs natively and cross-compiles for the target platform.
+		"FROM --platform=$BUILDPLATFORM golang:",
+		"ARG TARGETOS TARGETARCH",
+		"GOOS=$TARGETOS GOARCH=$TARGETARCH",
+		// The nonroot user (65532) must own the state directory.
+		"RUN mkdir -p /out/var/lib/tsrelay",
+		"COPY --from=builder --chown=65532:65532 /out/var/lib/tsrelay /var/lib/tsrelay",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("Dockerfile missing %q", want)
 		}
+	}
+	// Changes to a volume path after VOLUME are discarded, so the owned
+	// directory must be copied in before it.
+	if c, v := strings.Index(s, "--chown=65532:65532"), strings.Index(s, "VOLUME"); c < 0 || v < 0 || c > v {
+		t.Error("Dockerfile must copy the owned state directory before VOLUME")
 	}
 }
 
@@ -62,6 +74,9 @@ func TestKubernetesStatefulSet(t *testing.T) {
 		"path: /healthz",
 		"path: /readyz",
 		"serviceAccountName: tsrelay",
+		// The volume must be writable by the image's nonroot user.
+		"fsGroup: 65532",
+		"runAsNonRoot: true",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("statefulset.yaml missing %q", want)

@@ -21,6 +21,9 @@ spec:
         app: tsrelay
     spec:
       serviceAccountName: tsrelay
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
       containers:
         - name: tsrelay
           image: ghcr.io/radiergummi/tsrelay:latest
