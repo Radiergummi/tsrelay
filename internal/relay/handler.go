@@ -149,6 +149,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		tun, err = h.hold(ctx, hook, eff.HoldTimeout.Std())
 		waited = time.Since(holdStart)
 		switch {
+		case err != nil && ctx.Err() != nil:
+			return // the sender went away; nobody is left to answer (as in proxyError)
 		case errors.Is(err, tunnel.ErrHookGone), errors.Is(err, errHookExpired):
 			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 			return

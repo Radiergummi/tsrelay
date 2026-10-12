@@ -136,6 +136,31 @@ func TestHoldQueueFull(t *testing.T) {
 	}
 }
 
+// A sender that gives up while its call is held gets no answer, and the
+// call is not recorded as tunnel_unavailable: no tunnel failed it.
+func TestHeldCallCanceledBySender(t *testing.T) {
+	e := newEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, "POST", e.srv.URL+"/~moritz/cb", nil)
+	done := make(chan error, 1)
+	go func() {
+		resp, err := e.fake.Client(sender).Do(req)
+		if err == nil {
+			resp.Body.Close()
+		}
+		done <- err
+	}()
+	e.waitHeld(1)
+	cancel()
+	if err := <-done; err == nil {
+		t.Fatal("the canceled call got a response")
+	}
+	e.waitLog(`"msg":"call"`)
+	if strings.Contains(e.log(), problem.TunnelUnavailable) {
+		t.Fatalf("a call the sender canceled was recorded as %s:\n%s", problem.TunnelUnavailable, e.log())
+	}
+}
+
 // A hook deleted while calls wait for it releases them at once with 404.
 func TestHeldCallsReleasedOnDelete(t *testing.T) {
 	e := newEnv(t)
