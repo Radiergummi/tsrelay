@@ -29,6 +29,7 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 	name := fs.String("name", "", "hook path below your ~user prefix (default: remembered, else three random words)")
 	channel := fs.String("channel", "", `hook channel (default: "default")`)
 	persistent := fs.Bool("persistent", false, "keep the hook after this command exits")
+	insecure := fs.Bool("insecure", false, "skip TLS certificate verification for an https:// target")
 	// Accept flags before and after the target, as people type both.
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -79,15 +80,9 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 	}
 	relayAPI := &client.API{BaseURL: relayURL, HTTP: hc}
 
-	statePath := d.StatePath
-	if statePath == "" {
-		if statePath, err = client.DefaultStatePath(); err != nil {
-			return fail(err)
-		}
-	}
-	state, err := client.LoadState(statePath)
+	state, err := openState(d)
 	if err != nil {
-		return fail(fmt.Errorf("reading %s: %w", statePath, err))
+		return fail(err)
 	}
 	cwd, _ := os.Getwd()
 	key := client.StateKey(relayURL, cwd, target)
@@ -96,7 +91,7 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 	if err != nil {
 		return fail(err)
 	}
-	if err := state.SetPath(key, hook.Path); err != nil {
+	if err := state.Remember(key, hook.Path, hook.URL); err != nil {
 		fmt.Fprintf(stderr, "tsrelay: warning: could not remember the hook path: %v\n", err)
 	}
 
@@ -111,7 +106,10 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 		Dial: func(ctx context.Context, ids []string, a tunnel.Attach) (net.Conn, error) {
 			return tunnel.Dial(ctx, hc, relayAPI.TunnelURL(a, ids...))
 		},
-		Handler: client.LogCalls(client.NewForwarder(target), logCall),
+		Handler: client.LogCalls(client.NewForwarder(target, client.Options{
+			Insecure:        *insecure,
+			OnUpstreamError: func(err error) { fmt.Fprintln(stderr, "tsrelay:", err) },
+		}), logCall),
 		OnState: func(connected bool, err error) {
 			switch {
 			case connected && !connectedOnce:
@@ -169,4 +167,23 @@ func ensureHook(ctx context.Context, c *client.API, explicit, remembered string,
 		return c.CreateHook(ctx, req)
 	}
 	return h, err
+}
+
+// openState loads the CLI's state: d.StatePath in tests, else
+// client.DefaultStatePath, falling back to the pre-§15 location until the
+// next write moves it.
+func openState(d deps) (*client.State, error) {
+	path, legacy := d.StatePath, ""
+	if path == "" {
+		var err error
+		if path, err = client.DefaultStatePath(); err != nil {
+			return nil, err
+		}
+		legacy, _ = client.LegacyStatePath()
+	}
+	s, err := client.LoadState(path, legacy)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	return s, nil
 }

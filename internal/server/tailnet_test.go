@@ -125,7 +125,7 @@ func TestOverRealTailnet(t *testing.T) {
 		Dial: func(ctx context.Context, ids []string, a tunnel.Attach) (net.Conn, error) {
 			return tunnel.Dial(ctx, hc, relayAPI.TunnelURL(a, ids...))
 		},
-		Handler: client.NewForwarder(target),
+		Handler: client.NewForwarder(target, client.Options{}),
 		OnState: func(c bool, _ error) {
 			if c {
 				connected <- struct{}{}

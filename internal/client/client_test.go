@@ -6,9 +6,12 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -61,7 +64,7 @@ func TestForwarder(t *testing.T) {
 	req.Header.Set("X-Forwarded-Proto", "https")
 	req.Header.Set("X-Forwarded-Prefix", "/~m/cb")
 	rec := httptest.NewRecorder()
-	NewForwarder(target).ServeHTTP(rec, req)
+	NewForwarder(target, Options{}).ServeHTTP(rec, req)
 
 	r := <-seen
 	if r.URL.Path != "/base/done" || r.URL.RawQuery != "x=1" || r.Host != "tsrelay.example" {
@@ -88,21 +91,76 @@ func must[T any](v T, err error) T {
 	return v
 }
 
+// Minor 4: the sender learns only that the local app is unreachable; the
+// target and the dial error go to the CLI's own log.
 func TestForwarderUnreachable(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	target, _ := url.Parse(srv.URL)
 	srv.Close() // nothing listens there any more
+	var logged error
 	rec := httptest.NewRecorder()
-	NewForwarder(target).ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
+	fwd := NewForwarder(target, Options{OnUpstreamError: func(err error) { logged = err }})
+	fwd.ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
 	if rec.Code != 502 || rec.Header().Get(problem.HeaderError) != problem.UpstreamUnreachable {
 		t.Fatalf("got %d %q", rec.Code, rec.Header().Get(problem.HeaderError))
 	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "the local application is not reachable") || strings.Contains(body, target.Host) || strings.Contains(body, "dial") {
+		t.Fatalf("problem detail leaks the local target or error: %s", body)
+	}
+	if logged == nil || !strings.Contains(logged.Error(), target.Host) {
+		t.Fatalf("OnUpstreamError got %v, want the full error naming %s", logged, target.Host)
+	}
 }
 
+func TestForwarderHostRewrite(t *testing.T) {
+	hosts := make(chan string, 2)
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(tunnel.HeaderTunnelHost) != "" {
+			t.Error("the relay's host marker leaked to the local app")
+		}
+		hosts <- r.Host
+	}))
+	defer local.Close()
+	target, _ := url.Parse(local.URL)
+	fwd := NewForwarder(target, Options{})
+	for _, marker := range []string{"", "rewrite"} {
+		req := httptest.NewRequest("GET", "http://tsrelay.example/x", nil)
+		if marker != "" {
+			req.Header.Set(tunnel.HeaderTunnelHost, marker)
+		}
+		fwd.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	if got := <-hosts; got != "tsrelay.example" {
+		t.Errorf("preserve: local app saw Host %q, want the relay's", got)
+	}
+	if got := <-hosts; got != target.Host {
+		t.Errorf("rewrite: local app saw Host %q, want %q", got, target.Host)
+	}
+}
+
+func TestForwarderInsecure(t *testing.T) {
+	local := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	local.Config.ErrorLog = log.New(io.Discard, "", 0) // the rejected handshake is expected
+	local.StartTLS()
+	defer local.Close()
+	target, _ := url.Parse(local.URL)
+	for insecure, want := range map[bool]int{false: http.StatusBadGateway, true: http.StatusTeapot} {
+		rec := httptest.NewRecorder()
+		NewForwarder(target, Options{Insecure: insecure}).ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+		if rec.Code != want {
+			t.Errorf("Insecure=%v: status %d, want %d", insecure, rec.Code, want)
+		}
+	}
+}
+
+// Minor 5: query strings may carry secrets, so the call log leaves them out.
 func TestLogCalls(t *testing.T) {
 	var got Call
 	h := LogCalls(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(201) }), func(c Call) { got = c })
-	req := httptest.NewRequest("POST", "/done", nil)
+	req := httptest.NewRequest("POST", "/done?token=s3cret", nil)
 	req.Header.Set("Tsrelay-Sender-Tags", "tag:prod-worker")
 	req.Header.Set("Tsrelay-Sender-Node", "worker")
 	h.ServeHTTP(httptest.NewRecorder(), req)
@@ -153,20 +211,88 @@ func TestRelayURL(t *testing.T) {
 }
 
 func TestState(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sub", "state.json")
-	s, err := LoadState(path)
-	if err != nil || s.Path("k") != "" {
-		t.Fatalf("empty state: %v %q", err, s.Path("k"))
+	path := filepath.Join(t.TempDir(), "sub", "hooks.json")
+	s, err := LoadState(path, "")
+	if err != nil || s.Path("k") != "" || s.URL("k") != "" {
+		t.Fatalf("empty state: %v %q %q", err, s.Path("k"), s.URL("k"))
 	}
-	if err := s.SetPath("k", "amber-otter-lamp"); err != nil {
+	if err := s.Remember("k", "amber-otter-lamp", "https://r/~m/amber-otter-lamp"); err != nil {
 		t.Fatal(err)
 	}
-	s2, _ := LoadState(path)
-	if s2.Path("k") != "amber-otter-lamp" {
-		t.Fatalf("reloaded = %q", s2.Path("k"))
+	s2, _ := LoadState(path, "")
+	if s2.Path("k") != "amber-otter-lamp" || s2.URL("k") != "https://r/~m/amber-otter-lamp" {
+		t.Fatalf("reloaded = %q %q", s2.Path("k"), s2.URL("k"))
 	}
 	u, _ := url.Parse("http://localhost:8080")
 	if StateKey("https://r", "/proj", u) == StateKey("https://r", "/other", u) {
 		t.Fatal("keys must differ per directory")
+	}
+}
+
+// Minor 10: the state lives where DESIGN.md §15 says.
+func TestDefaultStatePath(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", xdg)
+	if p, err := DefaultStatePath(); err != nil || p != filepath.Join(xdg, "tsrelay", "hooks.json") {
+		t.Errorf("with XDG_STATE_HOME: %q, %v", p, err)
+	}
+	home := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", "")
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
+	if p, err := DefaultStatePath(); err != nil || p != filepath.Join(home, ".local", "state", "tsrelay", "hooks.json") {
+		t.Errorf("without XDG_STATE_HOME: %q, %v", p, err)
+	}
+}
+
+// Minor 10: the old state file is read once and moved on the next write.
+func TestStateMigratesLegacyFile(t *testing.T) {
+	dir := t.TempDir()
+	legacy := filepath.Join(dir, "config", "state.json")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, []byte(`{"paths":{"k":"old-path"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "state", "hooks.json")
+	s, err := LoadState(path, legacy)
+	if err != nil || s.Path("k") != "old-path" {
+		t.Fatalf("legacy state not read: %v %q", err, s.Path("k"))
+	}
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("loading must not write the new file: %v", err)
+	}
+	if err := s.Remember("k2", "p2", "u2"); err != nil {
+		t.Fatal(err)
+	}
+	moved, _ := LoadState(path, "")
+	if moved.Path("k") != "old-path" || moved.Path("k2") != "p2" {
+		t.Fatalf("migrated state = %v", moved.Paths)
+	}
+	if _, err := os.Stat(legacy); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("legacy file should be gone after the migration: %v", err)
+	}
+	// Once the new file exists, a legacy file is ignored.
+	os.WriteFile(legacy, []byte(`{"paths":{"k":"stale"}}`), 0o600)
+	if again, _ := LoadState(path, legacy); again.Path("k") != "old-path" {
+		t.Fatalf("legacy file won over the new one: %q", again.Path("k"))
+	}
+}
+
+// Minor 11: the temporary file has a unique name, so a stray or concurrent
+// one cannot break a save.
+func TestStateTempFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hooks.json")
+	if err := os.Mkdir(path+".tmp", 0o700); err != nil { // where a fixed name would write
+		t.Fatal(err)
+	}
+	s, _ := LoadState(path, "")
+	if err := s.Remember("k", "p", "u"); err != nil {
+		t.Fatalf("save next to a stray %s.tmp: %v", path, err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 2 {
+		t.Fatalf("leftover temporary files: %v", entries)
 	}
 }

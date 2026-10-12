@@ -1,26 +1,44 @@
 package client
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
+// Options configure NewForwarder.
+type Options struct {
+	// Insecure skips TLS certificate verification for an https target,
+	// e.g. a dev server with a self-signed certificate.
+	Insecure bool
+	// OnUpstreamError receives the full error when the target cannot be
+	// reached. The sender only learns that the local app is unreachable.
+	OnUpstreamError func(error)
+}
+
 // NewForwarder delivers tunnelled requests to target. Bodies pass through
-// unchanged in both directions; Host and the relay's X-Forwarded-* headers
-// are kept as the relay set them.
-func NewForwarder(target *url.URL) http.Handler {
+// unchanged in both directions. Host and the relay's X-Forwarded-* headers
+// are kept as the relay set them, except that the relay's host marker
+// (tunnel.HeaderTunnelHost: rewrite) sets Host to the target's host.
+func NewForwarder(target *url.URL, opts Options) http.Handler {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.DisableCompression = true
+	if opts.Insecure && target.Scheme == "https" {
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
 	return &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(target)
-			pr.Out.Host = pr.In.Host
+			pr.SetURL(target) // also clears Out.Host, so Host becomes the target's
+			if pr.In.Header.Get(tunnel.HeaderTunnelHost) != string(hooks.HostRewrite) {
+				pr.Out.Host = pr.In.Host
+			}
 			// Rewrite strips these from Out; the relay set them, so keep them.
 			for _, h := range []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto"} {
 				if v := pr.In.Header.Values(h); len(v) > 0 {
@@ -28,12 +46,15 @@ func NewForwarder(target *url.URL) http.Handler {
 				}
 			}
 			pr.Out.Header.Del(tunnel.HeaderHook)
+			pr.Out.Header.Del(tunnel.HeaderTunnelHost)
 		},
 		Transport:     tr,
 		FlushInterval: -1,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			problem.New(http.StatusBadGateway, problem.UpstreamUnreachable,
-				fmt.Sprintf("could not reach %s: %v", target.Redacted(), err)).Write(w)
+			if opts.OnUpstreamError != nil {
+				opts.OnUpstreamError(fmt.Errorf("could not reach %s: %w", target.Redacted(), err))
+			}
+			problem.New(http.StatusBadGateway, problem.UpstreamUnreachable, "the local application is not reachable").Write(w)
 		},
 	}
 }
@@ -41,7 +62,7 @@ func NewForwarder(target *url.URL) http.Handler {
 // Call summarizes one forwarded call for the CLI's output.
 type Call struct {
 	Method   string
-	Path     string
+	Path     string // without the query string, which may carry secrets
 	Status   int
 	Duration time.Duration
 	Sender   string // tags if the sender is tagged, else its node name
@@ -57,7 +78,7 @@ func LogCalls(next http.Handler, log func(Call)) http.Handler {
 		if sender == "" {
 			sender = r.Header.Get("Tsrelay-Sender-Node")
 		}
-		log(Call{Method: r.Method, Path: r.URL.RequestURI(), Status: sw.status, Duration: time.Since(start), Sender: sender})
+		log(Call{Method: r.Method, Path: r.URL.Path, Status: sw.status, Duration: time.Since(start), Sender: sender})
 	})
 }
 

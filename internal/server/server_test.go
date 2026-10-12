@@ -89,7 +89,7 @@ func (e *env) cli(hookID string, target string) (stop func()) {
 		Dial: func(ctx context.Context, hs []string, a tunnel.Attach) (net.Conn, error) {
 			return tunnel.Dial(ctx, e.api.HTTP, e.api.TunnelURL(a, hs...))
 		},
-		Handler: client.NewForwarder(u),
+		Handler: client.NewForwarder(u, client.Options{}),
 		OnState: func(c bool, _ error) {
 			if c {
 				connected <- struct{}{}
