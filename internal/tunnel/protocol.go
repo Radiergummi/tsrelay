@@ -30,6 +30,15 @@ type HookInfo struct {
 	URL string `json:"url,omitempty"`
 }
 
+// Attach describes one dial of a tunnel client. Session is fixed for the
+// client's lifetime; Resume marks redials after a lost connection. A resume
+// may only displace a tunnel of the same session, so a client that was
+// replaced cannot take its hooks back by reconnecting.
+type Attach struct {
+	Session string
+	Resume  bool
+}
+
 // Control is a message from the relay to the client about the tunnel itself.
 type Control struct {
 	Type  ControlType `json:"type"`

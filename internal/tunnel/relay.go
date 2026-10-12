@@ -54,6 +54,8 @@ func Accept(w http.ResponseWriter, r *http.Request) (net.Conn, error) {
 type Tunnel struct {
 	ID    string
 	Owner authz.Identity
+	// Session identifies the client process that opened the tunnel.
+	Session string
 
 	cc   *http2.ClientConn
 	conn *watchedConn

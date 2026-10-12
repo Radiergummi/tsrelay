@@ -125,7 +125,7 @@ func TestAPIClientDecodesProblems(t *testing.T) {
 	if !errors.As(err, &p) || p.Code != problem.Invalid {
 		t.Fatalf("err = %v", err)
 	}
-	if got := c.TunnelURL("h_1", "h_2"); got != srv.URL+"/api/v1/tunnel?hook=h_1&hook=h_2" {
+	if got := c.TunnelURL(tunnel.Attach{Session: "s_1", Resume: true}, "h_1", "h_2"); got != srv.URL+"/api/v1/tunnel?hook=h_1&hook=h_2&resume=1&session=s_1" {
 		t.Fatalf("TunnelURL = %q", got)
 	}
 }

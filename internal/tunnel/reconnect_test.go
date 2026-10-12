@@ -50,7 +50,7 @@ func newFakeRelay(t *testing.T, rejectStatus int, rejections int32) *fakeRelay {
 func (f *fakeRelay) client(states chan<- bool) *tunnel.Client {
 	return &tunnel.Client{
 		Hooks: []string{"h1"},
-		Dial: func(ctx context.Context, hooks []string) (net.Conn, error) {
+		Dial: func(ctx context.Context, hooks []string, _ tunnel.Attach) (net.Conn, error) {
 			return tunnel.Dial(ctx, tunnel.NewHTTPClient(nil), f.srv.URL+"/?hook="+hooks[0])
 		},
 		Handler:    http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(299) }),
@@ -143,5 +143,28 @@ func TestClientStopsOnCancel(t *testing.T) {
 	cancel()
 	if err := recv(t, done); err != nil {
 		t.Fatalf("Run = %v, want nil after cancel", err)
+	}
+}
+
+// Every dial of one Client uses the same session; only dials after a
+// successful connection are resumes.
+func TestClientSessionAndResume(t *testing.T) {
+	f := newFakeRelay(t, http.StatusServiceUnavailable, 1)
+	attaches := make(chan tunnel.Attach, 8)
+	c := f.client(make(chan bool, 16))
+	dial := c.Dial
+	c.Dial = func(ctx context.Context, hooks []string, a tunnel.Attach) (net.Conn, error) {
+		attaches <- a
+		return dial(ctx, hooks, a)
+	}
+	run(t, c)
+	first, second := recv(t, attaches), recv(t, attaches)
+	recv(t, f.tunnels).Close()
+	third := recv(t, attaches)
+	if first.Session == "" || first.Session != second.Session || second.Session != third.Session {
+		t.Fatalf("sessions differ: %q %q %q", first.Session, second.Session, third.Session)
+	}
+	if first.Resume || second.Resume || !third.Resume {
+		t.Fatalf("resume flags = %v %v %v, want false false true", first.Resume, second.Resume, third.Resume)
 	}
 }

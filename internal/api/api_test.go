@@ -159,9 +159,14 @@ func toJSON(v any) string { b, _ := json.Marshal(v); return string(b) }
 // background. controls receives control messages; served is closed when the
 // tunnel ends.
 func (e *env) openTunnel(id authz.Identity, hookIDs ...string) (controls chan tunnel.Control, served chan struct{}, err error) {
-	q := ""
-	for i, h := range hookIDs {
-		if i > 0 {
+	return e.openTunnelQ(id, "", hookIDs...)
+}
+
+// openTunnelQ is openTunnel with extra query parameters such as session and resume.
+func (e *env) openTunnelQ(id authz.Identity, extra string, hookIDs ...string) (controls chan tunnel.Control, served chan struct{}, err error) {
+	q := extra
+	for _, h := range hookIDs {
+		if q != "" {
 			q += "&"
 		}
 		q += "hook=" + h
@@ -249,5 +254,30 @@ func TestTunnelRejections(t *testing.T) {
 	}
 	if resp := e.call(moritz, "GET", "/api/v1/tunnel?hook="+h.ID, nil, nil); resp.StatusCode != 400 {
 		t.Errorf("non-upgrade request = %d, want 400", resp.StatusCode)
+	}
+}
+
+// A redial (resume=1) may only displace a tunnel of its own session. A CLI
+// that was replaced but missed the "replaced" message must not steal the
+// hook back; a fresh start (no resume) still takes over.
+func TestResumeCannotTakeOverOtherSessions(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	if _, _, err := e.openTunnelQ(moritz, "session=s_old", h.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := e.openTunnelQ(moritz, "session=s_new", h.ID); err != nil {
+		t.Fatalf("fresh attach must take over: %v", err)
+	}
+	_, _, err := e.openTunnelQ(moritz, "session=s_old&resume=1", h.ID)
+	var p *problem.Problem
+	if !errors.As(err, &p) || p.Status != 409 || p.Code != problem.Conflict {
+		t.Fatalf("replaced session resuming: err = %v, want 409 conflict", err)
+	}
+	var got Hook
+	e.call(moritz, "GET", "/api/v1/hooks/"+h.ID, nil, &got)
+	if _, _, err := e.openTunnelQ(moritz, "session=s_new&resume=1", h.ID); err != nil {
+		t.Fatalf("resuming the serving session (stale half-open tunnel) must work: %v", err)
 	}
 }

@@ -84,8 +84,8 @@ func (e *env) cli(hookID string, target string) (stop func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	tc := &tunnel.Client{
 		Hooks: []string{hookID},
-		Dial: func(ctx context.Context, hs []string) (net.Conn, error) {
-			return tunnel.Dial(ctx, e.api.HTTP, e.api.TunnelURL(hs...))
+		Dial: func(ctx context.Context, hs []string, a tunnel.Attach) (net.Conn, error) {
+			return tunnel.Dial(ctx, e.api.HTTP, e.api.TunnelURL(a, hs...))
 		},
 		Handler: client.NewForwarder(u),
 		OnState: func(c bool, _ error) {

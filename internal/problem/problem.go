@@ -30,6 +30,7 @@ const (
 	NotFound             = "not_found"
 	Invalid              = "invalid"
 	BadRequest           = "bad_request"
+	Conflict             = "conflict"
 	MisdirectedRequest   = "misdirected_request"
 	UnsupportedMediaType = "unsupported_media_type"
 	Internal             = "internal"

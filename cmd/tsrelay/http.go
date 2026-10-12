@@ -108,8 +108,8 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 	connectedOnce := false
 	tc := &tunnel.Client{
 		Hooks: []string{hook.ID},
-		Dial: func(ctx context.Context, ids []string) (net.Conn, error) {
-			return tunnel.Dial(ctx, hc, relayAPI.TunnelURL(ids...))
+		Dial: func(ctx context.Context, ids []string, a tunnel.Attach) (net.Conn, error) {
+			return tunnel.Dial(ctx, hc, relayAPI.TunnelURL(a, ids...))
 		},
 		Handler: client.LogCalls(client.NewForwarder(target), logCall),
 		OnState: func(connected bool, err error) {

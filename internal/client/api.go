@@ -11,6 +11,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/problem"
+	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
 // API is a client for the relay's /api/v1. Errors from the relay are
@@ -43,8 +44,14 @@ func (c *API) DeleteHook(ctx context.Context, id string) error {
 }
 
 // TunnelURL is the endpoint tunnel.Dial attaches to for the given hooks.
-func (c *API) TunnelURL(hookIDs ...string) string {
+func (c *API) TunnelURL(a tunnel.Attach, hookIDs ...string) string {
 	q := url.Values{"hook": hookIDs}
+	if a.Session != "" {
+		q.Set("session", a.Session)
+	}
+	if a.Resume {
+		q.Set("resume", "1")
+	}
 	return c.BaseURL + "/api/v1/tunnel?" + q.Encode()
 }
 

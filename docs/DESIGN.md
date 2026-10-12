@@ -219,6 +219,7 @@ The protocol version lives in the `Upgrade` token. An incompatible change gets a
 - **Takeover:** when a second tunnel attaches to a hook that already has one, the hook's `attachPolicy` decides.
   - **`takeover`** (default): the new tunnel wins. The old one is sent `replaced` and detached from that hook. It is closed once it serves no hooks.
   - **`reject`:** the new attach fails with `409`.
+- **Sessions:** each client process picks a random session ID and sends it with every attach. Redials after a lost connection are marked as resumes, and a resume may only displace a tunnel of its *own* session. A CLI that was taken over, but never received `replaced` (it was asleep, or its tunnel was saturated), therefore gets `409 conflict` when it redials, rather than taking the hook back. A stale, half-open tunnel from the same process is still replaced, which is the common case on a flaky connection.
 
 ### 6.4 Concurrency
 

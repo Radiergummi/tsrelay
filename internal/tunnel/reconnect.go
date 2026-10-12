@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/ids"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
@@ -25,7 +26,7 @@ var errTunnelLost = errors.New("tunnel lost")
 // from later attach attempts.
 type Client struct {
 	Hooks      []string
-	Dial       func(ctx context.Context, hooks []string) (net.Conn, error)
+	Dial       func(ctx context.Context, hooks []string, a Attach) (net.Conn, error)
 	Handler    http.Handler
 	OnControl  func(Control)
 	OnState    func(connected bool, err error)
@@ -45,12 +46,13 @@ func (c *Client) Run(ctx context.Context) error {
 	minB := cmp.Or(c.MinBackoff, 250*time.Millisecond)
 	maxB := cmp.Or(c.MaxBackoff, 30*time.Second)
 	backoff := minB
+	attach := Attach{Session: ids.New("s_")}
 	for {
 		hooks := c.current()
 		if len(hooks) == 0 {
 			return ErrNoHooks
 		}
-		conn, err := c.Dial(ctx, hooks)
+		conn, err := c.Dial(ctx, hooks, attach)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -67,6 +69,7 @@ func (c *Client) Run(ctx context.Context) error {
 			continue
 		}
 		backoff = minB
+		attach.Resume = true
 		c.state(true, nil)
 		Serve(ctx, conn, c.Handler, c.handleControl)
 		if ctx.Err() != nil {
