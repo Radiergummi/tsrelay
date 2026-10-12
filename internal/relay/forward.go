@@ -78,6 +78,18 @@ func remainder(u *url.URL, n int) (path, rawPath string) {
 	return decoded, rest
 }
 
+// encodedSlashIn reports whether the first n segments of u's escaped path
+// contain an encoded slash.
+func encodedSlashIn(u *url.URL, n int) bool {
+	segs := strings.SplitN(strings.TrimPrefix(u.EscapedPath(), "/"), "/", n+1)
+	for _, s := range segs[:min(n, len(segs))] {
+		if strings.Contains(strings.ToLower(s), "%2f") {
+			return true
+		}
+	}
+	return false
+}
+
 // recorder captures the status and size of a response for the audit log. It
 // unwraps so http.ResponseController can still flush streamed responses.
 type recorder struct {

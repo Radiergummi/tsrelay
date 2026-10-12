@@ -321,3 +321,15 @@ func TestAuditCallRecord(t *testing.T) {
 		t.Error("denied sender was not audited")
 	}
 }
+
+// An encoded slash inside the slug or hook path would route on the decoded
+// path but strip segments of the escaped one, delivering a wrong path.
+func TestEncodedSlashInPrefixIsNotFound(t *testing.T) {
+	e := newEnv(t)
+	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("local app reached with %s", r.URL.EscapedPath())
+	}), tunnel.Options{})
+	for _, p := range []string{"/~moritz%2Fcb/x/y", "/~moritz%2fcb"} {
+		wantProblem(t, e.do(sender, "GET", p, nil, nil), 404, problem.HookNotFound)
+	}
+}

@@ -84,6 +84,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hook, segs, found := h.Hooks.Route(slug, rest)
+	if found && encodedSlashIn(r.URL, 1+segs) {
+		found = false // the decoded and escaped paths would split differently
+	}
 	if !found || !sender.Grants.Allows(authz.RoleSender, hook.Channel) {
 		if found {
 			h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender), audit.Hook(hook),
