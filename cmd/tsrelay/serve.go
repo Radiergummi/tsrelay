@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,7 +43,8 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	maxTunnels := fs.Int("max-tunnels-default", authz.DefaultLimits.MaxTunnels, "tunnels per user unless a grant allows more")
 	maxTTL := fs.Duration("max-hook-ttl-default", 0, "longest hook lifetime unless a grant allows more (0: unlimited)")
 	grace := fs.Duration("ephemeral-grace", server.DefaultEphemeralGrace, "how long an ephemeral hook survives without a tunnel")
-	responseTimeout := fs.Duration("response-timeout", 2*time.Minute, "how long to wait for the local app's response headers")
+	policyFlags := registerPolicyFlags(fs)
+	legacyResponseTimeout := fs.Duration("response-timeout", 0, "deprecated: use --hook-response-timeout-default")
 	concurrency := fs.Int("tunnel-concurrency", tunnel.DefaultConcurrency, "concurrent calls per tunnel")
 	logFormat := fs.String("log-format", "json", `"json" or "text"`)
 	logLevel := fs.String("log-level", "info", "debug, info, warn or error")
@@ -62,7 +64,24 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "tsrelay serve: --user-slug must be %q or %q\n", hooks.SlugLocalPart, hooks.SlugLogin)
 		return 2
 	}
+	for login, slug := range overrides {
+		if !hooks.ValidSlug(slug) {
+			fmt.Fprintf(stderr, "tsrelay serve: --user-slug-override %s=%s: a slug may only contain a-z, 0-9, '.', '_' and '-'\n", login, slug)
+			return 2
+		}
+	}
 	logger, err := newLogger(stderr, *logFormat, *logLevel)
+	if err != nil {
+		fmt.Fprintln(stderr, "tsrelay serve:", err)
+		return 2
+	}
+	if wasSet(fs, "response-timeout") {
+		logger.Warn("--response-timeout is deprecated; use --hook-response-timeout-default")
+		if !wasSet(fs, "hook-response-timeout-default") {
+			_ = fs.Set("hook-response-timeout-default", legacyResponseTimeout.String())
+		}
+	}
+	policy, err := policyFlags()
 	if err != nil {
 		fmt.Fprintln(stderr, "tsrelay serve:", err)
 		return 2
@@ -73,7 +92,8 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		cap:    peercap.Cap(*capName),
 		slugs:  hooks.SlugConfig{Mode: hooks.SlugMode(*slugMode), Overrides: overrides},
 		limits: authz.Limits{MaxHooks: *maxHooks, MaxTunnels: *maxTunnels, MaxHookTTL: *maxTTL},
-		server: server.Config{EphemeralGrace: *grace, ResponseTimeout: *responseTimeout,
+		policy: policy,
+		server: server.Config{EphemeralGrace: *grace, ResponseTimeout: policy.Defaults.ResponseTimeout.Std(),
 			Tunnel: tunnel.Options{Concurrency: *concurrency}},
 	})
 	if err != nil {
@@ -90,6 +110,7 @@ type relayConfig struct {
 	cap                peercap.Cap
 	slugs              hooks.SlugConfig
 	limits             authz.Limits
+	policy             hooks.Policy
 	server             server.Config
 }
 
@@ -103,6 +124,7 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 	if err != nil {
 		return err
 	}
+	mgr.SetPolicy(cfg.policy)
 
 	ts := &tsnet.Server{
 		Hostname:      cfg.hostname,
@@ -141,13 +163,9 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 	defer ln.Close()
 
 	dnsName := strings.TrimSuffix(st.Self.DNSName, ".")
-	allowed := []string{dnsName, cfg.hostname}
-	for _, ip := range st.TailscaleIPs {
-		allowed = append(allowed, ip.String())
-	}
 	al := audit.New(logger)
 	cfg.server.BaseURL = scheme + "://" + cmp.Or(dnsName, cfg.hostname)
-	cfg.server.AllowedHosts = allowed
+	cfg.server.AllowedHosts = allowedHosts(dnsName, cfg.hostname, st.TailscaleIPs)
 	srv := server.New(cfg.server,
 		&identify.Tailscale{Client: lc, Cap: cfg.cap, Defaults: cfg.limits, Logger: logger},
 		mgr, al)
@@ -175,6 +193,22 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 		return err
 	}
 	return nil
+}
+
+// allowedHosts lists the Host header values the relay answers to. Empty
+// names are dropped: an empty DNS name would otherwise admit requests
+// that carry no Host header at all.
+func allowedHosts(dnsName, hostname string, ips []netip.Addr) []string {
+	var out []string
+	for _, h := range []string{dnsName, hostname} {
+		if h != "" {
+			out = append(out, h)
+		}
+	}
+	for _, ip := range ips {
+		out = append(out, ip.String())
+	}
+	return out
 }
 
 func defaultStateDir() string {

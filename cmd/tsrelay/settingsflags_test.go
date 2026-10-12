@@ -1,0 +1,115 @@
+package main
+
+import (
+	"flag"
+	"strings"
+	"testing"
+
+	"github.com/Radiergummi/tsrelay/internal/hooks"
+)
+
+func TestParseRateLimit(t *testing.T) {
+	got, err := parseRateLimit("2.5/10")
+	if err != nil || got != (hooks.RateLimit{PerSecond: 2.5, Burst: 10}) {
+		t.Fatalf("parseRateLimit = %+v, %v", got, err)
+	}
+	for _, bad := range []string{"", "100", "0/1", "-1/5", "1/0", "x/1", "1/y", "1/2.5", "NaN/1", "Inf/1"} {
+		if _, err := parseRateLimit(bad); err == nil {
+			t.Errorf("parseRateLimit(%q) should fail", bad)
+		}
+	}
+}
+
+func policyFrom(t *testing.T, args ...string) (hooks.Policy, error) {
+	t.Helper()
+	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	get := registerPolicyFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		t.Fatal(err)
+	}
+	return get()
+}
+
+func TestPolicyFlagDefaults(t *testing.T) {
+	p, err := policyFrom(t)
+	if err != nil || p != hooks.DefaultPolicy {
+		t.Fatalf("policy = %+v, %v; want hooks.DefaultPolicy", p, err)
+	}
+}
+
+func TestPolicyFlags(t *testing.T) {
+	p, err := policyFrom(t,
+		"--hook-hold-timeout-default=0s", "--hook-rate-limit-default=5/10", "--hook-rate-limit-max=50/100",
+		"--hook-max-body-bytes-default=4096", "--hook-max-body-bytes-max=1048576",
+		"--hook-host-header-default=rewrite", "--hook-attach-policy-default=reject")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := p.Defaults
+	if d.HoldTimeout != 0 || d.RateLimit != (hooks.RateLimit{PerSecond: 5, Burst: 10}) || d.MaxBodyBytes != 4096 ||
+		d.HostHeader != hooks.HostRewrite || d.AttachPolicy != hooks.AttachReject {
+		t.Fatalf("defaults = %+v", d)
+	}
+	if p.Max.MaxBodyBytes != 1<<20 || p.Max.RateLimit != (hooks.RateLimit{PerSecond: 50, Burst: 100}) ||
+		p.Max.HoldTimeout != hooks.DefaultPolicy.Max.HoldTimeout {
+		t.Fatalf("maxima = %+v", p.Max)
+	}
+}
+
+func TestPolicyFlagErrors(t *testing.T) {
+	cases := map[string][]string{
+		"responseTimeout":           {"--hook-response-timeout-max=1m"}, // below the 2m default
+		"hook-idle-timeout-default": {"--hook-idle-timeout-default=-1s"},
+		"hook-hold-timeout-max":     {"--hook-hold-timeout-max=-1s"},
+		"attachPolicy":              {"--hook-attach-policy-default=steal"},
+		"hostHeader":                {"--hook-host-header-default=keep"},
+		// An unlimited default body size is not allowed under a maximum.
+		"maxBodyBytes":            {"--hook-max-body-bytes-max=1024"},
+		"hook-max-body-bytes-max": {"--hook-max-body-bytes-max=-1"},
+	}
+	for want, args := range cases {
+		if _, err := policyFrom(t, args...); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%v: err = %v, want it to mention %q", args, err, want)
+		}
+	}
+	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	fs.SetOutput(new(nopWriter))
+	registerPolicyFlags(fs)
+	if err := fs.Parse([]string{"--hook-rate-limit-default=fast"}); err == nil {
+		t.Error("an unparseable rate limit must fail at parse time")
+	}
+}
+
+func TestHookSettingFlags(t *testing.T) {
+	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	get := registerHookSettingFlags(fs)
+	if err := fs.Parse([]string{"--hold-timeout=0s", "--rate-limit=5/10", "--host-header=rewrite", "--max-body-bytes=0"}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.HoldTimeout == nil || *s.HoldTimeout != 0 || s.MaxBodyBytes == nil || *s.MaxBodyBytes != 0 {
+		t.Errorf("explicit zero values must be set: %+v", s)
+	}
+	if s.RateLimit == nil || *s.RateLimit != (hooks.RateLimit{PerSecond: 5, Burst: 10}) || s.HostHeader == nil || *s.HostHeader != hooks.HostRewrite {
+		t.Errorf("settings = %+v", s)
+	}
+	if s.ResponseTimeout != nil || s.IdleTimeout != nil || s.AttachPolicy != nil {
+		t.Errorf("flags that were not given must stay nil: %+v", s)
+	}
+
+	fs = flag.NewFlagSet("t", flag.ContinueOnError)
+	get = registerHookSettingFlags(fs)
+	fs.Parse([]string{"--idle-timeout=-1s"})
+	if _, err := get(); err == nil {
+		t.Error("a negative duration must fail")
+	}
+	fs = flag.NewFlagSet("t", flag.ContinueOnError)
+	get = registerHookSettingFlags(fs)
+	fs.Parse(nil)
+	if s, err := get(); err != nil || s != (hooks.Settings{}) {
+		t.Errorf("no flags = %+v, %v", s, err)
+	}
+}
