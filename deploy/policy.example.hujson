@@ -1,0 +1,25 @@
+{
+  "tagOwners": {
+    "tag:tsrelay": ["autogroup:admin"],
+  },
+  "grants": [
+    // Who may receive callbacks: run `tsrelay http` or use the UI.
+    {
+      "src": ["autogroup:member"],
+      "dst": ["tag:tsrelay"],
+      "ip": ["tcp:443"],
+      "app": {
+        "mazetti.me/cap/relay": [{"roles": ["receiver"]}],
+      },
+    },
+    // Who may send callbacks to a hook.
+    {
+      "src": ["tag:prod-worker"],
+      "dst": ["tag:tsrelay"],
+      "ip": ["tcp:443"],
+      "app": {
+        "mazetti.me/cap/relay": [{"roles": ["sender"]}],
+      },
+    },
+  ],
+}

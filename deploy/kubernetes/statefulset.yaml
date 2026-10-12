@@ -1,0 +1,66 @@
+# No Service is defined: the relay is its own tailnet node and is reached
+# at https://tsrelay.<your tailnet>.ts.net over the tailnet only. /healthz,
+# /readyz and /metrics are exposed on the pod IP (--ops-listen) for the
+# probes and for a PodMonitor, never on the tailnet interface.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tsrelay
+  namespace: default
+  labels:
+    app: tsrelay
+spec:
+  serviceName: tsrelay
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tsrelay
+  template:
+    metadata:
+      labels:
+        app: tsrelay
+    spec:
+      serviceAccountName: tsrelay
+      containers:
+        - name: tsrelay
+          image: ghcr.io/radiergummi/tsrelay:latest
+          args:
+            - --ops-listen=:9090
+          ports:
+            - name: metrics
+              containerPort: 9090
+          env:
+            - name: TS_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: tsrelay-tailscale
+                  key: TS_CLIENT_SECRET
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/tsrelay
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: state
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

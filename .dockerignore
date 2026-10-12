@@ -1,0 +1,10 @@
+.git
+.github
+.superpowers
+docs/superpowers
+*.md
+deploy
+dist
+*.test
+coverage.out
+tmp

@@ -1,0 +1,11 @@
+services:
+  tsrelay:
+    image: ghcr.io/radiergummi/tsrelay:latest
+    restart: unless-stopped
+    environment:
+      TS_CLIENT_SECRET: "tskey-client-REPLACE-ME"
+    volumes:
+      - state:/var/lib/tsrelay
+
+volumes:
+  state:
