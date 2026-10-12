@@ -64,7 +64,9 @@ func TestFromWhoIsOtherCapIgnored(t *testing.T) {
 
 type staticWhoIs struct{ res *apitype.WhoIsResponse }
 
-func (s staticWhoIs) WhoIs(context.Context, string) (*apitype.WhoIsResponse, error) { return s.res, nil }
+func (s staticWhoIs) WhoIs(context.Context, string) (*apitype.WhoIsResponse, error) {
+	return s.res, nil
+}
 
 func TestTailscaleLogsParseErrorsOnce(t *testing.T) {
 	var buf bytes.Buffer

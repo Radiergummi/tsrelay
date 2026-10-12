@@ -40,7 +40,11 @@ type env struct {
 	logBuf bytes.Buffer
 }
 
-func (e *env) Write(p []byte) (int, error) { e.logMu.Lock(); defer e.logMu.Unlock(); return e.logBuf.Write(p) }
+func (e *env) Write(p []byte) (int, error) {
+	e.logMu.Lock()
+	defer e.logMu.Unlock()
+	return e.logBuf.Write(p)
+}
 
 func (e *env) log() string { e.logMu.Lock(); defer e.logMu.Unlock(); return e.logBuf.String() }
 

@@ -57,7 +57,6 @@ func TestCreateDefaults(t *testing.T) {
 	}
 }
 
-
 func TestCreateForbidden(t *testing.T) {
 	m := newManager(t, t.TempDir())
 	tagged := identify.Tagged("w", []string{"tag:x"}, `{"roles":["receiver"]}`)

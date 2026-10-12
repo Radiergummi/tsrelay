@@ -12,7 +12,7 @@ func TestGuard(t *testing.T) {
 	g := Guard([]string{"tsrelay.example.ts.net.", "tsrelay", "100.64.0.1", "fd7a::1"}, ok)
 	cases := []struct {
 		name, method, host, path, ctype, fetchSite, body string
-		want                                         int
+		want                                             int
 	}{
 		{"known host", "GET", "tsrelay.example.ts.net", "/api/v1/me", "", "", "", 299},
 		{"host with port", "GET", "tsrelay:443", "/", "", "", "", 299},
