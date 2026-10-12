@@ -41,18 +41,21 @@ func (e ValidationError) Error() string {
 // CreateRequest describes a new hook. Empty Path means three random words;
 // empty Channel means authz.DefaultChannel.
 type CreateRequest struct {
-	Path        string `json:"path"`
-	Channel     string `json:"channel"`
-	Description string `json:"description"`
-	Ephemeral   bool   `json:"ephemeral"`
+	Path        string     `json:"path"`
+	Channel     string     `json:"channel"`
+	Description string     `json:"description"`
+	Ephemeral   bool       `json:"ephemeral"`
+	Settings    Settings   `json:"settings"`
+	ExpiresAt   *time.Time `json:"expiresAt"`
 }
 
 // Manager holds all hooks in memory, enforces ownership rules, and writes
 // changes through to the Store.
 type Manager struct {
-	store Store
-	slugs SlugConfig
-	now   func() time.Time
+	store  Store
+	slugs  SlugConfig
+	policy Policy
+	now    func() time.Time
 
 	mu    sync.RWMutex
 	hooks map[ID]Hook
@@ -69,7 +72,7 @@ func NewManager(ctx context.Context, store Store, slugs SlugConfig) (*Manager, e
 	if err != nil {
 		return nil, err
 	}
-	m := &Manager{store: store, slugs: slugs, now: time.Now, hooks: map[ID]Hook{}, detached: map[ID]time.Time{}}
+	m := &Manager{store: store, slugs: slugs, policy: DefaultPolicy, now: time.Now, hooks: map[ID]Hook{}, detached: map[ID]time.Time{}}
 	start := m.now()
 	for _, h := range list {
 		m.hooks[h.ID] = h
@@ -80,6 +83,38 @@ func NewManager(ctx context.Context, store Store, slugs SlugConfig) (*Manager, e
 
 // Slug returns the URL slug for a login.
 func (m *Manager) Slug(login string) (string, error) { return m.slugs.Slug(login) }
+
+// SetPolicy replaces the relay-wide hook setting defaults and maxima.
+func (m *Manager) SetPolicy(p Policy) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.policy = p
+}
+
+func (m *Manager) Policy() Policy {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.policy
+}
+
+// Effective resolves a hook's settings against the current relay defaults.
+func (m *Manager) Effective(h Hook) Effective { return m.Policy().Resolve(h.Settings) }
+
+// validateExpiry checks expiresAt against now and the owner's maxHookTTL.
+// Ephemeral hooks need no expiry, because they end with their tunnel.
+func validateExpiry(expiresAt *time.Time, ephemeral bool, now time.Time, maxTTL time.Duration) []FieldError {
+	switch {
+	case expiresAt == nil && maxTTL > 0 && !ephemeral:
+		return []FieldError{{"expiresAt", fmt.Sprintf("your grants require persistent hooks to expire within %s", maxTTL)}}
+	case expiresAt == nil:
+		return nil
+	case !expiresAt.After(now):
+		return []FieldError{{"expiresAt", "must be in the future"}}
+	case maxTTL > 0 && expiresAt.Sub(now) > maxTTL:
+		return []FieldError{{"expiresAt", fmt.Sprintf("must be within %s from now (your grants' maxHookTTL)", maxTTL)}}
+	}
+	return nil
+}
 
 func (m *Manager) Create(ctx context.Context, owner authz.Identity, req CreateRequest) (Hook, error) {
 	if !owner.IsUser() || !owner.Grants.Has(authz.RoleReceiver) {
@@ -119,6 +154,8 @@ func (m *Manager) Create(ctx context.Context, owner authz.Identity, req CreateRe
 	if len(req.Description) > maxDescription {
 		errs = append(errs, FieldError{"description", fmt.Sprintf("must be at most %d characters", maxDescription)})
 	}
+	errs = append(errs, m.policy.Validate(req.Settings)...)
+	errs = append(errs, validateExpiry(req.ExpiresAt, req.Ephemeral, m.now(), owner.Grants.Limits.MaxHookTTL)...)
 	if len(owned) >= owner.Grants.Limits.MaxHooks {
 		errs = append(errs, FieldError{"", fmt.Sprintf("you already own %d hooks, the maximum your grants allow", len(owned))})
 	}
@@ -136,7 +173,7 @@ func (m *Manager) Create(ctx context.Context, owner authz.Identity, req CreateRe
 	h := Hook{
 		ID: NewID(), Owner: owner.UserID, OwnerLogin: owner.Login, Slug: slug,
 		Path: req.Path, Channel: req.Channel, Description: req.Description,
-		Ephemeral: req.Ephemeral, CreatedAt: m.now().UTC(),
+		Ephemeral: req.Ephemeral, Settings: req.Settings, ExpiresAt: req.ExpiresAt, CreatedAt: m.now().UTC(),
 	}
 	if err := m.store.PutHook(ctx, h); err != nil {
 		return Hook{}, err

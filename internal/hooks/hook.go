@@ -23,6 +23,8 @@ type Hook struct {
 	Channel     string         `json:"channel"`
 	Description string         `json:"description,omitempty"`
 	Ephemeral   bool           `json:"ephemeral"`
+	Settings    Settings       `json:"settings,omitzero"`
+	ExpiresAt   *time.Time     `json:"expiresAt,omitempty"`
 	CreatedAt   time.Time      `json:"createdAt"`
 }
 

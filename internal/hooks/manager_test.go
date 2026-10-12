@@ -234,3 +234,69 @@ func TestReapSkipsServedHooks(t *testing.T) {
 }
 
 func nobody(ID) bool { return false }
+
+func TestCreateWithSettingsAndExpiry(t *testing.T) {
+	dir := t.TempDir()
+	m := newManager(t, dir)
+	now := time.Unix(1000, 0).UTC()
+	m.now = func() time.Time { return now }
+	exp := now.Add(time.Hour)
+	h, err := m.Create(ctx, receiver, CreateRequest{
+		Path:      "s",
+		Settings:  Settings{HoldTimeout: ptr(Duration(5 * time.Second)), HostHeader: ptr(HostRewrite)},
+		ExpiresAt: &exp,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eff := m.Effective(h)
+	if eff.HoldTimeout != Duration(5*time.Second) || eff.HostHeader != HostRewrite || eff.ResponseTimeout != DefaultPolicy.Defaults.ResponseTimeout {
+		t.Fatalf("effective = %+v", eff)
+	}
+
+	_, err = m.Create(ctx, receiver, CreateRequest{Path: "bad", Settings: Settings{HoldTimeout: ptr(Duration(time.Hour))}})
+	fieldErr(t, err, "settings.holdTimeout")
+	past := now.Add(-time.Second)
+	_, err = m.Create(ctx, receiver, CreateRequest{Path: "past", ExpiresAt: &past})
+	fieldErr(t, err, "expiresAt")
+}
+
+func TestCreateExpiryCappedByGrant(t *testing.T) {
+	m := newManager(t, t.TempDir())
+	now := time.Unix(1000, 0).UTC()
+	m.now = func() time.Time { return now }
+	capped := identify.User("l", "c@example.com", 5, `{"roles":["receiver"]}`)
+	capped.Grants.Limits.MaxHookTTL = 8 * time.Hour
+
+	_, err := m.Create(ctx, capped, CreateRequest{Path: "forever"})
+	if msg := fieldErr(t, err, "expiresAt"); !strings.Contains(msg, "8h0m0s") {
+		t.Errorf("missing expiry under a TTL limit: %q", msg)
+	}
+	tooLate := now.Add(9 * time.Hour)
+	_, err = m.Create(ctx, capped, CreateRequest{Path: "late", ExpiresAt: &tooLate})
+	fieldErr(t, err, "expiresAt")
+	ok := now.Add(8 * time.Hour)
+	if _, err := m.Create(ctx, capped, CreateRequest{Path: "ok", ExpiresAt: &ok}); err != nil {
+		t.Fatalf("expiry at the limit: %v", err)
+	}
+	// Ephemeral hooks need no expiry: they end with their tunnel.
+	if _, err := m.Create(ctx, capped, CreateRequest{Path: "eph", Ephemeral: true}); err != nil {
+		t.Fatalf("ephemeral under a TTL limit: %v", err)
+	}
+}
+
+func TestSettingsSurviveReload(t *testing.T) {
+	dir := t.TempDir()
+	s1, _ := OpenJSON(dir)
+	m1, _ := NewManager(ctx, s1, SlugConfig{})
+	h, err := m1.Create(ctx, receiver, CreateRequest{Settings: Settings{MaxBodyBytes: ptr(int64(4096))}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s1.Close()
+	m2 := newManager(t, dir)
+	got, _ := m2.Get(h.ID)
+	if got.Settings.MaxBodyBytes == nil || *got.Settings.MaxBodyBytes != 4096 {
+		t.Fatalf("settings after reload = %+v", got.Settings)
+	}
+}
