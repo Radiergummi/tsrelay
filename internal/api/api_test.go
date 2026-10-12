@@ -310,3 +310,27 @@ func TestPatchHook(t *testing.T) {
 		t.Fatalf("admins may delete but not edit others' hooks: %d", resp.StatusCode)
 	}
 }
+
+// Deleting a hook fails the calls held for it at once (tunnel.ErrHookGone).
+func TestDeleteReleasesHeldCalls(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/api/v1/hooks", map[string]any{"path": "held"}, &h)
+	waited := make(chan error, 1)
+	go func() {
+		_, err := e.reg.Wait(context.Background(), h.ID)
+		waited <- err
+	}()
+	time.Sleep(20 * time.Millisecond) // let Wait block
+	if resp := e.call(moritz, "DELETE", "/api/v1/hooks/"+h.ID, nil, nil); resp.StatusCode != 204 {
+		t.Fatalf("delete = %d", resp.StatusCode)
+	}
+	select {
+	case err := <-waited:
+		if !errors.Is(err, tunnel.ErrHookGone) {
+			t.Fatalf("Wait = %v, want ErrHookGone", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the held call was not released")
+	}
+}

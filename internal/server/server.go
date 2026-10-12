@@ -23,6 +23,7 @@ type Config struct {
 	BaseURL        string   // public URL of the relay on the tailnet, no trailing slash
 	AllowedHosts   []string // Host header values the relay answers to
 	EphemeralGrace time.Duration
+	HoldQueue      int // calls per hook that may wait for a tunnel; 0 means relay.DefaultHoldQueue
 	Tunnel         tunnel.Options
 }
 
@@ -31,6 +32,7 @@ type Server struct {
 	hooks   *hooks.Manager
 	tunnels *tunnel.Registry
 	audit   *audit.Logger
+	relay   *relay.Handler // serves callbacks; its Held() feeds the held-calls gauge
 	handler http.Handler
 }
 
@@ -39,7 +41,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 		cfg.EphemeralGrace = DefaultEphemeralGrace
 	}
 	s := &Server{cfg: cfg, hooks: mgr, tunnels: tunnel.NewRegistry(), audit: al}
-	callbacks := &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al}
+	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue}
 
 	mux := http.NewServeMux()
 	(&api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, BaseURL: cfg.BaseURL, Tunnel: cfg.Tunnel}).Register(mux)
@@ -56,7 +58,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	// such as "/~m/cb//x" that must reach the local app unchanged.
 	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/~") {
-			callbacks.ServeHTTP(w, r)
+			s.relay.ServeHTTP(w, r)
 			return
 		}
 		mux.ServeHTTP(w, r)
@@ -86,6 +88,7 @@ func (s *Server) RunReaper(ctx context.Context, interval time.Duration) {
 		}
 		for _, h := range reaped {
 			s.audit.Log(ctx, audit.HookExpire, audit.Hook(h))
+			s.tunnels.Release(string(h.ID)) // calls held for the hook fail now
 			if t, orphaned, ok := s.tunnels.DetachHook(string(h.ID)); ok {
 				t.Notify(tunnel.Control{Type: tunnel.ControlHookDeleted, Hooks: []tunnel.HookInfo{{ID: string(h.ID)}}}, orphaned)
 			}

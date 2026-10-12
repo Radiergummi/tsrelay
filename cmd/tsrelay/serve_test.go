@@ -47,3 +47,10 @@ func TestAllowedHostsDropsEmpty(t *testing.T) {
 		t.Fatalf("allowedHosts = %q", got)
 	}
 }
+
+func TestServeRejectsEmptyHoldQueue(t *testing.T) {
+	code, out := serveExit(t, "--hold-queue=0")
+	if code != 2 || !strings.Contains(out, "--hold-queue") {
+		t.Fatalf("exit %d, stderr %q", code, out)
+	}
+}

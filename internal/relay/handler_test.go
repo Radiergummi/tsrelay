@@ -35,6 +35,7 @@ type env struct {
 	fake   *identify.Fake
 	reg    *tunnel.Registry
 	mgr    *hooks.Manager
+	h      *Handler
 	hook   hooks.Hook
 	srv    *httptest.Server
 	logMu  sync.Mutex
@@ -62,13 +63,14 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &Handler{
+	e.h = &Handler{
 		Identifier: e.fake,
 		Hooks:      e.mgr,
 		Tunnels:    e.reg,
 		Audit:      audit.New(slog.New(slog.NewJSONHandler(e, nil))),
+		HoldQueue:  2, // small, so TestHoldQueueFull can fill it
 	}
-	e.srv = httptest.NewServer(h)
+	e.srv = httptest.NewServer(e.h)
 	t.Cleanup(e.srv.Close)
 	return e
 }
@@ -238,6 +240,7 @@ func TestLocalErrorsPassThroughUnmarked(t *testing.T) {
 
 func TestErrors(t *testing.T) {
 	e := newEnv(t)
+	e.patch(hooks.SettingsPatch{HoldTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: ptr(hooks.Duration(0))}})
 	staging := identify.Tagged("w2", []string{"tag:staging"}, `{"roles":["sender"],"channels":["staging"]}`)
 	unknown := identify.Tagged("w3", []string{"tag:x"})
 

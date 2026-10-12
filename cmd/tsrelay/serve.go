@@ -20,6 +20,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
+	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/server"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	_ "tailscale.com/feature/oauthkey" // lets TS_CLIENT_SECRET mint auth keys
@@ -46,6 +47,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	policyFlags := registerPolicyFlags(fs)
 	legacyResponseTimeout := fs.Duration("response-timeout", 0, "deprecated: use --hook-response-timeout-default")
 	concurrency := fs.Int("tunnel-concurrency", tunnel.DefaultConcurrency, "concurrent calls per tunnel")
+	holdQueue := fs.Int("hold-queue", relay.DefaultHoldQueue, "calls per hook that may wait for a tunnel at once")
 	logFormat := fs.String("log-format", "json", `"json" or "text"`)
 	logLevel := fs.String("log-level", "info", "debug, info, warn or error")
 	verbose := fs.Bool("verbose-tailscale", false, "include tsnet's own logs")
@@ -62,6 +64,10 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	}
 	if *slugMode != string(hooks.SlugLocalPart) && *slugMode != string(hooks.SlugLogin) {
 		fmt.Fprintf(stderr, "tsrelay serve: --user-slug must be %q or %q\n", hooks.SlugLocalPart, hooks.SlugLogin)
+		return 2
+	}
+	if *holdQueue < 1 {
+		fmt.Fprintln(stderr, "tsrelay serve: --hold-queue must be at least 1; use --hook-hold-timeout-default=0s to disable holding")
 		return 2
 	}
 	for login, slug := range overrides {
@@ -93,7 +99,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		slugs:  hooks.SlugConfig{Mode: hooks.SlugMode(*slugMode), Overrides: overrides},
 		limits: authz.Limits{MaxHooks: *maxHooks, MaxTunnels: *maxTunnels, MaxHookTTL: *maxTTL},
 		policy: policy,
-		server: server.Config{EphemeralGrace: *grace, Tunnel: tunnel.Options{Concurrency: *concurrency}},
+		server: server.Config{EphemeralGrace: *grace, HoldQueue: *holdQueue, Tunnel: tunnel.Options{Concurrency: *concurrency}},
 	})
 	if err != nil {
 		logger.Error("relay stopped", "error", err)

@@ -252,3 +252,21 @@ func TestPersistentHookExpires(t *testing.T) {
 	})
 	e.waitFor(func() bool { return strings.Contains(e.log.String(), `"msg":"hook.expire"`) })
 }
+
+// A call held for an ephemeral hook ends with 404 when the reaper removes
+// the hook, instead of waiting out holdTimeout.
+func TestHeldCallReleasedWhenReaped(t *testing.T) {
+	e := newEnv(t, Config{EphemeralGrace: 300 * time.Millisecond})
+	hook, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "eph", Ephemeral: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	resp := e.send(hook, "", nil, nil) // never attached: held until reaped
+	if resp.StatusCode != 404 || resp.Header.Get(problem.HeaderError) != problem.HookNotFound {
+		t.Fatalf("got %d %q", resp.StatusCode, resp.Header.Get(problem.HeaderError))
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Fatalf("released after %v", took)
+	}
+}

@@ -2,6 +2,7 @@
 package relay
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
@@ -32,6 +35,15 @@ const (
 	HeaderCallID      = "Tsrelay-Call-Id"
 )
 
+// DefaultHoldQueue is how many calls per hook may wait for a tunnel at once.
+const DefaultHoldQueue = 100
+
+var (
+	errHoldTimeout   = errors.New("no tunnel attached within the hold timeout")
+	errHoldQueueFull = errors.New("too many calls are waiting for a tunnel")
+	errHookExpired   = errors.New("the hook expired while the call was waiting")
+)
+
 // Handler serves callbacks. Each call uses the effective settings of its
 // hook at the time the call arrives, so updates apply from the next call.
 type Handler struct {
@@ -39,9 +51,16 @@ type Handler struct {
 	Hooks      *hooks.Manager
 	Tunnels    *tunnel.Registry
 	Audit      *audit.Logger
+	HoldQueue  int // calls per hook that may wait for a tunnel; 0 means DefaultHoldQueue
 
-	limiters limiters
+	limiters  limiters
+	heldMu    sync.Mutex
+	held      map[hooks.ID]int
+	heldTotal atomic.Int64
 }
+
+// Held returns how many calls are currently waiting for a tunnel.
+func (h *Handler) Held() int64 { return h.heldTotal.Load() }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
@@ -56,6 +75,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Body = body
 	var hook hooks.Hook
 	var sender authz.Identity
+	var waited time.Duration
 	aborted := false
 	defer func() {
 		p := recover()
@@ -79,7 +99,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			slog.String("method", r.Method), slog.String("path", r.URL.Path),
 			slog.Int("status", rec.status), slog.String("error", code),
 			slog.Int64("bytesIn", body.n), slog.Int64("bytesOut", rec.bytes),
-			slog.Duration("duration", time.Since(start)))
+			slog.Duration("waited", waited), slog.Duration("duration", time.Since(start)))
 		if p != nil {
 			panic(p)
 		}
@@ -124,9 +144,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	tun, attached := h.Tunnels.Lookup(string(hook.ID))
 	if !attached {
-		rec.Header().Set("Retry-After", "5")
-		problem.New(http.StatusServiceUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook").Write(rec)
-		return
+		// Nothing has been read from the body yet, so holding is safe.
+		holdStart := time.Now()
+		tun, err = h.hold(ctx, hook, eff.HoldTimeout.Std())
+		waited = time.Since(holdStart)
+		switch {
+		case errors.Is(err, tunnel.ErrHookGone), errors.Is(err, errHookExpired):
+			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
+			return
+		case errors.Is(err, errHoldQueueFull):
+			rec.Header().Set("Retry-After", holdRetryAfter(eff.HoldTimeout.Std()))
+			problem.New(http.StatusServiceUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook, and too many calls are waiting for one").Write(rec)
+			return
+		case err != nil:
+			rec.Header().Set("Retry-After", holdRetryAfter(eff.HoldTimeout.Std()))
+			problem.New(http.StatusServiceUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook").Write(rec)
+			return
+		}
 	}
 
 	idle := newIdleWatch(eff.IdleTimeout.Std(), func() {
@@ -151,6 +185,54 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	proxy.ServeHTTP(&idleWriter{ResponseWriter: rec, idle: idle}, r)
 }
+
+// hold waits up to timeout for a tunnel to attach to hook, but never past
+// the hook's expiry, and only while fewer than HoldQueue calls wait for it.
+func (h *Handler) hold(ctx context.Context, hook hooks.Hook, timeout time.Duration) (*tunnel.Tunnel, error) {
+	if timeout <= 0 {
+		return nil, errHoldTimeout
+	}
+	if !h.enqueue(hook.ID) {
+		return nil, errHoldQueueFull
+	}
+	defer h.dequeue(hook.ID)
+	cause := errHoldTimeout
+	if hook.ExpiresAt != nil {
+		if left := time.Until(*hook.ExpiresAt); left < timeout {
+			timeout, cause = left, errHookExpired
+		}
+	}
+	ctx, cancel := context.WithTimeoutCause(ctx, timeout, cause)
+	defer cancel()
+	return h.Tunnels.Wait(ctx, string(hook.ID))
+}
+
+func (h *Handler) enqueue(id hooks.ID) bool {
+	h.heldMu.Lock()
+	defer h.heldMu.Unlock()
+	if h.held[id] >= cmp.Or(h.HoldQueue, DefaultHoldQueue) {
+		return false
+	}
+	if h.held == nil {
+		h.held = map[hooks.ID]int{}
+	}
+	h.held[id]++
+	h.heldTotal.Add(1)
+	return true
+}
+
+func (h *Handler) dequeue(id hooks.ID) {
+	h.heldMu.Lock()
+	defer h.heldMu.Unlock()
+	if h.held[id]--; h.held[id] == 0 {
+		delete(h.held, id)
+	}
+	h.heldTotal.Add(-1)
+}
+
+// holdRetryAfter is the Retry-After of tunnel_unavailable: the hold
+// timeout rounded up to seconds, but at least 5 seconds.
+func holdRetryAfter(hold time.Duration) string { return retryAfter(max(5*time.Second, hold)) }
 
 func (h *Handler) hookExists(id hooks.ID) bool {
 	_, ok := h.Hooks.Get(id)
