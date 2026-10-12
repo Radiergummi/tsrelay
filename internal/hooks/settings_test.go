@@ -58,6 +58,38 @@ func TestResolve(t *testing.T) {
 	}
 }
 
+// A hook stored under a higher maximum is clamped to the current one.
+func TestResolveClampsToMaxima(t *testing.T) {
+	p := DefaultPolicy
+	p.Max.MaxBodyBytes = 1 << 20
+	p.Max.RateLimit = RateLimit{PerSecond: 10, Burst: 20}
+	got := p.Resolve(Settings{
+		HoldTimeout:     ptr(Duration(time.Hour)),
+		ResponseTimeout: ptr(Duration(time.Hour)),
+		IdleTimeout:     ptr(Duration(time.Hour)),
+		MaxBodyBytes:    ptr(int64(0)), // unlimited
+		RateLimit:       &RateLimit{PerSecond: 50, Burst: 5},
+	})
+	want := Effective{
+		AttachPolicy:    AttachTakeover,
+		HostHeader:      HostPreserve,
+		HoldTimeout:     p.Max.HoldTimeout,
+		ResponseTimeout: p.Max.ResponseTimeout,
+		IdleTimeout:     p.Max.IdleTimeout,
+		MaxBodyBytes:    1 << 20,
+		RateLimit:       RateLimit{PerSecond: 10, Burst: 5},
+	}
+	if got != want {
+		t.Fatalf("Resolve = %+v, want %+v", got, want)
+	}
+	if got := p.Resolve(Settings{MaxBodyBytes: ptr(int64(5))}); got.MaxBodyBytes != 5 {
+		t.Fatalf("maxBodyBytes under the maximum = %d, want 5", got.MaxBodyBytes)
+	}
+	if got := DefaultPolicy.Resolve(Settings{MaxBodyBytes: ptr(int64(0))}); got.MaxBodyBytes != 0 {
+		t.Fatalf("maxBodyBytes without a maximum = %d, want unlimited", got.MaxBodyBytes)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	p := DefaultPolicy
 	p.Max.MaxBodyBytes = 1 << 20

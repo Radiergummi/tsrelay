@@ -64,6 +64,24 @@ func apply[T any](dst **T, o Opt[T]) bool {
 	return o.Set
 }
 
+// apply sets the fields of s that p gives and returns their names.
+func (p SettingsPatch) apply(s *Settings) []string {
+	var changed []string
+	touch := func(name string, set bool) {
+		if set {
+			changed = append(changed, "settings."+name)
+		}
+	}
+	touch("attachPolicy", apply(&s.AttachPolicy, p.AttachPolicy))
+	touch("hostHeader", apply(&s.HostHeader, p.HostHeader))
+	touch("holdTimeout", apply(&s.HoldTimeout, p.HoldTimeout))
+	touch("responseTimeout", apply(&s.ResponseTimeout, p.ResponseTimeout))
+	touch("idleTimeout", apply(&s.IdleTimeout, p.IdleTimeout))
+	touch("maxBodyBytes", apply(&s.MaxBodyBytes, p.MaxBodyBytes))
+	touch("rateLimit", apply(&s.RateLimit, p.RateLimit))
+	return changed
+}
+
 // Update applies req to the hook id owned by owner. It returns the updated
 // hook and the names of the fields the request touched. Hooks of other
 // users are reported as ErrNotFound, so their existence is not revealed.
@@ -136,15 +154,12 @@ func (m *Manager) Update(ctx context.Context, owner authz.Identity, id ID, req U
 		errs = append(errs, validateExpiry(h.ExpiresAt, h.Ephemeral, m.now(), owner.Grants.Limits.MaxHookTTL)...)
 	}
 
-	s, p := &h.Settings, req.Settings
-	touch("settings.attachPolicy", apply(&s.AttachPolicy, p.AttachPolicy))
-	touch("settings.hostHeader", apply(&s.HostHeader, p.HostHeader))
-	touch("settings.holdTimeout", apply(&s.HoldTimeout, p.HoldTimeout))
-	touch("settings.responseTimeout", apply(&s.ResponseTimeout, p.ResponseTimeout))
-	touch("settings.idleTimeout", apply(&s.IdleTimeout, p.IdleTimeout))
-	touch("settings.maxBodyBytes", apply(&s.MaxBodyBytes, p.MaxBodyBytes))
-	touch("settings.rateLimit", apply(&s.RateLimit, p.RateLimit))
-	errs = append(errs, m.policy.Validate(h.Settings)...)
+	changed = append(changed, req.Settings.apply(&h.Settings)...)
+	// Only the settings this request sets are validated: a stored value over
+	// a since-lowered maximum must not block unrelated edits (Resolve clamps it).
+	var touched Settings
+	req.Settings.apply(&touched)
+	errs = append(errs, m.policy.Validate(touched)...)
 
 	if len(errs) > 0 {
 		return Hook{}, nil, errs

@@ -90,6 +90,21 @@ func TestUpdateRejections(t *testing.T) {
 	}
 }
 
+// Lowering a maximum must not make a hook's unrelated fields uneditable.
+func TestUpdateValidatesOnlyTouchedSettings(t *testing.T) {
+	m := newManager(t, t.TempDir())
+	h, _ := m.Create(ctx, receiver, CreateRequest{Path: "a", Settings: Settings{MaxBodyBytes: ptr(int64(10 << 20))}})
+	p := m.Policy()
+	p.Max.MaxBodyBytes = 1 << 20
+	m.SetPolicy(p)
+
+	if _, _, err := m.Update(ctx, receiver, h.ID, UpdateRequest{Description: Opt[string]{Set: true, Value: ptr("x")}}); err != nil {
+		t.Fatalf("description-only update: %v", err)
+	}
+	_, _, err := m.Update(ctx, receiver, h.ID, UpdateRequest{Settings: SettingsPatch{MaxBodyBytes: Opt[int64]{Set: true, Value: ptr(int64(10 << 20))}}})
+	fieldErr(t, err, "settings.maxBodyBytes")
+}
+
 func TestExpiry(t *testing.T) {
 	m := newManager(t, t.TempDir())
 	now := time.Unix(1000, 0).UTC()

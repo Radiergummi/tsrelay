@@ -128,6 +128,25 @@ func (p Policy) Resolve(s Settings) Effective {
 	if s.RateLimit != nil {
 		e.RateLimit = *s.RateLimit
 	}
+	// Clamp to the maxima: a hook stored before a maximum was lowered must
+	// not exceed it. A zero maximum means none.
+	clamp := func(v *Duration, max Duration) {
+		if max > 0 && *v > max {
+			*v = max
+		}
+	}
+	clamp(&e.HoldTimeout, p.Max.HoldTimeout)
+	clamp(&e.ResponseTimeout, p.Max.ResponseTimeout)
+	clamp(&e.IdleTimeout, p.Max.IdleTimeout)
+	if max := p.Max.MaxBodyBytes; max > 0 && (e.MaxBodyBytes == 0 || e.MaxBodyBytes > max) {
+		e.MaxBodyBytes = max // 0 is unlimited, which exceeds any maximum
+	}
+	if max := p.Max.RateLimit.PerSecond; max > 0 && e.RateLimit.PerSecond > max {
+		e.RateLimit.PerSecond = max
+	}
+	if max := p.Max.RateLimit.Burst; max > 0 && e.RateLimit.Burst > max {
+		e.RateLimit.Burst = max
+	}
 	return e
 }
 
