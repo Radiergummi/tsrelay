@@ -23,7 +23,7 @@ func TestServeRejectsInvalidSlugOverride(t *testing.T) {
 
 func TestServeChecksHookPolicy(t *testing.T) {
 	code, out := serveExit(t, "--hook-hold-timeout-default=10m") // above the 5m maximum
-	if code != 2 || !strings.Contains(out, "holdTimeout") {
+	if code != 2 || !strings.Contains(out, "--hook-hold-timeout-default 10m0s exceeds --hook-hold-timeout-max 5m0s") {
 		t.Fatalf("exit %d, stderr %q", code, out)
 	}
 }
@@ -32,7 +32,7 @@ func TestServeChecksHookPolicy(t *testing.T) {
 // --hook-response-timeout-default.
 func TestServeResponseTimeoutAlias(t *testing.T) {
 	code, out := serveExit(t, "--response-timeout=1h") // above the 30m maximum
-	if code != 2 || !strings.Contains(out, "deprecated") || !strings.Contains(out, "responseTimeout") {
+	if code != 2 || !strings.Contains(out, "deprecated") || !strings.Contains(out, "--hook-response-timeout-default 1h0m0s exceeds") {
 		t.Fatalf("exit %d, stderr %q", code, out)
 	}
 }

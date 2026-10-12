@@ -122,11 +122,48 @@ func registerPolicyFlags(fs *flag.FlagSet) func() (hooks.Policy, error) {
 				RateLimit:       rateMax.v,
 			},
 		}
+		if err := checkDefaultsWithinMaxima(fs, p); err != nil {
+			return hooks.Policy{}, err
+		}
 		if err := p.Check(); err != nil {
 			return hooks.Policy{}, err
 		}
 		return p, nil
 	}
+}
+
+// checkDefaultsWithinMaxima reports a default above its maximum by flag
+// name; p.Check would only name the hook setting.
+func checkDefaultsWithinMaxima(fs *flag.FlagSet, p hooks.Policy) error {
+	d, m := p.Defaults, p.Max
+	overDur := func(def, max hooks.Duration) bool { return max > 0 && def > max }
+	body := strconv.FormatInt(d.MaxBodyBytes, 10)
+	if d.MaxBodyBytes == 0 {
+		body = "(unlimited)"
+	}
+	for _, c := range []struct {
+		setting  string
+		over     bool
+		def, max string
+	}{
+		{"hold-timeout", overDur(d.HoldTimeout, m.HoldTimeout), d.HoldTimeout.Std().String(), m.HoldTimeout.Std().String()},
+		{"response-timeout", overDur(d.ResponseTimeout, m.ResponseTimeout), d.ResponseTimeout.Std().String(), m.ResponseTimeout.Std().String()},
+		{"idle-timeout", overDur(d.IdleTimeout, m.IdleTimeout), d.IdleTimeout.Std().String(), m.IdleTimeout.Std().String()},
+		{"max-body-bytes", m.MaxBodyBytes > 0 && (d.MaxBodyBytes == 0 || d.MaxBodyBytes > m.MaxBodyBytes), body, strconv.FormatInt(m.MaxBodyBytes, 10)},
+		{"rate-limit", m.RateLimit.PerSecond > 0 && d.RateLimit.PerSecond > m.RateLimit.PerSecond ||
+			m.RateLimit.Burst > 0 && d.RateLimit.Burst > m.RateLimit.Burst,
+			(&rateLimitFlag{d.RateLimit}).String(), (&rateLimitFlag{m.RateLimit}).String()},
+	} {
+		if !c.over {
+			continue
+		}
+		hint := "set the default too"
+		if wasSet(fs, "hook-"+c.setting+"-default") {
+			hint = "lower the default or raise the maximum"
+		}
+		return fmt.Errorf("--hook-%s-default %s exceeds --hook-%s-max %s; %s", c.setting, c.def, c.setting, c.max, hint)
+	}
+	return nil
 }
 
 // registerHookSettingFlags registers the per-hook setting flags used by

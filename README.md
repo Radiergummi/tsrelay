@@ -158,7 +158,7 @@ Every flag can also be set as an environment variable: `--ephemeral-grace` becom
 | `--revalidate-interval` | `60s` | How often an attached tunnel's grant is re-checked |
 | `--ops-listen` | off | Host address (e.g. `:9090`) for `/healthz`, `/readyz` and `/metrics`; never on the tailnet |
 
-Every numeric or duration setting from [Hook settings](#hook-settings) also has a relay-wide default and maximum flag, named `--hook-<setting>-default` and `--hook-<setting>-max`, for example `--hook-rate-limit-default=100/200` and `--hook-max-body-bytes-max=10485760`; `attachPolicy` and `hostHeader` only get a `-default` flag, since there's no sensible maximum for them. A hook may only set a value within the relay's maximum. `--response-timeout` still works as a deprecated alias of `--hook-response-timeout-default`.
+Every numeric or duration setting from [Hook settings](#hook-settings) also has a relay-wide default and maximum flag, named `--hook-<setting>-default` and `--hook-<setting>-max`, for example `--hook-rate-limit-default=100/200`, or `--hook-max-body-bytes-default=1048576 --hook-max-body-bytes-max=10485760` (the default body size is unlimited, which a maximum would not allow, so set both); `attachPolicy` and `hostHeader` only get a `-default` flag, since there's no sensible maximum for them. A hook may only set a value within the relay's maximum. `--response-timeout` still works as a deprecated alias of `--hook-response-timeout-default`.
 
 The audit log is JSON on stderr. It never contains bodies, query strings, or header values.
 

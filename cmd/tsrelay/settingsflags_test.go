@@ -58,14 +58,14 @@ func TestPolicyFlags(t *testing.T) {
 
 func TestPolicyFlagErrors(t *testing.T) {
 	cases := map[string][]string{
-		"responseTimeout":           {"--hook-response-timeout-max=1m"}, // below the 2m default
+		"hook-response-timeout-max": {"--hook-response-timeout-max=1m"}, // below the 2m default
 		"hook-idle-timeout-default": {"--hook-idle-timeout-default=-1s"},
 		"hook-hold-timeout-max":     {"--hook-hold-timeout-max=-1s"},
 		"attachPolicy":              {"--hook-attach-policy-default=steal"},
 		"hostHeader":                {"--hook-host-header-default=keep"},
 		// An unlimited default body size is not allowed under a maximum.
-		"maxBodyBytes":            {"--hook-max-body-bytes-max=1024"},
-		"hook-max-body-bytes-max": {"--hook-max-body-bytes-max=-1"},
+		"hook-max-body-bytes-default": {"--hook-max-body-bytes-max=1024"},
+		"hook-max-body-bytes-max":     {"--hook-max-body-bytes-max=-1"},
 	}
 	for want, args := range cases {
 		if _, err := policyFrom(t, args...); err == nil || !strings.Contains(err.Error(), want) {
@@ -77,6 +77,23 @@ func TestPolicyFlagErrors(t *testing.T) {
 	registerPolicyFlags(fs)
 	if err := fs.Parse([]string{"--hook-rate-limit-default=fast"}); err == nil {
 		t.Error("an unparseable rate limit must fail at parse time")
+	}
+}
+
+// A default above its maximum is reported by flag name, not hook field.
+func TestPolicyFlagDefaultAboveMax(t *testing.T) {
+	cases := map[string][]string{
+		"--hook-max-body-bytes-default (unlimited) exceeds --hook-max-body-bytes-max 10485760; set the default too": {"--hook-max-body-bytes-max=10485760"},
+		"--hook-max-body-bytes-default 4096 exceeds --hook-max-body-bytes-max 1024; lower the default or raise the maximum": {
+			"--hook-max-body-bytes-default=4096", "--hook-max-body-bytes-max=1024"},
+		"--hook-response-timeout-default 2m0s exceeds --hook-response-timeout-max 1m0s; set the default too":             {"--hook-response-timeout-max=1m"},
+		"--hook-hold-timeout-default 10m0s exceeds --hook-hold-timeout-max 5m0s; lower the default or raise the maximum": {"--hook-hold-timeout-default=10m"},
+		"--hook-rate-limit-default 100/200 exceeds --hook-rate-limit-max 50/500; set the default too":                    {"--hook-rate-limit-max=50/500"},
+	}
+	for want, args := range cases {
+		if _, err := policyFrom(t, args...); err == nil || err.Error() != want {
+			t.Errorf("%v: err = %v, want %q", args, err, want)
+		}
 	}
 }
 
