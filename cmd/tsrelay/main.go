@@ -53,5 +53,3 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 		return 2
 	}
 }
-
-func httpCmd(context.Context, []string, io.Writer, io.Writer, deps) int { return 1 }

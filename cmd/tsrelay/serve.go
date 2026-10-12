@@ -70,8 +70,8 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 
 	err = runRelay(ctx, logger, relayConfig{
 		hostname: *hostname, stateDir: *stateDir, tls: *useTLS, tags: tags, verbose: *verbose,
-		cap: peercap.Cap(*capName),
-		slugs: hooks.SlugConfig{Mode: hooks.SlugMode(*slugMode), Overrides: overrides},
+		cap:    peercap.Cap(*capName),
+		slugs:  hooks.SlugConfig{Mode: hooks.SlugMode(*slugMode), Overrides: overrides},
 		limits: authz.Limits{MaxHooks: *maxHooks, MaxTunnels: *maxTunnels, MaxHookTTL: *maxTTL},
 		server: server.Config{EphemeralGrace: *grace, ResponseTimeout: *responseTimeout,
 			Tunnel: tunnel.Options{Concurrency: *concurrency}},
