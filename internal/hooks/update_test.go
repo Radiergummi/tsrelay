@@ -27,7 +27,7 @@ func TestOptJSON(t *testing.T) {
 	if *req.Settings.HoldTimeout.Value != Duration(5*time.Second) || !req.Settings.RateLimit.Set || req.Settings.RateLimit.Value != nil {
 		t.Errorf("settings = %+v", req.Settings)
 	}
-	out, _ := json.Marshal(UpdateRequest{Description: Opt[string]{Set: true, Value: ptr("y")}, Channel: Opt[string]{Set: true}})
+	out, _ := json.Marshal(UpdateRequest{Description: Opt[string]{Set: true, Value: new("y")}, Channel: Opt[string]{Set: true}})
 	if string(out) != `{"channel":null,"description":"y","settings":{}}` {
 		t.Errorf("marshal = %s", out)
 	}
@@ -35,16 +35,16 @@ func TestOptJSON(t *testing.T) {
 
 func TestUpdate(t *testing.T) {
 	m := newManager(t, t.TempDir())
-	h, _ := m.Create(ctx, receiver, CreateRequest{Path: "a", Settings: Settings{HoldTimeout: ptr(Duration(time.Second))}})
+	h, _ := m.Create(ctx, receiver, CreateRequest{Path: "a", Settings: Settings{HoldTimeout: new(Duration(time.Second))}})
 	m.Create(ctx, receiver, CreateRequest{Path: "b"})
 
 	got, changed, err := m.Update(ctx, receiver, h.ID, UpdateRequest{
-		Path:        Opt[string]{Set: true, Value: ptr("a2")},
-		Channel:     Opt[string]{Set: true, Value: ptr("prod.eu")},
-		Description: Opt[string]{Set: true, Value: ptr("payments")},
+		Path:        Opt[string]{Set: true, Value: new("a2")},
+		Channel:     Opt[string]{Set: true, Value: new("prod.eu")},
+		Description: Opt[string]{Set: true, Value: new("payments")},
 		Settings: SettingsPatch{
 			HoldTimeout: Opt[Duration]{Set: true}, // null: back to the relay default
-			HostHeader:  Opt[HostHeader]{Set: true, Value: ptr(HostRewrite)},
+			HostHeader:  Opt[HostHeader]{Set: true, Value: new(HostRewrite)},
 		},
 	})
 	if err != nil {
@@ -70,11 +70,11 @@ func TestUpdateRejections(t *testing.T) {
 	h, _ := m.Create(ctx, receiver, CreateRequest{Path: "a"})
 	m.Create(ctx, receiver, CreateRequest{Path: "b"})
 	cases := map[string]UpdateRequest{
-		"path":                 {Path: Opt[string]{Set: true, Value: ptr("b/c")}},
-		"channel":              {Channel: Opt[string]{Set: true, Value: ptr("billing")}},
+		"path":                 {Path: Opt[string]{Set: true, Value: new("b/c")}},
+		"channel":              {Channel: Opt[string]{Set: true, Value: new("billing")}},
 		"ephemeral":            {Ephemeral: Opt[bool]{Set: true}},
-		"settings.idleTimeout": {Settings: SettingsPatch{IdleTimeout: Opt[Duration]{Set: true, Value: ptr(Duration(0))}}},
-		"expiresAt":            {ExpiresAt: Opt[time.Time]{Set: true, Value: ptr(time.Unix(1, 0))}},
+		"settings.idleTimeout": {Settings: SettingsPatch{IdleTimeout: Opt[Duration]{Set: true, Value: new(Duration(0))}}},
+		"expiresAt":            {ExpiresAt: Opt[time.Time]{Set: true, Value: new(time.Unix(1, 0))}},
 	}
 	for field, req := range cases {
 		_, _, err := m.Update(ctx, receiver, h.ID, req)
@@ -93,15 +93,15 @@ func TestUpdateRejections(t *testing.T) {
 // Lowering a maximum must not make a hook's unrelated fields uneditable.
 func TestUpdateValidatesOnlyTouchedSettings(t *testing.T) {
 	m := newManager(t, t.TempDir())
-	h, _ := m.Create(ctx, receiver, CreateRequest{Path: "a", Settings: Settings{MaxBodyBytes: ptr(int64(10 << 20))}})
+	h, _ := m.Create(ctx, receiver, CreateRequest{Path: "a", Settings: Settings{MaxBodyBytes: new(int64(10 << 20))}})
 	p := m.Policy()
 	p.Max.MaxBodyBytes = 1 << 20
 	m.SetPolicy(p)
 
-	if _, _, err := m.Update(ctx, receiver, h.ID, UpdateRequest{Description: Opt[string]{Set: true, Value: ptr("x")}}); err != nil {
+	if _, _, err := m.Update(ctx, receiver, h.ID, UpdateRequest{Description: Opt[string]{Set: true, Value: new("x")}}); err != nil {
 		t.Fatalf("description-only update: %v", err)
 	}
-	_, _, err := m.Update(ctx, receiver, h.ID, UpdateRequest{Settings: SettingsPatch{MaxBodyBytes: Opt[int64]{Set: true, Value: ptr(int64(10 << 20))}}})
+	_, _, err := m.Update(ctx, receiver, h.ID, UpdateRequest{Settings: SettingsPatch{MaxBodyBytes: Opt[int64]{Set: true, Value: new(int64(10 << 20))}}})
 	fieldErr(t, err, "settings.maxBodyBytes")
 }
 

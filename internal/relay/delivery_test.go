@@ -46,7 +46,7 @@ func TestMaxBodyBytes(t *testing.T) {
 	}
 
 	// Lowering the limit applies to the next call, without a restart.
-	e.patch(hooks.SettingsPatch{MaxBodyBytes: hooks.Opt[int64]{Set: true, Value: ptr(int64(1024))}})
+	e.patch(hooks.SettingsPatch{MaxBodyBytes: hooks.Opt[int64]{Set: true, Value: new(int64(1024))}})
 	wantProblem(t, e.do(sender, "POST", "/~moritz/cb", bytes.NewReader(payload), nil), 413, problem.BodyTooLarge)
 	select {
 	case n := <-got:
@@ -67,7 +67,7 @@ func TestMaxBodyBytes(t *testing.T) {
 // A sender that stops sending its body mid-way is cut off after idleTimeout.
 func TestIdleTimeoutWhileReceiving(t *testing.T) {
 	e := newEnv(t)
-	e.patch(hooks.SettingsPatch{IdleTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: ptr(hooks.Duration(200 * time.Millisecond))}})
+	e.patch(hooks.SettingsPatch{IdleTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: new(hooks.Duration(200 * time.Millisecond))}})
 	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.ReadAll(r.Body) }), tunnel.Options{})
 	pr, pw := io.Pipe()
 	defer pw.Close()
@@ -82,7 +82,7 @@ func TestIdleTimeoutWhileReceiving(t *testing.T) {
 // A local app that stops sending its response body is cut off as well.
 func TestIdleTimeoutWhileResponding(t *testing.T) {
 	e := newEnv(t)
-	e.patch(hooks.SettingsPatch{IdleTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: ptr(hooks.Duration(200 * time.Millisecond))}})
+	e.patch(hooks.SettingsPatch{IdleTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: new(hooks.Duration(200 * time.Millisecond))}})
 	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "first")
 		w.(http.Flusher).Flush()
@@ -103,7 +103,7 @@ func TestIdleTimeoutWhileResponding(t *testing.T) {
 // idleTimeout, even after the request body is complete.
 func TestIdleTimeoutPausesForResponseHeaders(t *testing.T) {
 	e := newEnv(t)
-	e.patch(hooks.SettingsPatch{IdleTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: ptr(hooks.Duration(100 * time.Millisecond))}})
+	e.patch(hooks.SettingsPatch{IdleTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: new(hooks.Duration(100 * time.Millisecond))}})
 	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.ReadAll(r.Body)
 		time.Sleep(400 * time.Millisecond)
@@ -126,7 +126,7 @@ func TestHostHeaderMarker(t *testing.T) {
 	if v := (<-seen).Get(tunnel.HeaderTunnelHost); v != "" {
 		t.Fatalf("preserve: %s = %q, a sender must not be able to set it", tunnel.HeaderTunnelHost, v)
 	}
-	e.patch(hooks.SettingsPatch{HostHeader: hooks.Opt[hooks.HostHeader]{Set: true, Value: ptr(hooks.HostRewrite)}})
+	e.patch(hooks.SettingsPatch{HostHeader: hooks.Opt[hooks.HostHeader]{Set: true, Value: new(hooks.HostRewrite)}})
 	e.do(sender, "GET", "/~moritz/cb", nil, nil)
 	if v := (<-seen).Get(tunnel.HeaderTunnelHost); v != "rewrite" {
 		t.Fatalf("rewrite: %s = %q", tunnel.HeaderTunnelHost, v)

@@ -60,9 +60,21 @@ func (s *Server) newMetrics() (*metrics.Registry, func(event string, attrs []slo
 	observe := func(event string, attrs []slog.Attr) {
 		switch event {
 		case audit.Call:
-			calls.Add(cmp.Or(attrString(attrs, "error"), "ok"), 1)
-			callBytes.Add("in", float64(attrInt(attrs, "bytesIn")))
-			callBytes.Add("out", float64(attrInt(attrs, "bytesOut")))
+			var outcome string
+			var in, out int64
+			for _, a := range attrs {
+				switch k := a.Value.Kind(); {
+				case a.Key == "error" && k == slog.KindString:
+					outcome = a.Value.String()
+				case a.Key == "bytesIn" && k == slog.KindInt64:
+					in = a.Value.Int64()
+				case a.Key == "bytesOut" && k == slog.KindInt64:
+					out = a.Value.Int64()
+				}
+			}
+			calls.Add(cmp.Or(outcome, "ok"), 1)
+			callBytes.Add("in", float64(in))
+			callBytes.Add("out", float64(out))
 		case audit.AuthzDeny:
 			denials.Add(attrString(attrs, "action"), 1)
 		}
@@ -77,13 +89,4 @@ func attrString(attrs []slog.Attr, key string) string {
 		}
 	}
 	return ""
-}
-
-func attrInt(attrs []slog.Attr, key string) int64 {
-	for _, a := range attrs {
-		if a.Key == key && a.Value.Kind() == slog.KindInt64 {
-			return a.Value.Int64()
-		}
-	}
-	return 0
 }

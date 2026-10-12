@@ -64,10 +64,7 @@ func attachCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d d
 		Dial: func(ctx context.Context, ids []string, a tunnel.Attach) (net.Conn, error) {
 			return tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, ids...))
 		},
-		Handler: client.LogCalls(client.NewForwarder(target, client.Options{
-			Insecure:        *insecure,
-			OnUpstreamError: out.upstreamError,
-		}), out.call),
+		Handler: callHandler(target, *insecure, out),
 		OnState: out.onState(urls, target.String(), hold),
 		OnControl: func(c tunnel.Control) {
 			mu.Lock() // control messages arrive concurrently

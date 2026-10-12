@@ -46,11 +46,12 @@ type jsonEvent struct {
 	ExitCode *int   `json:"exitCode,omitempty"`
 }
 
-// dropReasons names the control messages that end a hook's delivery here.
-var dropReasons = map[tunnel.ControlType]string{
-	tunnel.ControlReplaced:    "replaced",
-	tunnel.ControlRevoked:     "revoked",
-	tunnel.ControlHookDeleted: "deleted",
+// drops names the control messages that end a hook's delivery here: the
+// --json reason, and the text phrase with %s for the hook's URL.
+var drops = map[tunnel.ControlType]struct{ reason, text string }{
+	tunnel.ControlReplaced:    {"replaced", "%s is now served by another tsrelay process"},
+	tunnel.ControlRevoked:     {"revoked", "your grants no longer allow serving %s"},
+	tunnel.ControlHookDeleted: {"deleted", "%s was deleted"},
 }
 
 func newOutput(stdout, stderr io.Writer, asJSON bool) *output {
@@ -123,17 +124,16 @@ func (o *output) call(c client.Call) {
 // dropped reports the hooks a control message ends delivery of; urlOf
 // names them. Other control messages are ignored.
 func (o *output) dropped(c tunnel.Control, urlOf func(hookID string) string) {
-	reason, ok := dropReasons[c.Type]
+	d, ok := drops[c.Type]
 	if !ok {
 		return
 	}
 	for _, h := range c.Hooks {
 		if o.json {
-			o.emit(jsonEvent{Event: "stopped", Hook: h.ID, URL: urlOf(h.ID), Reason: reason})
+			o.emit(jsonEvent{Event: "stopped", Hook: h.ID, URL: urlOf(h.ID), Reason: d.reason})
 			continue
 		}
-		msg, _ := dropMessage(c.Type, urlOf(h.ID))
-		o.text(o.stderr, "tsrelay: %s.", msg)
+		o.text(o.stderr, "tsrelay: "+d.text+".", urlOf(h.ID))
 	}
 }
 

@@ -100,6 +100,40 @@ func (m *Manager) Policy() Policy {
 // Effective resolves a hook's settings against the current relay defaults.
 func (m *Manager) Effective(h Hook) Effective { return m.Policy().Resolve(h.Settings) }
 
+// validateHookPath checks path, and that it neither equals nor nests inside the
+// path of one of owned other than the hook except (empty for a new hook).
+func validateHookPath(path string, owned []Hook, except ID) []FieldError {
+	if err := ValidatePath(path); err != nil {
+		return []FieldError{{"path", err.Error()}}
+	}
+	for _, h := range owned {
+		if h.ID != except && overlaps(h.Path, path) {
+			return []FieldError{{"path", fmt.Sprintf("conflicts with your hook %q; a hook cannot equal or nest inside another", h.Path)}}
+		}
+	}
+	return nil
+}
+
+// validateChannel checks that channel is valid and that grants let its
+// owner receive on it.
+func validateChannel(channel string, grants authz.Effective) []FieldError {
+	switch {
+	case !authz.ValidChannel(channel):
+		return []FieldError{{"channel", fmt.Sprintf("%q is not a valid channel name (dot-separated [a-z0-9-] segments)", channel)}}
+	case !grants.Allows(authz.RoleReceiver, channel):
+		return []FieldError{{"channel", fmt.Sprintf("channel %q is not matched by your receiver patterns %s",
+			channel, strings.Join(grants.Patterns[authz.RoleReceiver], ", "))}}
+	}
+	return nil
+}
+
+func validateDescription(description string) []FieldError {
+	if len(description) > maxDescription {
+		return []FieldError{{"description", fmt.Sprintf("must be at most %d characters", maxDescription)}}
+	}
+	return nil
+}
+
 // validateExpiry checks expiresAt against now and the owner's maxHookTTL.
 // Ephemeral hooks need no expiry, because they end with their tunnel.
 func validateExpiry(expiresAt *time.Time, ephemeral bool, now time.Time, maxTTL time.Duration) []FieldError {
@@ -134,26 +168,11 @@ func (m *Manager) Create(ctx context.Context, owner authz.Identity, req CreateRe
 	var errs ValidationError
 	if req.Path == "" {
 		req.Path = m.freePathLocked(owned)
-	} else if err := ValidatePath(req.Path); err != nil {
-		errs = append(errs, FieldError{"path", err.Error()})
 	} else {
-		for _, h := range owned {
-			if overlaps(h.Path, req.Path) {
-				errs = append(errs, FieldError{"path", fmt.Sprintf("conflicts with your hook %q; a hook cannot equal or nest inside another", h.Path)})
-				break
-			}
-		}
+		errs = append(errs, validateHookPath(req.Path, owned, "")...)
 	}
-	switch {
-	case !authz.ValidChannel(req.Channel):
-		errs = append(errs, FieldError{"channel", fmt.Sprintf("%q is not a valid channel name (dot-separated [a-z0-9-] segments)", req.Channel)})
-	case !owner.Grants.Allows(authz.RoleReceiver, req.Channel):
-		errs = append(errs, FieldError{"channel", fmt.Sprintf("channel %q is not matched by your receiver patterns %s",
-			req.Channel, strings.Join(owner.Grants.Patterns[authz.RoleReceiver], ", "))})
-	}
-	if len(req.Description) > maxDescription {
-		errs = append(errs, FieldError{"description", fmt.Sprintf("must be at most %d characters", maxDescription)})
-	}
+	errs = append(errs, validateChannel(req.Channel, owner.Grants)...)
+	errs = append(errs, validateDescription(req.Description)...)
 	errs = append(errs, m.policy.Validate(req.Settings)...)
 	errs = append(errs, validateExpiry(req.ExpiresAt, req.Ephemeral, m.now(), owner.Grants.Limits.MaxHookTTL)...)
 	if len(owned) >= owner.Grants.Limits.MaxHooks {

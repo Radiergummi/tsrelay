@@ -75,8 +75,6 @@ func newEnv(t *testing.T) *env {
 	return e
 }
 
-func ptr[T any](v T) *T { return &v }
-
 // patch updates the hook's settings the way PATCH /api/v1/hooks/{id} does.
 func (e *env) patch(p hooks.SettingsPatch) {
 	e.t.Helper()
@@ -240,7 +238,7 @@ func TestLocalErrorsPassThroughUnmarked(t *testing.T) {
 
 func TestErrors(t *testing.T) {
 	e := newEnv(t)
-	e.patch(hooks.SettingsPatch{HoldTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: ptr(hooks.Duration(0))}})
+	e.patch(hooks.SettingsPatch{HoldTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: new(hooks.Duration(0))}})
 	staging := identify.Tagged("w2", []string{"tag:staging"}, `{"roles":["sender"],"channels":["staging"]}`)
 	unknown := identify.Tagged("w3", []string{"tag:x"})
 
@@ -261,7 +259,7 @@ func TestErrors(t *testing.T) {
 
 func TestResponseTimeout(t *testing.T) {
 	e := newEnv(t)
-	e.patch(hooks.SettingsPatch{ResponseTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: ptr(hooks.Duration(500 * time.Millisecond))}})
+	e.patch(hooks.SettingsPatch{ResponseTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: new(hooks.Duration(500 * time.Millisecond))}})
 	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-time.After(5 * time.Second):

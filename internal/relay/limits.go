@@ -152,15 +152,15 @@ const sweepInterval = time.Minute
 // it is used to drop the buckets of deleted hooks now and then.
 func (ls *limiters) allow(id hooks.ID, rl hooks.RateLimit, now time.Time, exists func(hooks.ID) bool) (time.Duration, bool) {
 	ls.mu.Lock()
-	defer ls.mu.Unlock()
 	if ls.byHook == nil {
 		ls.byHook = map[hooks.ID]*hookLimiter{}
 		ls.swept = now
 	}
+	var swept []hooks.ID // checked against exists once the lock is released
 	if now.Sub(ls.swept) >= sweepInterval {
 		for hid := range ls.byHook {
-			if hid != id && !exists(hid) {
-				delete(ls.byHook, hid)
+			if hid != id {
+				swept = append(swept, hid)
 			}
 		}
 		ls.swept = now
@@ -170,6 +170,22 @@ func (ls *limiters) allow(id hooks.ID, rl hooks.RateLimit, now time.Time, exists
 		hl = &hookLimiter{cfg: rl, l: rate.NewLimiter(rate.Limit(rl.PerSecond), rl.Burst)}
 		ls.byHook[id] = hl
 	}
+	ls.mu.Unlock()
+
+	var dead []hooks.ID
+	for _, hid := range swept {
+		if !exists(hid) {
+			dead = append(dead, hid)
+		}
+	}
+	if len(dead) > 0 {
+		ls.mu.Lock()
+		for _, hid := range dead {
+			delete(ls.byHook, hid)
+		}
+		ls.mu.Unlock()
+	}
+
 	r := hl.l.ReserveN(now, 1)
 	if d := r.DelayFrom(now); d > 0 {
 		r.CancelAt(now)

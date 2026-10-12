@@ -21,16 +21,7 @@ const maxIdentifyFailures = 3
 // RunRevalidator re-authorizes every attached tunnel every interval until
 // ctx is done (DESIGN.md §5.5).
 func (s *Server) RunRevalidator(ctx context.Context, interval time.Duration) {
-	t := time.NewTicker(interval)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-		}
-		s.revalidate(ctx)
-	}
+	runEvery(ctx, interval, func() { s.revalidate(ctx) })
 }
 
 // revalidate identifies each tunnel's client again and revokes the hooks

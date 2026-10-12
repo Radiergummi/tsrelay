@@ -243,7 +243,7 @@ func TestCreateWithSettingsAndExpiry(t *testing.T) {
 	exp := now.Add(time.Hour)
 	h, err := m.Create(ctx, receiver, CreateRequest{
 		Path:      "s",
-		Settings:  Settings{HoldTimeout: ptr(Duration(5 * time.Second)), HostHeader: ptr(HostRewrite)},
+		Settings:  Settings{HoldTimeout: new(Duration(5 * time.Second)), HostHeader: new(HostRewrite)},
 		ExpiresAt: &exp,
 	})
 	if err != nil {
@@ -254,7 +254,7 @@ func TestCreateWithSettingsAndExpiry(t *testing.T) {
 		t.Fatalf("effective = %+v", eff)
 	}
 
-	_, err = m.Create(ctx, receiver, CreateRequest{Path: "bad", Settings: Settings{HoldTimeout: ptr(Duration(time.Hour))}})
+	_, err = m.Create(ctx, receiver, CreateRequest{Path: "bad", Settings: Settings{HoldTimeout: new(Duration(time.Hour))}})
 	fieldErr(t, err, "settings.holdTimeout")
 	past := now.Add(-time.Second)
 	_, err = m.Create(ctx, receiver, CreateRequest{Path: "past", ExpiresAt: &past})
@@ -289,7 +289,7 @@ func TestSettingsSurviveReload(t *testing.T) {
 	dir := t.TempDir()
 	s1, _ := OpenJSON(dir)
 	m1, _ := NewManager(ctx, s1, SlugConfig{})
-	h, err := m1.Create(ctx, receiver, CreateRequest{Settings: Settings{MaxBodyBytes: ptr(int64(4096))}})
+	h, err := m1.Create(ctx, receiver, CreateRequest{Settings: Settings{MaxBodyBytes: new(int64(4096))}})
 	if err != nil {
 		t.Fatal(err)
 	}

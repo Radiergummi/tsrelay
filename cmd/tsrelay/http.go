@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -81,10 +82,9 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 	out.url(hook, false)
 
 	startURL := hook.URL // what a command started after "--" gets
-	// hook and hookURL change when the hook is recreated or updated; mu
-	// guards them, as control messages arrive concurrently.
+	// hook changes when the hook is recreated or updated; mu guards it, as
+	// control messages arrive concurrently.
 	var mu sync.Mutex
-	hookURL := hook.URL // stays the same when the hook is recreated
 	var tc *tunnel.Client
 	tc = &tunnel.Client{
 		Hooks: []string{hook.ID},
@@ -110,29 +110,26 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 			out.url(h, true)
 			return tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, h.ID))
 		},
-		Handler: client.LogCalls(client.NewForwarder(target, client.Options{
-			Insecure:        *insecure,
-			OnUpstreamError: out.upstreamError,
-		}), out.call),
-		OnState: out.onState([]string{hookURL}, target.String(), hook.Effective.HoldTimeout.Std()),
+		Handler: callHandler(target, *insecure, out),
+		OnState: out.onState([]string{hook.URL}, target.String(), hook.Effective.HoldTimeout.Std()),
 		OnControl: func(c tunnel.Control) {
 			mu.Lock()
 			defer mu.Unlock()
 			if c.Type == tunnel.ControlHookUpdated {
 				for _, h := range c.Hooks {
-					if h.ID != hook.ID || h.URL == hookURL {
+					if h.ID != hook.ID || h.URL == hook.URL {
 						continue
 					}
 					// Only the path can change the URL; the prefix before it stays.
-					hook.Path = strings.TrimPrefix(h.URL, strings.TrimSuffix(hookURL, hook.Path))
-					hook.URL, hookURL = h.URL, h.URL
+					hook.Path = strings.TrimPrefix(h.URL, strings.TrimSuffix(hook.URL, hook.Path))
+					hook.URL = h.URL
 					if err := state.Remember(key, hook.Path, hook.URL); err != nil {
 						out.text(stderr, "tsrelay: warning: could not remember the hook path: %v", err)
 					}
 					out.url(hook, false)
 				}
 			}
-			out.dropped(c, func(string) string { return hookURL })
+			out.dropped(c, func(string) string { return hook.URL })
 		},
 	}
 	return runTunnel(ctx, tc, command, startURL, out)
@@ -270,18 +267,12 @@ func isNotFound(err error) bool {
 	return errors.As(err, &p) && p.Status == http.StatusNotFound
 }
 
-// dropMessage explains a control message that ends delivery of the hook at
-// hookURL to this CLI. ok is false for other control messages.
-func dropMessage(t tunnel.ControlType, hookURL string) (msg string, ok bool) {
-	switch t {
-	case tunnel.ControlReplaced:
-		return hookURL + " is now served by another tsrelay process", true
-	case tunnel.ControlRevoked:
-		return "your grants no longer allow serving " + hookURL, true
-	case tunnel.ControlHookDeleted:
-		return hookURL + " was deleted", true
-	}
-	return "", false
+// callHandler delivers calls to target and reports them on out.
+func callHandler(target *url.URL, insecure bool, out *output) http.Handler {
+	return client.LogCalls(client.NewForwarder(target, client.Options{
+		Insecure:        insecure,
+		OnUpstreamError: out.upstreamError,
+	}), out.call)
 }
 
 // openState loads the CLI's state: d.StatePath in tests, else

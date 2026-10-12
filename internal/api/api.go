@@ -193,10 +193,7 @@ func (a *API) deleteHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		problem.New(http.StatusInternalServerError, problem.Internal, "could not delete the hook").Write(w)
 		return
 	}
-	a.Tunnels.Release(string(h.ID)) // calls held for the hook fail now
-	if t, orphaned, attached := a.Tunnels.DetachHook(string(h.ID)); attached {
-		t.Notify(tunnel.Control{Type: tunnel.ControlHookDeleted, Hooks: []tunnel.HookInfo{{ID: string(h.ID)}}}, orphaned)
-	}
+	a.Tunnels.RemoveHook(string(h.ID))
 	a.Audit.Log(r.Context(), audit.HookDelete, audit.Actor(id), audit.Hook(h))
 	w.WriteHeader(http.StatusNoContent)
 }

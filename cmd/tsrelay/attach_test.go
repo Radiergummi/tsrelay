@@ -58,7 +58,7 @@ func TestAttachFollowsHookUpdate(t *testing.T) {
 	}
 	r := e.startCmd("attach", a.ID, "--forward-to", e.local.URL, "--relay", e.relayURL)
 	waitOutput(t, r.stderr, "Forwarding "+a.URL)
-	moved, err := e.api().UpdateHook(ctx, a.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: ptr("billing")}})
+	moved, err := e.api().UpdateHook(ctx, a.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new("billing")}})
 	if err != nil {
 		t.Fatal(err)
 	}

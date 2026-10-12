@@ -102,7 +102,7 @@ func TestHeldCallIgnoresOtherHooks(t *testing.T) {
 
 func TestHoldTimeout(t *testing.T) {
 	e := newEnv(t)
-	e.patch(hooks.SettingsPatch{HoldTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: ptr(hooks.Duration(200 * time.Millisecond))}})
+	e.patch(hooks.SettingsPatch{HoldTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: new(hooks.Duration(200 * time.Millisecond))}})
 	resp := e.do(sender, "POST", "/~moritz/cb", nil, nil)
 	wantProblem(t, resp, 503, problem.TunnelUnavailable)
 	if ra := resp.Header.Get("Retry-After"); ra != "5" {

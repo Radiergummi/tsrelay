@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Radiergummi/tsrelay/internal/atomicfile"
 	"tailscale.com/tailcfg"
 )
 
@@ -164,35 +165,5 @@ func (s *JSONStore) save() error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(s.path, b)
-}
-
-// writeFileAtomic replaces path with data so that a crash leaves either the
-// old or the new content, never a partial file.
-func writeFileAtomic(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	f, err := os.CreateTemp(dir, ".hooks-*.json") // mode 0600
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name()) // no-op after a successful rename
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(f.Name(), path); err != nil {
-		return err
-	}
-	if d, err := os.Open(dir); err == nil { // persist the rename where supported
-		_ = d.Sync()
-		d.Close()
-	}
-	return nil
+	return atomicfile.WriteFile(s.path, b, 0o600)
 }

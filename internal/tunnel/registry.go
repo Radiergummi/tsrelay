@@ -104,6 +104,16 @@ func (r *Registry) DetachHook(hookID string) (t *Tunnel, orphaned, ok bool) {
 	return t, orphaned, true
 }
 
+// RemoveHook fails the calls held for hookID and tells the tunnel serving
+// it, if any, that the hook was deleted, closing that tunnel if it serves
+// no other hooks. Call it once the hook is deleted.
+func (r *Registry) RemoveHook(hookID string) {
+	r.Release(hookID)
+	if t, orphaned, ok := r.DetachHook(hookID); ok {
+		t.Notify(Control{Type: ControlHookDeleted, Hooks: []HookInfo{{ID: hookID}}}, orphaned)
+	}
+}
+
 // CountOwner returns how many tunnels of user serve hooks. A tunnel whose
 // hooks are all among taking is left out: attaching those hooks to a new
 // tunnel takes them over and orphans it.

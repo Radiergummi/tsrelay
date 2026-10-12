@@ -7,8 +7,6 @@ import (
 	"time"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 func TestDurationJSON(t *testing.T) {
 	b, _ := json.Marshal(Duration(90 * time.Second))
 	if string(b) != `"1m30s"` {
@@ -46,8 +44,8 @@ func TestDefaultPolicyMatchesDesign(t *testing.T) {
 
 func TestResolve(t *testing.T) {
 	got := DefaultPolicy.Resolve(Settings{
-		HostHeader:  ptr(HostRewrite),
-		HoldTimeout: ptr(Duration(0)),
+		HostHeader:  new(HostRewrite),
+		HoldTimeout: new(Duration(0)),
 		RateLimit:   &RateLimit{PerSecond: 5, Burst: 10},
 	})
 	if got.HostHeader != HostRewrite || got.HoldTimeout != 0 || got.RateLimit.PerSecond != 5 {
@@ -64,10 +62,10 @@ func TestResolveClampsToMaxima(t *testing.T) {
 	p.Max.MaxBodyBytes = 1 << 20
 	p.Max.RateLimit = RateLimit{PerSecond: 10, Burst: 20}
 	got := p.Resolve(Settings{
-		HoldTimeout:     ptr(Duration(time.Hour)),
-		ResponseTimeout: ptr(Duration(time.Hour)),
-		IdleTimeout:     ptr(Duration(time.Hour)),
-		MaxBodyBytes:    ptr(int64(0)), // unlimited
+		HoldTimeout:     new(Duration(time.Hour)),
+		ResponseTimeout: new(Duration(time.Hour)),
+		IdleTimeout:     new(Duration(time.Hour)),
+		MaxBodyBytes:    new(int64(0)), // unlimited
 		RateLimit:       &RateLimit{PerSecond: 50, Burst: 5},
 	})
 	want := Effective{
@@ -82,10 +80,10 @@ func TestResolveClampsToMaxima(t *testing.T) {
 	if got != want {
 		t.Fatalf("Resolve = %+v, want %+v", got, want)
 	}
-	if got := p.Resolve(Settings{MaxBodyBytes: ptr(int64(5))}); got.MaxBodyBytes != 5 {
+	if got := p.Resolve(Settings{MaxBodyBytes: new(int64(5))}); got.MaxBodyBytes != 5 {
 		t.Fatalf("maxBodyBytes under the maximum = %d, want 5", got.MaxBodyBytes)
 	}
-	if got := DefaultPolicy.Resolve(Settings{MaxBodyBytes: ptr(int64(0))}); got.MaxBodyBytes != 0 {
+	if got := DefaultPolicy.Resolve(Settings{MaxBodyBytes: new(int64(0))}); got.MaxBodyBytes != 0 {
 		t.Fatalf("maxBodyBytes without a maximum = %d, want unlimited", got.MaxBodyBytes)
 	}
 }
@@ -94,12 +92,12 @@ func TestValidate(t *testing.T) {
 	p := DefaultPolicy
 	p.Max.MaxBodyBytes = 1 << 20
 	cases := map[string]Settings{
-		"settings.attachPolicy":    {AttachPolicy: ptr(AttachPolicy("steal"))},
-		"settings.hostHeader":      {HostHeader: ptr(HostHeader("keep"))},
-		"settings.holdTimeout":     {HoldTimeout: ptr(Duration(time.Hour))},
-		"settings.responseTimeout": {ResponseTimeout: ptr(Duration(0))},
-		"settings.idleTimeout":     {IdleTimeout: ptr(Duration(0))},
-		"settings.maxBodyBytes":    {MaxBodyBytes: ptr(int64(2 << 20))},
+		"settings.attachPolicy":    {AttachPolicy: new(AttachPolicy("steal"))},
+		"settings.hostHeader":      {HostHeader: new(HostHeader("keep"))},
+		"settings.holdTimeout":     {HoldTimeout: new(Duration(time.Hour))},
+		"settings.responseTimeout": {ResponseTimeout: new(Duration(0))},
+		"settings.idleTimeout":     {IdleTimeout: new(Duration(0))},
+		"settings.maxBodyBytes":    {MaxBodyBytes: new(int64(2 << 20))},
 		"settings.rateLimit":       {RateLimit: &RateLimit{PerSecond: 0, Burst: 1}},
 	}
 	for field, s := range cases {
@@ -109,10 +107,10 @@ func TestValidate(t *testing.T) {
 		}
 	}
 	// "unlimited" is not allowed once the operator set a maximum
-	if errs := p.Validate(Settings{MaxBodyBytes: ptr(int64(0))}); len(errs) != 1 {
+	if errs := p.Validate(Settings{MaxBodyBytes: new(int64(0))}); len(errs) != 1 {
 		t.Errorf("unlimited body under a maximum: %v", errs)
 	}
-	if errs := p.Validate(Settings{HoldTimeout: ptr(Duration(0)), MaxBodyBytes: ptr(int64(1024))}); len(errs) != 0 {
+	if errs := p.Validate(Settings{HoldTimeout: new(Duration(0)), MaxBodyBytes: new(int64(1024))}); len(errs) != 0 {
 		t.Errorf("valid settings rejected: %v", errs)
 	}
 	if !strings.Contains(p.Validate(cases["settings.holdTimeout"])[0].Message, "5m0s") {

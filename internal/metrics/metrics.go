@@ -15,19 +15,20 @@ import (
 
 // Registry holds metric families and writes them in registration order.
 type Registry struct {
-	mu       sync.Mutex
+	mu       sync.Mutex // guards families; each family guards its counts
 	families []*family
 }
 
 type family struct {
 	name, help, kind, label string
-	counts                  map[string]float64        // counters, by label value
 	read                    func() map[string]float64 // gauges, by label value
+
+	mu     sync.Mutex
+	counts map[string]float64 // counters, by label value
 }
 
 // Counter is a family of monotonically increasing values, one per label value.
 type Counter struct {
-	r *Registry
 	f *family
 }
 
@@ -37,7 +38,7 @@ func NewRegistry() *Registry { return &Registry{} }
 func (r *Registry) Counter(name, help, label string) *Counter {
 	f := &family{name: name, help: help, kind: "counter", label: label, counts: map[string]float64{}}
 	r.add(f)
-	return &Counter{r: r, f: f}
+	return &Counter{f: f}
 }
 
 // GaugeFunc declares a gauge family whose values read returns at scrape
@@ -54,8 +55,8 @@ func (r *Registry) add(f *family) {
 
 // Add increases the counter for labelValue by v, which must not be negative.
 func (c *Counter) Add(labelValue string, v float64) {
-	c.r.mu.Lock()
-	defer c.r.mu.Unlock()
+	c.f.mu.Lock()
+	defer c.f.mu.Unlock()
 	c.f.counts[labelValue] += v
 }
 
@@ -71,11 +72,14 @@ func (r *Registry) WriteTo(w io.Writer) (int64, error) {
 		values map[string]float64
 	}
 	r.mu.Lock()
-	snaps := make([]snapshot, len(r.families))
-	for i, f := range r.families {
-		snaps[i] = snapshot{f: f, values: maps.Clone(f.counts)}
-	}
+	families := slices.Clone(r.families)
 	r.mu.Unlock()
+	snaps := make([]snapshot, len(families))
+	for i, f := range families {
+		f.mu.Lock()
+		snaps[i] = snapshot{f: f, values: maps.Clone(f.counts)}
+		f.mu.Unlock()
+	}
 
 	var b strings.Builder
 	for _, s := range snaps {

@@ -179,17 +179,17 @@ func hooksUpdate(ctx context.Context, args []string, stdout, stderr io.Writer, d
 		}
 		switch f.Name {
 		case "path":
-			req.Path = optSet(*path)
+			req.Path = optPtr(path)
 		case "channel":
-			req.Channel = optSet(*channel)
+			req.Channel = optPtr(channel)
 		case "description":
-			req.Description = optSet(*description)
+			req.Description = optPtr(description)
 		case "ephemeral":
-			req.Ephemeral = optSet(*ephemeral)
+			req.Ephemeral = optPtr(ephemeral)
 		case "expires-in":
 			req.ExpiresAt = hooks.Opt[time.Time]{Set: true} // 0 removes the expiry
 			if *expiresIn != 0 {
-				req.ExpiresAt = optSet(time.Now().Add(*expiresIn))
+				req.ExpiresAt.Value = new(time.Now().Add(*expiresIn))
 			}
 		}
 	})
@@ -261,9 +261,6 @@ func resolveHooks(ctx context.Context, c *client.API, refs []string) ([]api.Hook
 	}
 	return found, nil
 }
-
-// optSet is a PATCH field that sets v.
-func optSet[T any](v T) hooks.Opt[T] { return hooks.Opt[T]{Set: true, Value: &v} }
 
 // optPtr is a PATCH field that sets *v, or leaves the field alone if v is nil.
 func optPtr[T any](v *T) hooks.Opt[T] { return hooks.Opt[T]{Set: v != nil, Value: v} }

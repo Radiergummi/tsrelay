@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/Radiergummi/tsrelay/internal/atomicfile"
 )
 
 // State remembers which hook the CLI used per relay, working directory and
@@ -87,7 +89,12 @@ func (s *State) Remember(key, hookPath, hookURL string) error {
 	if err != nil {
 		return err
 	}
-	if err := writeFileAtomic(s.file, b); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.file), 0o700); err != nil {
+		return err
+	}
+	// The write does not merge: when two CLIs write concurrently, the last
+	// rename wins and the other's entry is lost.
+	if err := atomicfile.WriteFile(s.file, b, 0o600); err != nil {
 		return err
 	}
 	if s.legacy != "" {
@@ -95,30 +102,6 @@ func (s *State) Remember(key, hookPath, hookURL string) error {
 		s.legacy = ""
 	}
 	return nil
-}
-
-// writeFileAtomic writes b to a uniquely named temporary file next to path
-// and renames it into place, so no reader ever sees a partial file. It does
-// not merge: when two CLIs write concurrently, the last rename wins and the
-// other's entry is lost.
-func writeFileAtomic(path string, b []byte) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name()) // fails harmlessly after the rename
-	if _, err := f.Write(b); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), path)
 }
 
 func StateKey(relayURL, dir string, target *url.URL) string {

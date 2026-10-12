@@ -81,14 +81,7 @@ func (s *Server) Handler() http.Handler { return s.handler }
 
 // RunReaper deletes expired ephemeral hooks every interval until ctx is done.
 func (s *Server) RunReaper(ctx context.Context, interval time.Duration) {
-	t := time.NewTicker(interval)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-		}
+	runEvery(ctx, interval, func() {
 		reaped, err := s.hooks.Reap(ctx, s.cfg.EphemeralGrace, func(id hooks.ID) bool {
 			_, ok := s.tunnels.Lookup(string(id))
 			return ok
@@ -98,11 +91,22 @@ func (s *Server) RunReaper(ctx context.Context, interval time.Duration) {
 		}
 		for _, h := range reaped {
 			s.audit.Log(ctx, audit.HookExpire, audit.Hook(h))
-			s.tunnels.Release(string(h.ID)) // calls held for the hook fail now
-			if t, orphaned, ok := s.tunnels.DetachHook(string(h.ID)); ok {
-				t.Notify(tunnel.Control{Type: tunnel.ControlHookDeleted, Hooks: []tunnel.HookInfo{{ID: string(h.ID)}}}, orphaned)
-			}
+			s.tunnels.RemoveHook(string(h.ID))
 		}
+	})
+}
+
+// runEvery calls f every interval until ctx is done.
+func runEvery(ctx context.Context, interval time.Duration, f func()) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		f()
 	}
 }
 

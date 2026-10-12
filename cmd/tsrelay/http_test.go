@@ -332,7 +332,7 @@ func TestHTTPFollowsHookUpdate(t *testing.T) {
 	if err != nil || len(hs) != 1 {
 		t.Fatalf("hooks = %v, %v", hs, err)
 	}
-	h, err := e.api().UpdateHook(ctx, hs[0].ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: ptr("new")}})
+	h, err := e.api().UpdateHook(ctx, hs[0].ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new("new")}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +351,7 @@ func TestHTTPFollowsHookUpdate(t *testing.T) {
 		t.Fatalf("state = %q %q, want new %s", st.Path(key), st.URL(key), h.URL)
 	}
 	// An update that keeps the URL prints nothing.
-	if _, err := e.api().UpdateHook(ctx, h.ID, hooks.UpdateRequest{Description: hooks.Opt[string]{Set: true, Value: ptr("x")}}); err != nil {
+	if _, err := e.api().UpdateHook(ctx, h.ID, hooks.UpdateRequest{Description: hooks.Opt[string]{Set: true, Value: new("x")}}); err != nil {
 		t.Fatal(err)
 	}
 	if code := e.send(h.URL); code != http.StatusAccepted {
@@ -369,11 +369,16 @@ func TestDropMessage(t *testing.T) {
 		tunnel.ControlRevoked:     "grants no longer allow",
 		tunnel.ControlHookDeleted: "was deleted",
 	} {
-		if msg, ok := dropMessage(typ, u); !ok || !strings.Contains(msg, want) || !strings.Contains(msg, u) {
-			t.Errorf("%s: %q, %v", typ, msg, ok)
+		d, ok := drops[typ]
+		if !ok {
+			t.Errorf("%s: no drop message", typ)
+			continue
+		}
+		if msg := fmt.Sprintf(d.text, u); !strings.Contains(msg, want) || !strings.Contains(msg, u) {
+			t.Errorf("%s: %q", typ, msg)
 		}
 	}
-	if _, ok := dropMessage(tunnel.ControlAttached, u); ok {
+	if _, ok := drops[tunnel.ControlAttached]; ok {
 		t.Error("attached does not end delivery")
 	}
 }
@@ -494,5 +499,3 @@ func TestHTTPCommandExitCode(t *testing.T) {
 		t.Errorf("stderr should say why tsrelay stopped:\n%s", r.stderr)
 	}
 }
-
-func ptr[T any](v T) *T { return &v }

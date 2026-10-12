@@ -3,8 +3,6 @@ package hooks
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/authz"
@@ -103,19 +101,11 @@ func (m *Manager) Update(ctx context.Context, owner authz.Identity, id ID, req U
 
 	if req.Path.Set {
 		touch("path", true)
-		switch {
-		case req.Path.Value == nil:
+		if req.Path.Value == nil {
 			errs = append(errs, FieldError{"path", "cannot be null"})
-		case ValidatePath(*req.Path.Value) != nil:
-			errs = append(errs, FieldError{"path", ValidatePath(*req.Path.Value).Error()})
-		default:
+		} else {
 			h.Path = *req.Path.Value
-			for _, o := range m.ownedLocked(owner.UserID) {
-				if o.ID != id && overlaps(o.Path, h.Path) {
-					errs = append(errs, FieldError{"path", fmt.Sprintf("conflicts with your hook %q; a hook cannot equal or nest inside another", o.Path)})
-					break
-				}
-			}
+			errs = append(errs, validateHookPath(h.Path, m.ownedLocked(owner.UserID), id)...)
 		}
 	}
 	if req.Channel.Set {
@@ -124,13 +114,7 @@ func (m *Manager) Update(ctx context.Context, owner authz.Identity, id ID, req U
 		if req.Channel.Value != nil {
 			h.Channel = *req.Channel.Value
 		}
-		switch {
-		case !authz.ValidChannel(h.Channel):
-			errs = append(errs, FieldError{"channel", fmt.Sprintf("%q is not a valid channel name (dot-separated [a-z0-9-] segments)", h.Channel)})
-		case !owner.Grants.Allows(authz.RoleReceiver, h.Channel):
-			errs = append(errs, FieldError{"channel", fmt.Sprintf("channel %q is not matched by your receiver patterns %s",
-				h.Channel, strings.Join(owner.Grants.Patterns[authz.RoleReceiver], ", "))})
-		}
+		errs = append(errs, validateChannel(h.Channel, owner.Grants)...)
 	}
 	if req.Description.Set {
 		touch("description", true)
@@ -138,9 +122,7 @@ func (m *Manager) Update(ctx context.Context, owner authz.Identity, id ID, req U
 		if req.Description.Value != nil {
 			h.Description = *req.Description.Value
 		}
-		if len(h.Description) > maxDescription {
-			errs = append(errs, FieldError{"description", fmt.Sprintf("must be at most %d characters", maxDescription)})
-		}
+		errs = append(errs, validateDescription(h.Description)...)
 	}
 	if req.Ephemeral.Set {
 		touch("ephemeral", true)

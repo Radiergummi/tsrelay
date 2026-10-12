@@ -257,16 +257,8 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.
 	// Only the connection may say where a call came from.
 	out.Header.Del("X-Real-Ip")
 	out.Header.Del("X-Forwarded-Port")
-	for k := range out.Header {
-		if strings.HasPrefix(http.CanonicalHeaderKey(k), "Tsrelay-") {
-			out.Header.Del(k)
-		}
-	}
-	for k := range out.Trailer {
-		if strings.HasPrefix(http.CanonicalHeaderKey(k), "Tsrelay-") {
-			delete(out.Trailer, k)
-		}
-	}
+	stripTsrelay(out.Header)
+	stripTsrelay(out.Trailer)
 	if eff.HostHeader == hooks.HostRewrite {
 		out.Header.Set(tunnel.HeaderTunnelHost, "rewrite")
 	}
@@ -284,6 +276,15 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.
 	path, rawPath := remainder(pr.In.URL, segments)
 	out.URL = &url.URL{Scheme: "http", Host: "tunnel", Path: path, RawPath: rawPath, RawQuery: pr.In.URL.RawQuery}
 	out.Host = pr.In.Host
+}
+
+// stripTsrelay removes the headers with the Tsrelay- prefix from h.
+func stripTsrelay(h http.Header) {
+	for k := range h {
+		if strings.HasPrefix(http.CanonicalHeaderKey(k), "Tsrelay-") {
+			delete(h, k)
+		}
+	}
 }
 
 func proxyError(w http.ResponseWriter, r *http.Request, err error) {
