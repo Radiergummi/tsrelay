@@ -88,6 +88,16 @@ func (c *Client) current() []string {
 	return slices.Clone(c.hooks)
 }
 
+// Replace swaps oldID for newID in the hooks later dials attach, e.g. after
+// the caller recreated a hook the relay had deleted. Unknown IDs are ignored.
+func (c *Client) Replace(oldID, newID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if i := slices.Index(c.hooks, oldID); i >= 0 {
+		c.hooks[i] = newID
+	}
+}
+
 func (c *Client) handleControl(ctl Control) {
 	if ctl.Type == ControlReplaced || ctl.Type == ControlRevoked || ctl.Type == ControlHookDeleted {
 		c.mu.Lock()

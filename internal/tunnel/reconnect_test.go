@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -188,4 +189,31 @@ func TestClientDropsRevokedHooks(t *testing.T) {
 	if err := recv(t, done); !errors.Is(err, tunnel.ErrNoHooks) {
 		t.Fatalf("Run = %v, want ErrNoHooks", err)
 	}
+}
+
+// Replace changes the hooks of later dials, as the CLI does after it
+// recreated a hook the relay reaped while it was disconnected.
+func TestClientReplace(t *testing.T) {
+	f := newFakeRelay(t, http.StatusServiceUnavailable, 1)
+	c := f.client(make(chan bool, 16))
+	dials := make(chan []string, 4)
+	dial := c.Dial
+	first := true
+	c.Dial = func(ctx context.Context, hooks []string, a tunnel.Attach) (net.Conn, error) {
+		dials <- slices.Clone(hooks)
+		if first {
+			first = false
+			c.Replace("h1", "h2")
+			c.Replace("unknown", "h3") // no effect
+		}
+		return dial(ctx, hooks, a)
+	}
+	run(t, c)
+	if got := recv(t, dials); !slices.Equal(got, []string{"h1"}) {
+		t.Fatalf("first dial = %v", got)
+	}
+	if got := recv(t, dials); !slices.Equal(got, []string{"h2"}) {
+		t.Fatalf("dial after Replace = %v, want [h2]", got)
+	}
+	recv(t, f.tunnels)
 }

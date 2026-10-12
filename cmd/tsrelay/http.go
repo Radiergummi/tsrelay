@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"time"
 
@@ -87,7 +88,8 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 	cwd, _ := os.Getwd()
 	key := client.StateKey(relayURL, cwd, target)
 
-	hook, err := ensureHook(ctx, relayAPI, *name, state.Path(key), hooks.CreateRequest{Channel: *channel, Ephemeral: !*persistent})
+	req := hooks.CreateRequest{Channel: *channel, Ephemeral: !*persistent}
+	hook, err := ensureHook(ctx, relayAPI, *name, state.Path(key), req)
 	if err != nil {
 		return fail(err)
 	}
@@ -101,10 +103,31 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 			c.Duration.Round(time.Millisecond), c.Sender)
 	}
 	connectedOnce := false
-	tc := &tunnel.Client{
+	hookURL := hook.URL // stays the same when the hook is recreated
+	var tc *tunnel.Client
+	tc = &tunnel.Client{
 		Hooks: []string{hook.ID},
 		Dial: func(ctx context.Context, ids []string, a tunnel.Attach) (net.Conn, error) {
-			return tunnel.Dial(ctx, hc, relayAPI.TunnelURL(a, ids...))
+			conn, err := tunnel.Dial(ctx, hc, relayAPI.TunnelURL(a, ids...))
+			if !isNotFound(err) {
+				return conn, err
+			}
+			// The relay reaped the hook while this CLI was disconnected for
+			// longer than the ephemeral grace period: recreate it at the
+			// same path, so its URL keeps working.
+			h, err := ensureHook(ctx, relayAPI, hook.Path, "", req)
+			if err != nil {
+				return nil, err
+			}
+			tc.Replace(hook.ID, h.ID)
+			hook = h
+			fmt.Fprintln(stderr, "tsrelay: the hook was removed while disconnected; recreated at the same URL.")
+			return tunnel.Dial(ctx, hc, relayAPI.TunnelURL(a, h.ID))
+		},
+		OnControl: func(c tunnel.Control) {
+			if msg, ok := dropMessage(c.Type, hookURL); ok {
+				fmt.Fprintf(stderr, "tsrelay: %s; stopping.\n", msg)
+			}
 		},
 		Handler: client.LogCalls(client.NewForwarder(target, client.Options{
 			Insecure:        *insecure,
@@ -124,8 +147,7 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 	}
 	switch err := tc.Run(ctx); {
 	case errors.Is(err, tunnel.ErrNoHooks):
-		fmt.Fprintln(stderr, "tsrelay: the hook is now served by another tsrelay process, or was deleted; stopping.")
-		return 1
+		return 1 // OnControl said why
 	case err != nil:
 		return fail(err)
 	}
@@ -167,6 +189,27 @@ func ensureHook(ctx context.Context, c *client.API, explicit, remembered string,
 		return c.CreateHook(ctx, req)
 	}
 	return h, err
+}
+
+// isNotFound reports whether err is the relay's 404, which a tunnel dial
+// gets for a hook that no longer exists.
+func isNotFound(err error) bool {
+	var p *problem.Problem
+	return errors.As(err, &p) && p.Status == http.StatusNotFound
+}
+
+// dropMessage explains a control message that ends delivery of the hook at
+// hookURL to this CLI. ok is false for other control messages.
+func dropMessage(t tunnel.ControlType, hookURL string) (msg string, ok bool) {
+	switch t {
+	case tunnel.ControlReplaced:
+		return hookURL + " is now served by another tsrelay process", true
+	case tunnel.ControlRevoked:
+		return "your grants no longer allow serving " + hookURL, true
+	case tunnel.ControlHookDeleted:
+		return hookURL + " was deleted", true
+	}
+	return "", false
 }
 
 // openState loads the CLI's state: d.StatePath in tests, else
