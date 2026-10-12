@@ -49,6 +49,27 @@ func TestAttach(t *testing.T) {
 	}
 }
 
+func TestAttachFollowsHookUpdate(t *testing.T) {
+	e := newCLIEnv(t)
+	ctx := context.Background()
+	a, err := e.api().CreateHook(ctx, hooks.CreateRequest{Path: "pay"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := e.startCmd("attach", a.ID, "--forward-to", e.local.URL, "--relay", e.relayURL)
+	waitOutput(t, r.stderr, "Forwarding "+a.URL)
+	moved, err := e.api().UpdateHook(ctx, a.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: ptr("billing")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitOutput(t, r.stdout, moved.URL)
+	// The new URL names the hook from now on.
+	if err := e.api().DeleteHook(ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitOutput(t, r.stderr, moved.URL+" was deleted")
+}
+
 func TestAttachRefusals(t *testing.T) {
 	e := newCLIEnv(t)
 	if code, _, errOut := e.tsrelay("attach", "nope", "--forward-to", "8080"); code != 1 || !strings.Contains(errOut, `"nope"`) {

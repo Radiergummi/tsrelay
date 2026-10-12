@@ -176,6 +176,9 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		return
 	}
 	a.Audit.Log(r.Context(), audit.HookUpdate, audit.Actor(id), audit.Hook(h), slog.Any("changed", changed))
+	if t, ok := a.Tunnels.Lookup(string(h.ID)); ok {
+		t.Notify(tunnel.Control{Type: tunnel.ControlHookUpdated, Hooks: []tunnel.HookInfo{{ID: string(h.ID), URL: a.BaseURL + h.Route()}}}, false)
+	}
 	writeJSON(w, http.StatusOK, a.hookJSON(h))
 }
 

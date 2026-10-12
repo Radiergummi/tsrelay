@@ -101,10 +101,13 @@ tsrelay attach <id|path>... --forward-to <port|url>   # serve existing hooks fro
 - `--insecure` to skip TLS certificate verification when the target is `https://` (self-signed local certificates).
 - `--json` to print one JSON event per line on stdout (`url`, `connected`, `disconnected`, `call`, `stopped`) instead of text; useful for scripting.
 
+If a served hook's path is changed (`tsrelay hooks update` or the API), both print its new URL on stdout, and `tsrelay http` remembers it.
+
 `tsrelay http` additionally accepts `-- cmd args...` to start a local process with `TSRELAY_URL` set in its environment, and stop it (SIGTERM, then a kill after 5s) when the tunnel ends:
 ```bash
 tsrelay http 8080 -- npm run dev
 ```
+The command keeps the `TSRELAY_URL` it was started with, even if the hook's path changes while it runs.
 
 ## What your app receives
 

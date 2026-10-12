@@ -322,6 +322,46 @@ func TestHTTPStopsWhenHookDeleted(t *testing.T) {
 	}
 }
 
+// Renaming the hook elsewhere prints its new URL and remembers it.
+func TestHTTPFollowsHookUpdate(t *testing.T) {
+	e := newCLIEnv(t)
+	r := e.start("--name", "old")
+	oldURL := e.url(r)
+	ctx := context.Background()
+	hs, err := e.api().ListHooks(ctx)
+	if err != nil || len(hs) != 1 {
+		t.Fatalf("hooks = %v, %v", hs, err)
+	}
+	h, err := e.api().UpdateHook(ctx, hs[0].ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: ptr("new")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitOutput(t, r.stdout, h.URL)
+	if out := r.stdout.String(); out != oldURL+"\n"+h.URL+"\n" {
+		t.Fatalf("stdout = %q, want the old and then the new URL", out)
+	}
+	st, err := client.LoadState(e.statePath, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cwd, _ := os.Getwd()
+	target, _ := client.ParseTarget(e.local.URL)
+	key := client.StateKey(e.relayURL, cwd, target)
+	if st.Path(key) != "new" || st.URL(key) != h.URL {
+		t.Fatalf("state = %q %q, want new %s", st.Path(key), st.URL(key), h.URL)
+	}
+	// An update that keeps the URL prints nothing.
+	if _, err := e.api().UpdateHook(ctx, h.ID, hooks.UpdateRequest{Description: hooks.Opt[string]{Set: true, Value: ptr("x")}}); err != nil {
+		t.Fatal(err)
+	}
+	if code := e.send(h.URL); code != http.StatusAccepted {
+		t.Fatalf("send to the new URL = %d", code)
+	}
+	if out := r.stdout.String(); out != oldURL+"\n"+h.URL+"\n" {
+		t.Fatalf("stdout = %q after an update that kept the URL", out)
+	}
+}
+
 func TestDropMessage(t *testing.T) {
 	const u = "https://r/~m/cb"
 	for typ, want := range map[tunnel.ControlType]string{
@@ -454,3 +494,5 @@ func TestHTTPCommandExitCode(t *testing.T) {
 		t.Errorf("stderr should say why tsrelay stopped:\n%s", r.stderr)
 	}
 }
+
+func ptr[T any](v T) *T { return &v }

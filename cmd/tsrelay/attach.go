@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"slices"
+	"sync"
 
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/client"
@@ -49,7 +50,8 @@ func attachCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d d
 		}
 	}
 	ids, urls := make([]string, len(list)), make([]string, len(list))
-	urlOf := make(map[string]string, len(list))
+	urlOf := make(map[string]string, len(list)) // guarded by mu once the tunnel runs
+	var mu sync.Mutex
 	hold := list[0].Effective.HoldTimeout.Std()
 	for i, h := range list {
 		ids[i], urls[i], urlOf[h.ID] = h.ID, h.URL, h.URL
@@ -66,8 +68,20 @@ func attachCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d d
 			Insecure:        *insecure,
 			OnUpstreamError: out.upstreamError,
 		}), out.call),
-		OnState:   out.onState(urls, target.String(), hold),
-		OnControl: func(c tunnel.Control) { out.dropped(c, func(id string) string { return urlOf[id] }) },
+		OnState: out.onState(urls, target.String(), hold),
+		OnControl: func(c tunnel.Control) {
+			mu.Lock() // control messages arrive concurrently
+			defer mu.Unlock()
+			if c.Type == tunnel.ControlHookUpdated {
+				for _, h := range c.Hooks {
+					if u, ok := urlOf[h.ID]; ok && u != h.URL {
+						urlOf[h.ID] = h.URL
+						out.url(api.Hook{ID: h.ID, URL: h.URL}, false)
+					}
+				}
+			}
+			out.dropped(c, func(id string) string { return urlOf[id] })
+		},
 	}
 	return out.finish(tc.Run(ctx))
 }

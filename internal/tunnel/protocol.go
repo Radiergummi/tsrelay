@@ -32,6 +32,8 @@ const (
 	ControlAttached    ControlType = "attached"
 	ControlReplaced    ControlType = "replaced"
 	ControlHookDeleted ControlType = "hook-deleted"
+	// ControlHookUpdated carries a hook's URL after an update.
+	ControlHookUpdated ControlType = "hook-updated"
 	// ControlRevoked means the owner's grants no longer cover the hooks.
 	ControlRevoked ControlType = "revoked"
 )

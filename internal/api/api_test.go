@@ -313,6 +313,30 @@ func TestPatchHook(t *testing.T) {
 	}
 }
 
+// DESIGN.md §6.2: the tunnel serving a hook learns its new URL on PATCH.
+func TestPatchNotifiesServingTunnel(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	controls, _, err := e.openTunnel(moritz, h.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next(t, controls) // attached
+
+	var got Hook
+	if resp := e.call(moritz, "PATCH", "/api/v1/hooks/"+h.ID, map[string]any{"path": "cb2"}, &got); resp.StatusCode != 200 {
+		t.Fatalf("patch = %d", resp.StatusCode)
+	}
+	c := next(t, controls)
+	if c.Type != tunnel.ControlHookUpdated || len(c.Hooks) != 1 || c.Hooks[0].ID != h.ID || c.Hooks[0].URL != got.URL {
+		t.Fatalf("control = %+v, want hook-updated with %s", c, got.URL)
+	}
+	if !strings.HasSuffix(got.URL, "/cb2") {
+		t.Fatalf("patched URL = %s", got.URL)
+	}
+}
+
 // Deleting a hook fails the calls held for it at once (tunnel.ErrHookGone).
 func TestDeleteReleasesHeldCalls(t *testing.T) {
 	e := newEnv(t)

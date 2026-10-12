@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -78,6 +80,10 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 	}
 	out.url(hook, false)
 
+	startURL := hook.URL // what a command started after "--" gets
+	// hook and hookURL change when the hook is recreated or updated; mu
+	// guards them, as control messages arrive concurrently.
+	var mu sync.Mutex
 	hookURL := hook.URL // stays the same when the hook is recreated
 	var tc *tunnel.Client
 	tc = &tunnel.Client{
@@ -90,12 +96,17 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 			// The relay reaped the hook while this CLI was disconnected for
 			// longer than the ephemeral grace period: recreate it at the
 			// same path, so its URL keeps working.
-			h, err := ensureHook(ctx, relayAPI, hook.Path, "", req)
+			mu.Lock()
+			old := hook
+			mu.Unlock()
+			h, err := ensureHook(ctx, relayAPI, old.Path, "", req)
 			if err != nil {
 				return nil, err
 			}
-			tc.Replace(hook.ID, h.ID)
+			tc.Replace(old.ID, h.ID)
+			mu.Lock()
 			hook = h
+			mu.Unlock()
 			out.url(h, true)
 			return tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, h.ID))
 		},
@@ -103,10 +114,28 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 			Insecure:        *insecure,
 			OnUpstreamError: out.upstreamError,
 		}), out.call),
-		OnState:   out.onState([]string{hookURL}, target.String(), hook.Effective.HoldTimeout.Std()),
-		OnControl: func(c tunnel.Control) { out.dropped(c, func(string) string { return hookURL }) },
+		OnState: out.onState([]string{hookURL}, target.String(), hook.Effective.HoldTimeout.Std()),
+		OnControl: func(c tunnel.Control) {
+			mu.Lock()
+			defer mu.Unlock()
+			if c.Type == tunnel.ControlHookUpdated {
+				for _, h := range c.Hooks {
+					if h.ID != hook.ID || h.URL == hookURL {
+						continue
+					}
+					// Only the path can change the URL; the prefix before it stays.
+					hook.Path = strings.TrimPrefix(h.URL, strings.TrimSuffix(hookURL, hook.Path))
+					hook.URL, hookURL = h.URL, h.URL
+					if err := state.Remember(key, hook.Path, hook.URL); err != nil {
+						out.text(stderr, "tsrelay: warning: could not remember the hook path: %v", err)
+					}
+					out.url(hook, false)
+				}
+			}
+			out.dropped(c, func(string) string { return hookURL })
+		},
 	}
-	return runTunnel(ctx, tc, command, hookURL, out)
+	return runTunnel(ctx, tc, command, startURL, out)
 }
 
 // runTunnel runs tc until it stops and returns the exit code. With a
