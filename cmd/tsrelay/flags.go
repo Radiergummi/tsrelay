@@ -33,15 +33,22 @@ func applyEnv(fs *flag.FlagSet, prefix string) error {
 	return nil
 }
 
-// listFlag collects comma-separated values; repeating the flag appends.
-type listFlag []string
+// listFlag collects comma-separated values. The first explicit value
+// replaces the default in Values; repeating the flag appends.
+type listFlag struct {
+	Values []string
+	set    bool
+}
 
-func (l *listFlag) String() string { return strings.Join(*l, ",") }
+func (l *listFlag) String() string { return strings.Join(l.Values, ",") }
 
 func (l *listFlag) Set(v string) error {
+	if !l.set {
+		l.Values, l.set = nil, true
+	}
 	for _, s := range strings.Split(v, ",") {
 		if s = strings.TrimSpace(s); s != "" {
-			*l = append(*l, s)
+			l.Values = append(l.Values, s)
 		}
 	}
 	return nil

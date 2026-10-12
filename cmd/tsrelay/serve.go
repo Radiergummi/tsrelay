@@ -32,7 +32,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	hostname := fs.String("hostname", "tsrelay", "tailnet machine name of the relay")
 	stateDir := fs.String("state-dir", defaultStateDir(), "directory for tailnet state and hooks")
 	useTLS := fs.Bool("tls", true, "serve HTTPS on 443 with a tailnet certificate; false serves plain HTTP on 80")
-	tags := listFlag{"tag:tsrelay"}
+	tags := listFlag{Values: []string{"tag:tsrelay"}}
 	fs.Var(&tags, "advertise-tags", "tags the relay node advertises (comma-separated)")
 	capName := fs.String("cap-name", "mazetti.me/cap/relay", "application capability carrying relay grants")
 	slugMode := fs.String("user-slug", string(hooks.SlugLocalPart), `how URL slugs derive from logins: "local-part" or "login"`)
@@ -69,7 +69,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	}
 
 	err = runRelay(ctx, logger, relayConfig{
-		hostname: *hostname, stateDir: *stateDir, tls: *useTLS, tags: tags, verbose: *verbose,
+		hostname: *hostname, stateDir: *stateDir, tls: *useTLS, tags: tags.Values, verbose: *verbose,
 		cap:    peercap.Cap(*capName),
 		slugs:  hooks.SlugConfig{Mode: hooks.SlugMode(*slugMode), Overrides: overrides},
 		limits: authz.Limits{MaxHooks: *maxHooks, MaxTunnels: *maxTunnels, MaxHookTTL: *maxTTL},

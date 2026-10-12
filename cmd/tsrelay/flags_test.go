@@ -28,7 +28,7 @@ func TestApplyEnv(t *testing.T) {
 	if *host != "from-flag" {
 		t.Errorf("hostname = %q, flags must win over env", *host)
 	}
-	if *grace != 5*time.Minute || *tlsOn || !slices.Equal(tags, []string{"tag:a", "tag:b"}) {
+	if *grace != 5*time.Minute || *tlsOn || !slices.Equal(tags.Values, []string{"tag:a", "tag:b"}) {
 		t.Errorf("grace=%v tls=%v tags=%v", *grace, *tlsOn, tags)
 	}
 }
@@ -68,3 +68,20 @@ func TestUsage(t *testing.T) {
 type nopWriter struct{}
 
 func (*nopWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+// A list flag's default is replaced, not extended, by the first explicit value.
+func TestListFlagReplacesDefault(t *testing.T) {
+	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	tags := listFlag{Values: []string{"tag:tsrelay"}}
+	fs.Var(&tags, "advertise-tags", "")
+	if err := fs.Parse([]string{"--advertise-tags", "tag:relay-prod", "--advertise-tags", "tag:extra"}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(tags.Values, []string{"tag:relay-prod", "tag:extra"}) {
+		t.Fatalf("tags = %v, want the default replaced", tags.Values)
+	}
+	untouched := listFlag{Values: []string{"tag:tsrelay"}}
+	if untouched.String() != "tag:tsrelay" {
+		t.Fatalf("default = %q", untouched.String())
+	}
+}
