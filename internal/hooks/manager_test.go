@@ -162,11 +162,11 @@ func TestReap(t *testing.T) {
 	m.SetAttached(att.ID, true)
 
 	now = now.Add(9 * time.Minute)
-	if reaped, _ := m.Reap(ctx, 10*time.Minute); len(reaped) != 0 {
+	if reaped, _ := m.Reap(ctx, 10*time.Minute, nobody); len(reaped) != 0 {
 		t.Fatalf("reaped %v before grace elapsed", reaped)
 	}
 	now = now.Add(2 * time.Minute)
-	reaped, err := m.Reap(ctx, 10*time.Minute)
+	reaped, err := m.Reap(ctx, 10*time.Minute, nobody)
 	if err != nil || len(reaped) != 1 || reaped[0].ID != eph.ID {
 		t.Fatalf("Reap = %v, %v; want only %s", reaped, err, eph.ID)
 	}
@@ -176,7 +176,7 @@ func TestReap(t *testing.T) {
 
 	m.SetAttached(att.ID, false)
 	now = now.Add(11 * time.Minute)
-	if reaped, _ := m.Reap(ctx, 10*time.Minute); len(reaped) != 1 || reaped[0].ID != att.ID {
+	if reaped, _ := m.Reap(ctx, 10*time.Minute, nobody); len(reaped) != 1 || reaped[0].ID != att.ID {
 		t.Fatalf("detached hook not reaped: %v", reaped)
 	}
 }
@@ -194,7 +194,7 @@ func TestReloadRestartsGrace(t *testing.T) {
 	if got, ok := m2.Get(h.ID); !ok || got.Path != h.Path {
 		t.Fatalf("hook lost on reload: %+v %v", got, ok)
 	}
-	if reaped, _ := m2.Reap(ctx, time.Minute); len(reaped) != 0 {
+	if reaped, _ := m2.Reap(ctx, time.Minute, nobody); len(reaped) != 0 {
 		t.Fatalf("reaped %v right after restart", reaped)
 	}
 }
@@ -212,3 +212,25 @@ func TestDelete(t *testing.T) {
 		t.Fatalf("second delete: %v", err)
 	}
 }
+
+// A stale "detached" mark (from a tunnel that dropped while a new one was
+// attaching) must not get a hook reaped while the registry still serves it.
+func TestReapSkipsServedHooks(t *testing.T) {
+	m := newManager(t, t.TempDir())
+	now := time.Unix(1000, 0)
+	m.now = func() time.Time { return now }
+	h, _ := m.Create(ctx, receiver, CreateRequest{Path: "eph", Ephemeral: true})
+	m.SetAttached(h.ID, true)
+	m.SetAttached(h.ID, false) // stale write from the old tunnel's detach
+	now = now.Add(time.Hour)
+	served := func(id ID) bool { return id == h.ID }
+	if reaped, _ := m.Reap(ctx, time.Minute, served); len(reaped) != 0 {
+		t.Fatalf("reaped %v although a tunnel serves it", reaped)
+	}
+	now = now.Add(30 * time.Second)
+	if reaped, _ := m.Reap(ctx, time.Minute, func(ID) bool { return false }); len(reaped) != 0 {
+		t.Fatal("a hook seen served must get a fresh grace period")
+	}
+}
+
+func nobody(ID) bool { return false }

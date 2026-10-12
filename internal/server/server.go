@@ -78,7 +78,10 @@ func (s *Server) RunReaper(ctx context.Context, interval time.Duration) {
 			return
 		case <-t.C:
 		}
-		reaped, err := s.hooks.Reap(ctx, s.cfg.EphemeralGrace)
+		reaped, err := s.hooks.Reap(ctx, s.cfg.EphemeralGrace, func(id hooks.ID) bool {
+			_, ok := s.tunnels.Lookup(string(id))
+			return ok
+		})
 		if err != nil {
 			s.audit.Slog().Error("reaping ephemeral hooks failed", "error", err)
 		}

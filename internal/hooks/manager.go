@@ -242,8 +242,10 @@ func (m *Manager) SetAttached(id ID, attached bool) {
 }
 
 // Reap deletes ephemeral hooks that have had no tunnel for at least grace
-// and returns them.
-func (m *Manager) Reap(ctx context.Context, grace time.Duration) ([]Hook, error) {
+// and returns them. served reports whether a tunnel currently serves a hook;
+// it is the source of truth, because a detach can record "detached" after a
+// newer tunnel has already attached. Served hooks get a fresh grace period.
+func (m *Manager) Reap(ctx context.Context, grace time.Duration, served func(ID) bool) ([]Hook, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	now := m.now()
@@ -251,6 +253,10 @@ func (m *Manager) Reap(ctx context.Context, grace time.Duration) ([]Hook, error)
 	for id, since := range m.detached {
 		h := m.hooks[id]
 		if !h.Ephemeral || now.Sub(since) < grace {
+			continue
+		}
+		if served(id) {
+			m.detached[id] = now
 			continue
 		}
 		if err := m.store.DeleteHook(ctx, id); err != nil {
