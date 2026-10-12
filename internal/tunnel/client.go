@@ -61,7 +61,7 @@ func Serve(ctx context.Context, conn net.Conn, h http.Handler, onControl func(Co
 	stop := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stop()
 	srv := &http2.Server{
-		MaxConcurrentStreams: DefaultConcurrency,
+		MaxConcurrentStreams: clientMaxStreams,
 		ReadIdleTimeout:      pingInterval,
 		PingTimeout:          pingInterval,
 	}

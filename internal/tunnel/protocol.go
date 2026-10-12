@@ -20,6 +20,10 @@ const (
 	pingInterval       = 15 * time.Second
 	// ControlTimeout bounds how long delivering a control message may take.
 	ControlTimeout = 5 * time.Second
+	// clientMaxStreams is the CLI's SETTINGS_MAX_CONCURRENT_STREAMS. It is
+	// far above any sensible --tunnel-concurrency: the relay's semaphore is
+	// the real limit, and control messages, which bypass it, never starve.
+	clientMaxStreams = 1000
 )
 
 type ControlType string

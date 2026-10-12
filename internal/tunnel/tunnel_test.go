@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -149,5 +150,54 @@ func TestDialReturnsProblem(t *testing.T) {
 	var p *problem.Problem
 	if !errors.As(err, &p) || p.Status != 403 {
 		t.Fatalf("Dial err = %v, want 403 problem", err)
+	}
+}
+
+// The relay's semaphore is the only concurrency limit (plan 1 minor 6): a
+// relay configured above the default must not be capped by the CLI's
+// stream limit, and control messages still get through while every slot
+// is busy.
+func TestConcurrencyAboveDefault(t *testing.T) {
+	const n = 40
+	entered := make(chan struct{}, n)
+	release := make(chan struct{})
+	stop := sync.OnceFunc(func() { close(release) })
+	tun, _ := tunneltest.Pair(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		entered <- struct{}{}
+		<-release
+	}), tunnel.Options{Concurrency: n}, nil)
+	t.Cleanup(stop) // runs before Pair's cleanup, so handlers return first
+
+	errs := make(chan error, n)
+	for range n {
+		go func() {
+			req, _ := http.NewRequest("GET", "http://tunnel/slow", nil)
+			resp, err := tun.RoundTrip(req)
+			if err == nil {
+				resp.Body.Close()
+			}
+			errs <- err
+		}()
+	}
+	for in := 0; in < n; {
+		select {
+		case <-entered:
+			in++
+		case err := <-errs:
+			t.Fatalf("a call failed with %d of %d in flight: %v", in, n, err)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("only %d of %d calls reached the CLI", in, n)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := tun.Send(ctx, tunnel.Control{Type: tunnel.ControlAttached}); err != nil {
+		t.Fatalf("control message while saturated: %v", err)
+	}
+	stop()
+	for range n {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
 	}
 }
