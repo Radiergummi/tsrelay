@@ -21,6 +21,7 @@ Usage:
   tsrelay hooks ls|create|update|rm                    manage your hooks
   tsrelay url [<port|url>]                             print the URL tsrelay http would use
   tsrelay serve [flags]                                run the relay (as its own tailnet node)
+  tsrelay version                                      print the relay version
 
 Run "tsrelay <command> --help" for the flags of a command.
 `
@@ -54,6 +55,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 		return hooksCmd(ctx, args[1:], stdout, stderr, d)
 	case "url":
 		return urlCmd(ctx, args[1:], stdout, stderr, d)
+	case "version":
+		return versionCmd(stdout)
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0

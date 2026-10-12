@@ -63,6 +63,49 @@ Grants can scope senders to receivers with channel patterns (`*` matches anythin
 
 Hooks are created in channel `default` unless you choose another one with `--channel`. A grant without `channels` means `["*"]`. Scope sender grants first, because they are the broad ones.
 
+## Hook settings
+
+Every hook has delivery settings, each with a relay-wide default and maximum (`--hook-<setting>-default` / `--hook-<setting>-max`, above):
+
+| Setting | Default | |
+|---|---|---|
+| `attachPolicy` | `takeover` | `reject` fails a second tunnel's attach with `409` instead of replacing the first |
+| `hostHeader` | `preserve` | `rewrite` sets `Host` to your local target's host instead of the relay's |
+| `holdTimeout` | `30s` | How long a call waits for a tunnel to attach; `0` disables holding |
+| `responseTimeout` | `2m` | How long to wait for your app's response headers |
+| `idleTimeout` | `60s` | Longest gap in body traffic, either direction, before the call fails |
+| `maxBodyBytes` | unlimited | Request body size limit |
+| `rateLimit` | `100/200` | Calls per second and burst, per hook |
+
+Set them when creating or updating a persistent hook:
+
+```bash
+tsrelay hooks create payments/v1 --rate-limit 10/20 --host-header rewrite
+tsrelay hooks update payments/v1 --hold-timeout 0s
+```
+
+`tsrelay http` always uses the relay defaults; use `tsrelay hooks create` plus `tsrelay attach` for a hook with custom settings.
+
+## Managing hooks
+
+```bash
+tsrelay hooks ls [--json]                            # your hooks
+tsrelay hooks create [<path>] [flags]                # create a persistent hook
+tsrelay hooks update <id|path> [flags]               # change one (only the given flags)
+tsrelay hooks rm <id|path>...                         # delete one or more
+tsrelay url [<port|url>]                              # print the URL tsrelay http would use, without contacting the relay
+tsrelay attach <id|path>... --forward-to <port|url>   # serve existing hooks from one local target
+```
+
+`tsrelay http` and `tsrelay attach` both accept:
+- `--insecure` to skip TLS certificate verification when the target is `https://` (self-signed local certificates).
+- `--json` to print one JSON event per line on stdout (`url`, `connected`, `disconnected`, `call`, `stopped`) instead of text; useful for scripting.
+
+`tsrelay http` additionally accepts `-- cmd args...` to start a local process with `TSRELAY_URL` set in its environment, and stop it (SIGTERM, then a kill after 5s) when the tunnel ends:
+```bash
+tsrelay http 8080 -- npm run dev
+```
+
 ## What your app receives
 
 Bodies arrive exactly as sent, byte for byte, so signatures from Stripe, GitHub, Svix, or [Standard Webhooks](https://www.standardwebhooks.com/) verify normally. The relay adds these headers, after removing any copies the sender sent:
@@ -83,12 +126,14 @@ Errors produced by the relay itself are `application/problem+json` responses and
 | `Tsrelay-Error` | Status | Meaning |
 |---|---|---|
 | `sender_forbidden` | 403 | The caller has no sender grant |
-| `hook_not_found` | 404 | No such hook, or not in the caller's channels |
-| `tunnel_unavailable` | 503 | No tunnel attached; retry later |
-| `tunnel_overloaded` | 503 | Too many concurrent calls on the tunnel |
+| `hook_not_found` | 404 | No such hook, not in the caller's channels, or it was deleted/expired while a call was held for it |
+| `body_too_large` | 413 | Over the hook's `maxBodyBytes` (unlimited by default) |
+| `rate_limited` | 429 | Over the hook's `rateLimit` (100/s, burst 200 by default); `Retry-After` is the limiter's wait, rounded up to whole seconds |
+| `tunnel_unavailable` | 503 | No tunnel attached within `holdTimeout` (30s by default), or more than `--hold-queue` calls are already waiting; `Retry-After` is `holdTimeout`, but never less than 5s |
+| `tunnel_overloaded` | 503 | Too many concurrent calls on the tunnel; `Retry-After: 1` |
 | `upstream_unreachable` | 502 | The tunnel is up but your app is not listening |
 | `tunnel_lost` | 502 | The tunnel dropped mid-call |
-| `upstream_timeout` | 504 | Your app did not answer within `--response-timeout` |
+| `upstream_timeout` | 504 | Your app did not answer within the hook's `responseTimeout`, or a response stalled past `idleTimeout` |
 
 ## Relay configuration
 
@@ -103,8 +148,14 @@ Every flag can also be set as an environment variable: `--ephemeral-grace` becom
 | `--user-slug` | `local-part` | `moritz@example.com` → `~moritz`; `login` uses the full login |
 | `--user-slug-override` | | `alice@b.com=alice-b`, for collisions |
 | `--max-hooks-default` / `--max-tunnels-default` | `10` / `5` | Per user; grants can raise them with `maxHooks` / `maxTunnels` |
+| `--max-hook-ttl-default` | unlimited | Longest a persistent hook may live; grants can raise it with `maxHookTTL` |
 | `--ephemeral-grace` | `10m` | How long a hook survives without its tunnel |
-| `--response-timeout` | `2m` | |
+| `--tunnel-concurrency` | `32` | Concurrent calls per tunnel |
+| `--hold-queue` | `100` | Calls per hook that may wait for a tunnel to attach at once |
+| `--revalidate-interval` | `60s` | How often an attached tunnel's grant is re-checked |
+| `--ops-listen` | off | Host address (e.g. `:9090`) for `/healthz`, `/readyz` and `/metrics`; never on the tailnet |
+
+Every numeric or duration setting from [Hook settings](#hook-settings) also has a relay-wide default and maximum flag, named `--hook-<setting>-default` and `--hook-<setting>-max`, for example `--hook-rate-limit-default=100/200` and `--hook-max-body-bytes-max=10485760`; `attachPolicy` and `hostHeader` only get a `-default` flag, since there's no sensible maximum for them. A hook may only set a value within the relay's maximum. `--response-timeout` still works as a deprecated alias of `--hook-response-timeout-default`.
 
 The audit log is JSON on stderr. It never contains bodies, query strings, or header values.
 
@@ -121,8 +172,24 @@ The automated tests cover everything except real certificates. Before a release:
 ## Development
 
 ```bash
+go vet ./...
+gofmt -l .                                         # expect no output
 go test -race ./...                                # everything except the tailnet test
 go test -race -tags tailnet ./internal/server      # real tsnet nodes against an in-process control server
 ```
 
+`.github/workflows/ci.yml` runs the same four commands on every push and pull request. `.github/workflows/release.yml` builds binaries and a container image for tags matching `v*`; `tsrelay version` reports the version baked in at build time (`dev` for a local build).
+
 The design is in [docs/DESIGN.md](docs/DESIGN.md).
+
+## Metrics and deployment
+
+With `--ops-listen=:9090`, the relay serves `/healthz` (process alive), `/readyz` (tailnet joined and the hook store loaded) and `/metrics` (Prometheus text format: `tsrelay_calls_total`, `tsrelay_call_bytes_total`, `tsrelay_tunnels`, `tsrelay_hooks`, `tsrelay_held_calls`, `tsrelay_authz_denials_total`) — never on the tailnet interface.
+
+Ship it as:
+- a static binary (`go build ./cmd/tsrelay`, or download one from a [release](../../releases))
+- a container image, `ghcr.io/radiergummi/tsrelay` (see the `Dockerfile`)
+- Kubernetes, with `deploy/kubernetes/` (a `StatefulSet` with `replicas: 1`, a `Secret` example, no `Service` — the relay is reached over the tailnet only)
+- Docker Compose, with `deploy/compose.yaml`
+
+Run exactly one relay per state directory (`--state-dir`); see DESIGN.md §11 and §14.

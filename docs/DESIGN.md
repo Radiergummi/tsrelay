@@ -175,7 +175,7 @@ The grant's `ip` part is what gives network access. The `app` part only authoriz
 | Every callback request | `WhoIs` on the connection: the caller must be a sender whose patterns match the hook's channel. |
 | Every API request | `WhoIs`. Writes are re-checked against the effective grant: channel, limits, TTL. |
 | Tunnel attach | `WhoIs`: the caller must own every hook it attaches, be a receiver, and stay within `maxTunnels`. |
-| Attached tunnels, every 60 s (configurable) | `WhoIs` again. A tunnel that is no longer authorized is detached with reason `revoked`. Hooks whose channel the owner no longer matches stop delivering (`403` on the API, `404` to senders) until the grant comes back. They are not deleted. |
+| Attached tunnels, every `--revalidate-interval` (60 s default) | `WhoIs` again. A tunnel whose caller is no longer authorized at all is detached with reason `revoked` and closed; one that keeps some hooks but loses others only has those hooks detached, with the same `revoked` control sent naming them. A revalidation started before a takeover never undoes that takeover: it only detaches hooks the checked tunnel still serves at the moment it applies the result. |
 
 Because a hook can only deliver through a live tunnel from its owner, revoking a grant takes effect within one revalidation interval, even for persistent hooks.
 
@@ -241,7 +241,7 @@ Delivery is **synchronous pass-through.** The sender receives the local applicat
 
 - **Bodies are byte-exact** in both directions. There is no parsing, re-encoding or decompression, so signatures over the raw body (Stripe, GitHub, Svix and Standard Webhooks) still verify. A test asserts this (§16).
 - **Hop-by-hop headers** are removed as RFC 9110 requires. All other headers pass through, and so do trailers.
-- **`Host`** is preserved by default (`hostHeader: preserve`). Setting `rewrite` sets it to the local target's host instead, for dev servers that reject unknown hosts.
+- **`Host`** is preserved by default (`hostHeader: preserve`). Setting `rewrite` sets it to the local target's host instead, for dev servers that reject unknown hosts. The relay does not know the local target, so it signals this to the CLI with the tunnel-internal header `Tsrelay-Tunnel-Host: rewrite` on the HTTP/2 request it sends down the tunnel. A sender can never forge this: every incoming `Tsrelay-*` header is stripped first (below), and the header never reaches the local application either, because the CLI's forwarder deletes it after acting on it.
 - **Added headers:** `X-Forwarded-For` (the sender's tailnet IP), `X-Forwarded-Host`, `X-Forwarded-Proto` and `X-Forwarded-Prefix`. Together these let URL-signing schemes, such as Twilio's, rebuild the original URL.
 - **Sender identity** is passed on to the local application. Every incoming `Tsrelay-*` header is deleted first, the same strip-then-set pattern `tailscale serve` uses (`ipn/ipnlocal/serve.go`). Then the relay sets:
   - `Tsrelay-Sender-Node`: the sender's node name
@@ -253,7 +253,7 @@ Delivery is **synchronous pass-through.** The sender receives the local applicat
 
 ### 7.3 Hold for reconnect
 
-If a call arrives while no tunnel is attached to its hook, the relay waits up to `holdTimeout` (30 s by default) for one to attach before it forwards anything. Nothing has been read from the request body at that point, so streamed bodies are safe to hold. Held calls count against a per-hook limit of 100. Beyond that, calls fail immediately with `503`.
+If a call arrives while no tunnel is attached to its hook, the relay waits up to `holdTimeout` (30 s by default) for one to attach before it forwards anything. Nothing has been read from the request body at that point, so streamed bodies are safe to hold. Held calls count against `--hold-queue` per hook (100 by default); beyond that, or once `holdTimeout` elapses, the call fails with `503 tunnel_unavailable` and `Retry-After: max(5s, holdTimeout)`, rounded up to whole seconds. A hook deleted, or expiring, while calls are held for it releases them at once with `404 hook_not_found`, rather than waiting out `holdTimeout`.
 
 A call already **in flight** when its tunnel drops cannot be retried, because its body has been partly consumed. It fails with `502 tunnel_lost`. Buffered replay is on the backlog (§17).
 
@@ -266,8 +266,8 @@ Errors produced by the relay itself use `application/problem+json` (RFC 9457) an
 | `sender_forbidden` | 403 | Caller has no `sender` role at all |
 | `hook_not_found` | 404 | No such hook, or the sender's channels don't match it. The two cases are deliberately indistinguishable to the sender; the owner sees channel-denied calls in the inspector. |
 | `body_too_large` | 413 | Over `maxBodyBytes` (unlimited by default) |
-| `rate_limited` | 429 + `Retry-After` | Hook rate limit exceeded |
-| `tunnel_unavailable` | 503 + `Retry-After` | No tunnel attached within `holdTimeout`, or the hold queue is full |
+| `rate_limited` | 429 + `Retry-After` | Hook rate limit exceeded. `Retry-After` is the limiter's wait, rounded up to whole seconds, at least 1. |
+| `tunnel_unavailable` | 503 + `Retry-After` | No tunnel attached within `holdTimeout`, or the hold queue is full. `Retry-After` is `max(5s, holdTimeout)`, rounded up to whole seconds. |
 | `tunnel_overloaded` | 503 + `Retry-After: 1` | Per-tunnel concurrency limit reached |
 | `upstream_unreachable` | 502 | The CLI could not connect to the local target. The CLI reports this as a 502 with its own `Tsrelay-Error`, which the relay passes through. |
 | `tunnel_lost` | 502 | Tunnel dropped mid-call |
@@ -419,7 +419,7 @@ v1 has **no config file**. Flags and environment variables cover binaries and co
 
 **Ops listener** (`--ops-listen=:9090`, off by default, **never** bound on the tailnet interface): `/healthz` (process alive), `/readyz` (tsnet up and the store loaded), `/metrics`. The shipped Kubernetes manifests enable it on the pod IP for probes.
 
-**Metrics:** hand-written Prometheus text format, with no client library.
+**Metrics:** hand-written Prometheus text format, with no client library. Counters are derived from audit events through an `audit.Logger` observer hook, so the request path gets no second instrumentation layer; gauges are read from the tunnel registry and the hook manager at scrape time.
 - `tsrelay_calls_total{outcome}`
 - `tsrelay_call_bytes_total{direction}`
 - `tsrelay_tunnels`
