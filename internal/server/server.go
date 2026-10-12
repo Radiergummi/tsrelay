@@ -38,7 +38,10 @@ type Server struct {
 
 	// identifier re-identifies tunnel owners during revalidation.
 	identifier identify.Identifier
-	metrics    *metrics.Registry
+	// identifyFailures counts each tunnel's consecutive failed identifications
+	// during revalidation. Only the revalidator touches it.
+	identifyFailures map[*tunnel.Tunnel]int
+	metrics          *metrics.Registry
 }
 
 func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logger) *Server {

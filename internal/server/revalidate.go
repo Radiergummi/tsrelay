@@ -14,6 +14,10 @@ import (
 // identifyTimeout bounds one WhoIs during revalidation.
 const identifyTimeout = 10 * time.Second
 
+// maxIdentifyFailures is how many revalidations in a row may fail to identify
+// a tunnel's node before its hooks are revoked.
+const maxIdentifyFailures = 3
+
 // RunRevalidator re-authorizes every attached tunnel every interval until
 // ctx is done (DESIGN.md §5.5).
 func (s *Server) RunRevalidator(ctx context.Context, interval time.Duration) {
@@ -32,7 +36,13 @@ func (s *Server) RunRevalidator(ctx context.Context, interval time.Duration) {
 // revalidate identifies each tunnel's client again and revokes the hooks
 // its owner may no longer serve.
 func (s *Server) revalidate(ctx context.Context) {
-	for t, hookIDs := range s.tunnels.Snapshot() {
+	snapshot := s.tunnels.Snapshot()
+	for t := range s.identifyFailures {
+		if _, ok := snapshot[t]; !ok {
+			delete(s.identifyFailures, t)
+		}
+	}
+	for t, hookIDs := range snapshot {
 		if ctx.Err() != nil {
 			return
 		}
@@ -47,10 +57,22 @@ func (s *Server) check(ctx context.Context, t *tunnel.Tunnel, hookIDs []string) 
 	ictx, cancel := context.WithTimeout(ctx, identifyTimeout)
 	defer cancel()
 	id, err := s.identifier.Identify(ictx, t.RemoteAddr)
+	if err == nil {
+		delete(s.identifyFailures, t)
+	}
 	switch {
 	case err != nil && ctx.Err() != nil:
 		return nil, "" // shutting down; nothing was revoked
 	case err != nil:
+		// WhoIs can fail transiently; revoke only after repeated failures.
+		if s.identifyFailures == nil {
+			s.identifyFailures = map[*tunnel.Tunnel]int{}
+		}
+		s.identifyFailures[t]++
+		if s.identifyFailures[t] < maxIdentifyFailures {
+			return nil, ""
+		}
+		delete(s.identifyFailures, t)
 		return hookIDs, "the node could not be identified"
 	case !id.IsUser():
 		return hookIDs, "the node no longer belongs to a user"

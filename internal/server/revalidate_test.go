@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
@@ -134,5 +135,72 @@ func TestRevalidationRacingTakeover(t *testing.T) {
 	}
 	if strings.Contains(e.log.String(), `"msg":"tunnel.revoked"`) {
 		t.Fatal("a revocation that detached nothing was audited")
+	}
+}
+
+func TestRevalidateToleratesTransientIdentifyErrors(t *testing.T) {
+	e := newEnv(t, Config{})
+	ctx := context.Background()
+	hook, _ := e.api.CreateHook(ctx, hooks.CreateRequest{Path: "cb"})
+	controls, _ := e.startClient(hook.ID)
+
+	e.fake.Fail(errors.New("whois: timeout"))
+	for range maxIdentifyFailures - 1 {
+		e.srv.revalidate(ctx)
+	}
+	if _, ok := e.srv.tunnels.Lookup(hook.ID); !ok {
+		t.Fatal("transient identify errors revoked the hook")
+	}
+	// A success clears the count, so the next failures start over.
+	e.fake.Fail(nil)
+	e.srv.revalidate(ctx)
+	e.fake.Fail(errors.New("whois: timeout"))
+	for range maxIdentifyFailures - 1 {
+		e.srv.revalidate(ctx)
+	}
+	if _, ok := e.srv.tunnels.Lookup(hook.ID); !ok {
+		t.Fatal("a success did not reset the failure count")
+	}
+	e.srv.revalidate(ctx)
+	if c := receive(t, controls); c.Type != tunnel.ControlRevoked || len(c.Hooks) != 1 || c.Hooks[0].ID != hook.ID {
+		t.Fatalf("control = %+v, want revoked after %d consecutive failures", c, maxIdentifyFailures)
+	}
+	if len(e.srv.identifyFailures) != 0 {
+		t.Fatalf("failure counts = %v, want the closed tunnel forgotten", e.srv.identifyFailures)
+	}
+}
+
+func TestRevalidateForgetsGoneTunnels(t *testing.T) {
+	e := newEnv(t, Config{})
+	hook, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	e.startClient(hook.ID)
+	e.fake.Fail(errors.New("whois: timeout"))
+	e.srv.revalidate(context.Background())
+	if len(e.srv.identifyFailures) != 1 {
+		t.Fatalf("failure counts = %v, want one", e.srv.identifyFailures)
+	}
+	tun, _ := e.srv.tunnels.Lookup(hook.ID)
+	e.srv.tunnels.Detach(tun)
+	e.srv.revalidate(context.Background())
+	if len(e.srv.identifyFailures) != 0 {
+		t.Fatalf("failure counts = %v, want the detached tunnel forgotten", e.srv.identifyFailures)
+	}
+}
+
+func TestRevalidateRevokesChangedOwner(t *testing.T) {
+	for name, id := range map[string]authz.Identity{
+		"not a user":      identify.Tagged("laptop", []string{"tag:server"}, `{"roles":["receiver"]}`),
+		"another user ID": identify.User("laptop", "someone@example.com", 2, `{"roles":["receiver"]}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t, Config{})
+			hook, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+			controls, _ := e.startClient(hook.ID)
+			e.fake.Update(id)
+			e.srv.revalidate(context.Background())
+			if c := receive(t, controls); c.Type != tunnel.ControlRevoked || len(c.Hooks) != 1 || c.Hooks[0].ID != hook.ID {
+				t.Fatalf("control = %+v, want revoked", c)
+			}
+		})
 	}
 }

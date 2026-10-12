@@ -17,16 +17,27 @@ import (
 type Fake struct {
 	mu     sync.Mutex
 	byAddr map[string]authz.Identity
+	err    error
 }
 
 func (f *Fake) Identify(_ context.Context, remoteAddr string) (authz.Identity, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.err != nil {
+		return authz.Identity{}, f.err
+	}
 	id, ok := f.byAddr[remoteAddr]
 	if !ok {
 		return authz.Identity{}, fmt.Errorf("fake: unknown peer %s", remoteAddr)
 	}
 	return id, nil
+}
+
+// Fail makes every Identify return err until Fail(nil), as if WhoIs failed.
+func (f *Fake) Fail(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.err = err
 }
 
 // Update replaces the identity of every connection from id's node, as if
