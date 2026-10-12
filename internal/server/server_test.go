@@ -233,3 +233,22 @@ func TestRootAndUnknownPaths(t *testing.T) {
 		t.Fatalf("GET /nope = %d", resp.StatusCode)
 	}
 }
+
+// An expiring hook is removed by the reaper even while a tunnel serves it,
+// and the CLI is told so.
+func TestPersistentHookExpires(t *testing.T) {
+	e := newEnv(t, Config{})
+	local := httptest.NewServer(http.NotFoundHandler())
+	defer local.Close()
+	exp := time.Now().Add(300 * time.Millisecond)
+	hook, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "short", ExpiresAt: &exp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.cli(hook.ID, local.URL)()
+	e.waitFor(func() bool {
+		hs, _ := e.api.ListHooks(context.Background())
+		return len(hs) == 0
+	})
+	e.waitFor(func() bool { return strings.Contains(e.log.String(), `"msg":"hook.expire"`) })
+}

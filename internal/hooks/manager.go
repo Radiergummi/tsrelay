@@ -256,8 +256,12 @@ func (m *Manager) Delete(ctx context.Context, id ID) error {
 func (m *Manager) Route(slug, rest string) (Hook, int, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	now := m.now()
 	for _, h := range m.hooks {
 		if h.Slug == slug && (rest == h.Path || strings.HasPrefix(rest, h.Path+"/")) {
+			if m.expiredLocked(h, now) {
+				return Hook{}, 0, false
+			}
 			return h, strings.Count(h.Path, "/") + 1, true
 		}
 	}
@@ -278,8 +282,9 @@ func (m *Manager) SetAttached(id ID, attached bool) {
 	}
 }
 
-// Reap deletes ephemeral hooks that have had no tunnel for at least grace
-// and returns them. served reports whether a tunnel currently serves a hook;
+// Reap deletes ephemeral hooks that have had no tunnel for at least grace,
+// and every hook whose expiry has passed, and returns them. served reports
+// whether a tunnel currently serves a hook;
 // it is the source of truth, because a detach can record "detached" after a
 // newer tunnel has already attached. Served hooks get a fresh grace period.
 func (m *Manager) Reap(ctx context.Context, grace time.Duration, served func(ID) bool) ([]Hook, error) {
@@ -294,6 +299,17 @@ func (m *Manager) Reap(ctx context.Context, grace time.Duration, served func(ID)
 		}
 		if served(id) {
 			m.detached[id] = now
+			continue
+		}
+		if err := m.store.DeleteHook(ctx, id); err != nil {
+			return reaped, err
+		}
+		delete(m.hooks, id)
+		delete(m.detached, id)
+		reaped = append(reaped, h)
+	}
+	for id, h := range m.hooks {
+		if !m.expiredLocked(h, now) {
 			continue
 		}
 		if err := m.store.DeleteHook(ctx, id); err != nil {

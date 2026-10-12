@@ -39,6 +39,12 @@ func (c *API) CreateHook(ctx context.Context, req hooks.CreateRequest) (api.Hook
 	return h, err
 }
 
+func (c *API) UpdateHook(ctx context.Context, id string, req hooks.UpdateRequest) (api.Hook, error) {
+	var h api.Hook
+	err := c.do(ctx, http.MethodPatch, "/api/v1/hooks/"+url.PathEscape(id), req, &h)
+	return h, err
+}
+
 func (c *API) DeleteHook(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodDelete, "/api/v1/hooks/"+url.PathEscape(id), nil, nil)
 }

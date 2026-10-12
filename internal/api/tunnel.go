@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
@@ -14,8 +13,6 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
-
-const controlTimeout = 5 * time.Second
 
 func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 	if !tunnel.IsUpgrade(r) {
@@ -73,7 +70,7 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 		for i, h := range rep.Hooks {
 			infos[i] = tunnel.HookInfo{ID: h}
 		}
-		go notify(rep.Tunnel, tunnel.Control{Type: tunnel.ControlReplaced, Hooks: infos}, rep.Orphaned)
+		rep.Tunnel.Notify(tunnel.Control{Type: tunnel.ControlReplaced, Hooks: infos}, rep.Orphaned)
 	}
 	infos := make([]tunnel.HookInfo, len(attached))
 	for i, h := range attached {
@@ -81,7 +78,7 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 		infos[i] = tunnel.HookInfo{ID: string(h.ID), URL: a.BaseURL + h.Route()}
 	}
 	a.Audit.Log(ctx, audit.TunnelAttach, audit.Actor(id), slog.String("tunnel", t.ID), slog.Any("hooks", hookIDs))
-	go notify(t, tunnel.Control{Type: tunnel.ControlAttached, Hooks: infos}, false)
+	t.Notify(tunnel.Control{Type: tunnel.ControlAttached, Hooks: infos}, false)
 
 	go func() {
 		<-t.Done()
@@ -90,15 +87,4 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 		}
 		a.Audit.Log(ctx, audit.TunnelDetach, audit.Actor(id), slog.String("tunnel", t.ID))
 	}()
-}
-
-// notify sends a control message and closes the tunnel afterwards if it no
-// longer serves any hooks.
-func notify(t *tunnel.Tunnel, c tunnel.Control, closeAfter bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), controlTimeout)
-	defer cancel()
-	_ = t.Send(ctx, c)
-	if closeAfter {
-		t.Close()
-	}
 }

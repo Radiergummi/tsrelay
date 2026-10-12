@@ -15,6 +15,8 @@ const (
 
 	DefaultConcurrency = 32
 	pingInterval       = 15 * time.Second
+	// ControlTimeout bounds how long delivering a control message may take.
+	ControlTimeout = 5 * time.Second
 )
 
 type ControlType string

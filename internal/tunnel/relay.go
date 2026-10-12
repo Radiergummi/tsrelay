@@ -143,3 +143,16 @@ func (t *Tunnel) Send(ctx context.Context, c Control) error {
 	}
 	return nil
 }
+
+// Notify sends c in the background and then closes the tunnel if
+// closeAfter is set, e.g. because it no longer serves any hooks.
+func (t *Tunnel) Notify(c Control, closeAfter bool) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), ControlTimeout)
+		defer cancel()
+		_ = t.Send(ctx, c)
+		if closeAfter {
+			t.Close()
+		}
+	}()
+}

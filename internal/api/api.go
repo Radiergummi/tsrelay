@@ -42,15 +42,18 @@ type Limits struct {
 }
 
 type Hook struct {
-	ID          string      `json:"id"`
-	URL         string      `json:"url"`
-	Owner       string      `json:"owner"`
-	Path        string      `json:"path"`
-	Channel     string      `json:"channel"`
-	Description string      `json:"description,omitempty"`
-	Ephemeral   bool        `json:"ephemeral"`
-	CreatedAt   time.Time   `json:"createdAt"`
-	Tunnel      *TunnelInfo `json:"tunnel,omitempty"`
+	ID          string          `json:"id"`
+	URL         string          `json:"url"`
+	Owner       string          `json:"owner"`
+	Path        string          `json:"path"`
+	Channel     string          `json:"channel"`
+	Description string          `json:"description,omitempty"`
+	Ephemeral   bool            `json:"ephemeral"`
+	ExpiresAt   *time.Time      `json:"expiresAt,omitempty"`
+	Settings    hooks.Settings  `json:"settings"`
+	Effective   hooks.Effective `json:"effective"`
+	CreatedAt   time.Time       `json:"createdAt"`
+	Tunnel      *TunnelInfo     `json:"tunnel,omitempty"`
 }
 
 type TunnelInfo struct {
@@ -63,6 +66,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/hooks", a.authed(a.listHooks))
 	mux.Handle("POST /api/v1/hooks", a.authed(a.createHook))
 	mux.Handle("GET /api/v1/hooks/{id}", a.authed(a.getHook))
+	mux.Handle("PATCH /api/v1/hooks/{id}", a.authed(a.updateHook))
 	mux.Handle("DELETE /api/v1/hooks/{id}", a.authed(a.deleteHook))
 	mux.Handle("GET /api/v1/tunnel", a.authed(a.tunnel))
 }
@@ -147,6 +151,34 @@ func (a *API) getHook(w http.ResponseWriter, r *http.Request, id authz.Identity)
 	writeJSON(w, http.StatusOK, a.hookJSON(h))
 }
 
+func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	var req hooks.UpdateRequest
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		problem.New(http.StatusBadRequest, problem.BadRequest, "invalid JSON: "+err.Error()).Write(w)
+		return
+	}
+	h, changed, err := a.Hooks.Update(r.Context(), id, hooks.ID(r.PathValue("id")), req)
+	var ve hooks.ValidationError
+	switch {
+	case errors.Is(err, hooks.ErrNotFound):
+		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
+		return
+	case errors.As(err, &ve):
+		p := problem.New(http.StatusUnprocessableEntity, problem.Invalid, ve.Error())
+		p.Errors = ve
+		p.Write(w)
+		return
+	case err != nil:
+		a.Audit.Slog().Error("hook.update failed", "error", err)
+		problem.New(http.StatusInternalServerError, problem.Internal, "could not save the hook").Write(w)
+		return
+	}
+	a.Audit.Log(r.Context(), audit.HookUpdate, audit.Actor(id), audit.Hook(h), slog.Any("changed", changed))
+	writeJSON(w, http.StatusOK, a.hookJSON(h))
+}
+
 func (a *API) deleteHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 	h, ok := a.visibleHook(r, id)
 	if !ok {
@@ -159,7 +191,7 @@ func (a *API) deleteHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		return
 	}
 	if t, orphaned, attached := a.Tunnels.DetachHook(string(h.ID)); attached {
-		go notify(t, tunnel.Control{Type: tunnel.ControlHookDeleted, Hooks: []tunnel.HookInfo{{ID: string(h.ID)}}}, orphaned)
+		t.Notify(tunnel.Control{Type: tunnel.ControlHookDeleted, Hooks: []tunnel.HookInfo{{ID: string(h.ID)}}}, orphaned)
 	}
 	a.Audit.Log(r.Context(), audit.HookDelete, audit.Actor(id), audit.Hook(h))
 	w.WriteHeader(http.StatusNoContent)
@@ -177,7 +209,8 @@ func (a *API) visibleHook(r *http.Request, id authz.Identity) (hooks.Hook, bool)
 func (a *API) hookJSON(h hooks.Hook) Hook {
 	out := Hook{
 		ID: string(h.ID), URL: a.BaseURL + h.Route(), Owner: h.OwnerLogin, Path: h.Path,
-		Channel: h.Channel, Description: h.Description, Ephemeral: h.Ephemeral, CreatedAt: h.CreatedAt,
+		Channel: h.Channel, Description: h.Description, Ephemeral: h.Ephemeral, ExpiresAt: h.ExpiresAt,
+		Settings: h.Settings, Effective: a.Hooks.Effective(h), CreatedAt: h.CreatedAt,
 	}
 	if t, ok := a.Tunnels.Lookup(string(h.ID)); ok {
 		out.Tunnel = &TunnelInfo{ID: t.ID, Node: t.Owner.NodeName}

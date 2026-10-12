@@ -87,6 +87,9 @@ func (s *Server) RunReaper(ctx context.Context, interval time.Duration) {
 		}
 		for _, h := range reaped {
 			s.audit.Log(ctx, audit.HookExpire, audit.Hook(h))
+			if t, orphaned, ok := s.tunnels.DetachHook(string(h.ID)); ok {
+				t.Notify(tunnel.Control{Type: tunnel.ControlHookDeleted, Hooks: []tunnel.HookInfo{{ID: string(h.ID)}}}, orphaned)
+			}
 		}
 	}
 }

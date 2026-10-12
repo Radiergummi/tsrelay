@@ -281,3 +281,32 @@ func TestResumeCannotTakeOverOtherSessions(t *testing.T) {
 		t.Fatalf("resuming the serving session (stale half-open tunnel) must work: %v", err)
 	}
 }
+
+func TestPatchHook(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/api/v1/hooks", map[string]any{"path": "cb", "settings": map[string]any{"holdTimeout": "5s"}}, &h)
+	if h.Effective.HoldTimeout != hooks.Duration(5*time.Second) || h.Settings.HoldTimeout == nil {
+		t.Fatalf("created = %+v", h)
+	}
+
+	var got Hook
+	resp := e.call(moritz, "PATCH", "/api/v1/hooks/"+h.ID, map[string]any{"description": "pay", "settings": map[string]any{"holdTimeout": nil}}, &got)
+	if resp.StatusCode != 200 || got.Description != "pay" || got.Settings.HoldTimeout != nil || got.Effective.HoldTimeout != hooks.DefaultPolicy.Defaults.HoldTimeout {
+		t.Fatalf("patch = %d %+v", resp.StatusCode, got)
+	}
+
+	var p problem.Problem
+	if resp := e.call(moritz, "PATCH", "/api/v1/hooks/"+h.ID, map[string]any{"channel": "billing"}, &p); resp.StatusCode != 422 {
+		t.Fatalf("invalid patch = %d", resp.StatusCode)
+	}
+	if resp := e.call(moritz, "PATCH", "/api/v1/hooks/"+h.ID, map[string]any{"bogus": 1}, nil); resp.StatusCode != 400 {
+		t.Fatalf("unknown field = %d", resp.StatusCode)
+	}
+	if resp := e.call(other, "PATCH", "/api/v1/hooks/"+h.ID, map[string]any{"description": "x"}, nil); resp.StatusCode != 404 {
+		t.Fatalf("other user patch = %d", resp.StatusCode)
+	}
+	if resp := e.call(admin, "PATCH", "/api/v1/hooks/"+h.ID, map[string]any{"description": "x"}, nil); resp.StatusCode != 404 {
+		t.Fatalf("admins may delete but not edit others' hooks: %d", resp.StatusCode)
+	}
+}
