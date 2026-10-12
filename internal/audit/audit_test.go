@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
+	"slices"
 	"testing"
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
@@ -27,5 +29,17 @@ func TestLogShape(t *testing.T) {
 	actor, hook := rec["actor"].(map[string]any), rec["hook"].(map[string]any)
 	if actor["node"] != "laptop" || actor["login"] != "m@x.io" || hook["id"] != "h_1" || hook["channel"] != "default" {
 		t.Fatalf("record = %v", rec)
+	}
+}
+
+func TestObserver(t *testing.T) {
+	a := New(slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	var events []string
+	a.Observer = func(event string, attrs []slog.Attr) {
+		events = append(events, event+" "+attrs[0].Key+"="+attrs[0].Value.String())
+	}
+	a.Log(context.Background(), Call, slog.String("error", "hook_not_found"))
+	if !slices.Equal(events, []string{"call error=hook_not_found"}) {
+		t.Fatalf("observed %v", events)
 	}
 }

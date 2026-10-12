@@ -12,6 +12,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
+	"github.com/Radiergummi/tsrelay/internal/metrics"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
@@ -37,6 +38,7 @@ type Server struct {
 
 	// identifier re-identifies tunnel owners during revalidation.
 	identifier identify.Identifier
+	metrics    *metrics.Registry
 }
 
 func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logger) *Server {
@@ -45,6 +47,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	}
 	s := &Server{cfg: cfg, hooks: mgr, tunnels: tunnel.NewRegistry(), audit: al}
 	s.identifier = id
+	s.metrics, al.Observer = s.newMetrics()
 	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue}
 
 	mux := http.NewServeMux()

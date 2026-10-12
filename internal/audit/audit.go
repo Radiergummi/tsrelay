@@ -23,7 +23,12 @@ const (
 	AuthzDeny      = "authz.deny"
 )
 
-type Logger struct{ l *slog.Logger }
+type Logger struct {
+	l *slog.Logger
+	// Observer, if set, is called with every event after it was logged,
+	// e.g. to derive metrics. Set it before the Logger is first used.
+	Observer func(event string, attrs []slog.Attr)
+}
 
 func New(l *slog.Logger) *Logger { return &Logger{l: l} }
 
@@ -33,6 +38,9 @@ func (a *Logger) Slog() *slog.Logger { return a.l }
 // Log writes one audit event; the event name is the record's message.
 func (a *Logger) Log(ctx context.Context, event string, attrs ...slog.Attr) {
 	a.l.LogAttrs(ctx, slog.LevelInfo, event, attrs...)
+	if a.Observer != nil {
+		a.Observer(event, attrs)
+	}
 }
 
 // Actor describes the node that caused an event.

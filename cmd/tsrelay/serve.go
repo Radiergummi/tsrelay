@@ -48,6 +48,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	legacyResponseTimeout := fs.Duration("response-timeout", 0, "deprecated: use --hook-response-timeout-default")
 	concurrency := fs.Int("tunnel-concurrency", tunnel.DefaultConcurrency, "concurrent calls per tunnel")
 	revalidate := fs.Duration("revalidate-interval", time.Minute, "how often attached tunnels are re-authorized")
+	opsListen := fs.String("ops-listen", "", "host address for /healthz, /readyz and /metrics, e.g. :9090; never on the tailnet (empty: off)")
 	holdQueue := fs.Int("hold-queue", relay.DefaultHoldQueue, "calls per hook that may wait for a tunnel at once")
 	logFormat := fs.String("log-format", "json", `"json" or "text"`)
 	logLevel := fs.String("log-level", "info", "debug, info, warn or error")
@@ -106,6 +107,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		policy:     policy,
 		server:     server.Config{EphemeralGrace: *grace, HoldQueue: *holdQueue, Tunnel: tunnel.Options{Concurrency: *concurrency}},
 		revalidate: *revalidate,
+		opsListen:  *opsListen,
 	})
 	if err != nil {
 		logger.Error("relay stopped", "error", err)
@@ -124,9 +126,23 @@ type relayConfig struct {
 	policy             hooks.Policy
 	server             server.Config
 	revalidate         time.Duration
+	opsListen          string // host address of the ops listener; empty: off
 }
 
 func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
+	// The ops listener starts first, so liveness probes pass while tsnet
+	// joins the tailnet. It binds on the host network, never on tsnet.
+	ops := &server.Ops{}
+	if cfg.opsListen != "" {
+		opsLn, err := net.Listen("tcp", cfg.opsListen)
+		if err != nil {
+			return fmt.Errorf("--ops-listen: %w", err)
+		}
+		opsSrv := &http.Server{Handler: ops, ReadHeaderTimeout: 10 * time.Second}
+		go opsSrv.Serve(opsLn)
+		defer opsSrv.Close()
+	}
+
 	store, err := hooks.OpenJSON(cfg.stateDir)
 	if err != nil {
 		return err
@@ -190,6 +206,7 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 		ReadHeaderTimeout: 10 * time.Second,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
+	ops.Ready(srv)
 	logger.Info("relay ready", "url", cfg.server.BaseURL, "cap", string(cfg.cap), "stateDir", cfg.stateDir)
 	errc := make(chan error, 1)
 	go func() { errc <- hs.Serve(ln) }()
