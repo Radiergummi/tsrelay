@@ -44,6 +44,8 @@ func TestDockerfile(t *testing.T) {
 		// The nonroot user (65532) must own the state directory.
 		"RUN mkdir -p /out/var/lib/tsrelay",
 		"COPY --from=builder --chown=65532:65532 /out/var/lib/tsrelay /var/lib/tsrelay",
+		// A numeric user, so that the kubelet can verify runAsNonRoot.
+		"USER 65532:65532",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("Dockerfile missing %q", want)
@@ -77,6 +79,8 @@ func TestKubernetesStatefulSet(t *testing.T) {
 		// The volume must be writable by the image's nonroot user.
 		"fsGroup: 65532",
 		"runAsNonRoot: true",
+		"runAsUser: 65532",
+		"runAsGroup: 65532",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("statefulset.yaml missing %q", want)

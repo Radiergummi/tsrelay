@@ -14,5 +14,5 @@ ENV TSRELAY_STATE_DIR=/var/lib/tsrelay
 COPY --from=builder --chown=65532:65532 /out/var/lib/tsrelay /var/lib/tsrelay
 VOLUME ["/var/lib/tsrelay"]
 COPY --from=builder /tsrelay /tsrelay
-USER nonroot:nonroot
+USER 65532:65532
 ENTRYPOINT ["/tsrelay", "serve"]
