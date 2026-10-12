@@ -204,3 +204,25 @@ func TestHTTPUsage(t *testing.T) {
 		}
 	}
 }
+
+// Reusing a hook whose channel or persistence differs from the flags would
+// silently ignore them; the CLI must say so instead.
+func TestHTTPRefusesMismatchedReuse(t *testing.T) {
+	e := newCLIEnv(t)
+	r1 := e.start("--name", "cb")
+	e.url(r1)
+	r1.cancel()
+	waitExit(t, r1)
+
+	for flag, want := range map[string]string{"--channel=prod": "channel", "--persistent": "ephemeral"} {
+		r := e.start("--name", "cb", flag)
+		if code := waitExit(t, r); code != 1 {
+			t.Fatalf("%s: exit = %d, want 1", flag, code)
+		}
+		if out := r.stderr.String(); !strings.Contains(out, want) || !strings.Contains(out, "cb") {
+			t.Errorf("%s: stderr should explain the mismatch:\n%s", flag, out)
+		}
+	}
+	r := e.start("--name", "cb", "--channel=default")
+	e.url(r) // matching flags still reuse the hook
+}

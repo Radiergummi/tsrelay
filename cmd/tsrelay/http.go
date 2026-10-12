@@ -149,9 +149,16 @@ func ensureHook(ctx context.Context, c *client.API, explicit, remembered string,
 			return api.Hook{}, err
 		}
 		for _, h := range existing {
-			if h.Path == want {
-				return h, nil
+			if h.Path != want {
+				continue
 			}
+			switch {
+			case req.Channel != "" && h.Channel != req.Channel:
+				return api.Hook{}, fmt.Errorf("your hook %q is in channel %q, not %q; delete it or pick another --name", h.Path, h.Channel, req.Channel)
+			case !req.Ephemeral && h.Ephemeral:
+				return api.Hook{}, fmt.Errorf("your hook %q is ephemeral, but --persistent was given; delete it or pick another --name", h.Path)
+			}
+			return h, nil
 		}
 	}
 	req.Path = want
