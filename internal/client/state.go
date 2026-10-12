@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 )
 
 // State remembers which hook the CLI used per relay, working directory and
@@ -120,4 +122,20 @@ func writeFileAtomic(path string, b []byte) error {
 
 func StateKey(relayURL, dir string, target *url.URL) string {
 	return relayURL + " " + dir + " " + target.String()
+}
+
+// Targets returns the targets with a remembered hook for relayURL and dir,
+// sorted.
+func (s *State) Targets(relayURL, dir string) []string {
+	prefix := StateKey(relayURL, dir, &url.URL{})
+	var targets []string
+	for k := range s.Paths {
+		// Targets never contain spaces; a remainder with one belongs to a
+		// directory that merely starts with dir.
+		if t, ok := strings.CutPrefix(k, prefix); ok && t != "" && !strings.Contains(t, " ") {
+			targets = append(targets, t)
+		}
+	}
+	slices.Sort(targets)
+	return targets
 }

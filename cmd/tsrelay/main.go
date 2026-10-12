@@ -16,8 +16,10 @@ import (
 const usage = `tsrelay delivers callbacks from your tailnet to apps on your machine.
 
 Usage:
-  tsrelay http <port|url> [flags]   forward a hook to a local app
-  tsrelay serve [flags]             run the relay (as its own tailnet node)
+  tsrelay http <port|url> [flags] [-- cmd args...]  forward a hook to a local app
+  tsrelay hooks ls|create|update|rm                 manage your hooks
+  tsrelay url [<port|url>]                          print the URL tsrelay http would use
+  tsrelay serve [flags]                             run the relay (as its own tailnet node)
 
 Run "tsrelay <command> --help" for the flags of a command.
 `
@@ -45,6 +47,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 		return serve(ctx, args[1:], stderr)
 	case "http":
 		return httpCmd(ctx, args[1:], stdout, stderr, d)
+	case "hooks":
+		return hooksCmd(ctx, args[1:], stdout, stderr, d)
+	case "url":
+		return urlCmd(ctx, args[1:], stdout, stderr, d)
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0

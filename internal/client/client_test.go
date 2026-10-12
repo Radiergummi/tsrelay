@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -295,5 +296,18 @@ func TestStateTempFile(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 2 {
 		t.Fatalf("leftover temporary files: %v", entries)
+	}
+}
+
+func TestStateTargets(t *testing.T) {
+	s, _ := LoadState(filepath.Join(t.TempDir(), "hooks.json"), "")
+	a, _ := url.Parse("http://localhost:8080")
+	b, _ := url.Parse("https://app.test/x")
+	s.Remember(StateKey("https://r", "/proj", b), "p2", "u2")
+	s.Remember(StateKey("https://r", "/proj", a), "p1", "u1")
+	s.Remember(StateKey("https://r", "/proj two", a), "p3", "u3") // another directory
+	s.Remember(StateKey("https://other", "/proj", a), "p4", "u4") // another relay
+	if got := s.Targets("https://r", "/proj"); !slices.Equal(got, []string{"http://localhost:8080", "https://app.test/x"}) {
+		t.Fatalf("Targets = %v", got)
 	}
 }
