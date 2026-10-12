@@ -85,3 +85,26 @@ func TestListFlagReplacesDefault(t *testing.T) {
 		t.Fatalf("default = %q", untouched.String())
 	}
 }
+
+func TestParseArgs(t *testing.T) {
+	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	name := fs.String("name", "", "")
+	asJSON := fs.Bool("json", false, "")
+	rest, err := parseArgs(fs, []string{"a", "--name", "x", "b", "--json", "c"})
+	if err != nil || !slices.Equal(rest, []string{"a", "b", "c"}) || *name != "x" || !*asJSON {
+		t.Fatalf("rest=%v err=%v name=%q json=%v", rest, err, *name, *asJSON)
+	}
+	if _, err := parseArgs(fs, []string{"a", "--bogus"}); err == nil {
+		t.Fatal("unknown flags must fail")
+	}
+}
+
+func TestSplitCommand(t *testing.T) {
+	own, cmd := splitCommand([]string{"8080", "--name", "x", "--", "npm", "run", "--", "dev"})
+	if !slices.Equal(own, []string{"8080", "--name", "x"}) || !slices.Equal(cmd, []string{"npm", "run", "--", "dev"}) {
+		t.Fatalf("own=%v cmd=%v", own, cmd)
+	}
+	if own, cmd := splitCommand([]string{"8080"}); len(own) != 1 || cmd != nil {
+		t.Fatalf("without --: own=%v cmd=%v", own, cmd)
+	}
+}

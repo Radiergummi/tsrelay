@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -74,4 +75,30 @@ func (m mapFlag) Set(v string) error {
 		m[k] = val
 	}
 	return nil
+}
+
+// parseArgs parses flags given anywhere among the positional arguments, as
+// people type both "tsrelay http 8080 --name x" and "--name x 8080". It
+// returns the positional arguments.
+func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
+	var rest []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return nil, err
+		}
+		if fs.NArg() == 0 {
+			return rest, nil
+		}
+		rest = append(rest, fs.Arg(0))
+		args = fs.Args()[1:]
+	}
+}
+
+// splitCommand separates tsrelay's own arguments from a command given
+// after "--".
+func splitCommand(args []string) (own, command []string) {
+	if i := slices.Index(args, "--"); i >= 0 {
+		return args[:i], args[i+1:]
+	}
+	return args, nil
 }

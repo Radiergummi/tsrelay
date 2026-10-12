@@ -163,8 +163,9 @@ func TestLogCalls(t *testing.T) {
 	req := httptest.NewRequest("POST", "/done?token=s3cret", nil)
 	req.Header.Set("Tsrelay-Sender-Tags", "tag:prod-worker")
 	req.Header.Set("Tsrelay-Sender-Node", "worker")
+	req.Header.Set(tunnel.HeaderHook, "h_1")
 	h.ServeHTTP(httptest.NewRecorder(), req)
-	if got.Method != "POST" || got.Path != "/done" || got.Status != 201 || got.Sender != "tag:prod-worker" {
+	if got.Hook != "h_1" || got.Method != "POST" || got.Path != "/done" || got.Status != 201 || got.Sender != "tag:prod-worker" {
 		t.Fatalf("call = %+v", got)
 	}
 }

@@ -3,16 +3,20 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -331,5 +335,122 @@ func TestDropMessage(t *testing.T) {
 	}
 	if _, ok := dropMessage(tunnel.ControlAttached, u); ok {
 		t.Error("attached does not end delivery")
+	}
+}
+
+func TestHTTPJSON(t *testing.T) {
+	e := newCLIEnv(t)
+	r := e.start("--json")
+	waitOutput(t, r.stdout, `"event":"connected"`)
+	var first jsonEvent
+	if err := json.Unmarshal([]byte(strings.SplitN(r.stdout.String(), "\n", 2)[0]), &first); err != nil || first.Event != "url" || first.Hook == "" {
+		t.Fatalf("first event = %+v, %v", first, err)
+	}
+	if code := e.send(first.URL); code != http.StatusAccepted {
+		t.Fatalf("send = %d", code)
+	}
+	waitOutput(t, r.stdout, `"event":"call"`)
+	r.cancel()
+	if code := waitExit(t, r); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+
+	var call, last jsonEvent
+	for _, line := range strings.Split(strings.TrimSpace(r.stdout.String()), "\n") {
+		var ev jsonEvent
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			t.Fatalf("stdout line is not JSON: %q", line)
+		}
+		if ev.Event == "call" {
+			call = ev
+		}
+		last = ev
+	}
+	if call.Hook != first.Hook || call.Method != "POST" || call.Path != "/done" || call.Status != 202 || call.Sender != "tag:prod-worker" {
+		t.Errorf("call event = %+v", call)
+	}
+	if last.Event != "stopped" || last.Reason != "interrupted" || last.ExitCode == nil || *last.ExitCode != 0 {
+		t.Errorf("last event = %+v", last)
+	}
+	if r.stderr.String() != "" {
+		t.Errorf("--json wrote to stderr:\n%s", r.stderr)
+	}
+}
+
+// TestHelperChild is the command the "-- cmd" tests start: it records its
+// PID and TSRELAY_URL, then sleeps or exits as TSRELAY_TEST_CHILD says.
+func TestHelperChild(t *testing.T) {
+	mode := os.Getenv("TSRELAY_TEST_CHILD")
+	if mode == "" {
+		t.Skip("runs only as the child of the -- cmd tests")
+	}
+	out := os.Getenv("TSRELAY_TEST_CHILD_OUT")
+	if err := os.WriteFile(out+".tmp", fmt.Appendf(nil, "%d %s", os.Getpid(), os.Getenv("TSRELAY_URL")), 0o600); err != nil {
+		os.Exit(10)
+	}
+	if err := os.Rename(out+".tmp", out); err != nil {
+		os.Exit(10)
+	}
+	if mode == "exit3" {
+		os.Exit(3)
+	}
+	time.Sleep(time.Minute)
+	os.Exit(0)
+}
+
+// startChild runs tsrelay http with the test binary as its "-- cmd" child,
+// in the given TestHelperChild mode. The child reports to the returned file.
+func (e *cliEnv) startChild(mode string) (*cliRun, string) {
+	out := filepath.Join(e.t.TempDir(), "child")
+	e.t.Setenv("TSRELAY_TEST_CHILD", mode)
+	e.t.Setenv("TSRELAY_TEST_CHILD_OUT", out)
+	return e.start("--", os.Args[0], "-test.run=^TestHelperChild$"), out
+}
+
+// readChild waits for the child's report and returns its PID and TSRELAY_URL.
+func readChild(t *testing.T, path string) (pid int, url string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		b, err := os.ReadFile(path)
+		if err == nil {
+			if _, err := fmt.Sscanf(string(b), "%d %s", &pid, &url); err == nil {
+				return pid, url
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("child did not report: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// Review focus: Ctrl-C must stop the "-- cmd" child, not leave it running.
+func TestHTTPCommandStoppedOnInterrupt(t *testing.T) {
+	e := newCLIEnv(t)
+	r, report := e.startChild("sleep")
+	hookURL := e.url(r)
+	pid, childURL := readChild(t, report)
+	if childURL != hookURL {
+		t.Fatalf("child got TSRELAY_URL=%q, want %q", childURL, hookURL)
+	}
+	r.cancel() // what Ctrl-C does to run's context
+	if code := waitExit(t, r); code != 0 {
+		t.Fatalf("exit after Ctrl-C = %d", code)
+	}
+	if p, err := os.FindProcess(pid); err == nil && p.Signal(syscall.Signal(0)) == nil {
+		p.Kill()
+		t.Fatalf("the command (pid %d) still runs after tsrelay was interrupted", pid)
+	}
+}
+
+func TestHTTPCommandExitCode(t *testing.T) {
+	e := newCLIEnv(t)
+	r, _ := e.startChild("exit3")
+	if code := waitExit(t, r); code != 3 {
+		t.Fatalf("exit = %d, want the command's 3; stderr:\n%s", code, r.stderr)
+	}
+	if !strings.Contains(r.stderr.String(), "exited with status 3") {
+		t.Errorf("stderr should say why tsrelay stopped:\n%s", r.stderr)
 	}
 }

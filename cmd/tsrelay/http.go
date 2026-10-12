@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"syscall"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/api"
@@ -19,11 +21,15 @@ import (
 	"tailscale.com/client/local"
 )
 
+// childStopTimeout is how long a command started after "--" gets to exit
+// after SIGTERM before it is killed.
+const childStopTimeout = 5 * time.Second
+
 func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) int {
 	fs := flag.NewFlagSet("tsrelay http", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "Usage: tsrelay http <port|url> [flags]")
+		fmt.Fprintln(stderr, "Usage: tsrelay http <port|url> [flags] [-- command args...]")
 		fs.PrintDefaults()
 	}
 	relayFlag := fs.String("relay", "", "relay URL or host (default: https://tsrelay.<your tailnet>)")
@@ -31,17 +37,11 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 	channel := fs.String("channel", "", `hook channel (default: "default")`)
 	persistent := fs.Bool("persistent", false, "keep the hook after this command exits")
 	insecure := fs.Bool("insecure", false, "skip TLS certificate verification for an https:// target")
-	// Accept flags before and after the target, as people type both.
-	if err := fs.Parse(args); err != nil {
+	asJSON := fs.Bool("json", false, "print one JSON object per event on stdout")
+	own, command := splitCommand(args)
+	rest, err := parseArgs(fs, own)
+	if err != nil {
 		return 2
-	}
-	rest := fs.Args()
-	if len(rest) > 0 {
-		first := rest[0]
-		if err := fs.Parse(rest[1:]); err != nil {
-			return 2
-		}
-		rest = append([]string{first}, fs.Args()...)
 	}
 	if err := applyEnv(fs, "TSRELAY_"); err != nil {
 		fmt.Fprintln(stderr, "tsrelay http:", err)
@@ -56,59 +56,34 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 		fmt.Fprintln(stderr, "tsrelay http:", err)
 		return 2
 	}
+	out := newOutput(stdout, stderr, *asJSON)
 
-	fail := func(err error) int {
-		var p *problem.Problem
-		if errors.As(err, &p) {
-			fmt.Fprintf(stderr, "tsrelay: the relay refused: %s\n", p.Detail)
-		} else {
-			fmt.Fprintln(stderr, "tsrelay:", err)
-		}
-		return 1
-	}
-
-	status := d.Status
-	if status == nil {
-		status = (&local.Client{}).StatusWithoutPeers
-	}
-	relayURL, err := client.RelayURL(ctx, *relayFlag, status)
+	relayAPI, err := newRelayAPI(ctx, *relayFlag, d)
 	if err != nil {
-		return fail(err)
+		return out.fail(err)
 	}
-	hc := d.HTTP
-	if hc == nil {
-		hc = tunnel.NewHTTPClient(nil)
-	}
-	relayAPI := &client.API{BaseURL: relayURL, HTTP: hc}
-
 	state, err := openState(d)
 	if err != nil {
-		return fail(err)
+		return out.fail(err)
 	}
 	cwd, _ := os.Getwd()
-	key := client.StateKey(relayURL, cwd, target)
-
+	key := client.StateKey(relayAPI.BaseURL, cwd, target)
 	req := hooks.CreateRequest{Channel: *channel, Ephemeral: !*persistent}
 	hook, err := ensureHook(ctx, relayAPI, *name, state.Path(key), req)
 	if err != nil {
-		return fail(err)
+		return out.fail(err)
 	}
 	if err := state.Remember(key, hook.Path, hook.URL); err != nil {
-		fmt.Fprintf(stderr, "tsrelay: warning: could not remember the hook path: %v\n", err)
+		out.text(stderr, "tsrelay: warning: could not remember the hook path: %v", err)
 	}
+	out.url(hook, false)
 
-	fmt.Fprintln(stdout, hook.URL)
-	logCall := func(c client.Call) {
-		fmt.Fprintf(stderr, "%s %s %s → %d  %s  %s\n", time.Now().Format("15:04:05"), c.Method, c.Path, c.Status,
-			c.Duration.Round(time.Millisecond), c.Sender)
-	}
-	connectedOnce := false
 	hookURL := hook.URL // stays the same when the hook is recreated
 	var tc *tunnel.Client
 	tc = &tunnel.Client{
 		Hooks: []string{hook.ID},
 		Dial: func(ctx context.Context, ids []string, a tunnel.Attach) (net.Conn, error) {
-			conn, err := tunnel.Dial(ctx, hc, relayAPI.TunnelURL(a, ids...))
+			conn, err := tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, ids...))
 			if !isNotFound(err) {
 				return conn, err
 			}
@@ -121,37 +96,105 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 			}
 			tc.Replace(hook.ID, h.ID)
 			hook = h
-			fmt.Fprintln(stderr, "tsrelay: the hook was removed while disconnected; recreated at the same URL.")
-			return tunnel.Dial(ctx, hc, relayAPI.TunnelURL(a, h.ID))
-		},
-		OnControl: func(c tunnel.Control) {
-			if msg, ok := dropMessage(c.Type, hookURL); ok {
-				fmt.Fprintf(stderr, "tsrelay: %s; stopping.\n", msg)
-			}
+			out.url(h, true)
+			return tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, h.ID))
 		},
 		Handler: client.LogCalls(client.NewForwarder(target, client.Options{
 			Insecure:        *insecure,
-			OnUpstreamError: func(err error) { fmt.Fprintln(stderr, "tsrelay:", err) },
-		}), logCall),
-		OnState: func(connected bool, err error) {
-			switch {
-			case connected && !connectedOnce:
-				connectedOnce = true
-				fmt.Fprintf(stderr, "Forwarding %s → %s\n", hook.URL, target)
-			case connected:
-				fmt.Fprintln(stderr, "Tunnel restored.")
-			default:
-				fmt.Fprintf(stderr, "Tunnel lost (%v); reconnecting…\n", err)
+			OnUpstreamError: out.upstreamError,
+		}), out.call),
+		OnState:   out.onState([]string{hookURL}, target.String(), hook.Effective.HoldTimeout.Std()),
+		OnControl: func(c tunnel.Control) { out.dropped(c, func(string) string { return hookURL }) },
+	}
+	return runTunnel(ctx, tc, command, hookURL, out)
+}
+
+// runTunnel runs tc until it stops and returns the exit code. With a
+// command, it first starts the command with TSRELAY_URL set. Whichever ends
+// first stops the other: the command gets SIGTERM, and is killed after
+// childStopTimeout. If the command exits on its own, its exit code becomes
+// tsrelay's.
+func runTunnel(ctx context.Context, tc *tunnel.Client, command []string, hookURL string, out *output) int {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var childDone chan error
+	if len(command) > 0 {
+		cmd := exec.CommandContext(runCtx, command[0], command[1:]...)
+		cmd.Env = append(os.Environ(), "TSRELAY_URL="+hookURL)
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, out.stdout, out.stderr
+		if out.json {
+			cmd.Stdout = out.stderr // stdout carries only events
+		}
+		cmd.Cancel = func() error {
+			if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+				return cmd.Process.Kill() // e.g. on Windows, which has no SIGTERM
 			}
-		},
+			return nil
+		}
+		cmd.WaitDelay = childStopTimeout
+		if err := cmd.Start(); err != nil {
+			return out.fail(fmt.Errorf("starting %s: %w", command[0], err))
+		}
+		childDone = make(chan error, 1)
+		go func() { childDone <- cmd.Wait() }()
 	}
-	switch err := tc.Run(ctx); {
-	case errors.Is(err, tunnel.ErrNoHooks):
-		return 1 // OnControl said why
-	case err != nil:
-		return fail(err)
+	tunnelDone := make(chan error, 1)
+	go func() { tunnelDone <- tc.Run(runCtx) }()
+
+	select {
+	case err := <-tunnelDone:
+		cancel()
+		if childDone != nil {
+			<-childDone
+		}
+		return out.finish(err)
+	case err := <-childDone:
+		cancel()
+		runErr := <-tunnelDone
+		if ctx.Err() != nil {
+			return out.finish(runErr) // interrupted: the command only followed
+		}
+		return out.stopped("command-exited", nil, exitCode(err))
 	}
-	return 0
+}
+
+// exitCode is the exit status of a finished command; 1 if a signal ended it.
+func exitCode(err error) int {
+	var ee *exec.ExitError
+	switch {
+	case err == nil:
+		return 0
+	case errors.As(err, &ee) && ee.ExitCode() >= 0:
+		return ee.ExitCode()
+	default:
+		return 1
+	}
+}
+
+// relayBase finds the relay: --relay, then $TSRELAY_RELAY, then
+// https://tsrelay.<MagicDNS suffix> from the local Tailscale.
+func relayBase(ctx context.Context, relayFlag string, d deps) (string, error) {
+	if relayFlag == "" {
+		relayFlag = os.Getenv("TSRELAY_RELAY")
+	}
+	status := d.Status
+	if status == nil {
+		status = (&local.Client{}).StatusWithoutPeers
+	}
+	return client.RelayURL(ctx, relayFlag, status)
+}
+
+// newRelayAPI returns a client for the relay's API; see relayBase.
+func newRelayAPI(ctx context.Context, relayFlag string, d deps) (*client.API, error) {
+	base, err := relayBase(ctx, relayFlag, d)
+	if err != nil {
+		return nil, err
+	}
+	hc := d.HTTP
+	if hc == nil {
+		hc = tunnel.NewHTTPClient(nil)
+	}
+	return &client.API{BaseURL: base, HTTP: hc}, nil
 }
 
 // ensureHook reuses the caller's hook at the wanted path or creates one. An

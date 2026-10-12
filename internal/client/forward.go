@@ -61,6 +61,7 @@ func NewForwarder(target *url.URL, opts Options) http.Handler {
 
 // Call summarizes one forwarded call for the CLI's output.
 type Call struct {
+	Hook     string // ID of the hook the relay delivered the call for
 	Method   string
 	Path     string // without the query string, which may carry secrets
 	Status   int
@@ -78,7 +79,8 @@ func LogCalls(next http.Handler, log func(Call)) http.Handler {
 		if sender == "" {
 			sender = r.Header.Get("Tsrelay-Sender-Node")
 		}
-		log(Call{Method: r.Method, Path: r.URL.Path, Status: sw.status, Duration: time.Since(start), Sender: sender})
+		log(Call{Hook: r.Header.Get(tunnel.HeaderHook), Method: r.Method, Path: r.URL.Path, Status: sw.status,
+			Duration: time.Since(start), Sender: sender})
 	})
 }
 
