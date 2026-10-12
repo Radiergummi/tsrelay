@@ -39,6 +39,8 @@ type Handler struct {
 	Hooks      *hooks.Manager
 	Tunnels    *tunnel.Registry
 	Audit      *audit.Logger
+
+	limiters limiters
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +116,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("the request body is larger than this hook's limit of %d bytes", eff.MaxBodyBytes)).Write(rec)
 		return
 	}
+	if wait, ok := h.limiters.allow(hook.ID, eff.RateLimit, time.Now(), h.hookExists); !ok {
+		rec.Header().Set("Retry-After", retryAfter(wait))
+		problem.New(http.StatusTooManyRequests, problem.RateLimited,
+			fmt.Sprintf("this hook accepts %g calls per second (burst %d)", eff.RateLimit.PerSecond, eff.RateLimit.Burst)).Write(rec)
+		return
+	}
 	tun, attached := h.Tunnels.Lookup(string(hook.ID))
 	if !attached {
 		rec.Header().Set("Retry-After", "5")
@@ -142,6 +150,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ErrorHandler:  proxyError,
 	}
 	proxy.ServeHTTP(&idleWriter{ResponseWriter: rec, idle: idle}, r)
+}
+
+func (h *Handler) hookExists(id hooks.ID) bool {
+	_, ok := h.Hooks.Get(id)
+	return ok
 }
 
 func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.Effective, sender authz.Identity, callID string, segments int) {

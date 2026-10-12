@@ -4,9 +4,14 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
+
+	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"golang.org/x/time/rate"
 )
 
 // Causes with which a call's context is cancelled when it breaks a limit.
@@ -125,3 +130,55 @@ func (w *idleWriter) Write(b []byte) (int, error) {
 }
 
 func (w *idleWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// limiters holds a token bucket per hook. A bucket is rebuilt, full, when
+// its hook's rate limit changes, so an update applies from the next call.
+type limiters struct {
+	mu     sync.Mutex
+	byHook map[hooks.ID]*hookLimiter
+	swept  time.Time
+}
+
+type hookLimiter struct {
+	cfg hooks.RateLimit
+	l   *rate.Limiter
+}
+
+// sweepInterval is how often limiters of deleted hooks are dropped.
+const sweepInterval = time.Minute
+
+// allow takes a token from hook id's bucket. If none is left, it returns
+// how long until one will be. exists reports whether a hook still exists;
+// it is used to drop the buckets of deleted hooks now and then.
+func (ls *limiters) allow(id hooks.ID, rl hooks.RateLimit, now time.Time, exists func(hooks.ID) bool) (time.Duration, bool) {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	if ls.byHook == nil {
+		ls.byHook = map[hooks.ID]*hookLimiter{}
+		ls.swept = now
+	}
+	if now.Sub(ls.swept) >= sweepInterval {
+		for hid := range ls.byHook {
+			if hid != id && !exists(hid) {
+				delete(ls.byHook, hid)
+			}
+		}
+		ls.swept = now
+	}
+	hl := ls.byHook[id]
+	if hl == nil || hl.cfg != rl {
+		hl = &hookLimiter{cfg: rl, l: rate.NewLimiter(rate.Limit(rl.PerSecond), rl.Burst)}
+		ls.byHook[id] = hl
+	}
+	r := hl.l.ReserveN(now, 1)
+	if d := r.DelayFrom(now); d > 0 {
+		r.CancelAt(now)
+		return d, false
+	}
+	return 0, true
+}
+
+// retryAfter renders d as whole seconds for Retry-After, at least 1.
+func retryAfter(d time.Duration) string {
+	return strconv.Itoa(max(1, int(math.Ceil(d.Seconds()))))
+}
