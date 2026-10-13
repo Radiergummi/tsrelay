@@ -221,7 +221,7 @@ The design is in [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Metrics and deployment
 
-With `--ops-listen=:9090`, the relay serves `/healthz` (process alive), `/readyz` (tailnet joined and the hook store loaded) and `/metrics` (Prometheus text format: the counters and gauges `tsrelay_calls_total`, `tsrelay_call_bytes_total`, `tsrelay_tunnels`, `tsrelay_hooks`, `tsrelay_held_calls`, `tsrelay_authz_denials_total`; the latency histograms `tsrelay_call_duration_seconds`, `tsrelay_call_ttfb_seconds`, `tsrelay_call_hold_seconds`; and Go runtime metrics) — never on the tailnet interface.
+With `--ops-listen=:9090`, the relay serves `/healthz` (process alive), `/readyz` (tailnet joined and the hook store loaded) and `/metrics` (Prometheus text format: the counters and gauges `tsrelay_calls_total`, `tsrelay_call_bytes_total`, `tsrelay_tunnels`, `tsrelay_hooks`, `tsrelay_held_calls`, `tsrelay_authz_denials_total`; the latency histograms `tsrelay_call_duration_seconds`, `tsrelay_call_ttfb_seconds`, `tsrelay_call_hold_seconds`, `tsrelay_api_request_duration_seconds`; and Go runtime metrics) — never on the tailnet interface.
 
 Ship it as:
 - a static binary (`go build ./cmd/tsrelay`, or download one from a [release](../../releases))

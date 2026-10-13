@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/telemetry"
 )
 
@@ -308,5 +310,109 @@ func TestBodyTooLargeEvent(t *testing.T) {
 	}
 	if got, _ := attr(call, "tsrelay.error"); got != "body_too_large" {
 		t.Errorf("tsrelay.error = %q, want body_too_large", got)
+	}
+}
+
+func TestTunnelSpans(t *testing.T) {
+	e, rec := tracedEnv(t, Config{})
+	app, _ := traceApp(t)
+	h, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	stop := e.cli(h.ID, app)
+	attach := e.spanNamed(rec, "tsrelay.tunnel.attach")
+	if got, _ := attr(attach, "tsrelay.tunnel.result"); got != "attached" {
+		t.Errorf("tsrelay.tunnel.result = %q", got)
+	}
+	if got, _ := attr(attach, "tsrelay.hook.ids"); got != `["`+h.ID+`"]` {
+		t.Errorf("tsrelay.hook.ids = %q", got)
+	}
+	stop()
+	detach := e.spanNamed(rec, "tsrelay.tunnel.detach")
+	if got, _ := attr(detach, "tsrelay.tunnel.reason"); got != "disconnected" {
+		t.Errorf("tsrelay.tunnel.reason = %q", got)
+	}
+	if detach.SpanContext().TraceID() == attach.SpanContext().TraceID() {
+		t.Error("detach shares the attach trace; want its own trace, linked")
+	}
+	if links := detach.Links(); len(links) != 1 || links[0].SpanContext.SpanID() != attach.SpanContext().SpanID() {
+		t.Errorf("detach links = %v, want the attach span", links)
+	}
+}
+
+func TestReplayParentedByAPISpan(t *testing.T) {
+	e, rec := tracedEnv(t, Config{})
+	app, _ := traceApp(t)
+	h, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	defer e.cli(h.ID, app)()
+	resp := e.send(h, "", []byte("x"), nil)
+	io.ReadAll(resp.Body)
+	callID := resp.Header.Get("Tsrelay-Call-Id")
+	e.waitFor(func() bool {
+		var c inspect.Call
+		return e.getJSON("/api/v1/hooks/"+h.ID+"/calls/"+callID, &c) == 200 && c.Outcome == inspect.OutcomeOK
+	})
+	if code := e.postJSON("/api/v1/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, nil); code != 201 {
+		t.Fatalf("replay = %d", code)
+	}
+	apiSpan := e.spanNamed(rec, "POST /api/v1/hooks/{id}/calls/{callID}/replay")
+	var replay sdktrace.ReadOnlySpan
+	e.waitFor(func() bool {
+		for _, s := range rec.Ended() {
+			if k, _ := attr(s, "tsrelay.call.kind"); s.Name() == "tsrelay.call" && k == "replay" {
+				replay = s
+				return true
+			}
+		}
+		return false
+	})
+	if replay.Parent().SpanID() != apiSpan.SpanContext().SpanID() {
+		t.Error("replayed call is not a child of the API request span")
+	}
+	if got, _ := attr(apiSpan, "tsrelay.actor.login"); got != "moritz@example.com" {
+		t.Errorf("tsrelay.actor.login = %q", got)
+	}
+	if got, _ := attr(apiSpan, "http.route"); got != "/api/v1/hooks/{id}/calls/{callID}/replay" {
+		t.Errorf("http.route = %q", got)
+	}
+	if _, ok := e.findSpan(rec, "tsrelay.authorize", replay); ok {
+		t.Error("a replay was authorized as a sender call")
+	}
+}
+
+// findSpan returns an ended span with that name whose parent is parent.
+func (e *env) findSpan(rec *tracetest.SpanRecorder, name string, parent sdktrace.ReadOnlySpan) (sdktrace.ReadOnlySpan, bool) {
+	for _, s := range rec.Ended() {
+		if s.Name() == name && s.Parent().SpanID() == parent.SpanContext().SpanID() {
+			return s, true
+		}
+	}
+	return nil, false
+}
+
+func TestAPISpansSkipStreams(t *testing.T) {
+	e, rec := tracedEnv(t, Config{})
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, "GET", e.base+"/api/v1/events", nil)
+	resp, err := e.api.HTTP.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	resp.Body.Close()
+	e.getJSON("/api/v1/me", nil) // a traced request, to know spans are flowing
+	e.spanNamed(rec, "GET /api/v1/me")
+	for _, s := range rec.Started() {
+		if strings.Contains(s.Name(), "/events") {
+			t.Errorf("event stream got span %q", s.Name())
+		}
+	}
+	ops := &Ops{}
+	ops.Ready(e.srv)
+	m := httptest.NewRecorder()
+	ops.ServeHTTP(m, httptest.NewRequest("GET", "/metrics", nil))
+	if strings.Contains(m.Body.String(), `route="/api/v1/events"`) {
+		t.Error("the event stream is in the API latency histogram")
+	}
+	if !strings.Contains(m.Body.String(), `tsrelay_api_request_duration_seconds_count{method="GET",route="/api/v1/me",status="200"} 1`) {
+		t.Errorf("no API latency for /me:\n%s", m.Body.String())
 	}
 }
