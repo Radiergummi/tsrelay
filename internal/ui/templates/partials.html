@@ -5,3 +5,18 @@
 {{define "callSummary"}}<a href="/hooks/{{.HookID}}/calls/{{.ID}}"><code>{{.Method}} {{.Path}}</code></a>
 <span class="{{outcomeClass .Outcome}}">{{if .Status}}{{.Status}}{{end}}{{if ne .Outcome "ok"}} {{.Outcome}}{{end}}</span>
 <time class="muted" datetime="{{iso .ReceivedAt}}">{{when .ReceivedAt}}</time>{{end}}
+
+{{define "calls"}}{{if .}}
+<table>
+<thead><tr><th>Received</th><th>Request</th><th>Sender</th><th>Result</th><th>Duration</th></tr></thead>
+<tbody>
+{{range .}}<tr>
+<td><time datetime="{{iso .ReceivedAt}}">{{when .ReceivedAt}}</time></td>
+<td><a href="/hooks/{{.HookID}}/calls/{{.ID}}"><code>{{.Method}} {{.Path}}</code></a>{{if ne .Kind "sender"}} <span class="tag">{{.Kind}}</span>{{end}}</td>
+<td>{{template "sender" .Sender}}</td>
+<td><span class="{{outcomeClass .Outcome}}">{{if .Status}}{{.Status}}{{end}}{{if ne .Outcome "ok"}} {{.Outcome}}{{end}}</span></td>
+<td>{{if ne .Outcome "pending"}}{{dur .Duration}}{{end}}</td>
+</tr>{{end}}
+</tbody>
+</table>
+{{else}}<p class="muted">No calls yet. They appear here as they arrive.</p>{{end}}{{end}}

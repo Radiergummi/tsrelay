@@ -53,6 +53,7 @@ func (u *UI) Register(mux *http.ServeMux) {
 		files.ServeHTTP(w, r)
 	})))
 	mux.Handle("GET /{$}", u.page(u.hooksPage))
+	mux.Handle("GET /hooks/{id}", u.page(u.hookPage))
 }
 
 // NotFound answers unknown non-API paths with an HTML 404 page.

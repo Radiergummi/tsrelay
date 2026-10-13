@@ -146,3 +146,48 @@ func TestUIHooksList(t *testing.T) {
 	}
 	assertInert(t, body)
 }
+
+func TestUIHookPage(t *testing.T) {
+	e := newEnv(t, Config{CapName: testCap})
+	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb", Description: "for <ci>",
+		Settings: hooks.Settings{HoldTimeout: new(hooks.Duration(0))}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.srv.inspect.Add(inspect.Call{ID: "c_1", HookID: hooks.ID(h.ID), Owner: receiver.UserID, ReceivedAt: time.Now(),
+		Kind: inspect.KindSender, Method: "POST", Path: "/done", Query: "token=s3cr3t",
+		Outcome: inspect.OutcomeOK, Status: 202, Attempts: []inspect.Attempt{}})
+
+	resp, body := e.page(receiver, "/hooks/"+h.ID)
+	if resp.StatusCode != 200 {
+		t.Fatalf("owner: status %d:\n%s", resp.StatusCode, body)
+	}
+	for _, want := range []string{
+		h.URL, "for &lt;ci&gt;", "no tunnel", "POST /done", `href="/hooks/` + h.ID + `/calls/c_1"`,
+		"Hold timeout", "off", "relay default", `href="/hooks/` + h.ID + `/edit"`,
+		`data-action="delete-hook"`, `id="hook-state" data-live data-hooks="` + h.ID + `"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("owner's hook page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "s3cr3t") {
+		t.Error("the call list shows a query string")
+	}
+	assertInert(t, body)
+
+	// Admins see the hook as metadata, without controls.
+	resp, body = e.page(uiAdmin, "/hooks/"+h.ID)
+	if resp.StatusCode != 200 || !strings.Contains(body, "metadata only") || strings.Contains(body, "/edit") || strings.Contains(body, "delete-hook") {
+		t.Errorf("admin's hook page = %d:\n%s", resp.StatusCode, body)
+	}
+	// Anyone else, and unknown IDs, get a 404 page.
+	for _, tc := range []struct {
+		id   authz.Identity
+		path string
+	}{{uiOther, "/hooks/" + h.ID}, {receiver, "/hooks/h_nope"}} {
+		if resp, body := e.page(tc.id, tc.path); resp.StatusCode != 404 || !strings.Contains(body, "There is no hook") {
+			t.Errorf("%s as %s = %d", tc.path, tc.id.Login, resp.StatusCode)
+		}
+	}
+}

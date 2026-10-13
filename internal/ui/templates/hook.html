@@ -1,0 +1,29 @@
+{{define "title"}}{{.Hook.Path}}{{end}}
+{{define "content"}}
+<div class="bar">
+<h1>{{.Hook.Path}}</h1>
+{{if .Owner}}<div class="actions">
+<a class="button" href="/hooks/{{.Hook.ID}}/edit">Edit</a>
+<button class="danger" data-action="delete-hook" data-hook="{{.Hook.ID}}" data-next="/" data-confirm="Delete this hook? Its URL stops working and its calls are forgotten.">Delete</button>
+</div>{{end}}
+</div>
+{{if not .Owner}}<p class="muted">Owned by {{.Hook.Owner}}. As an admin you see metadata only.</p>{{end}}
+<p><code class="url" id="hook-url">{{.Hook.URL}}</code> <button data-action="copy" data-copy="#hook-url">Copy URL</button></p>
+{{with .Hook.Description}}<p>{{.}}</p>{{end}}
+
+<section id="hook-state" data-live data-hooks="{{.Hook.ID}}">
+<h2>Tunnel</h2>
+<p>{{template "tunnel" .Hook.Tunnel}}</p>
+<h2>Calls</h2>
+{{template "calls" .Calls}}
+</section>
+
+<section>
+<h2>Settings</h2>
+<dl class="settings">
+<dt>Channel</dt><dd>{{.Hook.Channel}}</dd>
+<dt>Lifetime</dt><dd>{{if .Hook.Ephemeral}}ephemeral: removed once no tunnel has been attached for a while{{else}}persistent{{end}}{{with .Hook.ExpiresAt}}; expires {{when .}}{{end}}</dd>
+{{range .Settings}}<dt>{{.Name}}</dt><dd>{{.Value}}{{if .Default}} <span class="muted">(relay default)</span>{{end}}</dd>
+{{end}}</dl>
+</section>
+{{end}}
