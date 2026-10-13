@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -463,5 +464,62 @@ func TestAttachRechecksDeletedHooks(t *testing.T) {
 	}
 	if _, ok := e.reg.Lookup(gone.ID); ok {
 		t.Fatal("the deleted hook stayed attached")
+	}
+}
+
+// Concurrent attaches must not both pass maxTunnels (DESIGN.md §5.5).
+func TestConcurrentAttachesRespectMaxTunnels(t *testing.T) {
+	e := newEnv(t)
+	ids := make([]string, 10) // the default maxHooks
+	for i := range ids {
+		var h Hook
+		if resp := e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: fmt.Sprintf("h%d", i)}, &h); resp.StatusCode != 201 {
+			t.Fatalf("create %d: %d", i, resp.StatusCode)
+		}
+		ids[i] = h.ID
+	}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	attached := 0
+	for _, id := range ids {
+		wg.Go(func() {
+			if _, _, err := e.openTunnel(moritz, id); err == nil {
+				mu.Lock()
+				attached++
+				mu.Unlock()
+			}
+		})
+	}
+	wg.Wait()
+	if want := authz.DefaultLimits.MaxTunnels; attached != want {
+		t.Fatalf("%d concurrent attaches succeeded, want exactly maxTunnels (%d)", attached, want)
+	}
+}
+
+// Under "reject", two concurrent attaches to one hook from different
+// sessions must not both succeed.
+func TestConcurrentAttachesRespectReject(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "r",
+		Settings: hooks.Settings{AttachPolicy: new(hooks.AttachReject)}}, &h)
+	var wg sync.WaitGroup
+	results := make(chan error, 2)
+	for _, s := range []string{"s_a", "s_b"} {
+		wg.Go(func() {
+			_, _, err := e.openTunnelQ(moritz, "session="+s, h.ID)
+			results <- err
+		})
+	}
+	wg.Wait()
+	close(results)
+	ok := 0
+	for err := range results {
+		if err == nil {
+			ok++
+		}
+	}
+	if ok != 1 {
+		t.Fatalf("%d attaches succeeded under the reject policy, want 1", ok)
 	}
 }

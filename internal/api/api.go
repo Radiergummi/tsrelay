@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
@@ -14,6 +15,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"tailscale.com/tailcfg"
 )
 
 type API struct {
@@ -23,6 +25,10 @@ type API struct {
 	Audit      *audit.Logger
 	BaseURL    string // e.g. "https://tsrelay.example.ts.net", no trailing slash
 	Tunnel     tunnel.Options
+
+	// attachLocks holds one *sync.Mutex per user (tailcfg.UserID). It
+	// serializes that user's attaches from the checks through registration.
+	attachLocks sync.Map
 }
 
 type Me struct {
@@ -80,6 +86,14 @@ func (a *API) authed(f func(http.ResponseWriter, *http.Request, authz.Identity))
 		}
 		f(w, r, id)
 	})
+}
+
+// lockAttaches locks user's attaches and returns the unlock function.
+func (a *API) lockAttaches(user tailcfg.UserID) (unlock func()) {
+	v, _ := a.attachLocks.LoadOrStore(user, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 func (a *API) me(w http.ResponseWriter, r *http.Request, id authz.Identity) {

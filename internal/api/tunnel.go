@@ -29,6 +29,9 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 		problem.New(http.StatusBadRequest, problem.BadRequest, "name at least one hook with ?hook=<id>").Write(w)
 		return
 	}
+	// Checks and registration must not interleave with this user's other
+	// attaches, or two of them could both pass maxTunnels or "reject".
+	defer a.lockAttaches(id.UserID)()
 	session := r.URL.Query().Get("session")
 	resume := r.URL.Query().Get("resume") == "1"
 	requested := make([]hooks.Hook, 0, len(hookIDs))
