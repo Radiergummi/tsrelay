@@ -301,12 +301,12 @@ Every setting has a relay-wide default and a relay-wide maximum. Settings that a
 
 ```
 Call     { id, hookID, receivedAt, kind: sender|replay|test, sender: {node, tags, login, ip},
-           method, path, query, requestHeaders (redacted), requestBody: Capture,
-           outcome, attempts: []Attempt }
+           method, path, query, requestHeaders, redacted, requestBody: Capture,
+           outcome, status, duration, attempts: []Attempt }
 Attempt  { id, startedAt, tunnelID, node, waitedFor (hold), ttfb, duration,
-           status, responseHeaders (redacted), responseBody: Capture,
+           status, responseHeaders, redacted, responseBody: Capture,
            bytesIn, bytesOut, error: Tsrelay-Error code or "" }
-Capture  { bytes (≤ captureLimit), size, truncated }
+Capture  { bytes (≤ captureLimit), size, truncated, captured }
 ```
 
 - `path` is the escaped path below the hook's route, as the local app sees it. `query` is kept up to `--capture-limit` bytes.

@@ -174,7 +174,7 @@ Every flag can also be set as an environment variable: `--ephemeral-grace` becom
 | `--capture-calls` | `100` | Calls per hook the inspector keeps in memory |
 | `--capture-limit` | `65536` | Bytes of each request and response body the inspector keeps |
 | `--capture-bodies` | `true` | `false` keeps no bodies for any hook |
-| `--redact-headers` | `Authorization,Proxy-Authorization,Cookie,Set-Cookie,X-Api-Key` | Headers whose values are never kept |
+| `--redact-headers` | `Authorization,Proxy-Authorization,Cookie,Set-Cookie,X-Api-Key` | Headers whose values are never kept; an empty value keeps these defaults, so redaction cannot be turned off |
 | `--ops-listen` | off | Host address (e.g. `:9090`) for `/healthz`, `/readyz` and `/metrics`; never on the tailnet |
 
 Every numeric or duration setting from [Hook settings](#hook-settings) also has a relay-wide default and maximum flag, named `--hook-<setting>-default` and `--hook-<setting>-max`, for example `--hook-rate-limit-default=100/200`, or `--hook-max-body-bytes-default=1048576 --hook-max-body-bytes-max=10485760` (the default body size is unlimited, which a maximum would not allow, so set both); `attachPolicy`, `hostHeader` and `capture` only get a `-default` flag, since there's no sensible maximum for them. A hook may only set a value within the relay's maximum. `--response-timeout` still works as a deprecated alias of `--hook-response-timeout-default`.
