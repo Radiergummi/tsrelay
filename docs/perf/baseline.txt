@@ -1,0 +1,115 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/Radiergummi/tsrelay/internal/server
+cpu: Apple M3 Pro
+BenchmarkCall/tracing=false/empty-12         	    6327	    188524 ns/op	  109457 B/op	     361 allocs/op
+BenchmarkCall/tracing=false/empty-12         	    7399	    191011 ns/op	  105434 B/op	     358 allocs/op
+BenchmarkCall/tracing=false/empty-12         	    7368	    183906 ns/op	  105375 B/op	     358 allocs/op
+BenchmarkCall/tracing=false/empty-12         	    7363	    178331 ns/op	  104767 B/op	     358 allocs/op
+BenchmarkCall/tracing=false/empty-12         	    7030	    197351 ns/op	  104622 B/op	     358 allocs/op
+BenchmarkCall/tracing=false/empty-12         	    6028	    195757 ns/op	  104771 B/op	     358 allocs/op
+BenchmarkCall/tracing=false/1KiB-12          	    7148	    187693 ns/op	   5.46 MB/s	  116305 B/op	     390 allocs/op
+BenchmarkCall/tracing=false/1KiB-12          	    6704	    192225 ns/op	   5.33 MB/s	  111737 B/op	     387 allocs/op
+BenchmarkCall/tracing=false/1KiB-12          	    6116	    193230 ns/op	   5.30 MB/s	  111442 B/op	     387 allocs/op
+BenchmarkCall/tracing=false/1KiB-12          	    5866	    203772 ns/op	   5.03 MB/s	  111460 B/op	     387 allocs/op
+BenchmarkCall/tracing=false/1KiB-12          	    7280	    197064 ns/op	   5.20 MB/s	  111485 B/op	     387 allocs/op
+BenchmarkCall/tracing=false/1KiB-12          	    6944	    205238 ns/op	   4.99 MB/s	  110955 B/op	     387 allocs/op
+BenchmarkCall/tracing=false/1MiB-12          	    1458	    840500 ns/op	1247.56 MB/s	  381098 B/op	     539 allocs/op
+BenchmarkCall/tracing=false/1MiB-12          	    1506	    784187 ns/op	1337.15 MB/s	  345277 B/op	     541 allocs/op
+BenchmarkCall/tracing=false/1MiB-12          	    1579	    769233 ns/op	1363.15 MB/s	  341802 B/op	     543 allocs/op
+BenchmarkCall/tracing=false/1MiB-12          	    1448	    751148 ns/op	1395.96 MB/s	  344606 B/op	     546 allocs/op
+BenchmarkCall/tracing=false/1MiB-12          	    1582	    773173 ns/op	1356.20 MB/s	  339372 B/op	     543 allocs/op
+BenchmarkCall/tracing=false/1MiB-12          	    1642	    728121 ns/op	1440.11 MB/s	  338429 B/op	     548 allocs/op
+BenchmarkCall/tracing=false/stream1MiB-12    	    1342	   1180049 ns/op	 888.59 MB/s	  294812 B/op	     606 allocs/op
+BenchmarkCall/tracing=false/stream1MiB-12    	    1467	    852287 ns/op	1230.31 MB/s	  290692 B/op	     602 allocs/op
+BenchmarkCall/tracing=false/stream1MiB-12    	    1473	    971888 ns/op	1078.91 MB/s	  291834 B/op	     603 allocs/op
+BenchmarkCall/tracing=false/stream1MiB-12    	    1384	    845061 ns/op	1240.83 MB/s	  291104 B/op	     602 allocs/op
+BenchmarkCall/tracing=false/stream1MiB-12    	    1473	    837553 ns/op	1251.95 MB/s	  290254 B/op	     602 allocs/op
+BenchmarkCall/tracing=false/stream1MiB-12    	    1431	   1016270 ns/op	1031.79 MB/s	  291126 B/op	     602 allocs/op
+BenchmarkCall/tracing=true/empty-12          	    5043	    225177 ns/op	  107786 B/op	     393 allocs/op
+BenchmarkCall/tracing=true/empty-12          	    3385	    321224 ns/op	  107551 B/op	     393 allocs/op
+BenchmarkCall/tracing=true/empty-12          	    6270	    186206 ns/op	  108251 B/op	     393 allocs/op
+BenchmarkCall/tracing=true/empty-12          	    7052	    190889 ns/op	  108133 B/op	     393 allocs/op
+BenchmarkCall/tracing=true/empty-12          	    6972	    197848 ns/op	  109151 B/op	     394 allocs/op
+BenchmarkCall/tracing=true/empty-12          	    6696	    182614 ns/op	  109944 B/op	     394 allocs/op
+BenchmarkCall/tracing=true/1KiB-12           	    6558	    196441 ns/op	   5.21 MB/s	  117980 B/op	     425 allocs/op
+BenchmarkCall/tracing=true/1KiB-12           	    6308	    190103 ns/op	   5.39 MB/s	  116270 B/op	     424 allocs/op
+BenchmarkCall/tracing=true/1KiB-12           	    6422	    203494 ns/op	   5.03 MB/s	  116011 B/op	     424 allocs/op
+BenchmarkCall/tracing=true/1KiB-12           	    6697	    193224 ns/op	   5.30 MB/s	  115906 B/op	     424 allocs/op
+BenchmarkCall/tracing=true/1KiB-12           	    6738	    196413 ns/op	   5.21 MB/s	  115956 B/op	     424 allocs/op
+BenchmarkCall/tracing=true/1KiB-12           	    6590	    196759 ns/op	   5.20 MB/s	  116419 B/op	     424 allocs/op
+BenchmarkCall/tracing=true/1MiB-12           	    1678	    711890 ns/op	1472.95 MB/s	  372777 B/op	     588 allocs/op
+BenchmarkCall/tracing=true/1MiB-12           	    1562	    711531 ns/op	1473.69 MB/s	  355932 B/op	     583 allocs/op
+BenchmarkCall/tracing=true/1MiB-12           	    1797	    706803 ns/op	1483.55 MB/s	  347475 B/op	     585 allocs/op
+BenchmarkCall/tracing=true/1MiB-12           	    1740	    702068 ns/op	1493.55 MB/s	  349024 B/op	     587 allocs/op
+BenchmarkCall/tracing=true/1MiB-12           	    1732	    747780 ns/op	1402.25 MB/s	  341414 B/op	     577 allocs/op
+BenchmarkCall/tracing=true/1MiB-12           	    1561	    770206 ns/op	1361.42 MB/s	  349579 B/op	     575 allocs/op
+BenchmarkCall/tracing=true/stream1MiB-12     	    1326	    978227 ns/op	1071.91 MB/s	  301454 B/op	     644 allocs/op
+BenchmarkCall/tracing=true/stream1MiB-12     	    1430	    906040 ns/op	1157.32 MB/s	  298680 B/op	     641 allocs/op
+BenchmarkCall/tracing=true/stream1MiB-12     	    1191	    994339 ns/op	1054.55 MB/s	  298635 B/op	     641 allocs/op
+BenchmarkCall/tracing=true/stream1MiB-12     	    1260	    916386 ns/op	1144.25 MB/s	  297413 B/op	     640 allocs/op
+BenchmarkCall/tracing=true/stream1MiB-12     	    1479	    833161 ns/op	1258.55 MB/s	  297034 B/op	     640 allocs/op
+BenchmarkCall/tracing=true/stream1MiB-12     	    1453	    852681 ns/op	1229.74 MB/s	  298471 B/op	     640 allocs/op
+BenchmarkDirect/empty-12                     	   34424	     35234 ns/op	    5641 B/op	      64 allocs/op
+BenchmarkDirect/empty-12                     	   33428	     35898 ns/op	    5642 B/op	      64 allocs/op
+BenchmarkDirect/empty-12                     	   32348	     39624 ns/op	    5644 B/op	      64 allocs/op
+BenchmarkDirect/empty-12                     	   32853	     36965 ns/op	    5731 B/op	      64 allocs/op
+BenchmarkDirect/empty-12                     	   33370	     35771 ns/op	    5801 B/op	      64 allocs/op
+BenchmarkDirect/empty-12                     	   32773	     37090 ns/op	    5832 B/op	      64 allocs/op
+BenchmarkDirect/1KiB-12                      	   30681	     38182 ns/op	  26.82 MB/s	    6499 B/op	      71 allocs/op
+BenchmarkDirect/1KiB-12                      	   31308	     37880 ns/op	  27.03 MB/s	    6460 B/op	      71 allocs/op
+BenchmarkDirect/1KiB-12                      	   32654	     37332 ns/op	  27.43 MB/s	    6511 B/op	      71 allocs/op
+BenchmarkDirect/1KiB-12                      	   31072	     38047 ns/op	  26.91 MB/s	    6517 B/op	      71 allocs/op
+BenchmarkDirect/1KiB-12                      	   31449	     37751 ns/op	  27.12 MB/s	    6570 B/op	      71 allocs/op
+BenchmarkDirect/1KiB-12                      	   32312	     37561 ns/op	  27.26 MB/s	    6605 B/op	      71 allocs/op
+BenchmarkDirect/1MiB-12                      	    4940	    323827 ns/op	3238.07 MB/s	   40567 B/op	      73 allocs/op
+BenchmarkDirect/1MiB-12                      	    4800	    393554 ns/op	2664.38 MB/s	   40226 B/op	      73 allocs/op
+BenchmarkDirect/1MiB-12                      	    3128	    350429 ns/op	2992.26 MB/s	   40234 B/op	      73 allocs/op
+BenchmarkDirect/1MiB-12                      	    4832	    231635 ns/op	4526.84 MB/s	   40250 B/op	      73 allocs/op
+BenchmarkDirect/1MiB-12                      	    5193	    232581 ns/op	4508.44 MB/s	   40241 B/op	      73 allocs/op
+BenchmarkDirect/1MiB-12                      	    5197	    241821 ns/op	4336.16 MB/s	   40130 B/op	      73 allocs/op
+BenchmarkDirect/stream1MiB-12                	    4838	    229418 ns/op	4570.59 MB/s	    6620 B/op	      90 allocs/op
+BenchmarkDirect/stream1MiB-12                	    5197	    236558 ns/op	4432.64 MB/s	    6524 B/op	      90 allocs/op
+BenchmarkDirect/stream1MiB-12                	    5181	    238256 ns/op	4401.05 MB/s	    6642 B/op	      90 allocs/op
+BenchmarkDirect/stream1MiB-12                	    5696	    294666 ns/op	3558.52 MB/s	    6593 B/op	      90 allocs/op
+BenchmarkDirect/stream1MiB-12                	    5035	    229437 ns/op	4570.22 MB/s	    6546 B/op	      90 allocs/op
+BenchmarkDirect/stream1MiB-12                	    5840	    258680 ns/op	4053.57 MB/s	    6521 B/op	      90 allocs/op
+PASS
+ok  	github.com/Radiergummi/tsrelay/internal/server	93.356s
+goos: darwin
+goarch: arm64
+pkg: github.com/Radiergummi/tsrelay/internal/tunnel
+cpu: Apple M3 Pro
+BenchmarkRoundTrip-12    	   27913	     42616 ns/op	    5168 B/op	      57 allocs/op
+BenchmarkRoundTrip-12    	   27444	     43836 ns/op	    5158 B/op	      57 allocs/op
+BenchmarkRoundTrip-12    	   29148	     43068 ns/op	    5159 B/op	      57 allocs/op
+BenchmarkRoundTrip-12    	   26238	     44424 ns/op	    5165 B/op	      57 allocs/op
+BenchmarkRoundTrip-12    	   25533	     45611 ns/op	    5178 B/op	      57 allocs/op
+BenchmarkRoundTrip-12    	   28488	     44895 ns/op	    5153 B/op	      57 allocs/op
+PASS
+ok  	github.com/Radiergummi/tsrelay/internal/tunnel	7.574s
+?   	github.com/Radiergummi/tsrelay/internal/tunnel/tunneltest	[no test files]
+goos: darwin
+goarch: arm64
+pkg: github.com/Radiergummi/tsrelay/internal/inspect
+cpu: Apple M3 Pro
+BenchmarkRedact-12     	 2914189	       411.3 ns/op	     528 B/op	       9 allocs/op
+BenchmarkRedact-12     	 2747888	       435.4 ns/op	     528 B/op	       9 allocs/op
+BenchmarkRedact-12     	 2826801	       513.5 ns/op	     528 B/op	       9 allocs/op
+BenchmarkRedact-12     	 2525924	       751.2 ns/op	     528 B/op	       9 allocs/op
+BenchmarkRedact-12     	 2510042	       445.6 ns/op	     528 B/op	       9 allocs/op
+BenchmarkRedact-12     	 2991201	       404.6 ns/op	     528 B/op	       9 allocs/op
+BenchmarkCapture/bodies-12         	  121869	     10021 ns/op	104642.74 MB/s	  180289 B/op	       4 allocs/op
+BenchmarkCapture/bodies-12         	  103209	     10991 ns/op	95407.28 MB/s	  180289 B/op	       4 allocs/op
+BenchmarkCapture/bodies-12         	  109110	     13185 ns/op	79530.35 MB/s	  180289 B/op	       4 allocs/op
+BenchmarkCapture/bodies-12         	   94203	     11360 ns/op	92306.42 MB/s	  180289 B/op	       4 allocs/op
+BenchmarkCapture/bodies-12         	  115680	     10187 ns/op	102937.19 MB/s	  180289 B/op	       4 allocs/op
+BenchmarkCapture/bodies-12         	  113743	     11679 ns/op	89780.54 MB/s	  180289 B/op	       4 allocs/op
+BenchmarkCapture/noBodies-12       	 4009389	       265.7 ns/op	3945731.14 MB/s	      64 B/op	       1 allocs/op
+BenchmarkCapture/noBodies-12       	 4831998	       535.9 ns/op	1956846.10 MB/s	      64 B/op	       1 allocs/op
+BenchmarkCapture/noBodies-12       	 3045910	       562.0 ns/op	1865860.77 MB/s	      64 B/op	       1 allocs/op
+BenchmarkCapture/noBodies-12       	 3531316	       341.6 ns/op	3069278.54 MB/s	      64 B/op	       1 allocs/op
+BenchmarkCapture/noBodies-12       	 4850848	       253.3 ns/op	4139302.15 MB/s	      64 B/op	       1 allocs/op
+BenchmarkCapture/noBodies-12       	 5276606	       221.5 ns/op	4733360.07 MB/s	      64 B/op	       1 allocs/op
+PASS
+ok  	github.com/Radiergummi/tsrelay/internal/inspect	24.644s
