@@ -200,6 +200,9 @@ func TestHTTPForwardsAndLogs(t *testing.T) {
 	if !strings.Contains(r.stderr.String(), "tag:prod-worker") {
 		t.Errorf("call line should name the sender:\n%s", r.stderr)
 	}
+	if !strings.Contains(r.stderr.String(), e.relayURL+"/inspect/c_") {
+		t.Errorf("call line should link to the inspector:\n%s", r.stderr)
+	}
 	r.cancel()
 	if code := waitExit(t, r); code != 0 {
 		t.Fatalf("exit after Ctrl-C = %d", code)

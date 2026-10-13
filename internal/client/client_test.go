@@ -165,8 +165,9 @@ func TestLogCalls(t *testing.T) {
 	req.Header.Set("Tsrelay-Sender-Tags", "tag:prod-worker")
 	req.Header.Set("Tsrelay-Sender-Node", "worker")
 	req.Header.Set(tunnel.HeaderHook, "h_1")
+	req.Header.Set("Tsrelay-Call-Id", "c_1")
 	h.ServeHTTP(httptest.NewRecorder(), req)
-	if got.Hook != "h_1" || got.Method != "POST" || got.Path != "/done" || got.Status != 201 || got.Sender != "tag:prod-worker" {
+	if got.Hook != "h_1" || got.Method != "POST" || got.Path != "/done" || got.Status != 201 || got.Sender != "tag:prod-worker" || got.CallID != "c_1" {
 		t.Fatalf("call = %+v", got)
 	}
 }

@@ -65,6 +65,7 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 	if err != nil {
 		return out.fail(err)
 	}
+	out.inspectBase = relayAPI.BaseURL
 	state, err := openState(d)
 	if err != nil {
 		return out.fail(err)

@@ -105,3 +105,24 @@ func TestUpdateSeqs(t *testing.T) {
 		t.Fatal("0 (a relay without sequence numbers) is always fresh")
 	}
 }
+
+func TestOutputCallLinks(t *testing.T) {
+	var stdout, stderr syncBuf
+	o := newOutput(&stdout, &stderr, false)
+	o.inspectBase = "https://r"
+	o.call(client.Call{CallID: "c_7f3a", Method: "POST", Path: "/done", Status: 200, Duration: 12 * time.Millisecond, Sender: "tag:ci"})
+	o.call(client.Call{Method: "GET", Path: "/old", Status: 200}) // from a relay that sends no call ID
+	lines := strings.Split(strings.TrimSpace(stderr.String()), "\n")
+	if len(lines) != 2 || !strings.HasSuffix(lines[0], "POST /done → 200  12ms  tag:ci  https://r/inspect/c_7f3a") || strings.Contains(lines[1], "inspect") {
+		t.Fatalf("call lines:\n%s", stderr.String())
+	}
+
+	stdout = syncBuf{}
+	o = newOutput(&stdout, &stderr, true)
+	o.inspectBase = "https://r"
+	o.call(client.Call{CallID: "c_7f3a", Method: "POST", Path: "/done", Status: 200})
+	var e jsonEvent
+	if err := json.Unmarshal([]byte(stdout.String()), &e); err != nil || e.CallID != "c_7f3a" || e.Inspect != "https://r/inspect/c_7f3a" {
+		t.Fatalf("call event = %+v, %v", e, err)
+	}
+}

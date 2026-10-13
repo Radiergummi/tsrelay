@@ -39,6 +39,7 @@ func attachCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d d
 	if err != nil {
 		return out.fail(err)
 	}
+	out.inspectBase = relayAPI.BaseURL
 	found, err := resolveHooks(ctx, relayAPI, refs)
 	if err != nil {
 		return out.fail(err)

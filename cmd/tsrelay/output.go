@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"sync"
 	"time"
 
@@ -22,6 +23,9 @@ type output struct {
 	stdout, stderr io.Writer
 	now            func() time.Time
 	mu             sync.Mutex
+	// inspectBase is the relay's URL. Call lines link to the call's
+	// inspector page below it. Empty means no links.
+	inspectBase string
 }
 
 // jsonEvent is one line of --json output.
@@ -38,6 +42,8 @@ type jsonEvent struct {
 	Status     int       `json:"status,omitempty"`
 	DurationMS float64   `json:"durationMs,omitempty"`
 	Sender     string    `json:"sender,omitempty"`
+	CallID     string    `json:"callId,omitempty"`
+	Inspect    string    `json:"inspect,omitempty"` // the call's inspector link
 	// Reason says why delivery stopped: for one hook "replaced", "revoked"
 	// or "deleted"; for the command "interrupted", "no-hooks", "error" or
 	// "command-exited".
@@ -112,13 +118,21 @@ func (o *output) onState(urls []string, target string, hold time.Duration) func(
 }
 
 func (o *output) call(c client.Call) {
+	link := ""
+	if o.inspectBase != "" && c.CallID != "" {
+		link = o.inspectBase + "/inspect/" + url.PathEscape(c.CallID)
+	}
 	if o.json {
 		o.emit(jsonEvent{Event: "call", Hook: c.Hook, Method: c.Method, Path: c.Path, Status: c.Status,
-			DurationMS: float64(c.Duration.Microseconds()) / 1000, Sender: c.Sender})
+			DurationMS: float64(c.Duration.Microseconds()) / 1000, Sender: c.Sender, CallID: c.CallID, Inspect: link})
 		return
 	}
-	o.text(o.stderr, "%s %s %s → %d  %s  %s", o.now().Format("15:04:05"), c.Method, c.Path, c.Status,
+	line := fmt.Sprintf("%s %s %s → %d  %s  %s", o.now().Format("15:04:05"), c.Method, c.Path, c.Status,
 		c.Duration.Round(time.Millisecond), c.Sender)
+	if link != "" {
+		line += "  " + link
+	}
+	o.text(o.stderr, "%s", line)
 }
 
 // dropped reports the hooks a control message ends delivery of; urlOf
