@@ -126,14 +126,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case aborted:
 			code = problem.TunnelLost
 		}
-		attrs := []slog.Attr{
+		attrs := make([]slog.Attr, 0, 13)
+		attrs = append(attrs,
 			slog.String("callID", callID), slog.String("kind", string(kind)),
 			slog.String("hookID", string(hook.ID)), audit.Actor(sender),
 			slog.String("method", r.Method), slog.String("path", r.URL.Path),
 			slog.Int("status", rec.status), slog.String("error", code),
 			slog.Int64("bytesIn", body.n), slog.Int64("bytesOut", rec.bytes),
 			slog.Duration("waited", waited), slog.Duration("duration", time.Since(start)),
-		}
+		)
 		if !headersAt.IsZero() {
 			attrs = append(attrs, slog.Duration("ttfb", headersAt.Sub(delivery.Add(waited))))
 		}

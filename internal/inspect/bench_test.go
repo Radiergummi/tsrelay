@@ -28,7 +28,9 @@ func BenchmarkCapture(b *testing.B) {
 		}
 		b.Run(name, func(b *testing.B) {
 			in := New(Config{})
-			b.SetBytes(1 << 20)
+			if keep {
+				b.SetBytes(1 << 20)
+			}
 			b.ReportAllocs()
 			for b.Loop() {
 				buf := in.NewBuffer(keep)
