@@ -20,7 +20,7 @@ type formView struct {
 	Channels []string          // channels the receiver patterns allow as they are
 	Patterns string            // the receiver patterns, for the hint
 	Policy   hooks.Policy      // relay defaults and maxima, for the hints
-	Me       api.Me            // the caller's hook count, limits and slug
+	Me       api.Me            // the caller's slug, and when creating their hook count and limits
 }
 
 func (u *UI) newHookPage(w http.ResponseWriter, r *http.Request, v viewer) {
@@ -45,8 +45,14 @@ func (u *UI) editHookPage(w http.ResponseWriter, r *http.Request, v viewer) {
 
 func (u *UI) formView(v viewer, h *api.Hook) formView {
 	patterns := v.ID.Grants.Patterns[authz.RoleReceiver]
-	return formView{V: v, Hook: h, Me: u.api.MeOf(v.ID), Values: formValues(h), Channels: channelChoices(patterns),
+	f := formView{V: v, Hook: h, Values: formValues(h), Channels: channelChoices(patterns),
 		Patterns: strings.Join(patterns, ", "), Policy: u.api.Hooks.Policy()}
+	if h == nil {
+		f.Me = u.api.MeOf(v.ID)
+	} else {
+		f.Me.Slug, _ = u.api.Hooks.Slug(v.ID.Login)
+	}
+	return f
 }
 
 // channelChoices are the channels a receiver may use as they are: "default"

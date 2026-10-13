@@ -79,6 +79,7 @@ function live(doc) {
         const fresh = next.getElementById(el.id);
         if (fresh) el.replaceWith(doc.importNode(fresh, true));
       }
+      if (parts().length === 0) stop(); // e.g. a pending call finished
     } catch {
       // the relay is unreachable; the next event or reconnect retries
     }
@@ -90,6 +91,7 @@ function live(doc) {
   let events = null;
   let opened = false;
   const connect = () => {
+    if (events) return;
     events = new EventSource("/api/v1/events" + (all ? "?all=true" : ""));
     const onEvent = (e) => {
       const hook = eventHook(e.data);
@@ -104,19 +106,27 @@ function live(doc) {
       opened = true;
     });
   };
-  connect();
+  const disconnect = () => {
+    events?.close();
+    events = null;
+  };
   // A background tab's connection still counts toward the browser's ~6
-  // connections per host over HTTP/1.1, so drop it while hidden and
-  // reconnect, with a refresh for whatever was missed, once shown again.
-  doc.addEventListener("visibilitychange", () => {
-    if (doc.visibilityState === "hidden") {
-      events.close();
-    } else {
-      opened = false;
-      connect();
-      schedule();
-    }
-  });
+  // connections per host over HTTP/1.1, so a hidden tab holds none: it
+  // connects once shown, with a refresh for whatever it missed.
+  const onVisibility = () => {
+    if (doc.visibilityState === "hidden") return disconnect();
+    if (events) return;
+    opened = false;
+    connect();
+    schedule();
+  };
+  // stop ends live updates once the page has nothing left to keep current.
+  const stop = () => {
+    disconnect();
+    doc.removeEventListener("visibilitychange", onVisibility);
+  };
+  doc.addEventListener("visibilitychange", onVisibility);
+  if (doc.visibilityState !== "hidden") connect();
 }
 
 // prettyJSON indents JSON text, or returns null if it is not valid JSON

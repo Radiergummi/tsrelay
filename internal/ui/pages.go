@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
@@ -94,7 +95,7 @@ func settingRows(h api.Hook) []settingRow {
 		{"Response timeout", formatDuration(e.ResponseTimeout), s.ResponseTimeout == nil},
 		{"Idle timeout", formatDuration(e.IdleTimeout), s.IdleTimeout == nil},
 		{"Max body size", body, s.MaxBodyBytes == nil},
-		{"Rate limit", fmt.Sprintf("%g/s, burst %d", e.RateLimit.PerSecond, e.RateLimit.Burst), s.RateLimit == nil},
+		{"Rate limit", fmt.Sprintf("%s/s, burst %d", strconv.FormatFloat(e.RateLimit.PerSecond, 'f', -1, 64), e.RateLimit.Burst), s.RateLimit == nil},
 		{"Capture", capture, s.Capture == nil},
 	}
 }

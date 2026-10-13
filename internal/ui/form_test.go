@@ -23,3 +23,13 @@ func TestFormValuesRateLimit(t *testing.T) {
 		}
 	}
 }
+
+// The hook page shows rate limits as plain decimals too.
+func TestSettingRowsRateLimit(t *testing.T) {
+	h := api.Hook{Effective: hooks.Effective{RateLimit: hooks.RateLimit{PerSecond: 1e6, Burst: 200}}}
+	for _, r := range settingRows(h) {
+		if r.Name == "Rate limit" && r.Value != "1000000/s, burst 200" {
+			t.Errorf("rate limit row = %q", r.Value)
+		}
+	}
+}
