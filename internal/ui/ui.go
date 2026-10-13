@@ -71,7 +71,6 @@ func (u *UI) NotFound() http.Handler {
 // viewer is the caller of a page.
 type viewer struct {
 	ID authz.Identity
-	Me api.Me
 }
 
 func (v viewer) Admin() bool    { return v.ID.Grants.Has(authz.RoleAdmin) }
@@ -88,7 +87,7 @@ func (u *UI) page(h func(http.ResponseWriter, *http.Request, viewer)) http.Handl
 				"The relay could not identify your device on the tailnet. Reload the page; if this keeps happening, the relay may have lost its Tailscale connection.")
 			return
 		}
-		h(w, r, viewer{ID: id, Me: u.api.MeOf(id)})
+		h(w, r, viewer{ID: id})
 	}))
 }
 
@@ -102,11 +101,11 @@ func secure(next http.Handler) http.Handler {
 	})
 }
 
-// visibleHook returns the hook with the given ID if v owns it or is an
-// admin, like the API's visibility rule.
+// visibleHook returns the hook with the given ID if v may see it, by the
+// API's visibility rule.
 func (u *UI) visibleHook(id string, v viewer) (hooks.Hook, bool) {
 	h, ok := u.hooks.Get(hooks.ID(id))
-	return h, ok && (v.owns(h) || v.Admin())
+	return h, ok && api.Visible(v.ID, h)
 }
 
 // render executes page into a buffer first, so a template error never

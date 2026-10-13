@@ -232,6 +232,16 @@ const actions = {
   },
 };
 
+// busy disables button while fn runs, so it cannot be pressed twice.
+async function busy(button, fn) {
+  button.disabled = true;
+  try {
+    await fn();
+  } finally {
+    button.disabled = false;
+  }
+}
+
 // clicks runs the action of any clicked element with a data-action. It
 // listens on the document, so buttons in swapped data-live parts work too.
 function clicks(doc) {
@@ -241,12 +251,7 @@ function clicks(doc) {
     if (!action) return;
     e.preventDefault();
     if (el.dataset.confirm && !confirm(el.dataset.confirm)) return;
-    el.disabled = true;
-    try {
-      await action(el, doc);
-    } finally {
-      el.disabled = false;
-    }
+    await busy(el, () => action(el, doc));
   });
 }
 
@@ -259,10 +264,8 @@ function testForm(doc) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const data = new FormData(form);
-    const button = form.querySelector("button[type=submit]");
-    button.disabled = true;
     flash(doc, "Sending… if no tunnel is attached, the relay holds the request until one is.");
-    try {
+    await busy(form.querySelector("button[type=submit]"), async () => {
       const r = await api("POST", `/api/v1/hooks/${encodeURIComponent(form.dataset.hook)}/test`, {
         method: data.get("method"),
         path: data.get("path"),
@@ -271,9 +274,7 @@ function testForm(doc) {
       });
       if (!r.ok) return flash(doc, problemText(r));
       location.assign(`/hooks/${encodeURIComponent(r.data.hookId)}/calls/${encodeURIComponent(r.data.id)}`);
-    } finally {
-      button.disabled = false;
-    }
+    });
   });
 }
 
@@ -320,14 +321,10 @@ function hookForm(doc) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     clearTimeout(timer);
-    const button = form.querySelector("button[type=submit]");
-    button.disabled = true;
-    try {
+    await busy(form.querySelector("button[type=submit]"), async () => {
       const hook = await send(false);
       if (hook) location.assign(`/hooks/${encodeURIComponent(hook.id)}`);
-    } finally {
-      button.disabled = false;
-    }
+    });
   });
 }
 

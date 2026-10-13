@@ -20,6 +20,11 @@ import (
 // Owns reports whether id owns h.
 func Owns(id authz.Identity, h hooks.Hook) bool { return id.IsUser() && h.Owner == id.UserID }
 
+// Visible reports whether id may see h: its owner always, admins as metadata.
+func Visible(id authz.Identity, h hooks.Hook) bool {
+	return Owns(id, h) || id.Grants.Has(authz.RoleAdmin)
+}
+
 // listCalls returns the hook's call summaries, newest first. Summaries are
 // metadata only, so owners and admins get the same list.
 func (a *API) listCalls(w http.ResponseWriter, r *http.Request, id authz.Identity) {

@@ -14,7 +14,6 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/metrics"
-	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"github.com/Radiergummi/tsrelay/internal/ui"
@@ -70,14 +69,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	a.Register(mux)
 	pages := ui.New(a, s.inspect, cfg.CapName)
 	pages.Register(mux)
-	notFound := pages.NotFound()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			problem.New(http.StatusNotFound, problem.NotFound, "not found").Write(w)
-			return
-		}
-		notFound.ServeHTTP(w, r)
-	})
+	mux.Handle("/", pages.NotFound())
 
 	// Callbacks bypass the mux, whose path cleaning would rewrite paths
 	// such as "/~m/cb//x" that must reach the local app unchanged.

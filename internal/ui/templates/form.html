@@ -1,13 +1,13 @@
 {{define "title"}}{{if .Hook}}Edit {{.Hook.Path}}{{else}}New hook{{end}}{{end}}
 {{define "content"}}
 <h1>{{if .Hook}}Edit {{.Hook.Path}}{{else}}New hook{{end}}</h1>
-{{if not .Hook}}<p class="muted">You own {{.V.Me.Hooks}} of {{.V.Me.Limits.MaxHooks}} hooks.</p>{{end}}
+{{if not .Hook}}<p class="muted">You own {{.Me.Hooks}} of {{.Me.Limits.MaxHooks}} hooks.</p>{{end}}
 <form id="hook-form" {{if .Hook}}data-method="PATCH" data-path="/api/v1/hooks/{{.Hook.ID}}" data-editing{{else}}data-method="POST" data-path="/api/v1/hooks"{{end}}>
 <p class="field-error" data-error-for=""></p>
 
 <label>Path
 <input name="path" value="{{index .Values "path"}}"{{if .Hook}} required{{else}} placeholder="three random words"{{end}}>
-<span class="hint">The URL is <code>~{{.V.Me.Slug}}/</code> followed by this path: up to 8 segments of letters, digits, <code>.</code>, <code>_</code> and <code>-</code>.</span>
+<span class="hint">The URL is <code>~{{.Me.Slug}}/</code> followed by this path: up to 8 segments of letters, digits, <code>.</code>, <code>_</code> and <code>-</code>.</span>
 <span class="field-error" data-error-for="path"></span></label>
 
 <label>Channel
@@ -25,7 +25,7 @@
 
 <label>Expires at
 <input name="expiresAt" data-type="time" value="{{index .Values "expiresAt"}}" placeholder="2026-12-31T00:00:00Z">
-<span class="hint">RFC 3339, in UTC. {{with .MaxTTL}}Your grants require persistent hooks to expire within {{.}}.{{else}}Optional.{{end}}</span>
+<span class="hint">RFC 3339, in UTC. {{with .V.ID.Grants.Limits.MaxHookTTL}}Your grants require persistent hooks to expire within {{.}}.{{else}}Optional.{{end}}</span>
 <span class="field-error" data-error-for="expiresAt"></span></label>
 
 <fieldset>

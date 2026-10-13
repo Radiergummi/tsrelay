@@ -90,6 +90,9 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.Handle("POST /api/v1/hooks/{id}/test", a.authed(a.testCall))
 	mux.Handle("GET /api/v1/events", a.authed(a.eventStream))
 	mux.Handle("GET /api/v1/tunnel", a.authed(a.tunnel))
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+		problem.New(http.StatusNotFound, problem.NotFound, "not found").Write(w)
+	})
 }
 
 func (a *API) authed(f func(http.ResponseWriter, *http.Request, authz.Identity)) http.Handler {
@@ -277,7 +280,7 @@ func (a *API) visibleHook(r *http.Request, id authz.Identity) (hooks.Hook, bool)
 	if !ok {
 		return hooks.Hook{}, false
 	}
-	return h, Owns(id, h) || id.Grants.Has(authz.RoleAdmin)
+	return h, Visible(id, h)
 }
 
 // HookJSON is h as the API shows it: URL, effective settings and attached tunnel.
