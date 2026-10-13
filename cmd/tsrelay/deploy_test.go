@@ -46,6 +46,8 @@ func TestDockerfile(t *testing.T) {
 		"COPY --from=builder --chown=65532:65532 /out/var/lib/tsrelay /var/lib/tsrelay",
 		// A numeric user, so that the kubelet can verify runAsNonRoot.
 		"USER 65532:65532",
+		// Links the GHCR package to the repository.
+		`org.opencontainers.image.source="https://github.com/Radiergummi/tsrelay"`,
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("Dockerfile missing %q", want)
