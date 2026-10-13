@@ -40,7 +40,7 @@ func (s *syncBuf) Write(p []byte) (int, error) { s.mu.Lock(); defer s.mu.Unlock(
 func (s *syncBuf) String() string              { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
 
 type env struct {
-	t    *testing.T
+	t    testing.TB
 	fake *identify.Fake
 	base string
 	log  *syncBuf
@@ -48,7 +48,14 @@ type env struct {
 	srv  *Server
 }
 
-func newEnv(t *testing.T, cfg Config) *env {
+func newEnv(t testing.TB, cfg Config) *env { t.Helper(); return newEnvLog(t, cfg, nil) }
+
+// newQuietEnv is newEnv without the audit log, for benchmarks and load
+// runs whose log would otherwise grow without bound.
+func newQuietEnv(t testing.TB, cfg Config) *env { t.Helper(); return newEnvLog(t, cfg, io.Discard) }
+
+// newEnvLog builds the environment; w receives the audit log, or e.log if nil.
+func newEnvLog(t testing.TB, cfg Config, w io.Writer) *env {
 	t.Helper()
 	e := &env{t: t, fake: &identify.Fake{}, log: &syncBuf{}}
 	store, err := hooks.OpenJSON(t.TempDir())
@@ -63,7 +70,10 @@ func newEnv(t *testing.T, cfg Config) *env {
 	e.base = "http://" + ts.Listener.Addr().String()
 	cfg.BaseURL = e.base
 	cfg.AllowedHosts = []string{"127.0.0.1"}
-	s := New(cfg, e.fake, mgr, audit.New(slog.New(slog.NewJSONHandler(e.log, nil))))
+	if w == nil {
+		w = e.log
+	}
+	s := New(cfg, e.fake, mgr, audit.New(slog.New(slog.NewJSONHandler(w, nil))))
 	h = s.Handler()
 	e.srv = s
 	ts.Start()
