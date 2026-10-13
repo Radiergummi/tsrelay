@@ -2,7 +2,9 @@ package server
 
 import (
 	"bytes"
+	"cmp"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -17,6 +19,10 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 )
+
+// callTimeout bounds every call the harness makes, so a stuck connection
+// fails the call instead of hanging the run (and the test binary) forever.
+const callTimeout = 30 * time.Second
 
 // TestLoad drives the relay in-process at a fixed concurrency for a fixed
 // time, then the same app directly, and reports what the relay adds. It is
@@ -89,12 +95,17 @@ func (r loadResult) p(q int) time.Duration {
 // drive sends calls to url from conc workers until dur has passed.
 func drive(t *testing.T, c *http.Client, url string, body []byte, conc int, dur time.Duration) loadResult {
 	var (
-		mu    sync.Mutex
-		all   []time.Duration
-		fails atomic.Int64
-		peak  atomic.Int64
-		wg    sync.WaitGroup
+		mu      sync.Mutex
+		all     []time.Duration
+		failsBy = map[string]int{} // keyed by error string or "status NNN"
+		peak    atomic.Int64
+		wg      sync.WaitGroup
 	)
+	fail := func(reason string) {
+		mu.Lock()
+		failsBy[reason]++
+		mu.Unlock()
+	}
 	stop := make(chan struct{})
 	sampled := make(chan struct{})
 	go func() { // sample the goroutine count while the run lasts
@@ -125,13 +136,13 @@ func drive(t *testing.T, c *http.Client, url string, body []byte, conc int, dur 
 				t0 := time.Now()
 				resp, err := c.Post(url, "application/octet-stream", bytes.NewReader(body))
 				if err != nil {
-					fails.Add(1)
+					fail(err.Error())
 					continue
 				}
 				io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
 				if resp.StatusCode >= 300 {
-					fails.Add(1)
+					fail(fmt.Sprintf("status %d", resp.StatusCode))
 					continue
 				}
 				mine = append(mine, time.Since(t0))
@@ -146,9 +157,7 @@ func drive(t *testing.T, c *http.Client, url string, body []byte, conc int, dur 
 	runtime.ReadMemStats(&after)
 	close(stop)
 	<-sampled
-	if n := fails.Load(); n > 0 {
-		t.Errorf("%d calls to %s failed", n, url)
-	}
+	reportFails(t, url, failsBy)
 	slices.Sort(all)
 	calls := max(1, len(all))
 	return loadResult{
@@ -159,11 +168,46 @@ func drive(t *testing.T, c *http.Client, url string, body []byte, conc int, dur 
 	}
 }
 
+// reportFails fails the test if any call to url failed, logging the most
+// common failure reasons (error strings and "status NNN") so a failing run
+// is legible instead of just a count.
+func reportFails(t *testing.T, url string, failsBy map[string]int) {
+	total := 0
+	for _, n := range failsBy {
+		total += n
+	}
+	if total == 0 {
+		return
+	}
+	t.Errorf("%d calls to %s failed", total, url)
+	type cause struct {
+		reason string
+		n      int
+	}
+	causes := make([]cause, 0, len(failsBy))
+	for reason, n := range failsBy {
+		causes = append(causes, cause{reason, n})
+	}
+	slices.SortFunc(causes, func(a, b cause) int { return cmp.Compare(b.n, a.n) })
+	const shown = 5
+	for i, c := range causes {
+		if i >= shown {
+			t.Logf("  ... and %d more distinct error(s)", len(causes)-shown)
+			break
+		}
+		t.Logf("  %5d  %s", c.n, c.reason)
+	}
+}
+
 // idleClient returns an HTTP client that keeps n idle connections per host,
 // one per expected concurrent caller, identified by dial (nil for the
-// relay's own default dialer).
+// relay's own default dialer). Every call is bounded by callTimeout so a
+// stuck connection cannot hang the run.
 func idleClient(n int, dial func(ctx context.Context, network, addr string) (net.Conn, error)) *http.Client {
-	return &http.Client{Transport: &http.Transport{DialContext: dial, MaxIdleConnsPerHost: n}}
+	return &http.Client{
+		Transport: &http.Transport{DialContext: dial, MaxIdleConnsPerHost: n},
+		Timeout:   callTimeout,
+	}
 }
 
 func envInt(t *testing.T, key string, def int) int {
