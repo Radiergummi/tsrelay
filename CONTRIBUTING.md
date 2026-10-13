@@ -32,6 +32,7 @@ TSRELAY_UI_DEV=1 go test ./internal/server -run TestUIDev -timeout 0 -v   # then
 ## Pull requests
 
 - Add or update tests for what you change. Bug fixes come with a test that fails without the fix.
+- For changes on the request path (relay, tunnel, inspector), compare benchmarks against `docs/perf/baseline.txt` with benchstat (see the README's Development section) and include the result.
 - Keep each pull request to one change, and match the style of the code around it.
 - Write commit messages as a plain imperative sentence that says what the change does, for example "Refuse replays of pending calls". No prefixes like `feat:`.
 - New dependencies need a good reason. tsrelay's direct dependencies are Tailscale, a few `golang.org/x` modules and OpenTelemetry (with the Prometheus client its exporter needs); anything else needs a good reason. The web UI has no JavaScript or CSS dependencies.
