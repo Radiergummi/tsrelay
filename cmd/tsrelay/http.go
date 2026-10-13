@@ -82,9 +82,10 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 	out.url(hook, false)
 
 	startURL := hook.URL // what a command started after "--" gets
-	// hook changes when the hook is recreated or updated; mu guards it, as
-	// control messages arrive concurrently.
+	// hook and seqs change when the hook is recreated or updated; mu guards
+	// them, as control messages arrive concurrently.
 	var mu sync.Mutex
+	seqs := updateSeqs{}
 	var tc *tunnel.Client
 	tc = &tunnel.Client{
 		Hooks: []string{hook.ID},
@@ -117,7 +118,7 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 			defer mu.Unlock()
 			if c.Type == tunnel.ControlHookUpdated {
 				for _, h := range c.Hooks {
-					if h.ID != hook.ID || h.URL == hook.URL {
+					if h.ID != hook.ID || !seqs.fresh(h.ID, c.Seq) || h.URL == hook.URL {
 						continue
 					}
 					// Only the path can change the URL; the prefix before it stays.

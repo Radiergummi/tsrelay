@@ -56,4 +56,7 @@ type Attach struct {
 type Control struct {
 	Type  ControlType `json:"type"`
 	Hooks []HookInfo  `json:"hooks,omitempty"`
+	// Seq orders hook-updated messages, which can arrive out of order. A
+	// client ignores one whose Seq is not above the last it saw for the hook.
+	Seq uint64 `json:"seq,omitempty"`
 }

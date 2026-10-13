@@ -89,3 +89,19 @@ func TestOutputJSON(t *testing.T) {
 		t.Errorf("JSON mode wrote to stderr: %q", stderr.String())
 	}
 }
+
+func TestUpdateSeqs(t *testing.T) {
+	s := updateSeqs{}
+	if !s.fresh("h_1", 2) {
+		t.Fatal("first update must be fresh")
+	}
+	if s.fresh("h_1", 1) || s.fresh("h_1", 2) {
+		t.Fatal("an older or repeated update must not be fresh")
+	}
+	if !s.fresh("h_2", 1) {
+		t.Fatal("sequence numbers are tracked per hook")
+	}
+	if !s.fresh("h_1", 0) || !s.fresh("h_1", 0) {
+		t.Fatal("0 (a relay without sequence numbers) is always fresh")
+	}
+}

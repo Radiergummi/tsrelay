@@ -51,6 +51,7 @@ func attachCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d d
 	}
 	ids, urls := make([]string, len(list)), make([]string, len(list))
 	urlOf := make(map[string]string, len(list)) // guarded by mu once the tunnel runs
+	seqs := updateSeqs{}                        // guarded by mu
 	var mu sync.Mutex
 	hold := list[0].Effective.HoldTimeout.Std()
 	for i, h := range list {
@@ -71,7 +72,7 @@ func attachCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d d
 			defer mu.Unlock()
 			if c.Type == tunnel.ControlHookUpdated {
 				for _, h := range c.Hooks {
-					if u, ok := urlOf[h.ID]; ok && u != h.URL {
+					if u, ok := urlOf[h.ID]; ok && seqs.fresh(h.ID, c.Seq) && u != h.URL {
 						urlOf[h.ID] = h.URL
 						out.url(api.Hook{ID: h.ID, URL: h.URL}, false)
 					}

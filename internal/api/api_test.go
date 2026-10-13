@@ -523,3 +523,32 @@ func TestConcurrentAttachesRespectReject(t *testing.T) {
 		t.Fatalf("%d attaches succeeded under the reject policy, want 1", ok)
 	}
 }
+
+// Each hook-updated carries a sequence number, and the higher number always
+// carries the newer URL, even though the messages may arrive in any order.
+func TestHookUpdatedSequence(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "a"}, &h)
+	controls, _, err := e.openTunnel(moritz, h.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next(t, controls) // attached
+	for _, p := range []string{"a1", "a2"} {
+		if resp := e.call(moritz, "PATCH", "/api/v1/hooks/"+h.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new(p)}}, nil); resp.StatusCode != 200 {
+			t.Fatalf("PATCH %s: %d", p, resp.StatusCode)
+		}
+	}
+	c1, c2 := next(t, controls), next(t, controls)
+	if c1.Seq == 0 || c2.Seq == 0 || c1.Seq == c2.Seq {
+		t.Fatalf("sequence numbers %d, %d", c1.Seq, c2.Seq)
+	}
+	newest := c1
+	if c2.Seq > c1.Seq {
+		newest = c2
+	}
+	if !strings.HasSuffix(newest.Hooks[0].URL, "/a2") {
+		t.Fatalf("highest sequence carries %s, want the URL ending in /a2", newest.Hooks[0].URL)
+	}
+}

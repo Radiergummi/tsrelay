@@ -29,6 +29,9 @@ type API struct {
 	// attachLocks holds one *sync.Mutex per user (tailcfg.UserID). It
 	// serializes that user's attaches from the checks through registration.
 	attachLocks sync.Map
+
+	notifyMu  sync.Mutex // orders updateSeq with the URL read for it
+	updateSeq uint64
 }
 
 type Me struct {
@@ -190,10 +193,27 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		return
 	}
 	a.Audit.Log(r.Context(), audit.HookUpdate, audit.Actor(id), audit.Hook(h), slog.Any("changed", changed))
-	if t, ok := a.Tunnels.Lookup(string(h.ID)); ok {
-		t.Notify(tunnel.Control{Type: tunnel.ControlHookUpdated, Hooks: []tunnel.HookInfo{{ID: string(h.ID), URL: a.BaseURL + h.Route()}}}, false)
-	}
+	a.notifyUpdated(h.ID)
 	writeJSON(w, http.StatusOK, a.hookJSON(h))
+}
+
+// notifyUpdated tells the tunnel serving the hook its current URL. Messages
+// are sent in the background and can overtake each other, so each carries
+// a sequence number. The number and the URL are taken under one lock, so a
+// higher number never carries an older URL.
+func (a *API) notifyUpdated(id hooks.ID) {
+	a.notifyMu.Lock()
+	h, ok := a.Hooks.Get(id)
+	a.updateSeq++
+	seq := a.updateSeq
+	a.notifyMu.Unlock()
+	if !ok {
+		return // deleted meanwhile; the delete sends hook-deleted
+	}
+	if t, ok := a.Tunnels.Lookup(string(id)); ok {
+		t.Notify(tunnel.Control{Type: tunnel.ControlHookUpdated, Seq: seq,
+			Hooks: []tunnel.HookInfo{{ID: string(id), URL: a.BaseURL + h.Route()}}}, false)
+	}
 }
 
 func (a *API) deleteHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {

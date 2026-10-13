@@ -171,6 +171,24 @@ func (o *output) finish(err error) int {
 	}
 }
 
+// updateSeqs remembers the newest hook-updated sequence number per hook,
+// because control messages can arrive out of order.
+type updateSeqs map[string]uint64
+
+// fresh reports whether an update numbered seq for hook is newer than any
+// seen so far, and records it. A relay without sequence numbers sends 0,
+// which always counts as fresh.
+func (s updateSeqs) fresh(hook string, seq uint64) bool {
+	if seq == 0 {
+		return true
+	}
+	if seq <= s[hook] {
+		return false
+	}
+	s[hook] = seq
+	return true
+}
+
 // errText renders err for people; relay refusals carry the relay's reason.
 func errText(err error) string {
 	var p *problem.Problem
