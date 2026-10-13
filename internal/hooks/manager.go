@@ -151,6 +151,16 @@ func validateExpiry(expiresAt *time.Time, ephemeral bool, now time.Time, maxTTL 
 }
 
 func (m *Manager) Create(ctx context.Context, owner authz.Identity, req CreateRequest) (Hook, error) {
+	return m.create(ctx, owner, req, false)
+}
+
+// CheckCreate validates req exactly as Create does, slug binding included,
+// but saves nothing. It returns the hook Create would make, without an ID.
+func (m *Manager) CheckCreate(ctx context.Context, owner authz.Identity, req CreateRequest) (Hook, error) {
+	return m.create(ctx, owner, req, true)
+}
+
+func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRequest, dry bool) (Hook, error) {
 	if !owner.IsUser() || !owner.Grants.Has(authz.RoleReceiver) {
 		return Hook{}, ErrForbidden
 	}
@@ -182,7 +192,11 @@ func (m *Manager) Create(ctx context.Context, owner authz.Identity, req CreateRe
 		return Hook{}, errs
 	}
 
-	if err := m.store.BindSlug(ctx, slug, owner.UserID); err != nil {
+	bind := m.store.BindSlug
+	if dry {
+		bind = m.slugFree
+	}
+	if err := bind(ctx, slug, owner.UserID); err != nil {
 		if errors.Is(err, ErrSlugTaken) {
 			return Hook{}, ValidationError{{Field: "owner", Message: fmt.Sprintf(
 				"the URL prefix ~%s belongs to another user; ask the relay operator to configure a slug override for %s", slug, owner.Login)}}
@@ -194,12 +208,29 @@ func (m *Manager) Create(ctx context.Context, owner authz.Identity, req CreateRe
 		Path: req.Path, Channel: req.Channel, Description: req.Description,
 		Ephemeral: req.Ephemeral, Settings: req.Settings, ExpiresAt: req.ExpiresAt, CreatedAt: m.now().UTC(),
 	}
+	if dry {
+		h.ID = ""
+		return h, nil
+	}
 	if err := m.store.PutHook(ctx, h); err != nil {
 		return Hook{}, err
 	}
 	m.hooks[h.ID] = h
 	m.detached[h.ID] = m.now()
 	return h, nil
+}
+
+// slugFree fails with ErrSlugTaken if slug is bound to a user other than
+// user. It is BindSlug without the binding, for dry runs.
+func (m *Manager) slugFree(ctx context.Context, slug string, user tailcfg.UserID) error {
+	owner, ok, err := m.store.SlugOwner(ctx, slug)
+	if err != nil {
+		return err
+	}
+	if ok && owner != user {
+		return ErrSlugTaken
+	}
+	return nil
 }
 
 // freePathLocked picks a random path that does not overlap the owner's hooks.

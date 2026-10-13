@@ -84,6 +84,16 @@ func (p SettingsPatch) apply(s *Settings) []string {
 // hook and the names of the fields the request touched. Hooks of other
 // users are reported as ErrNotFound, so their existence is not revealed.
 func (m *Manager) Update(ctx context.Context, owner authz.Identity, id ID, req UpdateRequest) (Hook, []string, error) {
+	return m.update(ctx, owner, id, req, false)
+}
+
+// CheckUpdate validates req exactly as Update does but saves nothing. It
+// returns the hook as Update would leave it.
+func (m *Manager) CheckUpdate(ctx context.Context, owner authz.Identity, id ID, req UpdateRequest) (Hook, []string, error) {
+	return m.update(ctx, owner, id, req, true)
+}
+
+func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req UpdateRequest, dry bool) (Hook, []string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cur, ok := m.hooks[id]
@@ -145,6 +155,9 @@ func (m *Manager) Update(ctx context.Context, owner authz.Identity, id ID, req U
 
 	if len(errs) > 0 {
 		return Hook{}, nil, errs
+	}
+	if dry {
+		return h, changed, nil
 	}
 	if err := m.store.PutHook(ctx, h); err != nil {
 		return Hook{}, nil, err

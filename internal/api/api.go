@@ -137,7 +137,12 @@ func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		problem.New(http.StatusBadRequest, problem.BadRequest, "invalid JSON: "+err.Error()).Write(w)
 		return
 	}
-	h, err := a.Hooks.Create(r.Context(), id, req)
+	dry := r.URL.Query().Get("dryRun") == "true"
+	create := a.Hooks.Create
+	if dry {
+		create = a.Hooks.CheckCreate
+	}
+	h, err := create(r.Context(), id, req)
 	var ve hooks.ValidationError
 	switch {
 	case errors.Is(err, hooks.ErrForbidden):
@@ -152,6 +157,10 @@ func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 	case err != nil:
 		a.Audit.Slog().Error("hook.create failed", "error", err)
 		problem.New(http.StatusInternalServerError, problem.Internal, "could not save the hook").Write(w)
+		return
+	}
+	if dry {
+		writeJSON(w, http.StatusOK, a.hookJSON(h))
 		return
 	}
 	a.Audit.Log(r.Context(), audit.HookCreate, audit.Actor(id), audit.Hook(h), slog.Bool("ephemeral", h.Ephemeral))
@@ -176,7 +185,12 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		problem.New(http.StatusBadRequest, problem.BadRequest, "invalid JSON: "+err.Error()).Write(w)
 		return
 	}
-	h, changed, err := a.Hooks.Update(r.Context(), id, hooks.ID(r.PathValue("id")), req)
+	dry := r.URL.Query().Get("dryRun") == "true"
+	update := a.Hooks.Update
+	if dry {
+		update = a.Hooks.CheckUpdate
+	}
+	h, changed, err := update(r.Context(), id, hooks.ID(r.PathValue("id")), req)
 	var ve hooks.ValidationError
 	switch {
 	case errors.Is(err, hooks.ErrNotFound):
@@ -190,6 +204,10 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 	case err != nil:
 		a.Audit.Slog().Error("hook.update failed", "error", err)
 		problem.New(http.StatusInternalServerError, problem.Internal, "could not save the hook").Write(w)
+		return
+	}
+	if dry {
+		writeJSON(w, http.StatusOK, a.hookJSON(h))
 		return
 	}
 	a.Audit.Log(r.Context(), audit.HookUpdate, audit.Actor(id), audit.Hook(h), slog.Any("changed", changed))

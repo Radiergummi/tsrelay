@@ -552,3 +552,40 @@ func TestHookUpdatedSequence(t *testing.T) {
 		t.Fatalf("highest sequence carries %s, want the URL ending in /a2", newest.Hooks[0].URL)
 	}
 }
+
+func TestDryRun(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	resp := e.call(moritz, "POST", "/api/v1/hooks?dryRun=true", hooks.CreateRequest{Path: "x", Channel: "prod.eu"}, &h)
+	if resp.StatusCode != 200 || h.ID != "" || h.Path != "x" || h.URL != "https://tsrelay.example.ts.net/~moritz/x" {
+		t.Fatalf("dry-run create = %d %+v", resp.StatusCode, h)
+	}
+	var list []Hook
+	e.call(moritz, "GET", "/api/v1/hooks", nil, &list)
+	if len(list) != 0 {
+		t.Fatalf("a dry run saved a hook: %+v", list)
+	}
+	var p problem.Problem
+	if resp := e.call(moritz, "POST", "/api/v1/hooks?dryRun=true", hooks.CreateRequest{Channel: "billing"}, &p); resp.StatusCode != 422 || !strings.Contains(p.Detail, "billing") {
+		t.Fatalf("invalid dry-run create = %d %+v", resp.StatusCode, p)
+	}
+
+	var real Hook
+	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "y"}, &real)
+	var got Hook
+	resp = e.call(moritz, "PATCH", "/api/v1/hooks/"+real.ID+"?dryRun=true", hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new("z")}}, &got)
+	if resp.StatusCode != 200 || got.Path != "z" || got.ID != real.ID {
+		t.Fatalf("dry-run update = %d %+v", resp.StatusCode, got)
+	}
+	e.call(moritz, "GET", "/api/v1/hooks/"+real.ID, nil, &got)
+	if got.Path != "y" {
+		t.Fatalf("a dry-run PATCH saved: path = %q", got.Path)
+	}
+
+	// The slug check runs too: "moritz" is now bound to the first user.
+	twin := identify.User("twin-box", "moritz@other.org", 9, `{"roles":["receiver"]}`)
+	p = problem.Problem{}
+	if resp := e.call(twin, "POST", "/api/v1/hooks?dryRun=true", hooks.CreateRequest{}, &p); resp.StatusCode != 422 || !strings.Contains(p.Detail, "belongs to another user") {
+		t.Fatalf("dry run with a taken slug = %d %+v", resp.StatusCode, p)
+	}
+}
