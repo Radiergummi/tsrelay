@@ -271,6 +271,20 @@ func TestUICallPage(t *testing.T) {
 			t.Errorf("admin's call page shows %q", secret)
 		}
 	}
+
+	// Markup in the path and query is escaped too, for owner and admin alike.
+	e.seed(h, inspect.Call{ID: "c_markup", Method: "POST", Path: `/x"'<script>alert(3)</script>`, Query: `q=<script>alert(4)</script>`})
+	for _, id := range []authz.Identity{receiver, uiAdmin} {
+		resp, body := e.page(id, "/hooks/"+h.ID+"/calls/c_markup")
+		if resp.StatusCode != 200 {
+			t.Fatalf("c_markup as %s: status %d:\n%s", id.Login, resp.StatusCode, body)
+		}
+		if strings.Contains(body, "<script>alert") {
+			t.Errorf("c_markup as %s: captured markup in the path or query was rendered as HTML", id.Login)
+		}
+		assertInert(t, body)
+	}
+
 	for _, path := range []string{"/hooks/" + h.ID + "/calls/c_nope", "/hooks/h_nope/calls/c_1"} {
 		if resp, _ := e.page(receiver, path); resp.StatusCode != 404 {
 			t.Errorf("%s = %d, want 404", path, resp.StatusCode)
@@ -290,6 +304,7 @@ func TestUICallBodies(t *testing.T) {
 	}
 	e.seed(h, inspect.Call{ID: "c_cut", RequestBody: inspect.Capture{Body: []byte("0123"), Size: 4096, Truncated: true, Captured: true}})
 	e.seed(h, inspect.Call{ID: "c_bin", RequestBody: full("\xff\xfe\x00")})
+	e.seed(h, inspect.Call{ID: "c_nul", RequestBody: full("a\x00b")})
 	e.seed(h, inspect.Call{ID: "c_off", RequestBody: inspect.Capture{Size: 10}})
 	e.seed(h, inspect.Call{ID: "c_empty", RequestBody: inspect.Capture{Captured: true}})
 	e.seed(h, inspect.Call{ID: "c_refused", Outcome: "hook_not_found", Status: 404, RequestBody: inspect.Capture{Captured: true}})
@@ -299,6 +314,7 @@ func TestUICallBodies(t *testing.T) {
 	}{
 		"c_cut":     {[]string{"showing the first 4 B", "not captured in full"}, false},
 		"c_bin":     {[]string{"binary body", "not offered as a curl command"}, true},
+		"c_nul":     {[]string{"binary body", "not offered as a curl command"}, true},
 		"c_off":     {[]string{"not captured: body capture is off"}, false},
 		"c_empty":   {[]string{"No body."}, true},
 		"c_refused": {[]string{"refused by channel", "No attempts"}, false},

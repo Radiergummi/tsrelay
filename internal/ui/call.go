@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"bytes"
 	"fmt"
 	"maps"
 	"mime"
@@ -127,10 +128,11 @@ func newBody(id string, c inspect.Capture, contentType string) bodyView {
 	if c.Truncated {
 		kept = trimPartialRune(kept) // the cut may have split a character
 	}
-	if utf8.Valid(kept) {
+	// A NUL byte counts as binary too: a shell argument cannot hold one, so
+	// such a body is never offered as a curl command either.
+	b.Binary = !utf8.Valid(kept) || bytes.IndexByte(kept, 0) >= 0
+	if !b.Binary {
 		b.Text = string(kept)
-	} else {
-		b.Binary = true
 	}
 	mt, _, _ := mime.ParseMediaType(contentType)
 	b.JSON = mt == "application/json" || strings.HasSuffix(mt, "+json")
