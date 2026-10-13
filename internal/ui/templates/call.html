@@ -1,0 +1,49 @@
+{{define "title"}}{{.Call.Method}} {{.Call.Path}}{{end}}
+{{define "content"}}
+<p><a href="/hooks/{{.Hook.ID}}">← {{.Hook.Path}}</a></p>
+<section id="call"{{if eq .Call.Outcome "pending"}} data-live data-hooks="{{.Hook.ID}}"{{if not .Owner}} data-all{{end}}{{end}}>
+<div class="bar">
+<h1><code>{{.Call.Method}} {{.Call.Path}}{{with .Call.Query}}?{{.}}{{end}}</code></h1>
+{{if .Owner}}<div class="actions">{{if .NoReplay}}<span class="muted">{{.NoReplay}}</span>{{else}}<button class="primary" data-action="replay" data-hook="{{.Hook.ID}}" data-call="{{.Call.ID}}">Replay</button>{{end}}</div>{{end}}
+</div>
+{{if .Call.QueryTruncated}}<p class="muted">The query string was cut at the capture limit.</p>{{end}}
+<dl class="settings">
+<dt>Received</dt><dd><time datetime="{{iso .Call.ReceivedAt}}">{{when .Call.ReceivedAt}}</time></dd>
+<dt>Kind</dt><dd>{{.Call.Kind}}{{with .Call.ReplayOf}}, replaying <a href="/hooks/{{$.Hook.ID}}/calls/{{.}}">{{.}}</a>{{end}}</dd>
+<dt>Sender</dt><dd>{{template "sender" .Call.Sender}}{{with .Call.Sender.IP}} <span class="muted">{{.}}</span>{{end}}</dd>
+<dt>Result</dt><dd><span class="{{outcomeClass .Call.Outcome}}">{{if .Call.Status}}{{.Call.Status}} {{end}}{{.Call.Outcome}}</span>{{if ne .Call.Outcome "pending"}} in {{dur .Call.Duration}}{{end}}</dd>
+</dl>
+{{if not .Owner}}<p class="muted">Only the hook's owner sees query strings, headers and bodies. As an admin you see metadata only.</p>{{end}}
+
+<div class="split">
+<div>
+<h2>Request</h2>
+{{if .Owner}}{{template "message" .Request}}{{else}}<p class="muted">{{size .Call.RequestBody.Size}} body.</p>{{end}}
+</div>
+<div>
+<h2>Response</h2>
+{{with .Response}}
+<p><span class="{{if .Error}}bad{{else}}ok{{end}}">{{if .Status}}{{.Status}}{{end}} {{.Error}}</span></p>
+{{if $.Owner}}{{template "message" .Response}}{{else}}<p class="muted">{{size .ResponseBody.Size}} body.</p>{{end}}
+{{else}}{{if eq .Call.Outcome "pending"}}<p class="muted">Waiting for the response…</p>{{else}}<p class="muted">The relay answered {{.Call.Status}} {{.Call.Outcome}} itself; the call never reached your app.</p>{{end}}{{end}}
+</div>
+</div>
+
+<h2>Attempts</h2>
+{{if .Attempts}}<ol class="attempts">
+{{range .Attempts}}<li>
+<time datetime="{{iso .StartedAt}}">{{when .StartedAt}}</time>
+{{with .Node}}via <strong>{{.}}</strong>{{else}}no tunnel{{end}}{{with .TunnelID}} <span class="muted">({{.}})</span>{{end}}:
+{{if .Status}}{{.Status}}{{end}}{{with .Error}} <span class="bad">{{.}}</span>{{end}}
+<span class="muted">held {{dur .WaitedFor}}, first byte after {{dur .TTFB}}, {{dur .Duration}} in total, {{size .BytesIn}} in, {{size .BytesOut}} out</span>
+</li>{{end}}
+</ol>{{else}}{{if eq .Call.Outcome "pending"}}<p class="muted">Delivering…</p>{{else}}<p class="muted">No attempts: the relay refused the call before delivering it.</p>{{end}}{{end}}
+</section>
+
+{{if .Owner}}
+<h2>Copy as curl</h2>
+{{range $i, $c := .Curl}}<div class="body-bar"><span>{{$c.Label}}</span><button data-action="copy" data-copy="#curl-{{$i}}">Copy</button></div>
+<pre id="curl-{{$i}}">{{$c.Command}}</pre>
+{{else}}<p class="muted">{{.NoCurl}}</p>{{end}}
+{{end}}
+{{end}}

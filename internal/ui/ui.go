@@ -54,6 +54,8 @@ func (u *UI) Register(mux *http.ServeMux) {
 	})))
 	mux.Handle("GET /{$}", u.page(u.hooksPage))
 	mux.Handle("GET /hooks/{id}", u.page(u.hookPage))
+	mux.Handle("GET /hooks/{id}/calls/{callID}", u.page(u.callPage))
+	mux.Handle("GET /inspect/{callID}", u.page(u.inspectRedirect))
 }
 
 // NotFound answers unknown non-API paths with an HTML 404 page.

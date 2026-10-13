@@ -20,3 +20,16 @@
 </tbody>
 </table>
 {{else}}<p class="muted">No calls yet. They appear here as they arrive.</p>{{end}}{{end}}
+
+{{define "message"}}
+{{if .Headers}}<table class="headers">{{range .Headers}}<tr><th>{{.Name}}</th><td>{{.Value}}</td></tr>{{end}}</table>{{else}}<p class="muted">No headers.</p>{{end}}
+{{with .Redacted}}<p class="muted">Left out: {{join . ", "}}</p>{{end}}
+{{template "body" .Body}}
+{{end}}
+
+{{define "body"}}{{if and (eq .Size 0) .Truncated}}<p class="muted">The body was not read: the call was refused before delivery.</p>
+{{else if eq .Size 0}}<p class="muted">No body.</p>
+{{else if not .Captured}}<p class="muted">{{size .Size}} body, not captured: body capture is off for this hook or the relay.</p>
+{{else if .Binary}}<p class="muted">{{size .Size}} binary body{{if .Truncated}}, partly captured{{end}}.</p>
+{{else}}<div class="body-bar"><span class="muted">{{size .Size}}{{if .Truncated}}, showing the first {{size .Kept}}{{end}}</span>{{if .JSON}}<button data-action="toggle-json" data-target="#{{.ID}}">Pretty-print</button>{{end}}</div>
+<pre id="{{.ID}}">{{.Text}}</pre>{{end}}{{end}}

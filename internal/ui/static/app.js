@@ -101,12 +101,41 @@ function live(doc) {
   });
 }
 
+// prettyJSON indents JSON text, or returns null if it is not valid JSON
+// (for example a body cut at the capture limit).
+export function prettyJSON(text) {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return null;
+  }
+}
+
 // actions maps a button's data-action to what clicking it does.
 const actions = {
   async "delete-hook"(el, doc) {
     const r = await api("DELETE", `/api/v1/hooks/${encodeURIComponent(el.dataset.hook)}`);
     if (!r.ok) return flash(doc, problemText(r));
     location.assign(el.dataset.next || "/");
+  },
+  async replay(el, doc) {
+    const r = await api("POST", `/api/v1/hooks/${encodeURIComponent(el.dataset.hook)}/calls/${encodeURIComponent(el.dataset.call)}/replay`);
+    if (!r.ok) return flash(doc, problemText(r));
+    location.assign(`/hooks/${encodeURIComponent(r.data.hookId)}/calls/${encodeURIComponent(r.data.id)}`);
+  },
+  "toggle-json"(el, doc) {
+    const pre = doc.querySelector(el.dataset.target);
+    if (pre.dataset.raw !== undefined) {
+      pre.textContent = pre.dataset.raw;
+      delete pre.dataset.raw;
+      el.textContent = "Pretty-print";
+      return;
+    }
+    const pretty = prettyJSON(pre.textContent);
+    if (pretty === null) return flash(doc, "This body is not valid JSON, possibly because it was cut at the capture limit.");
+    pre.dataset.raw = pre.textContent;
+    pre.textContent = pretty;
+    el.textContent = "Show raw";
   },
   async copy(el, doc) {
     const text = doc.querySelector(el.dataset.copy).textContent;

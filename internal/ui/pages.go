@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
@@ -90,6 +91,18 @@ func settingRows(h api.Hook) []settingRow {
 		{"Rate limit", fmt.Sprintf("%g/s, burst %d", e.RateLimit.PerSecond, e.RateLimit.Burst), s.RateLimit == nil},
 		{"Capture", capture, s.Capture == nil},
 	}
+}
+
+// inspectRedirect resolves the inspect link the CLI prints for each call
+// (DESIGN.md §15) to the call's page.
+func (u *UI) inspectRedirect(w http.ResponseWriter, r *http.Request, v viewer) {
+	if c, ok := u.inspect.Get(r.PathValue("callID")); ok {
+		if _, visible := u.visibleHook(string(c.HookID), v); visible {
+			http.Redirect(w, r, "/hooks/"+url.PathEscape(string(c.HookID))+"/calls/"+url.PathEscape(c.ID), http.StatusSeeOther)
+			return
+		}
+	}
+	u.error(w, v, http.StatusNotFound, noCall)
 }
 
 // noAccess tells a caller who cannot receive callbacks what is missing,

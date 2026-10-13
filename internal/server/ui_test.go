@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
@@ -194,6 +195,143 @@ func TestUIHookPage(t *testing.T) {
 	}{{uiOther, "/hooks/" + h.ID}, {receiver, "/hooks/h_nope"}} {
 		if resp, body := e.page(tc.id, tc.path); resp.StatusCode != 404 || !strings.Contains(body, "There is no hook") {
 			t.Errorf("%s as %s = %d", tc.path, tc.id.Login, resp.StatusCode)
+		}
+	}
+}
+
+// seed records c as a finished call of h for h's owner, filling in what
+// every call has.
+func (e *env) seed(h api.Hook, c inspect.Call) {
+	c.HookID, c.Owner = hooks.ID(h.ID), receiver.UserID
+	if c.ReceivedAt.IsZero() {
+		c.ReceivedAt = time.Now()
+	}
+	if c.Kind == "" {
+		c.Kind = inspect.KindSender
+	}
+	if c.Method == "" {
+		c.Method, c.Path = "POST", "/done"
+	}
+	if c.Outcome == "" {
+		c.Outcome, c.Status = inspect.OutcomeOK, 200
+	}
+	if c.Attempts == nil {
+		c.Attempts = []inspect.Attempt{}
+	}
+	e.srv.inspect.Add(c)
+}
+
+func full(s string) inspect.Capture {
+	return inspect.Capture{Body: []byte(s), Size: int64(len(s)), Captured: true}
+}
+
+func TestUICallPage(t *testing.T) {
+	e := newEnv(t, Config{CapName: testCap})
+	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer local.Close()
+	defer e.cli(h.ID, local.URL)()
+	e.seed(h, inspect.Call{
+		ID: "c_1", Query: "token=s3cr3t",
+		RequestHeaders: http.Header{"Content-Type": {"application/json"}, "X-Evil": {`</pre><script>alert(1)</script>`}},
+		Redacted:       []string{"Authorization"},
+		RequestBody:    full(`{"html":"<script>alert(2)</script>"}`),
+		Status:         201,
+		Attempts: []inspect.Attempt{{ID: "a_1", Status: 201, TunnelID: "t_1", Node: "laptop",
+			ResponseHeaders: http.Header{"X-Reply": {"secret-reply"}}, ResponseBody: full("created")}},
+	})
+
+	resp, body := e.page(receiver, "/hooks/"+h.ID+"/calls/c_1")
+	if resp.StatusCode != 200 {
+		t.Fatalf("owner: status %d:\n%s", resp.StatusCode, body)
+	}
+	for _, want := range []string{
+		"token=s3cr3t", "X-Evil", "&lt;/pre&gt;&lt;script&gt;alert(1)&lt;/script&gt;", "Left out: Authorization",
+		"secret-reply", "created", `data-action="replay"`, `data-action="toggle-json"`,
+		"To the local target", local.URL + "/done?token=s3cr3t", "To the hook URL",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("owner's call page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "<script>alert") {
+		t.Error("captured markup was rendered as HTML")
+	}
+	assertInert(t, body)
+
+	resp, body = e.page(uiAdmin, "/hooks/"+h.ID+"/calls/c_1")
+	if resp.StatusCode != 200 || !strings.Contains(body, "metadata only") {
+		t.Fatalf("admin: status %d:\n%s", resp.StatusCode, body)
+	}
+	for _, secret := range []string{"s3cr3t", "X-Evil", "alert(", "secret-reply", `data-action="replay"`, "curl"} {
+		if strings.Contains(body, secret) {
+			t.Errorf("admin's call page shows %q", secret)
+		}
+	}
+	for _, path := range []string{"/hooks/" + h.ID + "/calls/c_nope", "/hooks/h_nope/calls/c_1"} {
+		if resp, _ := e.page(receiver, path); resp.StatusCode != 404 {
+			t.Errorf("%s = %d, want 404", path, resp.StatusCode)
+		}
+	}
+	if resp, _ := e.page(uiOther, "/hooks/"+h.ID+"/calls/c_1"); resp.StatusCode != 404 {
+		t.Errorf("another user's call = %d, want 404", resp.StatusCode)
+	}
+}
+
+// Bodies that cannot be shown or replayed in full say so.
+func TestUICallBodies(t *testing.T) {
+	e := newEnv(t, Config{CapName: testCap})
+	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.seed(h, inspect.Call{ID: "c_cut", RequestBody: inspect.Capture{Body: []byte("0123"), Size: 4096, Truncated: true, Captured: true}})
+	e.seed(h, inspect.Call{ID: "c_bin", RequestBody: full("\xff\xfe\x00")})
+	e.seed(h, inspect.Call{ID: "c_off", RequestBody: inspect.Capture{Size: 10}})
+	e.seed(h, inspect.Call{ID: "c_empty", RequestBody: inspect.Capture{Captured: true}})
+	e.seed(h, inspect.Call{ID: "c_refused", Outcome: "hook_not_found", Status: 404, RequestBody: inspect.Capture{Captured: true}})
+	for id, tc := range map[string]struct {
+		want   []string
+		replay bool
+	}{
+		"c_cut":     {[]string{"showing the first 4 B", "not captured in full"}, false},
+		"c_bin":     {[]string{"binary body", "not offered as a curl command"}, true},
+		"c_off":     {[]string{"not captured: body capture is off"}, false},
+		"c_empty":   {[]string{"No body."}, true},
+		"c_refused": {[]string{"refused by channel", "No attempts"}, false},
+	} {
+		_, body := e.page(receiver, "/hooks/"+h.ID+"/calls/"+id)
+		for _, w := range tc.want {
+			if !strings.Contains(body, w) {
+				t.Errorf("%s: page lacks %q", id, w)
+			}
+		}
+		if got := strings.Contains(body, `data-action="replay"`); got != tc.replay {
+			t.Errorf("%s: replay offered = %v, want %v", id, got, tc.replay)
+		}
+	}
+}
+
+func TestUIInspectRedirect(t *testing.T) {
+	e := newEnv(t, Config{CapName: testCap})
+	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.seed(h, inspect.Call{ID: "c_1"})
+	resp, _ := e.page(receiver, "/inspect/c_1")
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/hooks/"+h.ID+"/calls/c_1" {
+		t.Fatalf("inspect link = %d → %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	for _, tc := range []struct {
+		id   authz.Identity
+		path string
+	}{{uiOther, "/inspect/c_1"}, {receiver, "/inspect/c_gone"}} {
+		if resp, body := e.page(tc.id, tc.path); resp.StatusCode != 404 || !strings.Contains(body, "forgets them when it restarts") {
+			t.Errorf("%s = %d", tc.path, resp.StatusCode)
 		}
 	}
 }

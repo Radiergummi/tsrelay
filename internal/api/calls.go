@@ -74,6 +74,20 @@ func (a *API) ownedHook(w http.ResponseWriter, r *http.Request, id authz.Identit
 	return hooks.Hook{}, false
 }
 
+// ReplayRefusal says why c cannot be replayed (DESIGN.md §9.3), or returns
+// nil if it can.
+func ReplayRefusal(c inspect.Call) *problem.Problem {
+	switch {
+	case c.Outcome == problem.HookNotFound:
+		return problem.New(http.StatusConflict, problem.Conflict, "this call was refused by channel and never delivered, so it cannot be replayed")
+	case c.QueryTruncated:
+		return problem.New(http.StatusConflict, problem.Conflict, "this call's query string was not captured in full, so it cannot be replayed")
+	case !c.RequestBody.Complete():
+		return problem.New(http.StatusConflict, problem.Conflict, "this call's request body was not captured in full, so it cannot be replayed")
+	}
+	return nil
+}
+
 // replayCall re-sends a captured call to the hook's current tunnel
 // (DESIGN.md §9.3). Redacted headers were never captured, so they are left
 // out. The local app is told about the original sender. A call refused by
@@ -88,16 +102,8 @@ func (a *API) replayCall(w http.ResponseWriter, r *http.Request, id authz.Identi
 		problem.New(http.StatusNotFound, problem.NotFound, "call not found").Write(w)
 		return
 	}
-	if orig.Outcome == problem.HookNotFound {
-		problem.New(http.StatusConflict, problem.Conflict, "this call was refused by channel and never delivered, so it cannot be replayed").Write(w)
-		return
-	}
-	if orig.QueryTruncated {
-		problem.New(http.StatusConflict, problem.Conflict, "this call's query string was not captured in full, so it cannot be replayed").Write(w)
-		return
-	}
-	if !orig.RequestBody.Complete() {
-		problem.New(http.StatusConflict, problem.Conflict, "this call's request body was not captured in full, so it cannot be replayed").Write(w)
+	if p := ReplayRefusal(orig); p != nil {
+		p.Write(w)
 		return
 	}
 	a.inject(w, r, relay.Injection{

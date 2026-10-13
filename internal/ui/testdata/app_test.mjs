@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { eventHook, problemText, wantsEvent } from "../static/app.js";
+import { eventHook, prettyJSON, problemText, wantsEvent } from "../static/app.js";
 
 test("wantsEvent matches listed hooks and *", () => {
   assert.equal(wantsEvent("h_1 h_2", "h_2"), true);
@@ -18,4 +18,9 @@ test("eventHook reads call and hook events", () => {
 test("problemText prefers the problem's detail", () => {
   assert.equal(problemText({ status: 422, data: { title: "Unprocessable Entity", detail: "path: taken" } }), "path: taken");
   assert.equal(problemText({ status: 502, data: null }), "The relay answered 502.");
+});
+
+test("prettyJSON indents JSON and rejects the rest", () => {
+  assert.equal(prettyJSON('{"a":[1,2]}'), '{\n  "a": [\n    1,\n    2\n  ]\n}');
+  assert.equal(prettyJSON('{"a":'), null);
 });
