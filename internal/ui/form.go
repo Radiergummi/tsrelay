@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"net/http"
 	"slices"
 	"strconv"
@@ -100,7 +99,7 @@ func formValues(h *api.Hook) map[string]string {
 		v["settings.maxBodyBytes"] = strconv.FormatInt(*s.MaxBodyBytes, 10)
 	}
 	if s.RateLimit != nil {
-		v["settings.rateLimit"] = fmt.Sprintf("%g/%d", s.RateLimit.PerSecond, s.RateLimit.Burst)
+		v["settings.rateLimit"] = strconv.FormatFloat(s.RateLimit.PerSecond, 'f', -1, 64) + "/" + strconv.Itoa(s.RateLimit.Burst)
 	}
 	if s.Capture != nil {
 		v["settings.capture"] = strconv.FormatBool(*s.Capture)

@@ -41,6 +41,7 @@ test("fieldValue converts and checks each field type", () => {
   assert.ok(fieldValue("1e3", "int").error);
   assert.deepEqual(fieldValue("false", "bool"), { value: false });
   assert.deepEqual(fieldValue("2.5 / 10", "ratelimit"), { value: { perSecond: 2.5, burst: 10 } });
+  assert.deepEqual(fieldValue("1000000/200", "ratelimit"), { value: { perSecond: 1000000, burst: 200 } });
   assert.ok(fieldValue("fast", "ratelimit").error);
   assert.deepEqual(fieldValue("2026-12-31T00:00:00Z", "time"), { value: "2026-12-31T00:00:00Z" });
 });
