@@ -119,13 +119,13 @@ func Setup(ctx context.Context, cfg Config) (*Telemetry, error) {
 	return t, nil
 }
 
-// Must returns t, or panics if err is set. For setups without OTLP, which
-// fail only on programming errors.
-func Must(t *Telemetry, err error) *Telemetry {
+// Must returns v, or panics if err is set. For what fails only on
+// programming errors: a setup without OTLP, an instrument with a constant name.
+func Must[T any](v T, err error) T {
 	if err != nil {
 		panic(err)
 	}
-	return t
+	return v
 }
 
 // Shutdown flushes pending spans and metrics, bounded by ShutdownTimeout.

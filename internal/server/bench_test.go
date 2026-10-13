@@ -71,15 +71,18 @@ func doCall(b *testing.B, c *http.Client, url string, body []byte) {
 	}
 }
 
+// benchCases are the request and response shapes both call benchmarks run.
+var benchCases = []struct {
+	name   string
+	size   int  // request body bytes
+	stream bool // the app streams a 1 MiB response
+}{{"empty", 0, false}, {"1KiB", 1 << 10, false}, {"1MiB", 1 << 20, false}, {"stream1MiB", 0, true}}
+
 // BenchmarkCall measures a call through the whole relay: sender, relay,
 // tunnel, CLI client and app, over loopback. Compare with BenchmarkDirect.
 func BenchmarkCall(b *testing.B) {
 	for _, tracing := range []bool{false, true} {
-		for _, tc := range []struct {
-			name   string
-			size   int
-			stream bool
-		}{{"empty", 0, false}, {"1KiB", 1 << 10, false}, {"1MiB", 1 << 20, false}, {"stream1MiB", 0, true}} {
+		for _, tc := range benchCases {
 			b.Run(fmt.Sprintf("tracing=%v/%s", tracing, tc.name), func(b *testing.B) {
 				e, url := benchEnv(b, tracing, benchApp(b, tc.stream))
 				c := e.fake.Client(sender)
@@ -97,11 +100,7 @@ func BenchmarkCall(b *testing.B) {
 // BenchmarkDirect is BenchmarkCall's app without the relay: the floor the
 // relay's overhead is measured against.
 func BenchmarkDirect(b *testing.B) {
-	for _, tc := range []struct {
-		name   string
-		size   int
-		stream bool
-	}{{"empty", 0, false}, {"1KiB", 1 << 10, false}, {"1MiB", 1 << 20, false}, {"stream1MiB", 0, true}} {
+	for _, tc := range benchCases {
 		b.Run(tc.name, func(b *testing.B) {
 			url := benchApp(b, tc.stream)
 			body := bytes.Repeat([]byte("x"), tc.size)
