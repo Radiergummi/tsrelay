@@ -62,6 +62,33 @@ func TestRedactor(t *testing.T) {
 	}
 }
 
+func TestRedactCapsHeaders(t *testing.T) {
+	in := New(Config{CaptureLimit: 10})
+	kept, redacted := in.Redact(http.Header{"A": {"12345"}, "B": {"12345"}, "C": {"12345"}})
+	if len(kept) != 1 || kept.Get("A") != "12345" {
+		t.Fatalf("over the limit: kept = %v, want only the prefix in sorted-name order", kept)
+	}
+	if !slices.Equal(redacted, []string{"B", "C"}) {
+		t.Fatalf("over the limit: redacted = %v", redacted)
+	}
+
+	in = New(Config{})
+	kept, redacted = in.Redact(http.Header{"X-Custom": {"small"}})
+	if len(kept) != 1 || kept.Get("X-Custom") != "small" || len(redacted) != 0 {
+		t.Fatalf("under the limit: kept = %v, redacted = %v, want it unchanged", kept, redacted)
+	}
+}
+
+func TestTruncateQuery(t *testing.T) {
+	in := New(Config{CaptureLimit: 4})
+	if got := in.TruncateQuery("abcdef"); got != "abcd" {
+		t.Fatalf("over the limit: %q", got)
+	}
+	if got := in.TruncateQuery("ab"); got != "ab" {
+		t.Fatalf("under the limit: %q", got)
+	}
+}
+
 func call(id string, hook hooks.ID) Call {
 	return Call{ID: id, HookID: hook, Owner: 1, Kind: KindSender, Method: "POST", Path: "/x", Outcome: OutcomePending}
 }

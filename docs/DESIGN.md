@@ -309,8 +309,8 @@ Attempt  { id, startedAt, tunnelID, node, waitedFor (hold), ttfb, duration,
 Capture  { bytes (≤ captureLimit), size, truncated }
 ```
 
-- `path` is the escaped path below the hook's route, as the local app sees it.
-- `redacted` (on the call and on each attempt) lists the header names whose values were dropped.
+- `path` is the escaped path below the hook's route, as the local app sees it. `query` is kept up to `--capture-limit` bytes.
+- `redacted` (on the call and on each attempt) lists header names left out either because they are redacted or because the headers exceeded `--capture-limit`.
 - `status` and `duration` on the call are what the sender received and how long the call took.
 - `Capture.truncated` means the bytes are not the whole body: it was longer than `--capture-limit`, or was never read to the end, as for a call refused before delivery. `Capture.captured` is false when body capture was off.
 - `outcome` is `pending` while the call is delivered, then `ok` (delivered, whatever the local app answered), a `Tsrelay-Error` code, or `sender_canceled`.

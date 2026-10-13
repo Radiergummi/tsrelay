@@ -47,8 +47,49 @@ func New(cfg Config) *Inspector {
 	return &Inspector{cfg: cfg, redact: NewRedactor(cfg.Redact), byHook: map[hooks.ID][]*Call{}, byID: map[string]*Call{}}
 }
 
-// Redact returns h without the redacted headers, and their names.
-func (in *Inspector) Redact(h http.Header) (http.Header, []string) { return in.redact.Headers(h) }
+// Redact returns h without the redacted headers and those left out to keep
+// the set within the capture limit, and the sorted names of every header it
+// left out, for either reason.
+func (in *Inspector) Redact(h http.Header) (http.Header, []string) {
+	kept, redacted := in.redact.Headers(h)
+	return in.capHeaders(kept, redacted)
+}
+
+// capHeaders keeps headers from h, visited in sorted name order so the
+// result is deterministic, while the running total of name and value bytes
+// stays within the capture limit. Headers left out for size are appended to
+// redacted.
+func (in *Inspector) capHeaders(h http.Header, redacted []string) (http.Header, []string) {
+	names := make([]string, 0, len(h))
+	for k := range h {
+		names = append(names, k)
+	}
+	slices.Sort(names)
+	kept := make(http.Header, len(h))
+	total := 0
+	for _, k := range names {
+		size := len(k)
+		for _, v := range h[k] {
+			size += len(v)
+		}
+		if total+size > in.cfg.CaptureLimit {
+			redacted = append(redacted, k)
+			continue
+		}
+		total += size
+		kept[k] = h[k]
+	}
+	slices.Sort(redacted)
+	return kept, redacted
+}
+
+// TruncateQuery returns q cut to the inspector's capture limit, in bytes.
+func (in *Inspector) TruncateQuery(q string) string {
+	if len(q) > in.cfg.CaptureLimit {
+		return q[:in.cfg.CaptureLimit]
+	}
+	return q
+}
 
 // NewBuffer returns a buffer for one body. It keeps bytes only if the hook
 // captures bodies and the relay allows it.

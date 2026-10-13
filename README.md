@@ -125,7 +125,7 @@ Bodies arrive exactly as sent, byte for byte, so signatures from Stripe, GitHub,
 
 ## Inspecting calls
 
-The relay keeps the last 100 calls of each hook in memory (`--capture-calls`): method, path, query, sender, status and timings, the headers without the redacted ones (`--redact-headers`), and the first 64 KiB of each body (`--capture-limit`). Only the hook's owner sees queries, headers and bodies; admins see the rest. Calls are lost when the relay restarts.
+The relay keeps the last 100 calls of each hook in memory (`--capture-calls`): method, path, sender, status and timings, the query and the headers without the redacted ones (`--redact-headers`), each capped at `--capture-limit` bytes, and the first 64 KiB of each body (`--capture-limit`). Only the hook's owner sees queries, headers and bodies; admins see the rest. Calls are lost when the relay restarts.
 
 | | |
 |---|---|
