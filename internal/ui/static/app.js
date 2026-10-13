@@ -111,6 +111,22 @@ export function prettyJSON(text) {
   }
 }
 
+// parseHeaders turns "Name: value" lines into the API's header object.
+// Blank lines are skipped, and a line without a colon is a header with an
+// empty value.
+export function parseHeaders(text) {
+  const out = {};
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    const i = t.indexOf(":");
+    const name = (i < 0 ? t : t.slice(0, i)).trim();
+    const value = i < 0 ? "" : t.slice(i + 1).trim();
+    (out[name] ??= []).push(value);
+  }
+  return out;
+}
+
 // actions maps a button's data-action to what clicking it does.
 const actions = {
   async "delete-hook"(el, doc) {
@@ -166,9 +182,37 @@ function clicks(doc) {
   });
 }
 
+// testForm sends the hook page's test request. The API answers once the
+// call is finished, which can take as long as the hook holds calls for a
+// tunnel; then the page opens the call.
+function testForm(doc) {
+  const form = doc.getElementById("test-form");
+  if (!form) return;
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const data = new FormData(form);
+    const button = form.querySelector("button[type=submit]");
+    button.disabled = true;
+    flash(doc, "Sending… if no tunnel is attached, the relay holds the request until one is.");
+    try {
+      const r = await api("POST", `/api/v1/hooks/${encodeURIComponent(form.dataset.hook)}/test`, {
+        method: data.get("method"),
+        path: data.get("path"),
+        headers: parseHeaders(data.get("headers")),
+        body: data.get("body"),
+      });
+      if (!r.ok) return flash(doc, problemText(r));
+      location.assign(`/hooks/${encodeURIComponent(r.data.hookId)}/calls/${encodeURIComponent(r.data.id)}`);
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
 export function init(doc) {
   clicks(doc);
   live(doc);
+  testForm(doc);
 }
 
 if (typeof document !== "undefined") init(document);

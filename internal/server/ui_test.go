@@ -351,3 +351,17 @@ func TestUIInspectRedirect(t *testing.T) {
 		}
 	}
 }
+
+func TestUITestRequestForm(t *testing.T) {
+	e := newEnv(t, Config{CapName: testCap})
+	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, body := e.page(receiver, "/hooks/"+h.ID); !strings.Contains(body, `id="test-form" data-hook="`+h.ID+`"`) {
+		t.Errorf("the owner's hook page has no test form:\n%s", body)
+	}
+	if _, body := e.page(uiAdmin, "/hooks/"+h.ID); strings.Contains(body, "test-form") {
+		t.Error("an admin was offered the test form")
+	}
+}

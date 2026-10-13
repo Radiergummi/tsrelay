@@ -26,4 +26,21 @@
 {{range .Settings}}<dt>{{.Name}}</dt><dd>{{.Value}}{{if .Default}} <span class="muted">(relay default)</span>{{end}}</dd>
 {{end}}</dl>
 </section>
+
+{{if .Owner}}
+<section>
+<h2>Send a test request</h2>
+<p class="muted">It goes through the relay and your tunnel to your app, like a real callback, and appears in the call list.</p>
+<form id="test-form" data-hook="{{.Hook.ID}}">
+<div class="row">
+<label>Method <input name="method" value="POST" required></label>
+<label class="grow">Path below the hook URL, with an optional query <input name="path" value="/" required></label>
+</div>
+<label>Headers <span class="hint">One per line, as Name: value.</span>
+<textarea name="headers" rows="3">Content-Type: application/json</textarea></label>
+<label>Body <textarea name="body" rows="6">{"hello": "from tsrelay"}</textarea></label>
+<button class="primary" type="submit">Send</button>
+</form>
+</section>
+{{end}}
 {{end}}

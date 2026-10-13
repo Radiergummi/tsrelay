@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { eventHook, prettyJSON, problemText, wantsEvent } from "../static/app.js";
+import { eventHook, prettyJSON, problemText, wantsEvent, parseHeaders } from "../static/app.js";
 
 test("wantsEvent matches listed hooks and *", () => {
   assert.equal(wantsEvent("h_1 h_2", "h_2"), true);
@@ -23,4 +23,12 @@ test("problemText prefers the problem's detail", () => {
 test("prettyJSON indents JSON and rejects the rest", () => {
   assert.equal(prettyJSON('{"a":[1,2]}'), '{\n  "a": [\n    1,\n    2\n  ]\n}');
   assert.equal(prettyJSON('{"a":'), null);
+});
+
+test("parseHeaders reads Name: value lines", () => {
+  assert.deepEqual(parseHeaders("Content-Type: application/json\n\nX-A: 1\nX-A: 2:3\nX-Empty"), {
+    "Content-Type": ["application/json"],
+    "X-A": ["1", "2:3"],
+    "X-Empty": [""],
+  });
 });
