@@ -15,8 +15,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/telemetry"
+	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
 // tracedEnv is newEnv with tracing on, recording spans instead of
@@ -166,6 +169,92 @@ func TestAppErrorIsNotASpanError(t *testing.T) {
 	}
 	if got, _ := attr(call, "http.response.status_code"); got != "503" {
 		t.Errorf("status code = %q", got)
+	}
+}
+
+// An app that forges the relay's own error header must not be able to mint
+// a span error or an arbitrary outcome label.
+func TestAppForgedErrorHeaderIsNotASpanError(t *testing.T) {
+	e, rec := tracedEnv(t, Config{})
+	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(problem.HeaderError, "app_made_this_up_12345")
+		w.WriteHeader(200)
+	}))
+	defer app.Close()
+	h, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	defer e.cli(h.ID, app.URL)()
+	io.ReadAll(e.send(h, "", nil, nil).Body)
+
+	call := e.spanNamed(rec, "tsrelay.call")
+	if call.Status().Code == codes.Error {
+		t.Error("an app-forged Tsrelay-Error header marked the call span as an error")
+	}
+	if got, ok := attr(call, "tsrelay.error"); ok && got == "app_made_this_up_12345" {
+		t.Errorf("tsrelay.error = %q, forged by the app", got)
+	}
+
+	ops := &Ops{}
+	ops.Ready(e.srv)
+	var body string
+	e.waitFor(func() bool {
+		m := httptest.NewRecorder()
+		ops.ServeHTTP(m, httptest.NewRequest("GET", "/metrics", nil))
+		body = m.Body.String()
+		return strings.Contains(body, "tsrelay_calls_total")
+	})
+	if strings.Contains(body, "app_made_this_up_12345") {
+		t.Errorf("/metrics minted a label from the app-forged header:\n%s", body)
+	}
+}
+
+// The CLI forwarder's own upstream_unreachable legitimately travels back as
+// a Tsrelay-Error header (internal/client/forward.go), and must still mark
+// the call span as an error.
+func TestUpstreamUnreachableIsSpanError(t *testing.T) {
+	e, rec := tracedEnv(t, Config{})
+	local := httptest.NewServer(http.NotFoundHandler())
+	target := local.URL
+	local.Close()
+	h, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	defer e.cli(h.ID, target)()
+	resp := e.send(h, "", nil, nil)
+	io.ReadAll(resp.Body)
+	if got := resp.Header.Get(problem.HeaderError); got != problem.UpstreamUnreachable {
+		t.Fatalf("Tsrelay-Error = %q, want %q", got, problem.UpstreamUnreachable)
+	}
+	call := e.spanNamed(rec, "tsrelay.call")
+	if call.Status().Code != codes.Error {
+		t.Error("upstream_unreachable did not mark the call span as an error")
+	}
+	if got, _ := attr(call, "tsrelay.error"); got != problem.UpstreamUnreachable {
+		t.Errorf("tsrelay.error = %q, want %q", got, problem.UpstreamUnreachable)
+	}
+}
+
+// A call refused by channel is recorded (DESIGN.md §9.2), but the sender
+// gets the same 404 as for a missing hook, and the hook is never named.
+func TestChannelDeniedCallSpan(t *testing.T) {
+	e, rec := tracedEnv(t, Config{})
+	h, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	staging := identify.Tagged("w2", []string{"tag:staging"}, `{"roles":["sender"],"channels":["staging"]}`)
+	req, _ := http.NewRequest("POST", h.URL, nil)
+	resp, err := e.fake.Client(staging).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+	call := e.spanNamed(rec, "tsrelay.call")
+	if !hasEvent(call, "channel_denied") {
+		t.Error("no channel_denied event")
+	}
+	if _, ok := attr(call, "tsrelay.hook.id"); ok {
+		t.Error("tsrelay.hook.id set on a channel-denied call")
+	}
+	if _, ok := e.findSpan(rec, "tsrelay.forward", call); ok {
+		t.Error("a channel-denied call got a tsrelay.forward span")
 	}
 }
 
@@ -335,6 +424,28 @@ func TestTunnelSpans(t *testing.T) {
 	}
 	if links := detach.Links(); len(links) != 1 || links[0].SpanContext.SpanID() != attach.SpanContext().SpanID() {
 		t.Errorf("detach links = %v, want the attach span", links)
+	}
+}
+
+// An attach for an unknown hook is refused before any tunnel exists; the
+// span must say so without naming the hook ID that caused it (DESIGN §13.1).
+func TestRefusedAttachSpan(t *testing.T) {
+	e, rec := tracedEnv(t, Config{})
+	_, err := tunnel.Dial(context.Background(), e.api.HTTP, e.api.TunnelURL(tunnel.Attach{}, "nope_12345"))
+	if err == nil {
+		t.Fatal("attaching an unknown hook ID should be refused")
+	}
+	attach := e.spanNamed(rec, "tsrelay.tunnel.attach")
+	if got, _ := attr(attach, "tsrelay.tunnel.result"); got != "refused" {
+		t.Errorf("tsrelay.tunnel.result = %q, want refused", got)
+	}
+	if _, ok := attr(attach, "tsrelay.hook.ids"); ok {
+		t.Error("a refused attach recorded hook IDs")
+	}
+	for _, a := range attach.Attributes() {
+		if strings.Contains(a.Value.Emit(), "nope_12345") {
+			t.Errorf("attribute %s leaked the bogus hook ID: %s", a.Key, a.Value.Emit())
+		}
 	}
 }
 
