@@ -1,11 +1,20 @@
 package api
 
 import (
+	"cmp"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/problem"
+	"github.com/Radiergummi/tsrelay/internal/relay"
+	"golang.org/x/net/http/httpguts"
 )
 
 // owns reports whether id owns h.
@@ -39,4 +48,112 @@ func (a *API) getCall(w http.ResponseWriter, r *http.Request, id authz.Identity)
 		c = c.Metadata()
 	}
 	writeJSON(w, http.StatusOK, c)
+}
+
+// TestRequest is the body of POST /api/v1/hooks/{id}/test.
+type TestRequest struct {
+	Method  string      `json:"method"` // default POST
+	Path    string      `json:"path"`   // below the hook's URL, query allowed; default "/"
+	Headers http.Header `json:"headers"`
+	Body    string      `json:"body"`
+}
+
+// ownedHook returns the hook named in the path if id owns it. It answers
+// 404 for hooks id cannot see, and 403 when an admin names another user's
+// hook: admins see metadata only and cannot act on calls (DESIGN.md §5.2).
+func (a *API) ownedHook(w http.ResponseWriter, r *http.Request, id authz.Identity) (hooks.Hook, bool) {
+	h, ok := a.visibleHook(r, id)
+	switch {
+	case !ok:
+		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
+	case !owns(id, h):
+		problem.New(http.StatusForbidden, problem.Forbidden, "only the hook's owner can replay calls or send test requests").Write(w)
+	default:
+		return h, true
+	}
+	return hooks.Hook{}, false
+}
+
+// replayCall re-sends a captured call to the hook's current tunnel
+// (DESIGN.md §9.3). Redacted headers were never captured, so they are left
+// out. The local app is told about the original sender.
+func (a *API) replayCall(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	h, ok := a.ownedHook(w, r, id)
+	if !ok {
+		return
+	}
+	orig, ok := a.Inspect.Get(r.PathValue("callID"))
+	if !ok || orig.HookID != h.ID {
+		problem.New(http.StatusNotFound, problem.NotFound, "call not found").Write(w)
+		return
+	}
+	if !orig.RequestBody.Complete() {
+		problem.New(http.StatusConflict, problem.Conflict, "this call's request body was not captured in full, so it cannot be replayed").Write(w)
+		return
+	}
+	a.inject(w, r, relay.Injection{
+		Hook: h, Kind: inspect.KindReplay, ReplayOf: orig.ID,
+		Sender: authz.Identity{NodeName: orig.Sender.Node, Tags: orig.Sender.Tags, Login: orig.Sender.Login},
+		Method: orig.Method, Path: orig.Path, Query: orig.Query, Header: orig.RequestHeaders, Body: orig.RequestBody.Body,
+		From: r,
+	})
+}
+
+// testCall sends a request the owner wrote through the normal pipeline,
+// as a call of kind test (DESIGN.md §9.3).
+func (a *API) testCall(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	h, ok := a.ownedHook(w, r, id)
+	if !ok {
+		return
+	}
+	var req TestRequest
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		problem.New(http.StatusBadRequest, problem.BadRequest, "invalid JSON: "+err.Error()).Write(w)
+		return
+	}
+	var errs hooks.ValidationError
+	method := cmp.Or(req.Method, http.MethodPost)
+	if !httpguts.ValidHeaderFieldName(method) { // a method is a token, like a header name
+		errs = append(errs, hooks.FieldError{Field: "method", Message: fmt.Sprintf("%q is not a valid HTTP method", method)})
+	}
+	u, err := url.Parse(cmp.Or(req.Path, "/"))
+	if err != nil || u.Scheme != "" || u.Host != "" || !strings.HasPrefix(u.Path, "/") {
+		errs = append(errs, hooks.FieldError{Field: "path", Message: "must be a path starting with /, optionally with a query string"})
+	}
+	for k, vs := range req.Headers {
+		valid := httpguts.ValidHeaderFieldName(k)
+		for _, v := range vs {
+			valid = valid && httpguts.ValidHeaderFieldValue(v)
+		}
+		if !valid {
+			errs = append(errs, hooks.FieldError{Field: "headers." + k, Message: "is not a valid header"})
+		}
+	}
+	if len(errs) > 0 {
+		p := problem.New(http.StatusUnprocessableEntity, problem.Invalid, errs.Error())
+		p.Errors = errs
+		p.Write(w)
+		return
+	}
+	a.inject(w, r, relay.Injection{
+		Hook: h, Kind: inspect.KindTest, Sender: id,
+		Method: method, Path: u.EscapedPath(), Query: u.RawQuery, Header: req.Headers, Body: []byte(req.Body),
+		From: r,
+	})
+}
+
+// inject delivers a replay or test call and answers with the finished call.
+func (a *API) inject(w http.ResponseWriter, r *http.Request, in relay.Injection) {
+	c, err := a.Relay.Inject(r.Context(), in)
+	switch {
+	case errors.Is(err, relay.ErrNotRouted):
+		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
+	case err != nil:
+		a.Audit.Slog().Error("delivering a replay or test request failed", "error", err)
+		problem.New(http.StatusInternalServerError, problem.Internal, "could not deliver the call").Write(w)
+	default:
+		writeJSON(w, http.StatusCreated, c)
+	}
 }

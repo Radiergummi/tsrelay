@@ -72,6 +72,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	callID := ids.New("c_")
 	w.Header().Set(HeaderCallID, callID)
+	inj, _ := r.Context().Value(injectKey{}).(*injection) // nil for sender calls
 	rec := &recorder{ResponseWriter: w}
 	parent := r.Context() // ends when the sender goes away
 	// Limits cancel the call with a cause that selects the error reported.
@@ -84,6 +85,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var sender authz.Identity
 	var waited time.Duration
 	kind := inspect.KindSender
+	replayOf := ""
+	if inj != nil {
+		inj.callID, kind, replayOf = callID, inj.kind, inj.replayOf
+	}
 	var record *callRecord    // set once the call is routed to a hook
 	var delivery time.Time    // when delivery began, holding included
 	var served *tunnel.Tunnel // the tunnel the call went down
@@ -139,8 +144,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 		return
 	}
-	sender, err := h.Identifier.Identify(r.Context(), r.RemoteAddr)
-	if err != nil || !sender.Grants.Has(authz.RoleSender) {
+	var err error
+	if inj != nil {
+		sender = inj.sender // the owner's replay or test: no sender authorization (DESIGN.md §9.3)
+	} else if sender, err = h.Identifier.Identify(r.Context(), r.RemoteAddr); err != nil || !sender.Grants.Has(authz.RoleSender) {
 		h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender),
 			slog.String("action", "call"), slog.String("reason", "no sender role"))
 		problem.New(http.StatusForbidden, problem.SenderForbidden, "this node has no sender role on the relay").Write(rec)
@@ -150,18 +157,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if found && encodedSlashIn(r.URL, 1+segs) {
 		found = false // the decoded and escaped paths would split differently
 	}
+	if inj != nil && found && hook.ID != inj.hook {
+		found = false // the path now belongs to another hook
+	}
 	var eff hooks.Effective
 	if found {
 		// Calls refused by channel are recorded too, so the owner can see
 		// them (DESIGN.md §9.2). The sender cannot tell: it gets the same
 		// 404 as for a missing hook.
 		eff = h.Hooks.Effective(hook)
-		record = h.startRecord(r, callID, start, kind, "", hook, sender, 1+segs, eff.Capture)
+		record = h.startRecord(r, callID, start, kind, replayOf, hook, sender, 1+segs, eff.Capture)
 		if record != nil {
 			body.capture, rec.capture = record.reqBuf, record.respBuf
 		}
 	}
-	if !found || !sender.Grants.Allows(authz.RoleSender, hook.Channel) {
+	if !found || (inj == nil && !sender.Grants.Allows(authz.RoleSender, hook.Channel)) {
 		if found {
 			h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender), audit.Hook(hook),
 				slog.String("action", "call"), slog.String("reason", "channel not allowed"))

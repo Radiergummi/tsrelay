@@ -1,12 +1,18 @@
 package api
 
 import (
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
+	"github.com/Radiergummi/tsrelay/internal/problem"
+	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"github.com/Radiergummi/tsrelay/internal/tunnel/tunneltest"
 )
 
 // seedCall records a finished call with owner-only data for moritz's hook.
@@ -84,5 +90,78 @@ func TestDeleteForgetsCalls(t *testing.T) {
 	}
 	if _, ok := e.in.Get("c_1"); ok {
 		t.Fatal("the deleted hook's calls are still kept")
+	}
+}
+
+// serve attaches a tunnel to hookID whose local app answers 200 "pong".
+func (e *env) serve(hookID string) {
+	tun, _ := tunneltest.Pair(e.t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.ReadAll(r.Body)
+		io.WriteString(w, "pong")
+	}), tunnel.Options{}, nil)
+	e.reg.Attach(tun, []string{hookID})
+}
+
+func TestReplayRules(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.serve(h.ID)
+	e.seedCall("c_full", h.ID, completeBody(`{"n":1}`))
+	e.seedCall("c_cut", h.ID, inspect.Capture{Body: []byte(`{"n":`), Size: 4096, Truncated: true, Captured: true})
+	replay := func(id authz.Identity, callID string) int {
+		return e.call(id, "POST", "/api/v1/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, nil).StatusCode
+	}
+	if code := replay(moritz, "c_cut"); code != 409 {
+		t.Errorf("replay of a truncated body = %d, want 409", code)
+	}
+	if code := replay(admin, "c_full"); code != 403 {
+		t.Errorf("admin replay = %d, want 403", code)
+	}
+	if code := replay(other, "c_full"); code != 404 {
+		t.Errorf("other user's replay = %d, want 404", code)
+	}
+	if code := replay(moritz, "c_nope"); code != 404 {
+		t.Errorf("replay of an unknown call = %d, want 404", code)
+	}
+	var c inspect.Call
+	if resp := e.call(moritz, "POST", "/api/v1/hooks/"+h.ID+"/calls/c_full/replay", nil, &c); resp.StatusCode != 201 ||
+		c.Kind != inspect.KindReplay || c.ReplayOf != "c_full" || c.Outcome != inspect.OutcomeOK || c.Path != "/done" || c.Query != "token=s3cr3t" {
+		t.Fatalf("replay = %d %+v", resp.StatusCode, c)
+	}
+}
+
+func TestTestRequest(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.serve(h.ID)
+	var c inspect.Call
+	resp := e.call(moritz, "POST", "/api/v1/hooks/"+h.ID+"/test", TestRequest{
+		Method: "PUT", Path: "/ping?x=1", Headers: http.Header{"X-A": {"1"}}, Body: "{}",
+	}, &c)
+	if resp.StatusCode != 201 || c.Kind != inspect.KindTest || c.Method != "PUT" || c.Path != "/ping" || c.Query != "x=1" ||
+		c.Outcome != inspect.OutcomeOK || string(c.Attempts[0].ResponseBody.Body) != "pong" || c.Sender.Login != "moritz@example.com" {
+		t.Fatalf("test request = %d %+v", resp.StatusCode, c)
+	}
+	// Defaults: POST to "/".
+	c = inspect.Call{}
+	if resp := e.call(moritz, "POST", "/api/v1/hooks/"+h.ID+"/test", TestRequest{}, &c); resp.StatusCode != 201 || c.Method != "POST" || c.Path != "/" {
+		t.Fatalf("default test request = %d %+v", resp.StatusCode, c)
+	}
+
+	for field, req := range map[string]TestRequest{
+		"method":         {Method: "GE T"},
+		"path":           {Path: "nope"},
+		"path ":          {Path: "//evil.example/x"}, // a host, not a path
+		"headers.Bad Na": {Headers: http.Header{"Bad Name": {"x"}}},
+	} {
+		var p problem.Problem
+		if resp := e.call(moritz, "POST", "/api/v1/hooks/"+h.ID+"/test", req, &p); resp.StatusCode != 422 || !strings.Contains(p.Detail, strings.TrimSpace(field)) {
+			t.Errorf("%s: %d %+v, want 422 naming the field", field, resp.StatusCode, p)
+		}
+	}
+	if resp := e.call(admin, "POST", "/api/v1/hooks/"+h.ID+"/test", TestRequest{}, nil); resp.StatusCode != 403 {
+		t.Errorf("admin test request = %d, want 403", resp.StatusCode)
 	}
 }

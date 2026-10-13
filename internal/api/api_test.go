@@ -21,6 +21,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/problem"
+	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"github.com/Radiergummi/tsrelay/internal/tunnel/tunneltest"
 )
@@ -47,9 +48,11 @@ func newEnv(t *testing.T) *env {
 	t.Cleanup(func() { store.Close() })
 	e.mgr, _ = hooks.NewManager(context.Background(), store, hooks.SlugConfig{})
 	e.in = inspect.New(inspect.Config{})
+	al := audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	rh := &relay.Handler{Identifier: e.fake, Hooks: e.mgr, Tunnels: e.reg, Audit: al, Inspect: e.in}
 	a := &API{
 		Identifier: e.fake, Hooks: e.mgr, Tunnels: e.reg, Inspect: e.in,
-		Audit:   audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))),
+		Audit: al, Relay: rh,
 		BaseURL: "https://tsrelay.example.ts.net",
 	}
 	mux := http.NewServeMux()

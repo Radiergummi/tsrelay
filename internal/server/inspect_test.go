@@ -71,3 +71,38 @@ func TestCallsEndToEnd(t *testing.T) {
 		t.Fatalf("summary = %+v", list[0])
 	}
 }
+
+// A replay re-sends the captured body and leaves out redacted headers.
+func TestReplayEndToEnd(t *testing.T) {
+	e := newEnv(t, Config{})
+	type seen struct{ auth, body string }
+	got := make(chan seen, 2)
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got <- seen{r.Header.Get("Authorization"), string(b)}
+	}))
+	defer local.Close()
+	h, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	defer e.cli(h.ID, local.URL)()
+
+	resp := e.send(h, "/done", []byte(`{"n":1}`), http.Header{"Authorization": {"Bearer s3cr3t"}})
+	io.ReadAll(resp.Body)
+	if first := <-got; first.auth == "" {
+		t.Fatal("precondition: the original call carries Authorization")
+	}
+	callID := resp.Header.Get("Tsrelay-Call-Id")
+	e.waitFor(func() bool {
+		var c inspect.Call
+		return e.getJSON("/api/v1/hooks/"+h.ID+"/calls/"+callID, &c) == 200 && c.Outcome == inspect.OutcomeOK
+	})
+	var replay inspect.Call
+	if code := e.postJSON("/api/v1/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, &replay); code != 201 {
+		t.Fatalf("replay = %d", code)
+	}
+	if second := <-got; second.auth != "" || second.body != `{"n":1}` {
+		t.Fatalf("replay delivered %+v; want the same body and no Authorization", second)
+	}
+	if replay.Kind != inspect.KindReplay || replay.ReplayOf != callID || replay.Outcome != inspect.OutcomeOK {
+		t.Fatalf("replay = %+v", replay)
+	}
+}

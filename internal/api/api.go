@@ -15,6 +15,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/problem"
+	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"tailscale.com/tailcfg"
 )
@@ -24,6 +25,7 @@ type API struct {
 	Hooks      *hooks.Manager
 	Tunnels    *tunnel.Registry
 	Inspect    *inspect.Inspector
+	Relay      *relay.Handler // delivers replays and test requests
 	Audit      *audit.Logger
 	BaseURL    string // e.g. "https://tsrelay.example.ts.net", no trailing slash
 	Tunnel     tunnel.Options
@@ -82,6 +84,8 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.Handle("DELETE /api/v1/hooks/{id}", a.authed(a.deleteHook))
 	mux.Handle("GET /api/v1/hooks/{id}/calls", a.authed(a.listCalls))
 	mux.Handle("GET /api/v1/hooks/{id}/calls/{callID}", a.authed(a.getCall))
+	mux.Handle("POST /api/v1/hooks/{id}/calls/{callID}/replay", a.authed(a.replayCall))
+	mux.Handle("POST /api/v1/hooks/{id}/test", a.authed(a.testCall))
 	mux.Handle("GET /api/v1/tunnel", a.authed(a.tunnel))
 }
 
