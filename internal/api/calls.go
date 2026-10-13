@@ -17,8 +17,8 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-// owns reports whether id owns h.
-func owns(id authz.Identity, h hooks.Hook) bool { return id.IsUser() && h.Owner == id.UserID }
+// Owns reports whether id owns h.
+func Owns(id authz.Identity, h hooks.Hook) bool { return id.IsUser() && h.Owner == id.UserID }
 
 // listCalls returns the hook's call summaries, newest first. Summaries are
 // metadata only, so owners and admins get the same list.
@@ -44,7 +44,7 @@ func (a *API) getCall(w http.ResponseWriter, r *http.Request, id authz.Identity)
 		problem.New(http.StatusNotFound, problem.NotFound, "call not found").Write(w)
 		return
 	}
-	if !owns(id, h) {
+	if !Owns(id, h) {
 		c = c.Metadata()
 	}
 	writeJSON(w, http.StatusOK, c)
@@ -66,7 +66,7 @@ func (a *API) ownedHook(w http.ResponseWriter, r *http.Request, id authz.Identit
 	switch {
 	case !ok:
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
-	case !owns(id, h):
+	case !Owns(id, h):
 		problem.New(http.StatusForbidden, problem.Forbidden, "only the hook's owner can replay calls or send test requests").Write(w)
 	default:
 		return h, true

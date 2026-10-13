@@ -86,12 +86,15 @@ func newCLIEnv(t *testing.T) *cliEnv {
 // sequence counter starts over at 0, which can be lower than one the CLI
 // already saw from the instance before it.
 func (e *cliEnv) restartRelay() {
+	// Held for the whole swap: otherwise a reconnect raced between Close
+	// and the new instance replacing e.handler could attach to the old,
+	// already-closing instance's registry, where it would be stranded.
+	e.handlerMu.Lock()
+	defer e.handlerMu.Unlock()
 	e.srv.Close() // drops the old tunnel so the CLI reconnects
 	srv := server.New(server.Config{BaseURL: e.relayURL, AllowedHosts: []string{"127.0.0.1"}},
 		e.fake, e.mgr, audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))))
-	e.handlerMu.Lock()
 	e.srv, e.handler = srv, srv.Handler()
-	e.handlerMu.Unlock()
 }
 
 type cliRun struct {

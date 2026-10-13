@@ -119,6 +119,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		server: server.Config{
 			EphemeralGrace: *grace, HoldQueue: *holdQueue, Tunnel: tunnel.Options{Concurrency: *concurrency},
 			Inspect: inspect.Config{CallsPerHook: *captureCalls, CaptureLimit: *captureLimit, NoBodies: !*captureBodies, Redact: redact.Values},
+			CapName: *capName,
 		},
 		revalidate: *revalidate,
 		opsListen:  *opsListen,

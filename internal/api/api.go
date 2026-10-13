@@ -111,7 +111,8 @@ func (a *API) lockAttaches(user tailcfg.UserID) (unlock func()) {
 	return mu.Unlock
 }
 
-func (a *API) me(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+// MeOf describes id as GET /api/v1/me does.
+func (a *API) MeOf(id authz.Identity) Me {
 	me := Me{
 		Login: id.Login, Node: id.NodeName, Tags: id.Tags, Roles: id.Grants.Patterns,
 		Limits: Limits{MaxHooks: id.Grants.Limits.MaxHooks, MaxTunnels: id.Grants.Limits.MaxTunnels},
@@ -123,7 +124,11 @@ func (a *API) me(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 		me.Slug, _ = a.Hooks.Slug(id.Login)
 		me.Hooks = len(a.Hooks.List(id.UserID))
 	}
-	writeJSON(w, http.StatusOK, me)
+	return me
+}
+
+func (a *API) me(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	writeJSON(w, http.StatusOK, a.MeOf(id))
 }
 
 func (a *API) listHooks(w http.ResponseWriter, r *http.Request, id authz.Identity) {
@@ -136,7 +141,7 @@ func (a *API) listHooks(w http.ResponseWriter, r *http.Request, id authz.Identit
 	}
 	out := make([]Hook, len(list))
 	for i, h := range list {
-		out[i] = a.hookJSON(h)
+		out[i] = a.HookJSON(h)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -172,13 +177,13 @@ func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		return
 	}
 	if dry {
-		writeJSON(w, http.StatusOK, a.hookJSON(h))
+		writeJSON(w, http.StatusOK, a.HookJSON(h))
 		return
 	}
 	a.Audit.Log(r.Context(), audit.HookCreate, audit.Actor(id), audit.Hook(h), slog.Bool("ephemeral", h.Ephemeral))
 	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
 	w.Header().Set("Location", "/api/v1/hooks/"+string(h.ID))
-	writeJSON(w, http.StatusCreated, a.hookJSON(h))
+	writeJSON(w, http.StatusCreated, a.HookJSON(h))
 }
 
 func (a *API) getHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
@@ -187,7 +192,7 @@ func (a *API) getHook(w http.ResponseWriter, r *http.Request, id authz.Identity)
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, a.hookJSON(h))
+	writeJSON(w, http.StatusOK, a.HookJSON(h))
 }
 
 func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
@@ -220,13 +225,13 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		return
 	}
 	if dry {
-		writeJSON(w, http.StatusOK, a.hookJSON(h))
+		writeJSON(w, http.StatusOK, a.HookJSON(h))
 		return
 	}
 	a.Audit.Log(r.Context(), audit.HookUpdate, audit.Actor(id), audit.Hook(h), slog.Any("changed", changed))
 	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
 	a.notifyUpdated(h.ID)
-	writeJSON(w, http.StatusOK, a.hookJSON(h))
+	writeJSON(w, http.StatusOK, a.HookJSON(h))
 }
 
 // notifyUpdated tells the tunnel serving the hook its current URL. Messages
@@ -272,10 +277,11 @@ func (a *API) visibleHook(r *http.Request, id authz.Identity) (hooks.Hook, bool)
 	if !ok {
 		return hooks.Hook{}, false
 	}
-	return h, owns(id, h) || id.Grants.Has(authz.RoleAdmin)
+	return h, Owns(id, h) || id.Grants.Has(authz.RoleAdmin)
 }
 
-func (a *API) hookJSON(h hooks.Hook) Hook {
+// HookJSON is h as the API shows it: URL, effective settings and attached tunnel.
+func (a *API) HookJSON(h hooks.Hook) Hook {
 	out := Hook{
 		ID: string(h.ID), URL: a.BaseURL + h.Route(), Owner: h.OwnerLogin, Path: h.Path,
 		Channel: h.Channel, Description: h.Description, Ephemeral: h.Ephemeral, ExpiresAt: h.ExpiresAt,

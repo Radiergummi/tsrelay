@@ -1,0 +1,7 @@
+{{define "tunnel"}}{{with .}}<span class="ok">attached</span> from <strong>{{.Node}}</strong>{{with .Target}} → <code>{{.}}</code>{{end}}{{else}}<span class="muted">no tunnel</span>{{end}}{{end}}
+
+{{define "sender"}}{{if .Tags}}{{join .Tags ", "}}{{else}}{{.Login}}{{end}}{{with .Node}} <span class="muted">({{.}})</span>{{end}}{{end}}
+
+{{define "callSummary"}}<a href="/hooks/{{.HookID}}/calls/{{.ID}}"><code>{{.Method}} {{.Path}}</code></a>
+<span class="{{outcomeClass .Outcome}}">{{if .Status}}{{.Status}}{{end}}{{if ne .Outcome "ok"}} {{.Outcome}}{{end}}</span>
+<time class="muted" datetime="{{iso .ReceivedAt}}">{{when .ReceivedAt}}</time>{{end}}

@@ -85,7 +85,8 @@ func (e *env) cli(hookID string, target string) (stop func()) {
 	connected := make(chan struct{}, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	tc := &tunnel.Client{
-		Hooks: []string{hookID},
+		Hooks:  []string{hookID},
+		Target: u.Redacted(),
 		Dial: func(ctx context.Context, hs []string, a tunnel.Attach) (net.Conn, error) {
 			return tunnel.Dial(ctx, e.api.HTTP, e.api.TunnelURL(a, hs...))
 		},
@@ -231,8 +232,13 @@ func TestRootAndUnknownPaths(t *testing.T) {
 	resp.Body.Close()
 	resp, _ = c.Get(e.base + "/nope")
 	resp.Body.Close()
+	if resp.StatusCode != 404 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") {
+		t.Fatalf("GET /nope = %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	resp, _ = c.Get(e.base + "/api/v1/nope")
+	resp.Body.Close()
 	if resp.StatusCode != 404 || resp.Header.Get(problem.HeaderError) != problem.NotFound {
-		t.Fatalf("GET /nope = %d", resp.StatusCode)
+		t.Fatalf("GET /api/v1/nope = %d", resp.StatusCode)
 	}
 }
 

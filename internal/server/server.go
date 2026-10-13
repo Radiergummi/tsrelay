@@ -3,7 +3,6 @@ package server
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"github.com/Radiergummi/tsrelay/internal/ui"
 	"tailscale.com/tailcfg"
 )
 
@@ -26,6 +26,7 @@ const DefaultEphemeralGrace = 10 * time.Minute
 type Config struct {
 	BaseURL        string   // public URL of the relay on the tailnet, no trailing slash
 	AllowedHosts   []string // Host header values the relay answers to
+	CapName        string   // the capability carrying relay grants; the UI's no-access page names it
 	EphemeralGrace time.Duration
 	HoldQueue      int // calls per hook that may wait for a tunnel; 0 means relay.DefaultHoldQueue
 	Tunnel         tunnel.Options
@@ -65,14 +66,17 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect}
 
 	mux := http.NewServeMux()
-	(&api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, Tunnel: cfg.Tunnel}).Register(mux)
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		// Placeholder until the web UI lands (plan 3).
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		io.WriteString(w, "tsrelay is running. The web UI is not available yet; the API is at /api/v1/.\n")
-	})
+	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, Tunnel: cfg.Tunnel}
+	a.Register(mux)
+	pages := ui.New(a, s.inspect, cfg.CapName)
+	pages.Register(mux)
+	notFound := pages.NotFound()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		problem.New(http.StatusNotFound, problem.NotFound, "not found").Write(w)
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			problem.New(http.StatusNotFound, problem.NotFound, "not found").Write(w)
+			return
+		}
+		notFound.ServeHTTP(w, r)
 	})
 
 	// Callbacks bypass the mux, whose path cleaning would rewrite paths
