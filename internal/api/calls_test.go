@@ -109,11 +109,19 @@ func TestReplayRules(t *testing.T) {
 	e.serve(h.ID)
 	e.seedCall("c_full", h.ID, completeBody(`{"n":1}`))
 	e.seedCall("c_cut", h.ID, inspect.Capture{Body: []byte(`{"n":`), Size: 4096, Truncated: true, Captured: true})
+	e.in.Add(inspect.Call{
+		ID: "c_refused", HookID: hooks.ID(h.ID), Owner: moritz.UserID, Kind: inspect.KindSender,
+		Method: "POST", Path: "/done", Outcome: problem.HookNotFound, Status: http.StatusNotFound,
+		Attempts: []inspect.Attempt{},
+	})
 	replay := func(id authz.Identity, callID string) int {
 		return e.call(id, "POST", "/api/v1/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, nil).StatusCode
 	}
 	if code := replay(moritz, "c_cut"); code != 409 {
 		t.Errorf("replay of a truncated body = %d, want 409", code)
+	}
+	if code := replay(moritz, "c_refused"); code != 409 {
+		t.Errorf("replay of a call refused by channel = %d, want 409", code)
 	}
 	if code := replay(admin, "c_full"); code != 403 {
 		t.Errorf("admin replay = %d, want 403", code)

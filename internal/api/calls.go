@@ -76,7 +76,8 @@ func (a *API) ownedHook(w http.ResponseWriter, r *http.Request, id authz.Identit
 
 // replayCall re-sends a captured call to the hook's current tunnel
 // (DESIGN.md §9.3). Redacted headers were never captured, so they are left
-// out. The local app is told about the original sender.
+// out. The local app is told about the original sender. A call refused by
+// channel was never delivered, so it cannot be replayed either.
 func (a *API) replayCall(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 	h, ok := a.ownedHook(w, r, id)
 	if !ok {
@@ -85,6 +86,10 @@ func (a *API) replayCall(w http.ResponseWriter, r *http.Request, id authz.Identi
 	orig, ok := a.Inspect.Get(r.PathValue("callID"))
 	if !ok || orig.HookID != h.ID {
 		problem.New(http.StatusNotFound, problem.NotFound, "call not found").Write(w)
+		return
+	}
+	if orig.Outcome == problem.HookNotFound {
+		problem.New(http.StatusConflict, problem.Conflict, "this call was refused by channel and never delivered, so it cannot be replayed").Write(w)
 		return
 	}
 	if !orig.RequestBody.Complete() {
