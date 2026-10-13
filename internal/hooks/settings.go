@@ -59,6 +59,7 @@ type Settings struct {
 	IdleTimeout     *Duration     `json:"idleTimeout,omitempty"`
 	MaxBodyBytes    *int64        `json:"maxBodyBytes,omitempty"` // 0 means unlimited
 	RateLimit       *RateLimit    `json:"rateLimit,omitempty"`
+	Capture         *bool         `json:"capture,omitempty"` // keep bodies for the inspector
 }
 
 // Effective are a hook's settings with every default filled in.
@@ -70,6 +71,7 @@ type Effective struct {
 	IdleTimeout     Duration     `json:"idleTimeout"`
 	MaxBodyBytes    int64        `json:"maxBodyBytes"`
 	RateLimit       RateLimit    `json:"rateLimit"`
+	Capture         bool         `json:"capture"`
 }
 
 // Maxima cap what a hook may set. A zero field means "no maximum".
@@ -97,6 +99,7 @@ var DefaultPolicy = Policy{
 		ResponseTimeout: Duration(2 * time.Minute),
 		IdleTimeout:     Duration(60 * time.Second),
 		RateLimit:       RateLimit{PerSecond: 100, Burst: 200},
+		Capture:         true,
 	},
 	Max: Maxima{
 		HoldTimeout:     Duration(5 * time.Minute),
@@ -127,6 +130,9 @@ func (p Policy) Resolve(s Settings) Effective {
 	}
 	if s.RateLimit != nil {
 		e.RateLimit = *s.RateLimit
+	}
+	if s.Capture != nil {
+		e.Capture = *s.Capture
 	}
 	// Clamp to the maxima: a hook stored before a maximum was lowered must
 	// not exceed it. A zero maximum means none.
@@ -201,7 +207,7 @@ func (p Policy) Check() error {
 	if errs := p.Validate(Settings{
 		AttachPolicy: &d.AttachPolicy, HostHeader: &d.HostHeader,
 		HoldTimeout: &d.HoldTimeout, ResponseTimeout: &d.ResponseTimeout, IdleTimeout: &d.IdleTimeout,
-		MaxBodyBytes: &d.MaxBodyBytes, RateLimit: &d.RateLimit,
+		MaxBodyBytes: &d.MaxBodyBytes, RateLimit: &d.RateLimit, Capture: &d.Capture,
 	}); len(errs) > 0 {
 		return errors.New("hook defaults conflict with the maxima: " + errs.Error())
 	}

@@ -42,6 +42,7 @@ type SettingsPatch struct {
 	IdleTimeout     Opt[Duration]     `json:"idleTimeout,omitzero"`
 	MaxBodyBytes    Opt[int64]        `json:"maxBodyBytes,omitzero"`
 	RateLimit       Opt[RateLimit]    `json:"rateLimit,omitzero"`
+	Capture         Opt[bool]         `json:"capture,omitzero"`
 }
 
 // UpdateRequest is a partial update of a hook (PATCH semantics).
@@ -77,6 +78,7 @@ func (p SettingsPatch) apply(s *Settings) []string {
 	touch("idleTimeout", apply(&s.IdleTimeout, p.IdleTimeout))
 	touch("maxBodyBytes", apply(&s.MaxBodyBytes, p.MaxBodyBytes))
 	touch("rateLimit", apply(&s.RateLimit, p.RateLimit))
+	touch("capture", apply(&s.Capture, p.Capture))
 	return changed
 }
 

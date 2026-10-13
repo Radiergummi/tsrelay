@@ -91,6 +91,7 @@ func registerPolicyFlags(fs *flag.FlagSet) func() (hooks.Policy, error) {
 	fs.Var(rateMax, "hook-rate-limit-max", `largest rate limit a hook may set, as "perSecond/burst" (default: no maximum)`)
 	attach := fs.String("hook-attach-policy-default", string(d.AttachPolicy), `what a second tunnel for a hook does: "takeover" or "reject"`)
 	host := fs.String("hook-host-header-default", string(d.HostHeader), `the Host header the local app sees: "preserve" or "rewrite"`)
+	capture := fs.Bool("hook-capture-default", d.Capture, "keep request and response bodies for the inspector (metadata is always recorded)")
 
 	return func() (hooks.Policy, error) {
 		err := checkDurations([]durationFlag{
@@ -113,6 +114,7 @@ func registerPolicyFlags(fs *flag.FlagSet) func() (hooks.Policy, error) {
 				IdleTimeout:     hooks.Duration(*idleDef),
 				MaxBodyBytes:    *bodyDef,
 				RateLimit:       rateDef.v,
+				Capture:         *capture,
 			},
 			Max: hooks.Maxima{
 				HoldTimeout:     hooks.Duration(*holdMax),
@@ -179,6 +181,7 @@ func registerHookSettingFlags(fs *flag.FlagSet) func() (hooks.Settings, error) {
 	fs.Var(&rate, "rate-limit", `calls per second and burst, as "perSecond/burst" (default: the relay's)`)
 	attach := fs.String("attach-policy", "", `"takeover" or "reject" (default: the relay's)`)
 	host := fs.String("host-header", "", `"preserve" or "rewrite" (default: the relay's)`)
+	capture := fs.Bool("capture", true, "keep bodies for the inspector; --capture=false records metadata only (default: the relay's)")
 
 	return func() (hooks.Settings, error) {
 		if err := checkDurations([]durationFlag{{"hold-timeout", hold}, {"response-timeout", resp}, {"idle-timeout", idle}}); err != nil {
@@ -201,6 +204,8 @@ func registerHookSettingFlags(fs *flag.FlagSet) func() (hooks.Settings, error) {
 				s.AttachPolicy = new(hooks.AttachPolicy(*attach))
 			case "host-header":
 				s.HostHeader = new(hooks.HostHeader(*host))
+			case "capture":
+				s.Capture = new(*capture)
 			}
 		})
 		return s, nil

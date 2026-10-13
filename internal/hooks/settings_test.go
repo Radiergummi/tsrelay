@@ -33,6 +33,7 @@ func TestDefaultPolicyMatchesDesign(t *testing.T) {
 		HoldTimeout: Duration(30 * time.Second), ResponseTimeout: Duration(2 * time.Minute),
 		IdleTimeout: Duration(60 * time.Second), MaxBodyBytes: 0,
 		RateLimit: RateLimit{PerSecond: 100, Burst: 200},
+		Capture:   true,
 	}
 	if e != want {
 		t.Fatalf("defaults = %+v, want %+v (DESIGN.md §8)", e, want)
@@ -76,6 +77,7 @@ func TestResolveClampsToMaxima(t *testing.T) {
 		IdleTimeout:     p.Max.IdleTimeout,
 		MaxBodyBytes:    1 << 20,
 		RateLimit:       RateLimit{PerSecond: 10, Burst: 5},
+		Capture:         true,
 	}
 	if got != want {
 		t.Fatalf("Resolve = %+v, want %+v", got, want)
@@ -115,6 +117,15 @@ func TestValidate(t *testing.T) {
 	}
 	if !strings.Contains(p.Validate(cases["settings.holdTimeout"])[0].Message, "5m0s") {
 		t.Error("the message should name the maximum")
+	}
+}
+
+func TestResolveCapture(t *testing.T) {
+	if !DefaultPolicy.Resolve(Settings{}).Capture {
+		t.Fatal("capture must default to true (DESIGN.md §8)")
+	}
+	if DefaultPolicy.Resolve(Settings{Capture: new(false)}).Capture {
+		t.Fatal("a hook's capture=false must apply")
 	}
 }
 

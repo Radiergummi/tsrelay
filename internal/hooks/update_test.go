@@ -105,6 +105,15 @@ func TestUpdateValidatesOnlyTouchedSettings(t *testing.T) {
 	fieldErr(t, err, "settings.maxBodyBytes")
 }
 
+func TestUpdateCapture(t *testing.T) {
+	m := newManager(t, t.TempDir())
+	h, _ := m.Create(ctx, receiver, CreateRequest{Path: "a"})
+	got, changed, err := m.Update(ctx, receiver, h.ID, UpdateRequest{Settings: SettingsPatch{Capture: Opt[bool]{Set: true, Value: new(false)}}})
+	if err != nil || got.Settings.Capture == nil || *got.Settings.Capture || !slices.Contains(changed, "settings.capture") {
+		t.Fatalf("update = %+v %v %v", got.Settings, changed, err)
+	}
+}
+
 func TestExpiry(t *testing.T) {
 	m := newManager(t, t.TempDir())
 	now := time.Unix(1000, 0).UTC()

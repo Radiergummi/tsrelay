@@ -275,6 +275,7 @@ func settingsPatch(s hooks.Settings) hooks.SettingsPatch {
 		IdleTimeout:     optPtr(s.IdleTimeout),
 		MaxBodyBytes:    optPtr(s.MaxBodyBytes),
 		RateLimit:       optPtr(s.RateLimit),
+		Capture:         optPtr(s.Capture),
 	}
 }
 
