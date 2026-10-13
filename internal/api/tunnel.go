@@ -71,10 +71,7 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 		}
 		requested = append(requested, h)
 	}
-	validatedHookIDs = make([]string, len(requested))
-	for i, h := range requested {
-		validatedHookIDs[i] = string(h.ID)
-	}
+	validatedHookIDs = hookIDs // every one passed the checks above, or the attach was refused
 	if n, limit := a.Tunnels.CountOwner(id.UserID, hookIDs...), id.Grants.Limits.MaxTunnels; n >= limit {
 		a.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(id), slog.String("action", "tunnel.attach"), slog.String("reason", "maxTunnels"))
 		problem.New(http.StatusForbidden, problem.Forbidden,

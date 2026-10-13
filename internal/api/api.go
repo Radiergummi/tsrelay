@@ -87,7 +87,7 @@ type TunnelInfo struct {
 func (a *API) Register(mux *http.ServeMux) {
 	latency := a.latencyHistogram()
 	route := func(pattern string, f func(http.ResponseWriter, *http.Request, authz.Identity)) {
-		mux.Handle(pattern, a.observed(latency, a.authed(f)))
+		mux.Handle(pattern, a.observed(latency, pattern, a.authed(f)))
 	}
 	route("GET /api/v1/me", a.me)
 	route("GET /api/v1/hooks", a.listHooks)

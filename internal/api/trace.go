@@ -20,17 +20,18 @@ import (
 // observed wraps an API route in a server span named after its mux pattern
 // and records its latency. Long-lived routes (the event stream, tunnel
 // attaches) must not be wrapped: a span or latency of hours means nothing.
-func (a *API) observed(latency metric.Float64Histogram, h http.Handler) http.Handler {
+func (a *API) observed(latency metric.Float64Histogram, pattern string, h http.Handler) http.Handler {
 	if a.Tracer == nil && latency == nil {
 		return h
 	}
+	method, route, _ := strings.Cut(pattern, " ")
+	methodAttr, routeAttr := attribute.String("method", method), attribute.String("route", route)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		method, route, _ := strings.Cut(r.Pattern, " ")
 		var span trace.Span
 		if a.Tracer != nil {
-			var ctx = r.Context()
-			ctx, span = a.Tracer.Start(ctx, r.Pattern, trace.WithSpanKind(trace.SpanKindServer))
+			var ctx context.Context
+			ctx, span = a.Tracer.Start(r.Context(), pattern, trace.WithSpanKind(trace.SpanKindServer))
 			defer span.End()
 			r = r.WithContext(ctx)
 		}
@@ -52,8 +53,7 @@ func (a *API) observed(latency metric.Float64Histogram, h http.Handler) http.Han
 		}
 		if latency != nil {
 			latency.Record(r.Context(), time.Since(start).Seconds(), metric.WithAttributes(
-				attribute.String("method", method), attribute.String("route", route),
-				attribute.String("status", strconv.Itoa(status))))
+				methodAttr, routeAttr, attribute.String("status", strconv.Itoa(status))))
 		}
 	})
 }

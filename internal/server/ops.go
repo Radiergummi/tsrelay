@@ -70,38 +70,45 @@ func servePprof(w http.ResponseWriter, r *http.Request) {
 // metrics are collected.
 func (s *Server) newMetrics(mp metric.MeterProvider) func(event string, attrs []slog.Attr) {
 	m := mp.Meter(telemetry.ScopeName)
-	calls := must(m.Int64Counter("tsrelay_calls_total", metric.WithDescription("Callback calls, by outcome: ok or the relay's error code.")))
-	callBytes := must(m.Int64Counter("tsrelay_call_bytes_total", metric.WithDescription("Callback body bytes, in from senders and out to them.")))
-	denials := must(m.Int64Counter("tsrelay_authz_denials_total", metric.WithDescription("Requests refused by authorization, by action.")))
+	calls := telemetry.Must(m.Int64Counter("tsrelay_calls_total", metric.WithDescription("Callback calls, by outcome: ok or the relay's error code.")))
+	callBytes := telemetry.Must(m.Int64Counter("tsrelay_call_bytes_total", metric.WithDescription("Callback body bytes, in from senders and out to them.")))
+	denials := telemetry.Must(m.Int64Counter("tsrelay_authz_denials_total", metric.WithDescription("Requests refused by authorization, by action.")))
 	buckets := metric.WithExplicitBucketBoundaries(telemetry.Buckets...)
-	duration := must(m.Float64Histogram("tsrelay_call_duration_seconds", buckets,
+	duration := telemetry.Must(m.Float64Histogram("tsrelay_call_duration_seconds", buckets,
 		metric.WithDescription("Callback calls from arrival to the last byte back, by outcome and kind.")))
-	ttfb := must(m.Float64Histogram("tsrelay_call_ttfb_seconds", buckets,
+	ttfb := telemetry.Must(m.Float64Histogram("tsrelay_call_ttfb_seconds", buckets,
 		metric.WithDescription("Time from forwarding a call down its tunnel to the app's response headers, by outcome and kind.")))
-	hold := must(m.Float64Histogram("tsrelay_call_hold_seconds", buckets,
+	hold := telemetry.Must(m.Float64Histogram("tsrelay_call_hold_seconds", buckets,
 		metric.WithDescription("Time held calls waited for a tunnel, by outcome.")))
-	must(m.Int64ObservableGauge("tsrelay_tunnels", metric.WithDescription("Attached tunnels."),
+	telemetry.Must(m.Int64ObservableGauge("tsrelay_tunnels", metric.WithDescription("Attached tunnels."),
 		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
 			o.Observe(int64(len(s.tunnels.Snapshot())))
 			return nil
 		})))
-	must(m.Int64ObservableGauge("tsrelay_hooks", metric.WithDescription("Hooks, by whether they are ephemeral."),
+	ephemeral := metric.WithAttributes(attribute.Bool("ephemeral", true))
+	notEphemeral := metric.WithAttributes(attribute.Bool("ephemeral", false))
+	telemetry.Must(m.Int64ObservableGauge("tsrelay_hooks", metric.WithDescription("Hooks, by whether they are ephemeral."),
 		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
-			n := map[bool]int64{true: 0, false: 0}
+			var eph, persistent int64
 			for _, h := range s.hooks.ListAll() {
-				n[h.Ephemeral]++
+				if h.Ephemeral {
+					eph++
+				} else {
+					persistent++
+				}
 			}
-			for eph, v := range n {
-				o.Observe(v, metric.WithAttributes(attribute.Bool("ephemeral", eph)))
-			}
+			o.Observe(eph, ephemeral)
+			o.Observe(persistent, notEphemeral)
 			return nil
 		})))
-	must(m.Int64ObservableGauge("tsrelay_held_calls", metric.WithDescription("Calls waiting for a tunnel to attach."),
+	telemetry.Must(m.Int64ObservableGauge("tsrelay_held_calls", metric.WithDescription("Calls waiting for a tunnel to attach."),
 		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
 			o.Observe(s.relay.Held())
 			return nil
 		})))
 
+	bytesIn := metric.WithAttributes(attribute.String("direction", "in"))
+	bytesOut := metric.WithAttributes(attribute.String("direction", "out"))
 	return func(event string, attrs []slog.Attr) {
 		ctx := context.Background()
 		switch event {
@@ -109,6 +116,7 @@ func (s *Server) newMetrics(mp metric.MeterProvider) func(event string, attrs []
 			var outcome, kind string
 			var in, out int64
 			var waited, total, firstByte time.Duration
+			hasTTFB := false // the app's response headers arrived
 			for _, a := range attrs {
 				switch k := a.Value.Kind(); {
 				case a.Key == "error" && k == slog.KindString:
@@ -124,17 +132,17 @@ func (s *Server) newMetrics(mp metric.MeterProvider) func(event string, attrs []
 				case a.Key == "duration" && k == slog.KindDuration:
 					total = a.Value.Duration()
 				case a.Key == "ttfb" && k == slog.KindDuration:
-					firstByte = a.Value.Duration()
+					firstByte, hasTTFB = a.Value.Duration(), true
 				}
 			}
 			outcome = cmp.Or(outcome, "ok")
 			o := attribute.String("outcome", outcome)
 			calls.Add(ctx, 1, metric.WithAttributes(o))
-			callBytes.Add(ctx, in, metric.WithAttributes(attribute.String("direction", "in")))
-			callBytes.Add(ctx, out, metric.WithAttributes(attribute.String("direction", "out")))
+			callBytes.Add(ctx, in, bytesIn)
+			callBytes.Add(ctx, out, bytesOut)
 			ok := metric.WithAttributes(o, attribute.String("kind", kind))
 			duration.Record(ctx, total.Seconds(), ok)
-			if hasAttr(attrs, "ttfb") {
+			if hasTTFB {
 				ttfb.Record(ctx, firstByte.Seconds(), ok)
 			}
 			if waited > 0 {
@@ -144,24 +152,6 @@ func (s *Server) newMetrics(mp metric.MeterProvider) func(event string, attrs []
 			denials.Add(ctx, 1, metric.WithAttributes(attribute.String("action", attrString(attrs, "action"))))
 		}
 	}
-}
-
-// must returns v, or panics on err: instrument creation fails only for
-// invalid names, which are constants here.
-func must[T any](v T, err error) T {
-	if err != nil {
-		panic(err)
-	}
-	return v
-}
-
-func hasAttr(attrs []slog.Attr, key string) bool {
-	for _, a := range attrs {
-		if a.Key == key {
-			return true
-		}
-	}
-	return false
 }
 
 func attrString(attrs []slog.Attr, key string) string {
