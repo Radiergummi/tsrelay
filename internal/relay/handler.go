@@ -110,8 +110,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// A relay-forced abort (idle timeout, an oversized body) sets its own
 		// cause directly on ctx, so it is identified before falling back to
 		// the sender's own context: SetReadDeadline, used to unblock a
-		// stalled read, also cancels ctx's parent as a side effect, and must
-		// not be mistaken for the sender leaving.
+		// stalled read, also cancels the sender's context (parent) as a side
+		// effect, and must not be mistaken for the sender leaving.
 		switch cause := context.Cause(ctx); {
 		case code != "":
 		case aborted && cause == errIdleTimeout:
@@ -233,17 +233,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			result = "timeout"
 		}
 		ht.end(attribute.String("tsrelay.hold.result", result), true)
-		switch {
-		case err != nil && ctx.Err() != nil:
+		switch result {
+		case "canceled":
 			return // the sender went away; nobody is left to answer (as in proxyError)
-		case errors.Is(err, tunnel.ErrHookGone), errors.Is(err, errHookExpired):
+		case "hook_gone":
 			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 			return
-		case errors.Is(err, errHoldQueueFull):
+		case "queue_full":
 			rec.Header().Set("Retry-After", holdRetryAfter(eff.HoldTimeout.Std()))
 			problem.New(http.StatusServiceUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook, and too many calls are waiting for one").Write(rec)
 			return
-		case err != nil:
+		case "timeout":
 			rec.Header().Set("Retry-After", holdRetryAfter(eff.HoldTimeout.Std()))
 			problem.New(http.StatusServiceUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook").Write(rec)
 			return

@@ -143,7 +143,9 @@ func (t forwardTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.rt.RoundTrip(req)
 	if err == nil {
 		*t.headers = time.Now()
-	} else if span != nil {
+	} else if span != nil && req.Context().Err() == nil {
+		// The sender going away is not the app's (or the relay's) failure,
+		// consistent with the call span's sender_canceled exemption.
 		span.SetStatus(codes.Error, "no response from the app")
 	}
 	return resp, err
