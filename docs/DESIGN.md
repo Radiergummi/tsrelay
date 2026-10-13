@@ -193,7 +193,7 @@ Authority in the UI and API comes from the network identity, much like a cookie.
 - **Host check:** every request's `Host` must be one of the relay's MagicDNS names or tailnet IPs. Anything else gets `421`.
 - **API writes** require `Content-Type: application/json`. If the `Sec-Fetch-Site` header is present it must be `same-origin` or `none`.
 - **No CORS headers**, ever.
-- **The UI sends a strict CSP:** `default-src 'self'` with no inline script. Captured headers and bodies are always rendered as text, never as HTML.
+- **The UI sends a strict CSP:** `default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, with no inline script or style, plus `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`. Captured headers and bodies are always rendered as text, never as HTML.
 
 ## 6. Tunnel protocol
 
@@ -364,6 +364,12 @@ The UI is server-rendered with `html/template`, plus a small vanilla JS file for
 - **No access:** what the caller is missing, with an example grant.
 - **Admin:** all hooks and tunnels (metadata only), with delete.
 
+Pages read hooks and calls in-process and render them on the server. The UI has no write endpoints of its own: the script sends every change (create, edit, delete, replay, test) to the JSON API, so the API's `Guard` protects the UI too. Without JavaScript the UI is read-only.
+
+Live updates: the script subscribes to `/api/v1/events`. When an event concerns what a page shows, it refetches the page and swaps the parts marked `data-live`. Rows are rendered only by the templates. After a reconnect it refetches, because events may have been missed.
+
+Routes: `/` (hooks, or no access), `/hooks/new`, `/hooks/{id}`, `/hooks/{id}/edit`, `/hooks/{id}/calls/{callID}`, `/inspect/{callID}` (redirects to the call; the CLI links here), `/admin`, `/static/…`. An admin without the receiver role starts on `/admin`.
+
 ## 11. Storage
 
 ```go
@@ -466,6 +472,7 @@ tsrelay url [<port|url>]                   print the URL tsrelay http would use
   ```
   POST /done → 200  12ms  tag:prod-worker  https://tsrelay.…/inspect/c_7f3a
   ```
+  The link is `<relay>/inspect/<callID>`. The CLI reads the call ID from the `Tsrelay-Call-Id` header of the request it forwards. With `--json`, call events carry `callId` and `inspect`.
 - **Targets:** a bare port means `http://localhost:<port>`. A full URL is also accepted, including a path prefix and `https://` (with `--insecure` for self-signed local certificates).
 - **Stable URLs:** the CLI remembers the hook path it used for each working directory and target, in `$XDG_STATE_HOME/tsrelay/hooks.json`, and asks for the same path next time. The URL put into `.env` therefore keeps working across restarts, including after the ephemeral grace period has passed.
 - **`-- cmd args...`** starts the local application with `TSRELAY_URL` set in its environment, and stops it when the tunnel command exits.

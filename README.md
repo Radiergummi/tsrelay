@@ -42,7 +42,7 @@ Use an OAuth client secret with the `tag:tsrelay` tag. Auth keys (`TS_AUTHKEY`) 
 $ tsrelay http 8080
 https://tsrelay.example.ts.net/~moritz/amber-otter-lamp
 Forwarding https://tsrelay.example.ts.net/~moritz/amber-otter-lamp → http://localhost:8080
-14:02:11 POST /payments/done → 200  12ms  tag:prod-worker
+14:02:11 POST /payments/done → 200  12ms  tag:prod-worker  https://tsrelay.example.ts.net/inspect/c_7f3a
 ```
 
 Configure that URL as the callback URL in the app that calls you. Paths below it are passed on: `…/amber-otter-lamp/payments/done` reaches your app as `/payments/done`. Running `tsrelay http 8080` again in the same directory prints the same URL, so you can keep it in your `.env`.
@@ -123,6 +123,16 @@ Bodies arrive exactly as sent, byte for byte, so signatures from Stripe, GitHub,
 | `Tsrelay-Call-Id` | Also returned to the caller, for matching logs |
 | `X-Forwarded-For`, `-Host`, `-Proto`, `-Prefix` | The original request, for URL-signing schemes |
 
+## Web UI
+
+Open the relay's URL (`https://tsrelay.<your tailnet>/`) in a browser on your tailnet. You see your hooks with their tunnels and latest calls, and can create, edit and delete hooks. Each hook's page shows its calls as they arrive. A call's page shows the request and the response side by side, and lets you replay the call, copy it as a curl command (aimed at your local target or at the hook URL), or send a test request. Admins also get an admin page listing every hook, as metadata only. Each call line `tsrelay http` prints ends with a link to that call.
+
+The UI needs JavaScript to make changes; without it, it is read-only. To try the UI locally without a tailnet:
+
+```bash
+TSRELAY_UI_DEV=1 go test ./internal/server -run TestUIDev -timeout 0 -v   # then open http://127.0.0.1:8099
+```
+
 ## Inspecting calls
 
 The relay keeps the last 100 calls of each hook in memory (`--capture-calls`): method, path, sender, status and timings, the query and the headers without the redacted ones (`--redact-headers`), each capped at `--capture-limit` bytes, and the first 64 KiB of each body (`--capture-limit`). Only the hook's owner sees queries, headers and bodies; admins see the rest. Calls are lost when the relay restarts.
@@ -199,6 +209,8 @@ gofmt -l .                                         # expect no output
 go test -race ./...                                # everything except the tailnet test
 go test -race -tags tailnet ./internal/server      # real tsnet nodes against an in-process control server
 ```
+
+The UI script's unit tests run with `node --test` as part of `go test ./internal/ui` when `node` is installed, and are skipped otherwise.
 
 `.github/workflows/ci.yml` runs the same four commands on every push and pull request. `.github/workflows/release.yml` builds binaries and a container image for tags matching `v*`; `tsrelay version` reports the version baked in at build time (`dev` for a local build).
 
