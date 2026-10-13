@@ -11,7 +11,7 @@
 <p><code class="url" id="hook-url">{{.Hook.URL}}</code> <button data-action="copy" data-copy="#hook-url">Copy URL</button></p>
 {{with .Hook.Description}}<p>{{.}}</p>{{end}}
 
-<section id="hook-state" data-live data-hooks="{{.Hook.ID}}">
+<section id="hook-state" data-live data-hooks="{{.Hook.ID}}"{{if not .Owner}} data-all{{end}}>
 <h2>Tunnel</h2>
 <p>{{template "tunnel" .Hook.Tunnel}}</p>
 <h2>Calls</h2>

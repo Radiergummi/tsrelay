@@ -174,11 +174,17 @@ func TestUIHookPage(t *testing.T) {
 	if strings.Contains(body, "s3cr3t") {
 		t.Error("the call list shows a query string")
 	}
+	if strings.Contains(body, "data-all") {
+		t.Error("the owner's hook page subscribes to every hook's events")
+	}
 	assertInert(t, body)
 
-	// Admins see the hook as metadata, without controls.
+	// Admins see the hook as metadata, without controls. Their view
+	// subscribes with ?all=true, since the event stream only delivers an
+	// admin events for their own hooks otherwise.
 	resp, body = e.page(uiAdmin, "/hooks/"+h.ID)
-	if resp.StatusCode != 200 || !strings.Contains(body, "metadata only") || strings.Contains(body, "/edit") || strings.Contains(body, "delete-hook") {
+	if resp.StatusCode != 200 || !strings.Contains(body, "metadata only") || strings.Contains(body, "/edit") ||
+		strings.Contains(body, "delete-hook") || !strings.Contains(body, "data-all") {
 		t.Errorf("admin's hook page = %d:\n%s", resp.StatusCode, body)
 	}
 	// Anyone else, and unknown IDs, get a 404 page.
