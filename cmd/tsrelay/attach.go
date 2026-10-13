@@ -61,7 +61,8 @@ func attachCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d d
 	}
 
 	tc := &tunnel.Client{
-		Hooks: ids,
+		Hooks:  ids,
+		Target: target.Redacted(),
 		Dial: func(ctx context.Context, ids []string, a tunnel.Attach) (net.Conn, error) {
 			return tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, ids...))
 		},

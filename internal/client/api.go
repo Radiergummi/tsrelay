@@ -58,6 +58,9 @@ func (c *API) TunnelURL(a tunnel.Attach, hookIDs ...string) string {
 	if a.Resume {
 		q.Set("resume", "1")
 	}
+	if a.Target != "" {
+		q.Set("target", a.Target)
+	}
 	return c.BaseURL + "/api/v1/tunnel?" + q.Encode()
 }
 

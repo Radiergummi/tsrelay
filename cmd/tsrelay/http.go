@@ -88,7 +88,8 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 	seqs := updateSeqs{}
 	var tc *tunnel.Client
 	tc = &tunnel.Client{
-		Hooks: []string{hook.ID},
+		Hooks:  []string{hook.ID},
+		Target: target.Redacted(),
 		Dial: func(ctx context.Context, ids []string, a tunnel.Attach) (net.Conn, error) {
 			conn, err := tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, ids...))
 			if !isNotFound(err) {

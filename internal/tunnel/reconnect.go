@@ -25,7 +25,9 @@ var errTunnelLost = errors.New("tunnel lost")
 // full jitter. Hooks the relay reports as replaced, revoked or deleted are
 // dropped from later attach attempts.
 type Client struct {
-	Hooks      []string
+	Hooks []string
+	// Target is the local target reported to the relay for display.
+	Target     string
 	Dial       func(ctx context.Context, hooks []string, a Attach) (net.Conn, error)
 	Handler    http.Handler
 	OnControl  func(Control)
@@ -46,7 +48,7 @@ func (c *Client) Run(ctx context.Context) error {
 	minB := cmp.Or(c.MinBackoff, 250*time.Millisecond)
 	maxB := cmp.Or(c.MaxBackoff, 30*time.Second)
 	backoff := minB
-	attach := Attach{Session: ids.New("s_")}
+	attach := Attach{Session: ids.New("s_"), Target: c.Target}
 	for {
 		hooks := c.current()
 		if len(hooks) == 0 {

@@ -188,6 +188,9 @@ func TestAPIClientDecodesProblems(t *testing.T) {
 	if got := c.TunnelURL(tunnel.Attach{Session: "s_1", Resume: true}, "h_1", "h_2"); got != srv.URL+"/api/v1/tunnel?hook=h_1&hook=h_2&resume=1&session=s_1" {
 		t.Fatalf("TunnelURL = %q", got)
 	}
+	if got := c.TunnelURL(tunnel.Attach{Session: "s_1", Target: "http://localhost:8080"}, "h_1"); got != srv.URL+"/api/v1/tunnel?hook=h_1&session=s_1&target=http%3A%2F%2Flocalhost%3A8080" {
+		t.Fatalf("TunnelURL with target = %q", got)
+	}
 }
 
 func TestRelayURL(t *testing.T) {

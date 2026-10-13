@@ -589,3 +589,24 @@ func TestDryRun(t *testing.T) {
 		t.Fatalf("dry run with a taken slug = %d %+v", resp.StatusCode, p)
 	}
 }
+
+func TestTunnelTarget(t *testing.T) {
+	e := newEnv(t)
+	for target, want := range map[string]string{
+		"http%3A%2F%2Flocalhost%3A8080%2Fapp": "http://localhost:8080/app",
+		"javascript%3Aalert(1)":               "",
+		"http%3A%2F%2Fuser%3Apw%40localhost":  "", // credentials are never shown
+		"":                                    "",
+	} {
+		var h Hook
+		e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{}, &h)
+		if _, _, err := e.openTunnelQ(moritz, "target="+target, h.ID); err != nil {
+			t.Fatal(err)
+		}
+		var got Hook
+		e.call(moritz, "GET", "/api/v1/hooks/"+h.ID, nil, &got)
+		if got.Tunnel == nil || got.Tunnel.Target != want {
+			t.Errorf("target %q: tunnel = %+v, want target %q", target, got.Tunnel, want)
+		}
+	}
+}

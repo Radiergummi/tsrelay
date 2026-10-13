@@ -556,3 +556,12 @@ func TestHTTPCommandExitCode(t *testing.T) {
 		t.Errorf("stderr should say why tsrelay stopped:\n%s", r.stderr)
 	}
 }
+
+func TestHTTPReportsTarget(t *testing.T) {
+	e := newCLIEnv(t)
+	e.url(e.start())
+	hs, err := e.api().ListHooks(context.Background())
+	if err != nil || len(hs) != 1 || hs[0].Tunnel == nil || hs[0].Tunnel.Target != e.local.URL {
+		t.Fatalf("hooks = %+v, %v; want the tunnel's target %s", hs, err, e.local.URL)
+	}
+}

@@ -50,6 +50,8 @@ type HookInfo struct {
 type Attach struct {
 	Session string
 	Resume  bool
+	// Target is the client's local target, reported for display.
+	Target string
 }
 
 // Control is a message from the relay to the client about the tunnel itself.

@@ -59,6 +59,9 @@ type Tunnel struct {
 	// RemoteAddr is the client's address as the relay saw it when the
 	// tunnel attached. The revalidator identifies it again.
 	RemoteAddr string
+	// Target is the client's local target as it reported it, for display
+	// only. It may be empty.
+	Target string
 
 	cc   *http2.ClientConn
 	conn *watchedConn

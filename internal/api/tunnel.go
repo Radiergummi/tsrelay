@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
@@ -81,8 +82,22 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 	}
 	t.Session = session
 	t.RemoteAddr = r.RemoteAddr
+	t.Target = localTarget(r.URL.Query().Get("target"))
 	// r.Context() ends when this handler returns; the tunnel outlives it.
 	a.register(context.WithoutCancel(r.Context()), t, id, requested)
+}
+
+// localTarget returns s if it is an http(s) URL without credentials, else
+// "". The target is shown to the hook's owner and never connected to.
+func localTarget(s string) string {
+	if len(s) > 2048 {
+		return ""
+	}
+	u, err := url.Parse(s)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+		return ""
+	}
+	return u.String()
 }
 
 // register attaches t to the requested hooks, tells the client, and

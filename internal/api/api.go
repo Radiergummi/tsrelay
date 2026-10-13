@@ -66,8 +66,9 @@ type Hook struct {
 }
 
 type TunnelInfo struct {
-	ID   string `json:"id"`
-	Node string `json:"node"`
+	ID     string `json:"id"`
+	Node   string `json:"node"`
+	Target string `json:"target,omitempty"`
 }
 
 func (a *API) Register(mux *http.ServeMux) {
@@ -266,7 +267,7 @@ func (a *API) hookJSON(h hooks.Hook) Hook {
 		Settings: h.Settings, Effective: a.Hooks.Effective(h), CreatedAt: h.CreatedAt,
 	}
 	if t, ok := a.Tunnels.Lookup(string(h.ID)); ok {
-		out.Tunnel = &TunnelInfo{ID: t.ID, Node: t.Owner.NodeName}
+		out.Tunnel = &TunnelInfo{ID: t.ID, Node: t.Owner.NodeName, Target: t.Target}
 	}
 	return out
 }
