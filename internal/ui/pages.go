@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
@@ -27,6 +29,10 @@ func (u *UI) row(h hooks.Hook) hookRow {
 // hooksPage lists the caller's hooks, or explains why they have none.
 func (u *UI) hooksPage(w http.ResponseWriter, r *http.Request, v viewer) {
 	if !v.Receiver() {
+		if v.Admin() {
+			http.Redirect(w, r, "/admin", http.StatusSeeOther)
+			return
+		}
 		u.noAccess(w, v)
 		return
 	}
@@ -114,4 +120,30 @@ func (u *UI) noAccess(w http.ResponseWriter, v viewer) {
 		Roles  []string
 		Cap    string
 	}{v, !v.ID.IsUser(), sortedRoles(v.ID.Grants), u.capName})
+}
+
+// adminPage lists every hook as metadata, with its owner and tunnel, so
+// admins can see what is attached and delete hooks (DESIGN.md §5.2).
+func (u *UI) adminPage(w http.ResponseWriter, r *http.Request, v viewer) {
+	if !v.Admin() {
+		u.error(w, v, http.StatusForbidden, "Only relay admins can see this page.")
+		return
+	}
+	all := u.hooks.ListAll()
+	slices.SortFunc(all, func(a, b hooks.Hook) int {
+		return cmp.Or(cmp.Compare(a.OwnerLogin, b.OwnerLogin), cmp.Compare(a.Path, b.Path))
+	})
+	rows := make([]hookRow, len(all))
+	tunnels := map[string]bool{}
+	for i, h := range all {
+		rows[i] = u.row(h)
+		if t := rows[i].Tunnel; t != nil {
+			tunnels[t.ID] = true
+		}
+	}
+	u.render(w, http.StatusOK, "admin", struct {
+		V       viewer
+		Hooks   []hookRow
+		Tunnels int
+	}{v, rows, len(tunnels)})
 }

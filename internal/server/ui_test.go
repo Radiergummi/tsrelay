@@ -419,3 +419,42 @@ func TestUIHookForm(t *testing.T) {
 		}
 	}
 }
+
+func TestUIAdminPage(t *testing.T) {
+	e := newEnv(t, Config{CapName: testCap})
+	ctx := context.Background()
+	mine, err := e.api.CreateHook(ctx, hooks.CreateRequest{Path: "cb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs, err := e.apiAs(uiOther).CreateHook(ctx, hooks.CreateRequest{Path: "theirs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, body := e.page(uiAdmin, "/admin")
+	if resp.StatusCode != 200 {
+		t.Fatalf("admin page = %d:\n%s", resp.StatusCode, body)
+	}
+	for _, want := range []string{
+		"moritz@example.com", "other@example.com", `href="/hooks/` + mine.ID + `"`, `href="/hooks/` + theirs.ID + `"`,
+		`data-hook="` + theirs.ID + `" data-next="/admin"`, "data-all", "2 hooks, 0 tunnels",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("admin page lacks %q", want)
+		}
+	}
+	assertInert(t, body)
+
+	if resp, _ := e.page(receiver, "/admin"); resp.StatusCode != 403 {
+		t.Errorf("a non-admin's admin page = %d, want 403", resp.StatusCode)
+	}
+	// An admin who cannot receive callbacks starts on the admin page.
+	if resp, _ := e.page(uiAdmin, "/"); resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/admin" {
+		t.Errorf("admin's / = %d → %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	// One who can sees their own hooks first.
+	both := identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver","admin"]}`)
+	if resp, body := e.page(both, "/"); resp.StatusCode != 200 || !strings.Contains(body, mine.URL) || !strings.Contains(body, `href="/admin"`) {
+		t.Errorf("receiver-admin's / = %d", resp.StatusCode)
+	}
+}

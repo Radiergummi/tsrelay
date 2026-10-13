@@ -53,6 +53,7 @@ func (u *UI) Register(mux *http.ServeMux) {
 		files.ServeHTTP(w, r)
 	})))
 	mux.Handle("GET /{$}", u.page(u.hooksPage))
+	mux.Handle("GET /admin", u.page(u.adminPage))
 	mux.Handle("GET /hooks/new", u.page(u.newHookPage))
 	mux.Handle("GET /hooks/{id}/edit", u.page(u.editHookPage))
 	mux.Handle("GET /hooks/{id}", u.page(u.hookPage))

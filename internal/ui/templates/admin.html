@@ -1,0 +1,22 @@
+{{define "title"}}Admin{{end}}
+{{define "content"}}
+<h1>All hooks</h1>
+<section id="all-hooks" data-live data-hooks="*" data-all>
+<p class="muted">{{len .Hooks}} hooks, {{.Tunnels}} tunnels attached. You see metadata only: query strings, headers and bodies stay with each hook's owner.</p>
+{{if .Hooks}}
+<table>
+<thead><tr><th>Owner</th><th>Hook</th><th>Channel</th><th>Tunnel</th><th>Last call</th><th></th></tr></thead>
+<tbody>
+{{range .Hooks}}<tr>
+<td>{{.Owner}}</td>
+<td><a href="/hooks/{{.ID}}">{{.Path}}</a>{{if .Ephemeral}} <span class="tag">ephemeral</span>{{end}}</td>
+<td>{{.Channel}}</td>
+<td>{{template "tunnel" .Tunnel}}</td>
+<td>{{with .Last}}{{template "callSummary" .}}{{else}}<span class="muted">none</span>{{end}}</td>
+<td><button class="danger" data-action="delete-hook" data-hook="{{.ID}}" data-next="/admin" data-confirm="Delete {{.Owner}}'s hook {{.Path}}? Its URL stops working and its tunnel is detached from it.">Delete</button></td>
+</tr>{{end}}
+</tbody>
+</table>
+{{else}}<p class="muted">Nobody has a hook yet.</p>{{end}}
+</section>
+{{end}}
