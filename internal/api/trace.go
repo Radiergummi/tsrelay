@@ -102,20 +102,24 @@ func (a *API) startTunnelSpan(r *http.Request) (context.Context, trace.Span) {
 	return a.Tracer.Start(r.Context(), "tsrelay.tunnel.attach", trace.WithSpanKind(trace.SpanKindServer))
 }
 
+// endAttach records the attach's outcome and ends span. hookIDs are only
+// the hooks the request passed its ownership and channel checks for, and
+// are recorded only when attached; a refusal names no hooks (DESIGN §13.1).
 func (a *API) endAttach(span trace.Span, id authz.Identity, attached bool, hookIDs []string) {
 	if span == nil {
 		return
 	}
 	result := "refused"
-	if attached {
-		result = "attached"
-	}
-	span.SetAttributes(
-		attribute.String("tsrelay.tunnel.result", result),
+	attrs := []attribute.KeyValue{
 		attribute.String("tsrelay.actor.login", id.Login),
 		attribute.String("tsrelay.actor.node", id.NodeName),
-		attribute.StringSlice("tsrelay.hook.ids", hookIDs),
-	)
+	}
+	if attached {
+		result = "attached"
+		attrs = append(attrs, attribute.StringSlice("tsrelay.hook.ids", hookIDs))
+	}
+	attrs = append(attrs, attribute.String("tsrelay.tunnel.result", result))
+	span.SetAttributes(attrs...)
 	span.End()
 }
 

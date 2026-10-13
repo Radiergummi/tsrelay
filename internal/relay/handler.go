@@ -107,6 +107,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			aborted = true // the tunnel failed while streaming the response
 		}
 		code := rec.Header().Get(problem.HeaderError)
+		if code != "" && !problem.IsRelayCode(code) {
+			code = "" // the app set this header itself; it is not a relay error
+		}
 		// A relay-forced abort (idle timeout, an oversized body) sets its own
 		// cause directly on ctx, so it is identified before falling back to
 		// the sender's own context: SetReadDeadline, used to unblock a

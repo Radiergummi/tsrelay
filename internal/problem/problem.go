@@ -38,6 +38,21 @@ const (
 	Internal             = "internal"
 )
 
+// relayCodes are the codes above: the only ones the relay (or, for
+// UpstreamUnreachable, the CLI forwarder) ever writes on a response. A
+// Tsrelay-Error header carrying anything else came from the local app, not
+// from tsrelay.
+var relayCodes = map[string]bool{
+	SenderForbidden: true, HookNotFound: true, BodyTooLarge: true, RateLimited: true,
+	TunnelUnavailable: true, TunnelOverloaded: true, UpstreamUnreachable: true, TunnelLost: true, UpstreamTimeout: true,
+	Forbidden: true, NotFound: true, Invalid: true, BadRequest: true, Conflict: true,
+	MisdirectedRequest: true, UnsupportedMediaType: true, Internal: true,
+}
+
+// IsRelayCode reports whether code is one tsrelay itself ever writes, as
+// opposed to a value an app set on its own response.
+func IsRelayCode(code string) bool { return relayCodes[code] }
+
 // Problem is an RFC 9457 problem document.
 type Problem struct {
 	Type   string `json:"type"`

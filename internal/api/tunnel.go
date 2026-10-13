@@ -23,7 +23,8 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 	ctx, span := a.startTunnelSpan(r)
 	r = r.WithContext(ctx)
 	attached := false
-	defer func() { a.endAttach(span, id, attached, r.URL.Query()["hook"]) }()
+	var validatedHookIDs []string // set once the requested hooks pass their ownership checks
+	defer func() { a.endAttach(span, id, attached, validatedHookIDs) }()
 	if !tunnel.IsUpgrade(r) {
 		problem.New(http.StatusBadRequest, problem.BadRequest, "expected Connection: Upgrade and Upgrade: "+tunnel.UpgradeToken).Write(w)
 		return
@@ -69,6 +70,10 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 			}
 		}
 		requested = append(requested, h)
+	}
+	validatedHookIDs = make([]string, len(requested))
+	for i, h := range requested {
+		validatedHookIDs[i] = string(h.ID)
 	}
 	if n, limit := a.Tunnels.CountOwner(id.UserID, hookIDs...), id.Grants.Limits.MaxTunnels; n >= limit {
 		a.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(id), slog.String("action", "tunnel.attach"), slog.String("reason", "maxTunnels"))
