@@ -21,7 +21,7 @@ import (
 
 // tracedEnv is newEnv with tracing on, recording spans instead of
 // exporting them.
-func tracedEnv(t *testing.T, cfg Config) (*env, *tracetest.SpanRecorder) {
+func tracedEnv(t testing.TB, cfg Config) (*env, *tracetest.SpanRecorder) {
 	t.Helper()
 	rec := tracetest.NewSpanRecorder()
 	tel := telemetry.Must(telemetry.Setup(context.Background(), telemetry.Config{}))

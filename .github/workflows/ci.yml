@@ -33,5 +33,8 @@ jobs:
       - name: go test -race
         run: go test -race ./...
 
+      - name: benchmarks run
+        run: go test -run='^$' -bench=. -benchtime=1x ./...
+
       - name: tailnet integration test
         run: go test -race -tags tailnet ./internal/server

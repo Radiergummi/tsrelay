@@ -16,7 +16,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
-func receive[T any](t *testing.T, ch <-chan T) T {
+func receive[T any](t testing.TB, ch <-chan T) T {
 	t.Helper()
 	select {
 	case v := <-ch:
