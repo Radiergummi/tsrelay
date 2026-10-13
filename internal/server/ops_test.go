@@ -98,6 +98,41 @@ func TestOps(t *testing.T) {
 	}
 }
 
+func TestOpsPprof(t *testing.T) {
+	e := newEnv(t, Config{})
+	get := func(h http.Handler, path string) int {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		return rec.Code
+	}
+	off := &Ops{}
+	off.Ready(e.srv)
+	on := &Ops{Pprof: true}
+	on.Ready(e.srv)
+	for _, p := range []string{"/debug/pprof/", "/debug/pprof/heap", "/debug/pprof/cmdline", "/debug/pprof/symbol"} {
+		if code := get(off, p); code != 404 {
+			t.Errorf("%s without --ops-pprof = %d, want 404", p, code)
+		}
+		if code := get(on, p); code != 200 {
+			t.Errorf("%s with --ops-pprof = %d, want 200", p, code)
+		}
+	}
+	// pprof is never reachable through the relay's tailnet handler.
+	req, _ := http.NewRequest("GET", e.base+"/debug/pprof/", nil)
+	resp, err := e.fake.Client(receiver).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode == 200 {
+		t.Fatal("/debug/pprof/ answered 200 on the relay's own listener")
+	}
+	// pprof works before the relay is ready, like /healthz: it profiles the process.
+	if code := get(&Ops{Pprof: true}, "/debug/pprof/"); code != 200 {
+		t.Errorf("/debug/pprof/ before ready = %d, want 200", code)
+	}
+}
+
 func TestHoldMetrics(t *testing.T) {
 	e := newEnv(t, Config{})
 	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))

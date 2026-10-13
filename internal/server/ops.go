@@ -6,6 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/pprof"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -15,10 +17,14 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-// Ops serves the ops listener: /healthz, /readyz and /metrics. It exists
-// before the relay is up, so liveness probes pass while tsnet joins the
-// tailnet; /readyz and /metrics answer 503 until Ready is called.
-type Ops struct{ srv atomic.Pointer[Server] }
+// Ops serves the ops listener: /healthz, /readyz and /metrics, and with
+// Pprof, /debug/pprof/. It exists before the relay is up, so liveness
+// probes pass while tsnet joins the tailnet; /readyz and /metrics answer
+// 503 until Ready is called.
+type Ops struct {
+	Pprof bool // serve net/http/pprof under /debug/pprof/; set before serving
+	srv   atomic.Pointer[Server]
+}
 
 // Ready marks the relay as up: tsnet joined, the store loaded, s serving.
 func (o *Ops) Ready(s *Server) { o.srv.Store(s) }
@@ -28,6 +34,8 @@ func (o *Ops) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch p := r.URL.Path; {
 	case p == "/healthz":
 		io.WriteString(w, "ok\n")
+	case strings.HasPrefix(p, "/debug/pprof/") && o.Pprof:
+		servePprof(w, r)
 	case p != "/readyz" && p != "/metrics":
 		http.NotFound(w, r)
 	case s == nil:
@@ -36,6 +44,23 @@ func (o *Ops) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.tel.Metrics.ServeHTTP(w, r)
 	default:
 		io.WriteString(w, "ok\n")
+	}
+}
+
+// servePprof routes to net/http/pprof explicitly, never through
+// http.DefaultServeMux, which other packages may also register on.
+func servePprof(w http.ResponseWriter, r *http.Request) {
+	switch name := strings.TrimPrefix(r.URL.Path, "/debug/pprof/"); name {
+	case "cmdline":
+		pprof.Cmdline(w, r)
+	case "profile":
+		pprof.Profile(w, r)
+	case "symbol":
+		pprof.Symbol(w, r)
+	case "trace":
+		pprof.Trace(w, r)
+	default:
+		pprof.Index(w, r) // the index, and named profiles such as heap or goroutine
 	}
 }
 

@@ -186,6 +186,8 @@ Every flag can also be set as an environment variable: `--ephemeral-grace` becom
 | `--capture-bodies` | `true` | `false` keeps no bodies for any hook |
 | `--redact-headers` | `Authorization,Proxy-Authorization,Cookie,Set-Cookie,X-Api-Key` | Headers whose values are never kept; an empty value keeps these defaults, so redaction cannot be turned off |
 | `--ops-listen` | off | Host address (e.g. `:9090`) for `/healthz`, `/readyz` and `/metrics`; never on the tailnet |
+| `--ops-pprof` | `false` | Serve Go's profiler under `/debug/pprof/` on the ops listener |
+| `--otel` | `false` | Export traces and metrics over OTLP/HTTP; see [Tracing](#tracing) |
 
 Every numeric or duration setting from [Hook settings](#hook-settings) also has a relay-wide default and maximum flag, named `--hook-<setting>-default` and `--hook-<setting>-max`, for example `--hook-rate-limit-default=100/200`, or `--hook-max-body-bytes-default=1048576 --hook-max-body-bytes-max=10485760` (the default body size is unlimited, which a maximum would not allow, so set both); `attachPolicy`, `hostHeader` and `capture` only get a `-default` flag, since there's no sensible maximum for them. A hook may only set a value within the relay's maximum. `--response-timeout` still works as a deprecated alias of `--hook-response-timeout-default`.
 
@@ -227,6 +229,17 @@ Ship it as:
 - Docker Compose, with `deploy/compose.yaml`
 
 Run exactly one relay per state directory (`--state-dir`); see DESIGN.md §11 and §14.
+
+## Tracing
+
+With `--otel`, the relay exports traces and metrics over OTLP/HTTP. Everything else is configured with the standard OpenTelemetry variables: `OTEL_EXPORTER_OTLP_ENDPOINT` (default `http://localhost:4318`), `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_TRACES_SAMPLER`, `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES`. An unreachable collector never stops the relay; it logs a warning at most once a minute. Spans and metrics never contain bodies, query strings, or header values.
+
+## Profiling
+
+With `--ops-pprof`, the ops listener also serves Go's profiler under `/debug/pprof/`. On Kubernetes, enable it temporarily and reach it through a port-forward:
+
+    kubectl port-forward statefulset/tsrelay 9090:9090
+    go tool pprof http://localhost:9090/debug/pprof/heap
 
 ## License
 

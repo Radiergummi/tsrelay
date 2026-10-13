@@ -31,6 +31,8 @@ spec:
           image: ghcr.io/radiergummi/tsrelay:latest
           args:
             - --ops-listen=:9090
+            # --ops-pprof and --otel are left off here; enable them
+            # temporarily (see README.md's Profiling and Tracing sections).
           ports:
             - name: metrics
               containerPort: 9090

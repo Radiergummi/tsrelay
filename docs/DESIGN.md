@@ -411,6 +411,8 @@ Relay-wide settings (flag / environment variable):
 | `--redact-headers` | `Authorization,Proxy-Authorization,Cookie,Set-Cookie,X-Api-Key` |
 | `--hook-capture-default` | `true` |
 | `--ops-listen` | empty (off) |
+| `--ops-pprof` | `false` |
+| `--otel` | `false` (OTLP/HTTP, configured by `OTEL_*`) |
 | `--log-format` / `--log-level` | `json` / `info` |
 
 Per-hook defaults and maxima are listed in §8. Each per-hook setting also has a relay-wide `--hook-<setting>-default` and `--hook-<setting>-max` flag.
@@ -433,7 +435,7 @@ v1 has **no config file**. Flags and environment variables cover binaries and co
 
 **Never logged:** request or response bodies, query strings, or header values. Header *names* may appear in debug-level logs.
 
-**Ops listener** (`--ops-listen=:9090`, off by default, **never** bound on the tailnet interface): `/healthz` (process alive), `/readyz` (tsnet up and the store loaded), `/metrics`. The shipped Kubernetes manifests enable it on the pod IP for probes.
+**Ops listener** (`--ops-listen=:9090`, off by default, **never** bound on the tailnet interface): `/healthz` (process alive), `/readyz` (tsnet up and the store loaded), `/metrics`. The shipped Kubernetes manifests enable it on the pod IP for probes. With `--ops-pprof` (off by default) it also serves `net/http/pprof` under `/debug/pprof/`; the shipped manifests leave it off.
 
 **Metrics:** OpenTelemetry instruments, served as Prometheus text on the ops listener's `/metrics` (and pushed over OTLP with `--otel`, §13.1). The exporter keeps the names below exactly: no unit suffixes, no `otel_scope_*` labels, no `target_info`. Counters and histograms are derived from audit events through an `audit.Logger` observer hook, so the request path gets no second instrumentation layer; gauges are read from the tunnel registry and the hook manager at collection time.
 - `tsrelay_calls_total{outcome}`
