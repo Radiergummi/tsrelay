@@ -272,9 +272,41 @@ func TestMalformedTraceparent(t *testing.T) {
 			t.Errorf("traceparent %q: app got %q, want a new valid one", bad, tp)
 		}
 	}
-	for _, s := range rec.Ended() {
-		if s.Name() == "tsrelay.call" && s.Parent().IsValid() {
+	callSpans := func() (calls []sdktrace.ReadOnlySpan) {
+		for _, s := range rec.Ended() {
+			if s.Name() == "tsrelay.call" {
+				calls = append(calls, s)
+			}
+		}
+		return
+	}
+	e.waitFor(func() bool { return len(callSpans()) >= 3 })
+	for _, s := range callSpans() {
+		if s.Parent().IsValid() {
 			t.Errorf("call span has parent %v from a malformed traceparent", s.Parent())
 		}
+	}
+}
+
+func TestBodyTooLargeEvent(t *testing.T) {
+	e, rec := tracedEnv(t, Config{})
+	max := int64(4)
+	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb", Settings: hooks.Settings{MaxBodyBytes: &max}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := e.send(h, "", []byte("way too long"), nil)
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413", resp.StatusCode)
+	}
+	call := e.spanNamed(rec, "tsrelay.call")
+	if !hasEvent(call, "body_too_large") {
+		t.Error("no body_too_large event")
+	}
+	if call.Status().Code != codes.Error {
+		t.Error("body_too_large call not marked as an error")
+	}
+	if got, _ := attr(call, "tsrelay.error"); got != "body_too_large" {
+		t.Errorf("tsrelay.error = %q, want body_too_large", got)
 	}
 }
