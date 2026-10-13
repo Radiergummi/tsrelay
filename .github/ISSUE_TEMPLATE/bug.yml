@@ -1,0 +1,30 @@
+name: Bug report
+description: Something in tsrelay doesn't work as documented.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Include error messages and the relevant log lines.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce it
+      description: The smallest set of steps, commands or requests that shows the problem.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `tsrelay version` for the relay and the CLI.
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup
+      description: How the relay runs (Kubernetes, Compose, binary), the flags you changed, and the relevant part of your grants. Leave out keys and anything private.
