@@ -31,9 +31,12 @@ type Registry struct {
 
 // waiters are the calls waiting for a tunnel to attach to one hook. done
 // is closed, and the entry removed, when one attaches or the hook is gone.
+// n counts the waiters; the last one to leave without a wake-up removes
+// the entry.
 type waiters struct {
 	done chan struct{}
 	gone bool
+	n    int
 }
 
 func NewRegistry() *Registry {
@@ -180,19 +183,33 @@ func (r *Registry) Wait(ctx context.Context, hookID string, exists func() bool) 
 			w = &waiters{done: make(chan struct{})}
 			r.waits[hookID] = w
 		}
+		w.n++
 		r.mu.Unlock()
 		if exists != nil && !exists() {
+			r.leave(hookID, w)
 			return nil, ErrHookGone
 		}
 		select {
 		case <-w.done:
+			r.leave(hookID, w)
 			if w.gone {
 				return nil, ErrHookGone
 			}
 			// A tunnel attached; it may have gone again before we looked.
 		case <-ctx.Done():
+			r.leave(hookID, w)
 			return nil, context.Cause(ctx)
 		}
+	}
+}
+
+// leave unregisters one waiter of w, and removes w once nobody waits on it.
+// An entry that was woken has already been removed or replaced.
+func (r *Registry) leave(hookID string, w *waiters) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if w.n--; w.n == 0 && r.waits[hookID] == w {
+		delete(r.waits, hookID)
 	}
 }
 

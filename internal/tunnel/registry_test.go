@@ -131,6 +131,40 @@ func TestRegistryWaitEnds(t *testing.T) {
 	}
 }
 
+// Waits that end without an attach must not leave entries behind, and one
+// waiter giving up must not strand another waiting for the same hook.
+func TestRegistryWaitLeavesNoEntries(t *testing.T) {
+	r := NewRegistry()
+	short, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if _, err := r.Wait(short, "h_timeout", nil); err == nil {
+		t.Fatal("Wait returned without an attach")
+	}
+	if _, err := r.Wait(context.Background(), "h_deleted", func() bool { return false }); !errors.Is(err, ErrHookGone) {
+		t.Fatalf("Wait for a deleted hook = %v, want ErrHookGone", err)
+	}
+
+	long := startWait(context.Background(), r, "h_shared")
+	time.Sleep(20 * time.Millisecond) // let it block
+	brief, cancelBrief := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancelBrief()
+	if _, err := r.Wait(brief, "h_shared", nil); err == nil {
+		t.Fatal("the brief Wait returned without an attach")
+	}
+	a := &Tunnel{ID: "a"}
+	r.Attach(a, []string{"h_shared"})
+	if res := <-long; res.err != nil || res.t != a {
+		t.Fatalf("remaining waiter = %+v, want tunnel a", res)
+	}
+
+	r.mu.Lock()
+	left := len(r.waits)
+	r.mu.Unlock()
+	if left != 0 {
+		t.Fatalf("%d waiter entries left behind", left)
+	}
+}
+
 func TestRegistryCountOwner(t *testing.T) {
 	r := NewRegistry()
 	me, other := authz.Identity{UserID: 1}, authz.Identity{UserID: 2}
