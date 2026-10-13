@@ -19,6 +19,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
+	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"github.com/Radiergummi/tsrelay/internal/tunnel/tunneltest"
@@ -36,6 +37,7 @@ type env struct {
 	fake *identify.Fake
 	mgr  *hooks.Manager
 	reg  *tunnel.Registry
+	in   *inspect.Inspector
 	srv  *httptest.Server
 }
 
@@ -44,8 +46,9 @@ func newEnv(t *testing.T) *env {
 	store, _ := hooks.OpenJSON(t.TempDir())
 	t.Cleanup(func() { store.Close() })
 	e.mgr, _ = hooks.NewManager(context.Background(), store, hooks.SlugConfig{})
+	e.in = inspect.New(inspect.Config{})
 	a := &API{
-		Identifier: e.fake, Hooks: e.mgr, Tunnels: e.reg,
+		Identifier: e.fake, Hooks: e.mgr, Tunnels: e.reg, Inspect: e.in,
 		Audit:   audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))),
 		BaseURL: "https://tsrelay.example.ts.net",
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
+	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"tailscale.com/tailcfg"
@@ -22,6 +23,7 @@ type API struct {
 	Identifier identify.Identifier
 	Hooks      *hooks.Manager
 	Tunnels    *tunnel.Registry
+	Inspect    *inspect.Inspector
 	Audit      *audit.Logger
 	BaseURL    string // e.g. "https://tsrelay.example.ts.net", no trailing slash
 	Tunnel     tunnel.Options
@@ -78,6 +80,8 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/hooks/{id}", a.authed(a.getHook))
 	mux.Handle("PATCH /api/v1/hooks/{id}", a.authed(a.updateHook))
 	mux.Handle("DELETE /api/v1/hooks/{id}", a.authed(a.deleteHook))
+	mux.Handle("GET /api/v1/hooks/{id}/calls", a.authed(a.listCalls))
+	mux.Handle("GET /api/v1/hooks/{id}/calls/{callID}", a.authed(a.getCall))
 	mux.Handle("GET /api/v1/tunnel", a.authed(a.tunnel))
 }
 
@@ -247,6 +251,7 @@ func (a *API) deleteHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		return
 	}
 	a.Tunnels.RemoveHook(string(h.ID))
+	a.Inspect.Forget(h.ID)
 	a.Audit.Log(r.Context(), audit.HookDelete, audit.Actor(id), audit.Hook(h))
 	w.WriteHeader(http.StatusNoContent)
 }
