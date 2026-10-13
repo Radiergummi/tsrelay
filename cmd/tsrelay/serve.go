@@ -24,6 +24,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/server"
+	"github.com/Radiergummi/tsrelay/internal/telemetry"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	_ "tailscale.com/feature/oauthkey" // lets TS_CLIENT_SECRET mint auth keys
 	"tailscale.com/tailcfg/peercap"
@@ -51,6 +52,8 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	concurrency := fs.Int("tunnel-concurrency", tunnel.DefaultConcurrency, "concurrent calls per tunnel")
 	revalidate := fs.Duration("revalidate-interval", time.Minute, "how often attached tunnels are re-authorized")
 	opsListen := fs.String("ops-listen", "", "host address for /healthz, /readyz and /metrics, e.g. :9090; never on the tailnet (empty: off)")
+	opsPprof := fs.Bool("ops-pprof", false, "serve /debug/pprof/ on the ops listener")
+	otlp := fs.Bool("otel", false, "export traces and metrics over OTLP/HTTP, configured by the standard OTEL_* environment variables")
 	holdQueue := fs.Int("hold-queue", relay.DefaultHoldQueue, "calls per hook that may wait for a tunnel at once")
 	captureLimit := fs.Int("capture-limit", inspect.DefaultCaptureLimit, "bytes the inspector keeps of each body, of each call's headers, and of its query string")
 	captureCalls := fs.Int("capture-calls", inspect.DefaultCallsPerHook, "calls per hook the inspector keeps")
@@ -123,6 +126,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		},
 		revalidate: *revalidate,
 		opsListen:  *opsListen,
+		otel:       *otlp, pprof: *opsPprof,
 	})
 	if err != nil {
 		logger.Error("relay stopped", "error", err)
@@ -142,12 +146,13 @@ type relayConfig struct {
 	server             server.Config
 	revalidate         time.Duration
 	opsListen          string // host address of the ops listener; empty: off
+	otel, pprof        bool   // --otel, --ops-pprof
 }
 
 func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 	// The ops listener starts first, so liveness probes pass while tsnet
 	// joins the tailnet. It binds on the host network, never on tsnet.
-	ops := &server.Ops{}
+	ops := &server.Ops{Pprof: cfg.pprof}
 	if cfg.opsListen != "" {
 		opsLn, err := net.Listen("tcp", cfg.opsListen)
 		if err != nil {
@@ -209,6 +214,12 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 	al := audit.New(logger)
 	cfg.server.BaseURL = scheme + "://" + cmp.Or(dnsName, cfg.hostname)
 	cfg.server.AllowedHosts = allowedHosts(dnsName, cfg.hostname, st.TailscaleIPs)
+	tel, err := telemetry.Setup(ctx, telemetry.Config{OTLP: cfg.otel, Version: version, Hostname: cfg.hostname, Logger: logger})
+	if err != nil {
+		return fmt.Errorf("--otel: %w", err)
+	}
+	defer tel.Shutdown(context.Background()) // bounded by telemetry.ShutdownTimeout
+	cfg.server.Telemetry = tel
 	srv := server.New(cfg.server,
 		&identify.Tailscale{Client: lc, Cap: cfg.cap, Defaults: cfg.limits, Logger: logger},
 		mgr, al)
