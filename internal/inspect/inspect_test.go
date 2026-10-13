@@ -62,6 +62,23 @@ func TestRedactor(t *testing.T) {
 	}
 }
 
+func TestRedactorUnannouncedTrailers(t *testing.T) {
+	r := NewRedactor([]string{"Authorization"})
+	kept, redacted := r.Headers(http.Header{
+		http.TrailerPrefix + "Authorization": {"Bearer s3cr3t"}, // an unannounced trailer, stashed by ReverseProxy
+		http.TrailerPrefix + "X-Custom":      {"kept"},
+	})
+	if !slices.Equal(redacted, []string{"Authorization"}) {
+		t.Fatalf("redacted = %v, want the canonical name without the Trailer: prefix", redacted)
+	}
+	if v := kept[http.TrailerPrefix+"X-Custom"]; len(v) != 1 || v[0] != "kept" {
+		t.Fatalf("kept = %v", kept)
+	}
+	if _, ok := kept[http.TrailerPrefix+"Authorization"]; ok {
+		t.Fatal("an unannounced trailer escaped redaction")
+	}
+}
+
 func TestRedactCapsHeaders(t *testing.T) {
 	in := New(Config{CaptureLimit: 10})
 	kept, redacted := in.Redact(http.Header{"A": {"12345"}, "B": {"12345"}, "C": {"12345"}})
