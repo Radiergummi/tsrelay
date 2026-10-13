@@ -139,8 +139,12 @@ func drive(t *testing.T, c *http.Client, url string, body []byte, conc int, dur 
 					fail(err.Error())
 					continue
 				}
-				io.Copy(io.Discard, resp.Body)
+				_, copyErr := io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
+				if copyErr != nil {
+					fail(copyErr.Error())
+					continue
+				}
 				if resp.StatusCode >= 300 {
 					fail(fmt.Sprintf("status %d", resp.StatusCode))
 					continue
