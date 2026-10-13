@@ -74,12 +74,26 @@ func (h *Handler) Inject(ctx context.Context, in Injection) (inspect.Call, error
 		req.Header = http.Header{}
 	}
 	req.Host, req.RemoteAddr, req.TLS = in.From.Host, in.From.RemoteAddr, in.From.TLS
-	h.ServeHTTP(&discard{header: http.Header{}}, req)
+	serveInjected(h, &discard{header: http.Header{}}, req)
 	c, ok := h.Inspect.Get(inj.callID)
 	if !ok {
 		return inspect.Call{}, ErrNotRouted
 	}
 	return c, nil
+}
+
+// serveInjected runs ServeHTTP and swallows exactly http.ErrAbortHandler: a
+// tunnel that fails mid-response makes the reverse proxy panic with it
+// (ctx carries http.ServerContextKey, as a real call's does), but the
+// outcome is already recorded by then, so Inject must return the call
+// instead of the panic escaping into the API's own request handling.
+func serveInjected(h *Handler, w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if p := recover(); p != nil && p != http.ErrAbortHandler {
+			panic(p)
+		}
+	}()
+	h.ServeHTTP(w, r)
 }
 
 // discard is the ResponseWriter of an injected call: the inspector records

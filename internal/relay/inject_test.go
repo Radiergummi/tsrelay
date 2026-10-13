@@ -7,8 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
@@ -40,6 +43,33 @@ func TestInject(t *testing.T) {
 		t.Fatalf("call = %+v", c)
 	}
 	e.waitLog(`"kind":"test"`)
+}
+
+// A local app that stops responding mid-stream makes the reverse proxy
+// panic with http.ErrAbortHandler (it runs under an http.Server, since a
+// real call carries the API request's context). Inject must recover that
+// and still return the recorded (failed) call, not crash the owner's
+// request.
+func TestInjectTunnelLostMidResponse(t *testing.T) {
+	e := newEnv(t)
+	e.patch(hooks.SettingsPatch{IdleTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: new(hooks.Duration(50 * time.Millisecond))}})
+	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "partial")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done() // the idle timeout cancels the call's context
+	}), tunnel.Options{})
+
+	from := httptest.NewRequest("POST", "http://relay.test/", nil)
+	// Stands in for the real call's context, which carries this because
+	// the API request is served by a real http.Server.
+	ctx := context.WithValue(context.Background(), http.ServerContextKey, &http.Server{})
+	c, err := e.h.Inject(ctx, Injection{Hook: e.hook, Kind: inspect.KindTest, Sender: receiver, Method: "POST", From: from})
+	if err != nil {
+		t.Fatalf("Inject returned an error instead of the failed call: %v", err)
+	}
+	if c.Outcome != problem.UpstreamTimeout || len(c.Attempts) != 1 {
+		t.Fatalf("call = %+v, want one attempt with outcome %q", c, problem.UpstreamTimeout)
+	}
 }
 
 // An injected call goes only to the hook it names, even if another hook
