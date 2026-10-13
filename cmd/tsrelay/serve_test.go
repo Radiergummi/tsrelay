@@ -55,6 +55,14 @@ func TestServeRejectsEmptyHoldQueue(t *testing.T) {
 	}
 }
 
+func TestServeRejectsBadCaptureFlags(t *testing.T) {
+	for _, args := range [][]string{{"--capture-limit=0"}, {"--capture-calls=0"}} {
+		if code, out := serveExit(t, args...); code != 2 || !strings.Contains(out, strings.Split(strings.TrimPrefix(args[0], "--"), "=")[0]) {
+			t.Errorf("%v: exit %d, stderr %q", args, code, out)
+		}
+	}
+}
+
 func TestServeRejectsBadRevalidateInterval(t *testing.T) {
 	for _, v := range []string{"0", "-1s"} {
 		// An unknown flag also exits 2, so check the message too.

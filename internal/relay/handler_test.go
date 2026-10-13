@@ -20,6 +20,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
+	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"github.com/Radiergummi/tsrelay/internal/tunnel/tunneltest"
@@ -35,6 +36,7 @@ type env struct {
 	fake   *identify.Fake
 	reg    *tunnel.Registry
 	mgr    *hooks.Manager
+	in     *inspect.Inspector
 	h      *Handler
 	hook   hooks.Hook
 	srv    *httptest.Server
@@ -50,7 +52,7 @@ func (e *env) Write(p []byte) (int, error) {
 
 func (e *env) log() string { e.logMu.Lock(); defer e.logMu.Unlock(); return e.logBuf.String() }
 
-func newEnv(t *testing.T) *env {
+func newEnvWith(t *testing.T, cfg inspect.Config) *env {
 	t.Helper()
 	e := &env{t: t, fake: &identify.Fake{}, reg: tunnel.NewRegistry()}
 	store, err := hooks.OpenJSON(t.TempDir())
@@ -63,17 +65,21 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
+	e.in = inspect.New(cfg)
 	e.h = &Handler{
 		Identifier: e.fake,
 		Hooks:      e.mgr,
 		Tunnels:    e.reg,
 		Audit:      audit.New(slog.New(slog.NewJSONHandler(e, nil))),
 		HoldQueue:  2, // small, so TestHoldQueueFull can fill it
+		Inspect:    e.in,
 	}
 	e.srv = httptest.NewServer(e.h)
 	t.Cleanup(e.srv.Close)
 	return e
 }
+
+func newEnv(t *testing.T) *env { return newEnvWith(t, inspect.Config{}) }
 
 // patch updates the hook's settings the way PATCH /api/v1/hooks/{id} does.
 func (e *env) patch(p hooks.SettingsPatch) {

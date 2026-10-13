@@ -95,39 +95,55 @@ func encodedSlashIn(u *url.URL, n int) bool {
 	return false
 }
 
-// recorder captures the status and size of a response for the audit log. It
-// unwraps so http.ResponseController can still flush streamed responses.
+// recorder captures the status, size and start of a response for the audit
+// log and the inspector. It unwraps so http.ResponseController can still
+// flush streamed responses.
 type recorder struct {
 	http.ResponseWriter
-	status int
-	bytes  int64
+	status  int
+	bytes   int64
+	wrote   time.Time // when the status was written
+	capture io.Writer // receives the body as it is written; may be nil
 }
 
 func (r *recorder) WriteHeader(code int) {
 	if r.status == 0 && code >= 200 {
-		r.status = code
+		r.status, r.wrote = code, time.Now()
 	}
 	r.ResponseWriter.WriteHeader(code)
 }
 
 func (r *recorder) Write(b []byte) (int, error) {
 	if r.status == 0 {
-		r.status = http.StatusOK
+		r.status, r.wrote = http.StatusOK, time.Now()
 	}
 	n, err := r.ResponseWriter.Write(b)
 	r.bytes += int64(n)
+	if r.capture != nil && n > 0 {
+		r.capture.Write(b[:n])
+	}
 	return n, err
 }
 
 func (r *recorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
+// countingReader counts a request body as it is read and passes it to
+// capture, which may be nil. eof reports whether it was read to the end.
 type countingReader struct {
 	io.ReadCloser
-	n int64
+	n       int64
+	eof     bool
+	capture io.Writer
 }
 
 func (c *countingReader) Read(p []byte) (int, error) {
 	n, err := c.ReadCloser.Read(p)
 	c.n += int64(n)
+	if c.capture != nil && n > 0 {
+		c.capture.Write(p[:n])
+	}
+	if err == io.EOF {
+		c.eof = true
+	}
 	return n, err
 }

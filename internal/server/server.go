@@ -12,6 +12,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
+	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/metrics"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/relay"
@@ -26,6 +27,7 @@ type Config struct {
 	EphemeralGrace time.Duration
 	HoldQueue      int // calls per hook that may wait for a tunnel; 0 means relay.DefaultHoldQueue
 	Tunnel         tunnel.Options
+	Inspect        inspect.Config
 }
 
 type Server struct {
@@ -35,6 +37,7 @@ type Server struct {
 	audit   *audit.Logger
 	relay   *relay.Handler // serves callbacks; its Held() feeds the held-calls gauge
 	handler http.Handler
+	inspect *inspect.Inspector
 
 	// identifier re-identifies tunnel owners during revalidation.
 	identifier identify.Identifier
@@ -51,7 +54,8 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	s := &Server{cfg: cfg, hooks: mgr, tunnels: tunnel.NewRegistry(), audit: al}
 	s.identifier = id
 	s.metrics, al.Observer = s.newMetrics()
-	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue}
+	s.inspect = inspect.New(cfg.Inspect)
+	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect}
 
 	mux := http.NewServeMux()
 	(&api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, BaseURL: cfg.BaseURL, Tunnel: cfg.Tunnel}).Register(mux)
@@ -92,6 +96,7 @@ func (s *Server) RunReaper(ctx context.Context, interval time.Duration) {
 		for _, h := range reaped {
 			s.audit.Log(ctx, audit.HookExpire, audit.Hook(h))
 			s.tunnels.RemoveHook(string(h.ID))
+			s.inspect.Forget(h.ID)
 		}
 	})
 }

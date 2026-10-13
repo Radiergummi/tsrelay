@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
+	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/server"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
@@ -50,6 +52,11 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	revalidate := fs.Duration("revalidate-interval", time.Minute, "how often attached tunnels are re-authorized")
 	opsListen := fs.String("ops-listen", "", "host address for /healthz, /readyz and /metrics, e.g. :9090; never on the tailnet (empty: off)")
 	holdQueue := fs.Int("hold-queue", relay.DefaultHoldQueue, "calls per hook that may wait for a tunnel at once")
+	captureLimit := fs.Int("capture-limit", inspect.DefaultCaptureLimit, "bytes of each request and response body the inspector keeps")
+	captureCalls := fs.Int("capture-calls", inspect.DefaultCallsPerHook, "calls per hook the inspector keeps")
+	captureBodies := fs.Bool("capture-bodies", true, "keep bodies for the inspector; false records metadata and headers only, whatever hooks set")
+	redact := listFlag{Values: slices.Clone(inspect.DefaultRedact)}
+	fs.Var(&redact, "redact-headers", "headers whose values the inspector never keeps (comma-separated)")
 	logFormat := fs.String("log-format", "json", `"json" or "text"`)
 	logLevel := fs.String("log-level", "info", "debug, info, warn or error")
 	verbose := fs.Bool("verbose-tailscale", false, "include tsnet's own logs")
@@ -74,6 +81,10 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	}
 	if *holdQueue < 1 {
 		fmt.Fprintln(stderr, "tsrelay serve: --hold-queue must be at least 1; use --hook-hold-timeout-default=0s to disable holding")
+		return 2
+	}
+	if *captureLimit < 1 || *captureCalls < 1 {
+		fmt.Fprintln(stderr, "tsrelay serve: --capture-limit and --capture-calls must be at least 1; use --capture-bodies=false to keep no bodies")
 		return 2
 	}
 	for login, slug := range overrides {
@@ -101,11 +112,14 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 
 	err = runRelay(ctx, logger, relayConfig{
 		hostname: *hostname, stateDir: *stateDir, tls: *useTLS, tags: tags.Values, verbose: *verbose,
-		cap:        peercap.Cap(*capName),
-		slugs:      hooks.SlugConfig{Mode: hooks.SlugMode(*slugMode), Overrides: overrides},
-		limits:     authz.Limits{MaxHooks: *maxHooks, MaxTunnels: *maxTunnels, MaxHookTTL: *maxTTL},
-		policy:     policy,
-		server:     server.Config{EphemeralGrace: *grace, HoldQueue: *holdQueue, Tunnel: tunnel.Options{Concurrency: *concurrency}},
+		cap:    peercap.Cap(*capName),
+		slugs:  hooks.SlugConfig{Mode: hooks.SlugMode(*slugMode), Overrides: overrides},
+		limits: authz.Limits{MaxHooks: *maxHooks, MaxTunnels: *maxTunnels, MaxHookTTL: *maxTTL},
+		policy: policy,
+		server: server.Config{
+			EphemeralGrace: *grace, HoldQueue: *holdQueue, Tunnel: tunnel.Options{Concurrency: *concurrency},
+			Inspect: inspect.Config{CallsPerHook: *captureCalls, CaptureLimit: *captureLimit, NoBodies: !*captureBodies, Redact: redact.Values},
+		},
 		revalidate: *revalidate,
 		opsListen:  *opsListen,
 	})

@@ -21,6 +21,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/ids"
+	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
@@ -55,7 +56,8 @@ type Handler struct {
 	Hooks      *hooks.Manager
 	Tunnels    *tunnel.Registry
 	Audit      *audit.Logger
-	HoldQueue  int // calls per hook that may wait for a tunnel; 0 means DefaultHoldQueue
+	HoldQueue  int                // calls per hook that may wait for a tunnel; 0 means DefaultHoldQueue
+	Inspect    *inspect.Inspector // records calls for the inspector; nil records nothing
 
 	limiters  limiters
 	heldMu    sync.Mutex
@@ -81,6 +83,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var hook hooks.Hook
 	var sender authz.Identity
 	var waited time.Duration
+	kind := inspect.KindSender
+	var record *callRecord    // set once the call is routed to a hook
+	var delivery time.Time    // when delivery began, holding included
+	var served *tunnel.Tunnel // the tunnel the call went down
 	aborted := false
 	defer func() {
 		p := recover()
@@ -110,12 +116,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			code = OutcomeSenderCanceled
 		}
 		h.Audit.Log(r.Context(), audit.Call,
-			slog.String("callID", callID), slog.String("kind", "sender"),
+			slog.String("callID", callID), slog.String("kind", string(kind)),
 			slog.String("hookID", string(hook.ID)), audit.Actor(sender),
 			slog.String("method", r.Method), slog.String("path", r.URL.Path),
 			slog.Int("status", rec.status), slog.String("error", code),
 			slog.Int64("bytesIn", body.n), slog.Int64("bytesOut", rec.bytes),
 			slog.Duration("waited", waited), slog.Duration("duration", time.Since(start)))
+		record.finish(outcome{
+			code: code, status: rec.status, header: rec.Header(),
+			start: start, delivery: delivery, wrote: rec.wrote, waited: waited, tunnel: served,
+			bytesIn: body.n, bytesOut: rec.bytes,
+			bodyRead: body.eof || r.ContentLength == 0,
+			whole:    !aborted && parent.Err() == nil,
+		})
 		if p != nil {
 			panic(p)
 		}
@@ -137,16 +150,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if found && encodedSlashIn(r.URL, 1+segs) {
 		found = false // the decoded and escaped paths would split differently
 	}
+	var eff hooks.Effective
+	if found {
+		// Calls refused by channel are recorded too, so the owner can see
+		// them (DESIGN.md §9.2). The sender cannot tell: it gets the same
+		// 404 as for a missing hook.
+		eff = h.Hooks.Effective(hook)
+		record = h.startRecord(r, callID, start, kind, "", hook, sender, 1+segs, eff.Capture)
+		if record != nil {
+			body.capture, rec.capture = record.reqBuf, record.respBuf
+		}
+	}
 	if !found || !sender.Grants.Allows(authz.RoleSender, hook.Channel) {
 		if found {
 			h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender), audit.Hook(hook),
 				slog.String("action", "call"), slog.String("reason", "channel not allowed"))
-			hook = hooks.Hook{} // do not reveal the hook in the call record either
+			hook = hooks.Hook{} // do not reveal the hook in the audit record either
 		}
 		problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 		return
 	}
-	eff := h.Hooks.Effective(hook)
 	if eff.MaxBodyBytes > 0 && r.ContentLength > eff.MaxBodyBytes {
 		problem.New(http.StatusRequestEntityTooLarge, problem.BodyTooLarge,
 			fmt.Sprintf("the request body is larger than this hook's limit of %d bytes", eff.MaxBodyBytes)).Write(rec)
@@ -158,6 +181,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("this hook accepts %g calls per second (burst %d)", eff.RateLimit.PerSecond, eff.RateLimit.Burst)).Write(rec)
 		return
 	}
+	delivery = time.Now()
 	tun, attached := h.Tunnels.Lookup(string(hook.ID))
 	if !attached {
 		// Nothing has been read from the body yet, so holding is safe.
@@ -181,6 +205,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	served = tun
 	idle := newIdleWatch(eff.IdleTimeout.Std(), func() {
 		cancel(errIdleTimeout)
 		// Unblock a pending read from a stalled sender, so the error can be sent.
