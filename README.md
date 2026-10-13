@@ -227,3 +227,7 @@ Ship it as:
 - Docker Compose, with `deploy/compose.yaml`
 
 Run exactly one relay per state directory (`--state-dir`); see DESIGN.md §11 and §14.
+
+## License
+
+Apache License 2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE).
