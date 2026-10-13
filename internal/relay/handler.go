@@ -91,6 +91,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var record *callRecord    // set once the call is routed to a hook
 	var delivery time.Time    // when delivery began, holding included
+	var headersAt time.Time   // when the app's response headers arrived; zero if they never did
 	var served *tunnel.Tunnel // the tunnel the call went down
 	aborted := false
 	defer func() {
@@ -115,13 +116,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case aborted:
 			code = problem.TunnelLost
 		}
-		h.Audit.Log(r.Context(), audit.Call,
+		attrs := []slog.Attr{
 			slog.String("callID", callID), slog.String("kind", string(kind)),
 			slog.String("hookID", string(hook.ID)), audit.Actor(sender),
 			slog.String("method", r.Method), slog.String("path", r.URL.Path),
 			slog.Int("status", rec.status), slog.String("error", code),
 			slog.Int64("bytesIn", body.n), slog.Int64("bytesOut", rec.bytes),
-			slog.Duration("waited", waited), slog.Duration("duration", time.Since(start)))
+			slog.Duration("waited", waited), slog.Duration("duration", time.Since(start)),
+		}
+		if !headersAt.IsZero() {
+			attrs = append(attrs, slog.Duration("ttfb", headersAt.Sub(delivery.Add(waited))))
+		}
+		h.Audit.Log(r.Context(), audit.Call, attrs...)
 		record.finish(outcome{
 			code: code, status: rec.status, header: rec.Header(),
 			start: start, delivery: delivery, wrote: rec.wrote, waited: waited, tunnel: served,
@@ -227,7 +233,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			resp.Header.Del(HeaderCallID)
 			return nil
 		},
-		Transport:     timeoutTransport{rt: tun, timeout: eff.ResponseTimeout.Std()},
+		Transport:     forwardTransport{rt: timeoutTransport{rt: tun, timeout: eff.ResponseTimeout.Std()}, headers: &headersAt},
 		FlushInterval: -1,
 		ErrorHandler:  proxyError,
 	}
