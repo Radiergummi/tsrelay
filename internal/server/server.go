@@ -10,6 +10,7 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/audit"
+	"github.com/Radiergummi/tsrelay/internal/events"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
@@ -17,6 +18,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"tailscale.com/tailcfg"
 )
 
 const DefaultEphemeralGrace = 10 * time.Minute
@@ -38,6 +40,7 @@ type Server struct {
 	relay   *relay.Handler // serves callbacks; its Held() feeds the held-calls gauge
 	handler http.Handler
 	inspect *inspect.Inspector
+	events  *events.Hub
 
 	// identifier re-identifies tunnel owners during revalidation.
 	identifier identify.Identifier
@@ -55,10 +58,14 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	s.identifier = id
 	s.metrics, al.Observer = s.newMetrics()
 	s.inspect = inspect.New(cfg.Inspect)
+	s.events = &events.Hub{}
+	s.inspect.OnChange = func(owner tailcfg.UserID, sum inspect.Summary) {
+		s.events.Publish(events.Event{Type: events.TypeCall, Owner: owner, HookID: string(sum.HookID), Data: sum})
+	}
 	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect}
 
 	mux := http.NewServeMux()
-	(&api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Audit: al, BaseURL: cfg.BaseURL, Tunnel: cfg.Tunnel}).Register(mux)
+	(&api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, Tunnel: cfg.Tunnel}).Register(mux)
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		// Placeholder until the web UI lands (plan 3).
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -97,6 +104,7 @@ func (s *Server) RunReaper(ctx context.Context, interval time.Duration) {
 			s.audit.Log(ctx, audit.HookExpire, audit.Hook(h))
 			s.tunnels.RemoveHook(string(h.ID))
 			s.inspect.Forget(h.ID)
+			s.events.Publish(events.HookChanged(h.Owner, string(h.ID)))
 		}
 	})
 }
@@ -115,6 +123,9 @@ func runEvery(ctx context.Context, interval time.Duration, f func()) {
 	}
 }
 
-// Close closes all tunnels. Hijacked tunnel connections are not covered by
-// http.Server.Shutdown.
-func (s *Server) Close() { s.tunnels.CloseAll() }
+// Close ends the event streams and closes all tunnels. Neither hijacked
+// tunnel connections nor open streams are covered by http.Server.Shutdown.
+func (s *Server) Close() {
+	s.events.Close()
+	s.tunnels.CloseAll()
+}

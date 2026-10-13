@@ -9,6 +9,7 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
+	"github.com/Radiergummi/tsrelay/internal/events"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/ids"
 	"github.com/Radiergummi/tsrelay/internal/problem"
@@ -138,6 +139,9 @@ func (a *API) register(ctx context.Context, t *tunnel.Tunnel, id authz.Identity,
 			dt.Notify(tunnel.Control{Type: tunnel.ControlHookDeleted, Hooks: []tunnel.HookInfo{{ID: string(h.ID)}}}, o)
 		}
 	}
+	for _, hid := range live {
+		a.Events.Publish(events.HookChanged(id.UserID, hid))
+	}
 	a.Audit.Log(ctx, audit.TunnelAttach, audit.Actor(id), slog.String("tunnel", t.ID), slog.Any("hooks", live))
 	if len(infos) > 0 {
 		t.Notify(tunnel.Control{Type: tunnel.ControlAttached, Hooks: infos}, false)
@@ -150,6 +154,7 @@ func (a *API) register(ctx context.Context, t *tunnel.Tunnel, id authz.Identity,
 		<-t.Done()
 		for _, hid := range a.Tunnels.Detach(t) {
 			a.Hooks.SetAttached(hooks.ID(hid), false)
+			a.Events.Publish(events.HookChanged(id.UserID, hid))
 		}
 		a.Audit.Log(ctx, audit.TunnelDetach, audit.Actor(id), slog.String("tunnel", t.ID))
 	}()

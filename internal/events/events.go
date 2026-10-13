@@ -90,6 +90,12 @@ func (h *Hub) Publish(e Event) {
 	}
 }
 
+// HookChanged is the event for a hook that was created, updated, deleted or
+// expired, or whose tunnel attached or detached. Subscribers refetch it.
+func HookChanged(owner tailcfg.UserID, hookID string) Event {
+	return Event{Type: TypeHook, Owner: owner, HookID: hookID, Data: map[string]string{"id": hookID}}
+}
+
 // Close ends every subscription, for relay shutdown. Later subscriptions
 // end at once.
 func (h *Hub) Close() {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
+	"github.com/Radiergummi/tsrelay/internal/events"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
@@ -93,6 +94,7 @@ func (s *Server) revoke(ctx context.Context, t *tunnel.Tunnel, hookIDs []string,
 	infos := make([]tunnel.HookInfo, len(detached))
 	for i, hid := range detached {
 		s.hooks.SetAttached(hooks.ID(hid), false)
+		s.events.Publish(events.HookChanged(t.Owner.UserID, hid))
 		infos[i] = tunnel.HookInfo{ID: hid}
 	}
 	s.audit.Log(ctx, audit.TunnelRevoked, audit.Actor(t.Owner), slog.String("tunnel", t.ID),

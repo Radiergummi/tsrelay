@@ -11,6 +11,7 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
+	"github.com/Radiergummi/tsrelay/internal/events"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
@@ -26,6 +27,7 @@ type API struct {
 	Tunnels    *tunnel.Registry
 	Inspect    *inspect.Inspector
 	Relay      *relay.Handler // delivers replays and test requests
+	Events     *events.Hub    // receives hook changes; the event stream reads it
 	Audit      *audit.Logger
 	BaseURL    string // e.g. "https://tsrelay.example.ts.net", no trailing slash
 	Tunnel     tunnel.Options
@@ -86,6 +88,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/hooks/{id}/calls/{callID}", a.authed(a.getCall))
 	mux.Handle("POST /api/v1/hooks/{id}/calls/{callID}/replay", a.authed(a.replayCall))
 	mux.Handle("POST /api/v1/hooks/{id}/test", a.authed(a.testCall))
+	mux.Handle("GET /api/v1/events", a.authed(a.eventStream))
 	mux.Handle("GET /api/v1/tunnel", a.authed(a.tunnel))
 }
 
@@ -173,6 +176,7 @@ func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		return
 	}
 	a.Audit.Log(r.Context(), audit.HookCreate, audit.Actor(id), audit.Hook(h), slog.Bool("ephemeral", h.Ephemeral))
+	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
 	w.Header().Set("Location", "/api/v1/hooks/"+string(h.ID))
 	writeJSON(w, http.StatusCreated, a.hookJSON(h))
 }
@@ -220,6 +224,7 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		return
 	}
 	a.Audit.Log(r.Context(), audit.HookUpdate, audit.Actor(id), audit.Hook(h), slog.Any("changed", changed))
+	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
 	a.notifyUpdated(h.ID)
 	writeJSON(w, http.StatusOK, a.hookJSON(h))
 }
@@ -257,6 +262,7 @@ func (a *API) deleteHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 	a.Tunnels.RemoveHook(string(h.ID))
 	a.Inspect.Forget(h.ID)
 	a.Audit.Log(r.Context(), audit.HookDelete, audit.Actor(id), audit.Hook(h))
+	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
 	w.WriteHeader(http.StatusNoContent)
 }
 
