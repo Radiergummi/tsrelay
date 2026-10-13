@@ -13,8 +13,8 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
-	"github.com/Radiergummi/tsrelay/internal/metrics"
 	"github.com/Radiergummi/tsrelay/internal/relay"
+	"github.com/Radiergummi/tsrelay/internal/telemetry"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"github.com/Radiergummi/tsrelay/internal/ui"
 	"tailscale.com/tailcfg"
@@ -30,6 +30,7 @@ type Config struct {
 	HoldQueue      int // calls per hook that may wait for a tunnel; 0 means relay.DefaultHoldQueue
 	Tunnel         tunnel.Options
 	Inspect        inspect.Config
+	Telemetry      *telemetry.Telemetry // nil: Prometheus metrics only, no tracing
 }
 
 type Server struct {
@@ -47,7 +48,7 @@ type Server struct {
 	// identifyFailures counts each tunnel's consecutive failed identifications
 	// during revalidation. Only the revalidator touches it.
 	identifyFailures map[*tunnel.Tunnel]int
-	metrics          *metrics.Registry
+	tel              *telemetry.Telemetry
 }
 
 func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logger) *Server {
@@ -56,7 +57,11 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	}
 	s := &Server{cfg: cfg, hooks: mgr, tunnels: tunnel.NewRegistry(), audit: al}
 	s.identifier = id
-	s.metrics, al.Observer = s.newMetrics()
+	s.tel = cfg.Telemetry
+	if s.tel == nil {
+		s.tel = telemetry.Must(telemetry.Setup(context.Background(), telemetry.Config{}))
+	}
+	al.Observer = s.newMetrics(s.tel.Meter)
 	s.inspect = inspect.New(cfg.Inspect)
 	s.events = &events.Hub{}
 	s.inspect.OnChange = func(owner tailcfg.UserID, sum inspect.Summary) {

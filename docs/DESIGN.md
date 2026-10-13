@@ -79,7 +79,7 @@ internal/api/           JSON API handlers, problem responses, CSRF/host checks
 internal/ui/            server-rendered pages, embedded static assets
 internal/client/        CLI-side API client, local state, forwarding target
 internal/audit/         audit event types and slog emission
-internal/metrics/       hand-written Prometheus text exposition
+internal/telemetry/     OpenTelemetry setup: metrics (Prometheus, OTLP), tracing
 ```
 
 The relay core (`relay`, `api`, `tunnel`) receives a `net.Listener` and an `Identifier`. It never touches `tsnet` directly. This boundary is what makes the design testable without a tailnet (§16).
@@ -435,15 +435,19 @@ v1 has **no config file**. Flags and environment variables cover binaries and co
 
 **Ops listener** (`--ops-listen=:9090`, off by default, **never** bound on the tailnet interface): `/healthz` (process alive), `/readyz` (tsnet up and the store loaded), `/metrics`. The shipped Kubernetes manifests enable it on the pod IP for probes.
 
-**Metrics:** hand-written Prometheus text format, with no client library. Counters are derived from audit events through an `audit.Logger` observer hook, so the request path gets no second instrumentation layer; gauges are read from the tunnel registry and the hook manager at scrape time.
+**Metrics:** OpenTelemetry instruments, served as Prometheus text on the ops listener's `/metrics` (and pushed over OTLP with `--otel`, §13.1). The exporter keeps the names below exactly: no unit suffixes, no `otel_scope_*` labels, no `target_info`. Counters and histograms are derived from audit events through an `audit.Logger` observer hook, so the request path gets no second instrumentation layer; gauges are read from the tunnel registry and the hook manager at collection time.
 - `tsrelay_calls_total{outcome}`
 - `tsrelay_call_bytes_total{direction}`
 - `tsrelay_tunnels`
 - `tsrelay_hooks{ephemeral}`
 - `tsrelay_held_calls`
 - `tsrelay_authz_denials_total{action}`
+- `tsrelay_call_duration_seconds{outcome,kind}`: arrival to the last byte back
+- `tsrelay_call_ttfb_seconds{outcome,kind}`: forwarding to the app's response headers, only when they arrived
+- `tsrelay_call_hold_seconds{outcome}`: time held calls waited for a tunnel
+- Go runtime metrics (`go_*`)
 
-Histograms are on the backlog.
+Histogram buckets, in seconds: 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120. Labels never carry hook IDs, users, paths or nodes.
 
 ## 14. Deployment
 
@@ -513,7 +517,7 @@ tsrelay url [<port|url>]                   print the URL tsrelay http would use
 - **Capture in the CLI:** keep bodies on the developer machine only and serve them through the same inspector UI.
 - **Inspector extras:** edit-and-replay, and persistent call history.
 - **Escape hatch:** `senderTags` in the capability, matching tags directly.
-- **Packaging:** a config file, a Helm chart, histogram metrics.
+- **Packaging:** a config file, a Helm chart.
 
 ## 18. To verify during planning
 
