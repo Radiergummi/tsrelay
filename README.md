@@ -213,6 +213,14 @@ go test -race ./...                                # everything except the tailn
 go test -race -tags tailnet ./internal/server      # real tsnet nodes against an in-process control server
 ```
 
+Performance:
+
+    go test -run='^$' -bench=. -count=6 ./internal/server ./internal/tunnel/... ./internal/inspect > new.txt
+    go run golang.org/x/perf/cmd/benchstat@v0.0.0-20261009192801-be2c69fb417e docs/perf/baseline.txt new.txt
+    TSRELAY_LOAD=1 go test ./internal/server -run TestLoad -count=1 -v      # add -cpuprofile cpu.out to profile
+
+`TestLoad` drives the relay in-process (knobs: `TSRELAY_LOAD_CONCURRENCY`, `_DURATION`, `_BODY`, `_MODE=plain|streaming`) and reports throughput and the latency the relay adds over calling the app directly.
+
 The UI script's unit tests run with `node --test` as part of `go test ./internal/ui` when `node` is installed, and are skipped otherwise.
 
 `.github/workflows/ci.yml` runs the same four commands on every push and pull request. `.github/workflows/release.yml` builds binaries and a container image for tags matching `v*`; `tsrelay version` reports the version baked in at build time (`dev` for a local build).
