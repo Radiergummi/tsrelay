@@ -107,6 +107,23 @@ func TestCaptureLimitKeepsForwardingExact(t *testing.T) {
 	}
 }
 
+// A query over the capture limit is kept cut short and marked, so the
+// inspector shows it is incomplete and a replay can refuse it.
+func TestCaptureLimitCutsQuery(t *testing.T) {
+	e := newEnvWith(t, inspect.Config{CaptureLimit: 8})
+	e.attach(echo(), tunnel.Options{})
+	for query, want := range map[string]struct {
+		kept string
+		cut  bool
+	}{"a=1": {"a=1", false}, "token=0123456789": {"token=01", true}} {
+		resp := e.do(sender, "GET", "/~moritz/cb?"+query, nil, nil)
+		io.ReadAll(resp.Body)
+		if c := e.finished(resp); c.Query != want.kept || c.QueryTruncated != want.cut {
+			t.Errorf("query %q: kept %q, truncated %v; want %q, %v", query, c.Query, c.QueryTruncated, want.kept, want.cut)
+		}
+	}
+}
+
 func TestCaptureOff(t *testing.T) {
 	e := newEnv(t)
 	e.attach(echo(), tunnel.Options{})

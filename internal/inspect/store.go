@@ -94,12 +94,13 @@ func headerSize(name string, values []string) int {
 	return n
 }
 
-// TruncateQuery returns q cut to the inspector's capture limit, in bytes.
-func (in *Inspector) TruncateQuery(q string) string {
+// TruncateQuery returns q cut to the inspector's capture limit, in bytes,
+// and whether it was cut.
+func (in *Inspector) TruncateQuery(q string) (string, bool) {
 	if len(q) > in.cfg.CaptureLimit {
-		return q[:in.cfg.CaptureLimit]
+		return q[:in.cfg.CaptureLimit], true
 	}
-	return q
+	return q, false
 }
 
 // NewBuffer returns a buffer for one body. It keeps bytes only if the hook

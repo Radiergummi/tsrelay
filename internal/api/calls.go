@@ -92,6 +92,10 @@ func (a *API) replayCall(w http.ResponseWriter, r *http.Request, id authz.Identi
 		problem.New(http.StatusConflict, problem.Conflict, "this call was refused by channel and never delivered, so it cannot be replayed").Write(w)
 		return
 	}
+	if orig.QueryTruncated {
+		problem.New(http.StatusConflict, problem.Conflict, "this call's query string was not captured in full, so it cannot be replayed").Write(w)
+		return
+	}
 	if !orig.RequestBody.Complete() {
 		problem.New(http.StatusConflict, problem.Conflict, "this call's request body was not captured in full, so it cannot be replayed").Write(w)
 		return

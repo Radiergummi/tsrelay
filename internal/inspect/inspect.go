@@ -82,8 +82,10 @@ type Call struct {
 	Method     string         `json:"method"`
 	// Path is the escaped path below the hook's route, as the local app
 	// sees it, e.g. "/done".
-	Path           string         `json:"path"`
-	Query          string         `json:"query,omitempty"`
+	Path  string `json:"path"`
+	Query string `json:"query,omitempty"`
+	// QueryTruncated means Query was cut at the capture limit.
+	QueryTruncated bool           `json:"queryTruncated,omitempty"`
 	RequestHeaders http.Header    `json:"requestHeaders,omitempty"`
 	Redacted       []string       `json:"redacted,omitempty"` // request headers left out
 	RequestBody    Capture        `json:"requestBody"`

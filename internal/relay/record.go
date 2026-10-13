@@ -33,10 +33,11 @@ func (h *Handler) startRecord(r *http.Request, callID string, start time.Time, k
 	headers, redacted := h.Inspect.Redact(r.Header)
 	path, rawPath := remainder(r.URL, segments)
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	query, queryCut := h.Inspect.TruncateQuery(r.URL.RawQuery)
 	h.Inspect.Add(inspect.Call{
 		ID: callID, HookID: hook.ID, Owner: hook.Owner, ReceivedAt: start, Kind: kind, ReplayOf: replayOf,
 		Sender: inspect.Sender{Node: sender.NodeName, Tags: sender.Tags, Login: sender.Login, IP: ip},
-		Method: r.Method, Path: cmp.Or(rawPath, path), Query: h.Inspect.TruncateQuery(r.URL.RawQuery),
+		Method: r.Method, Path: cmp.Or(rawPath, path), Query: query, QueryTruncated: queryCut,
 		RequestHeaders: headers, Redacted: redacted,
 		Outcome: inspect.OutcomePending, Attempts: []inspect.Attempt{},
 	})

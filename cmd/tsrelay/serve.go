@@ -52,7 +52,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	revalidate := fs.Duration("revalidate-interval", time.Minute, "how often attached tunnels are re-authorized")
 	opsListen := fs.String("ops-listen", "", "host address for /healthz, /readyz and /metrics, e.g. :9090; never on the tailnet (empty: off)")
 	holdQueue := fs.Int("hold-queue", relay.DefaultHoldQueue, "calls per hook that may wait for a tunnel at once")
-	captureLimit := fs.Int("capture-limit", inspect.DefaultCaptureLimit, "bytes of each request and response body the inspector keeps")
+	captureLimit := fs.Int("capture-limit", inspect.DefaultCaptureLimit, "bytes the inspector keeps of each body, of each call's headers, and of its query string")
 	captureCalls := fs.Int("capture-calls", inspect.DefaultCallsPerHook, "calls per hook the inspector keeps")
 	captureBodies := fs.Bool("capture-bodies", true, "keep bodies for the inspector; false records metadata and headers only, whatever hooks set")
 	redact := listFlag{Values: slices.Clone(inspect.DefaultRedact)}

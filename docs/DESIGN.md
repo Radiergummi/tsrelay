@@ -301,7 +301,7 @@ Every setting has a relay-wide default and a relay-wide maximum. Settings that a
 
 ```
 Call     { id, hookID, receivedAt, kind: sender|replay|test, sender: {node, tags, login, ip},
-           method, path, query, requestHeaders, redacted, requestBody: Capture,
+           method, path, query, queryTruncated, requestHeaders, redacted, requestBody: Capture,
            outcome, status, duration, attempts: []Attempt }
 Attempt  { id, startedAt, tunnelID, node, waitedFor (hold), ttfb, duration,
            status, responseHeaders, redacted, responseBody: Capture,
@@ -309,7 +309,7 @@ Attempt  { id, startedAt, tunnelID, node, waitedFor (hold), ttfb, duration,
 Capture  { bytes (≤ captureLimit), size, truncated, captured }
 ```
 
-- `path` is the escaped path below the hook's route, as the local app sees it. `query` is kept up to `--capture-limit` bytes.
+- `path` is the escaped path below the hook's route, as the local app sees it. `query` is kept up to `--capture-limit` bytes; `queryTruncated` says it was cut.
 - `redacted` (on the call and on each attempt) lists header names left out either because they are redacted or because the headers exceeded `--capture-limit`.
 - `status` and `duration` on the call are what the sender received and how long the call took.
 - `Capture.truncated` means the bytes are not the whole body: it was longer than `--capture-limit`, or was never read to the end, as for a call refused before delivery. `Capture.captured` is false when body capture was off.
@@ -327,7 +327,7 @@ Every call has an attempts list from the start, even though v1 only ever creates
 
 ### 9.3 Actions
 
-- **Replay:** re-sends a captured call down the hook's current tunnel, for calls whose request body was captured in full. Redacted headers are left out. The response goes only to the inspector, never back to the original sender. Only the owner can replay. The `Tsrelay-Sender-*` headers name the original sender, because a replay reproduces that call. A call whose request body was not captured in full gets `409`. A call refused by channel was never delivered either, so it also gets `409`.
+- **Replay:** re-sends a captured call down the hook's current tunnel, for calls whose request body was captured in full. Redacted headers are left out. The response goes only to the inspector, never back to the original sender. Only the owner can replay. The `Tsrelay-Sender-*` headers name the original sender, because a replay reproduces that call. A call whose request body or query string was not captured in full gets `409`. A call refused by channel was never delivered either, so it also gets `409`.
 - **Copy as curl:** two variants. One targets the hook URL, which only works for nodes with the sender role. The other targets the tunnel's local target (e.g. `http://localhost:8080/…`), which is what developers usually want.
 - **Send test request:** the owner writes a request (method, path, headers, body; prefilled with a small JSON sample) and sends it through the normal pipeline as a call of kind `test`. The sender authorization step is skipped, because the owner is calling their own hook. This proves the whole chain works on first setup. The API takes `{method, path, headers, body}`. `method` defaults to `POST`, `path` to `/`, and `path` may include a query string. The sender is the owner. Replay and test both answer `201` with the finished call; admins get `403`.
 

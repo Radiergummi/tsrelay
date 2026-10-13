@@ -98,11 +98,11 @@ func TestRedactCapsHeaders(t *testing.T) {
 
 func TestTruncateQuery(t *testing.T) {
 	in := New(Config{CaptureLimit: 4})
-	if got := in.TruncateQuery("abcdef"); got != "abcd" {
-		t.Fatalf("over the limit: %q", got)
+	if got, cut := in.TruncateQuery("abcdef"); got != "abcd" || !cut {
+		t.Fatalf("over the limit: %q, %v", got, cut)
 	}
-	if got := in.TruncateQuery("ab"); got != "ab" {
-		t.Fatalf("under the limit: %q", got)
+	if got, cut := in.TruncateQuery("abcd"); got != "abcd" || cut {
+		t.Fatalf("at the limit: %q, %v", got, cut)
 	}
 }
 

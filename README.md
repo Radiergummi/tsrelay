@@ -131,7 +131,7 @@ The relay keeps the last 100 calls of each hook in memory (`--capture-calls`): m
 |---|---|
 | `GET /api/v1/hooks/{id}/calls` | Call summaries, newest first |
 | `GET /api/v1/hooks/{id}/calls/{callID}` | One call with its captured headers and bodies |
-| `POST /api/v1/hooks/{id}/calls/{callID}/replay` | Send the call again; its body must have been captured in full |
+| `POST /api/v1/hooks/{id}/calls/{callID}/replay` | Send the call again; its body and query string must have been captured in full |
 | `POST /api/v1/hooks/{id}/test` | Send `{"method","path","headers","body"}` through the relay to your app |
 | `GET /api/v1/events` | Server-sent events for your calls and hooks |
 
@@ -172,7 +172,7 @@ Every flag can also be set as an environment variable: `--ephemeral-grace` becom
 | `--hold-queue` | `100` | Calls per hook that may wait for a tunnel to attach at once |
 | `--revalidate-interval` | `60s` | How often an attached tunnel's grant is re-checked |
 | `--capture-calls` | `100` | Calls per hook the inspector keeps in memory |
-| `--capture-limit` | `65536` | Bytes of each request and response body the inspector keeps |
+| `--capture-limit` | `65536` | Bytes the inspector keeps of each body, of each call's headers, and of its query string |
 | `--capture-bodies` | `true` | `false` keeps no bodies for any hook |
 | `--redact-headers` | `Authorization,Proxy-Authorization,Cookie,Set-Cookie,X-Api-Key` | Headers whose values are never kept; an empty value keeps these defaults, so redaction cannot be turned off |
 | `--ops-listen` | off | Host address (e.g. `:9090`) for `/healthz`, `/readyz` and `/metrics`; never on the tailnet |

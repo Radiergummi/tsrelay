@@ -114,6 +114,8 @@ func TestReplayRules(t *testing.T) {
 		Method: "POST", Path: "/done", Outcome: problem.HookNotFound, Status: http.StatusNotFound,
 		Attempts: []inspect.Attempt{},
 	})
+	long := e.seedCall("c_long", h.ID, completeBody(`{}`))
+	e.in.Update(long.ID, func(c *inspect.Call) { c.QueryTruncated = true })
 	replay := func(id authz.Identity, callID string) int {
 		return e.call(id, "POST", "/api/v1/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, nil).StatusCode
 	}
@@ -122,6 +124,9 @@ func TestReplayRules(t *testing.T) {
 	}
 	if code := replay(moritz, "c_refused"); code != 409 {
 		t.Errorf("replay of a call refused by channel = %d, want 409", code)
+	}
+	if code := replay(moritz, "c_long"); code != 409 {
+		t.Errorf("replay of a truncated query = %d, want 409", code)
 	}
 	if code := replay(admin, "c_full"); code != 403 {
 		t.Errorf("admin replay = %d, want 403", code)
