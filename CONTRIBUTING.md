@@ -34,7 +34,7 @@ TSRELAY_UI_DEV=1 go test ./internal/server -run TestUIDev -timeout 0 -v   # then
 - Add or update tests for what you change. Bug fixes come with a test that fails without the fix.
 - Keep each pull request to one change, and match the style of the code around it.
 - Write commit messages as a plain imperative sentence that says what the change does, for example "Refuse replays of pending calls". No prefixes like `feat:`.
-- New dependencies need a good reason. tsrelay keeps its dependencies to Tailscale and a few `golang.org/x` modules, and the web UI has no JavaScript or CSS dependencies.
+- New dependencies need a good reason. tsrelay's direct dependencies are Tailscale, a few `golang.org/x` modules and OpenTelemetry (with the Prometheus client its exporter needs); anything else needs a good reason. The web UI has no JavaScript or CSS dependencies.
 - GitHub Actions are pinned to a full commit SHA, with the version in a comment. Only actions owned by GitHub and the Docker actions already in use are allowed to run.
 
 ## License
