@@ -365,3 +365,57 @@ func TestUITestRequestForm(t *testing.T) {
 		t.Error("an admin was offered the test form")
 	}
 }
+
+func TestUIHookForm(t *testing.T) {
+	e := newEnv(t, Config{CapName: testCap})
+	scoped := identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"channels":["default","prod","staging.*"]}`)
+	resp, body := e.page(scoped, "/hooks/new")
+	if resp.StatusCode != 200 {
+		t.Fatalf("new form = %d:\n%s", resp.StatusCode, body)
+	}
+	for _, want := range []string{
+		`id="hook-form" data-method="POST" data-path="/api/v1/hooks"`,
+		`<option value="default">`, `<option value="prod">`, "default, prod, staging.*",
+		`name="settings.holdTimeout"`, `data-type="duration"`, "At most 5m0s.", "~moritz/",
+		`data-error-for="settings.holdTimeout"`, `data-error-for=""`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("new form lacks %q", want)
+		}
+	}
+	if strings.Contains(body, `<option value="staging.*">`) {
+		t.Error("a channel pattern with a wildcard was offered as a channel")
+	}
+	assertInert(t, body)
+
+	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb", Description: "ci",
+		Settings: hooks.Settings{HoldTimeout: new(hooks.Duration(45 * time.Second)), AttachPolicy: new(hooks.AttachReject)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, body = e.page(receiver, "/hooks/"+h.ID+"/edit")
+	if resp.StatusCode != 200 {
+		t.Fatalf("edit form = %d", resp.StatusCode)
+	}
+	for _, want := range []string{
+		`data-method="PATCH" data-path="/api/v1/hooks/` + h.ID + `" data-editing`,
+		`name="path" value="cb"`, `name="settings.holdTimeout" data-type="duration" value="45s"`, `<option value="reject" selected>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("edit form lacks %q", want)
+		}
+	}
+	for _, tc := range []struct {
+		id   authz.Identity
+		path string
+		code int
+	}{
+		{uiOther, "/hooks/" + h.ID + "/edit", 404},
+		{uiAdmin, "/hooks/" + h.ID + "/edit", 404},
+		{sender, "/hooks/new", 403},
+	} {
+		if resp, _ := e.page(tc.id, tc.path); resp.StatusCode != tc.code {
+			t.Errorf("%s as %s = %d, want %d", tc.path, tc.id.NodeName, resp.StatusCode, tc.code)
+		}
+	}
+}

@@ -127,6 +127,56 @@ export function parseHeaders(text) {
   return out;
 }
 
+const durationRE = /^(\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+$/;
+
+// fieldValue converts a form field's text to its API value, by the field's
+// data-type. It returns {value}, where value is undefined for an empty
+// field, or {error}.
+export function fieldValue(raw, type) {
+  const s = raw.trim();
+  if (s === "") return { value: undefined };
+  switch (type) {
+    case "bool":
+      return { value: s === "true" };
+    case "int":
+      return /^\d+$/.test(s) ? { value: Number(s) } : { error: "must be a whole number of bytes" };
+    case "duration":
+      return durationRE.test(s) ? { value: s } : { error: "must be a duration like 30s, 2m or 1h30m" };
+    case "ratelimit": {
+      const m = /^(\d+(?:\.\d+)?)\s*\/\s*(\d+)$/.exec(s);
+      return m ? { value: { perSecond: Number(m[1]), burst: Number(m[2]) } } : { error: "must be calls per second / burst, like 100/200" };
+    }
+    default: // text and time
+      return { value: s };
+  }
+}
+
+// formRequest turns form fields, given as [name, text, type] triples, into
+// an API request body. It returns {body, errors}. Dotted names nest. An
+// empty field is left out when creating, so the relay default applies, and
+// sent as null when editing, which resets the field to the default.
+export function formRequest(fields, editing) {
+  const body = {};
+  const errors = [];
+  for (const [name, raw, type] of fields) {
+    const r = fieldValue(raw, type);
+    if (r.error) {
+      errors.push({ field: name, message: r.error });
+      continue;
+    }
+    let value = r.value;
+    if (value === undefined) {
+      if (!editing) continue;
+      value = null;
+    }
+    const path = name.split(".");
+    let obj = body;
+    for (const key of path.slice(0, -1)) obj = obj[key] ??= {};
+    obj[path.at(-1)] = value;
+  }
+  return { body, errors };
+}
+
 // actions maps a button's data-action to what clicking it does.
 const actions = {
   async "delete-hook"(el, doc) {
@@ -209,10 +259,65 @@ function testForm(doc) {
   });
 }
 
+// hookForm validates the create/edit form with a dry run as the user types,
+// and saves it on submit. When editing, it sends only the fields the user
+// changed.
+function hookForm(doc) {
+  const form = doc.getElementById("hook-form");
+  if (!form) return;
+  const editing = form.hasAttribute("data-editing");
+  const fields = () =>
+    [...form.elements]
+      .filter((el) => el.name)
+      .map((el) => [el.name, el.type === "checkbox" ? String(el.checked) : el.value, el.dataset.type || "text"]);
+  const initial = new Map(fields().map(([name, raw]) => [name, raw]));
+  const showErrors = (errors) => {
+    for (const el of form.querySelectorAll("[data-error-for]")) el.textContent = "";
+    for (const e of errors) {
+      const el = form.querySelector(`[data-error-for="${CSS.escape(e.field)}"]`) || form.querySelector('[data-error-for=""]');
+      el.textContent = el.textContent ? `${el.textContent} ${e.message}` : e.message;
+    }
+  };
+  let latest = 0;
+  // send dry-runs or saves the form, shows its errors, and returns the hook
+  // the API answered with, or null.
+  const send = async (dry) => {
+    const mine = ++latest;
+    const changed = fields().filter(([name, raw]) => !editing || raw !== initial.get(name));
+    const { body, errors } = formRequest(changed, editing);
+    if (errors.length) {
+      showErrors(errors);
+      return null;
+    }
+    const r = await api(form.dataset.method, form.dataset.path + (dry ? "?dryRun=true" : ""), body);
+    if (dry && mine !== latest) return null; // a newer request superseded this one
+    showErrors(r.ok ? [] : r.data?.errors || [{ field: "", message: problemText(r) }]);
+    return r.ok ? r.data : null;
+  };
+  let timer = null;
+  form.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => send(true), 400);
+  });
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    clearTimeout(timer);
+    const button = form.querySelector("button[type=submit]");
+    button.disabled = true;
+    try {
+      const hook = await send(false);
+      if (hook) location.assign(`/hooks/${encodeURIComponent(hook.id)}`);
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
 export function init(doc) {
   clicks(doc);
   live(doc);
   testForm(doc);
+  hookForm(doc);
 }
 
 if (typeof document !== "undefined") init(document);
