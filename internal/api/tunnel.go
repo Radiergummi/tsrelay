@@ -6,6 +6,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"time"
+
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
@@ -17,6 +20,10 @@ import (
 )
 
 func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	ctx, span := a.startTunnelSpan(r)
+	r = r.WithContext(ctx)
+	attached := false
+	defer func() { a.endAttach(span, id, attached, r.URL.Query()["hook"]) }()
 	if !tunnel.IsUpgrade(r) {
 		problem.New(http.StatusBadRequest, problem.BadRequest, "expected Connection: Upgrade and Upgrade: "+tunnel.UpgradeToken).Write(w)
 		return
@@ -81,11 +88,15 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 		a.Audit.Slog().Warn("tunnel setup failed", "error", err)
 		return
 	}
+	if span != nil {
+		span.SetAttributes(attribute.String("tsrelay.tunnel.id", t.ID))
+	}
 	t.Session = session
 	t.RemoteAddr = r.RemoteAddr
 	t.Target = localTarget(r.URL.Query().Get("target"))
+	attached = true
 	// r.Context() ends when this handler returns; the tunnel outlives it.
-	a.register(context.WithoutCancel(r.Context()), t, id, requested)
+	a.register(context.WithoutCancel(ctx), t, id, requested)
 }
 
 // localTarget returns s if it is an http(s) URL without credentials, else
@@ -107,6 +118,7 @@ func localTarget(s string) string {
 // register attaches t to the requested hooks, tells the client, and
 // detaches t again once it ends.
 func (a *API) register(ctx context.Context, t *tunnel.Tunnel, id authz.Identity, requested []hooks.Hook) {
+	attachedAt := time.Now()
 	hookIDs := make([]string, len(requested))
 	for i, h := range requested {
 		hookIDs[i] = string(h.ID)
@@ -160,5 +172,6 @@ func (a *API) register(ctx context.Context, t *tunnel.Tunnel, id authz.Identity,
 			a.Events.Publish(events.HookChanged(id.UserID, hid))
 		}
 		a.Audit.Log(ctx, audit.TunnelDetach, audit.Actor(id), slog.String("tunnel", t.ID))
+		a.traceDetach(ctx, t, time.Since(attachedAt))
 	}()
 }

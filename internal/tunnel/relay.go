@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/authz"
@@ -66,6 +67,8 @@ type Tunnel struct {
 	cc   *http2.ClientConn
 	conn *watchedConn
 	sem  chan struct{}
+
+	closeReason atomic.Pointer[string] // why the relay closed the tunnel; nil: the connection ended
 }
 
 // NewTunnel starts speaking HTTP/2, as client, on an accepted connection.
@@ -94,6 +97,22 @@ func (t *Tunnel) Done() <-chan struct{} { return t.conn.done }
 func (t *Tunnel) Close() error {
 	t.cc.Close()
 	return t.conn.Close()
+}
+
+// CloseReason says why the tunnel ended: "orphaned" (it lost its last hook,
+// e.g. to a newer tunnel), "revoked", "shutdown", or "disconnected" (the
+// client went away or the connection failed).
+func (t *Tunnel) CloseReason() string {
+	if r := t.closeReason.Load(); r != nil {
+		return *r
+	}
+	return "disconnected"
+}
+
+// closeWith closes the tunnel, recording reason unless one was recorded first.
+func (t *Tunnel) closeWith(reason string) {
+	t.closeReason.CompareAndSwap(nil, &reason)
+	t.Close()
 }
 
 // RoundTrip forwards req down the tunnel. It fails immediately with
@@ -158,7 +177,11 @@ func (t *Tunnel) Notify(c Control, closeAfter bool) {
 		defer cancel()
 		_ = t.Send(ctx, c)
 		if closeAfter {
-			t.Close()
+			reason := "orphaned"
+			if c.Type == ControlRevoked {
+				reason = "revoked"
+			}
+			t.closeWith(reason)
 		}
 	}()
 }

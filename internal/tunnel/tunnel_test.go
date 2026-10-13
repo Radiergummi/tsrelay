@@ -141,6 +141,31 @@ func TestDoneWhenClientDrops(t *testing.T) {
 	}
 }
 
+func TestCloseReason(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		close func(*tunnel.Tunnel)
+		want  string
+	}{
+		{"default", func(tun *tunnel.Tunnel) { tun.Close() }, "disconnected"},
+		{"revoked", func(tun *tunnel.Tunnel) { tun.Notify(tunnel.Control{Type: tunnel.ControlRevoked}, true) }, "revoked"},
+		{"orphaned", func(tun *tunnel.Tunnel) { tun.Notify(tunnel.Control{Type: tunnel.ControlReplaced}, true) }, "orphaned"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tun, _ := tunneltest.Pair(t, http.NotFoundHandler(), tunnel.Options{}, nil)
+			tc.close(tun)
+			select {
+			case <-tun.Done():
+			case <-time.After(5 * time.Second):
+				t.Fatal("tunnel did not close")
+			}
+			if got := tun.CloseReason(); got != tc.want {
+				t.Fatalf("CloseReason = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestDialReturnsProblem(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		problem.New(http.StatusForbidden, problem.Forbidden, "no receiver role").Write(w)

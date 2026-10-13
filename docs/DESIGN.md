@@ -448,6 +448,7 @@ v1 has **no config file**. Flags and environment variables cover binaries and co
 - `tsrelay_call_duration_seconds{outcome,kind}`: arrival to the last byte back
 - `tsrelay_call_ttfb_seconds{outcome,kind}`: forwarding to the app's response headers, only when they arrived
 - `tsrelay_call_hold_seconds{outcome}`: time held calls waited for a tunnel
+- `tsrelay_api_request_duration_seconds{method,route,status}`: JSON API requests by route pattern; the event stream and tunnel attaches are excluded
 - Go runtime metrics (`go_*`)
 
 Histogram buckets, in seconds: 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120. Labels never carry hook IDs, users, paths or nodes.
@@ -460,6 +461,9 @@ With `--otel`, the relay records OpenTelemetry spans and exports them, and its m
 - `tsrelay.authorize`: identifying the sender (WhoIs); skipped for replays and test requests.
 - `tsrelay.hold`: waiting for a tunnel, with `tsrelay.hold.result` (`attached`, `timeout`, `queue_full`, `hook_gone`, `canceled`).
 - `tsrelay.forward` (client): sending the call down the tunnel until the app's response headers.
+- `tsrelay.tunnel.attach` (server): authorization, upgrade, handshake and registration, with `tsrelay.tunnel.result` (`attached` or `refused`), the actor and the hook IDs.
+- `tsrelay.tunnel.detach`: a short span in its own trace, linked to the attach, with `tsrelay.tunnel.reason` (`disconnected`, `orphaned`, `revoked`, `shutdown`) and the tunnel's lifetime.
+- API requests (server): one span per request, named after the route pattern (`PATCH /api/v1/hooks/{id}`), with the actor's login. Replays and test requests are children of their API request's span. The event stream and tunnel attaches get no request span.
 
 With `--trace-propagation` (the default), a sender's call joins the sender's trace, and `traceparent`/`tracestate` sent to the app are replaced by `tsrelay.forward`'s. With `false`, or without `--otel`, they pass through untouched. With tracing off no span code runs at all.
 

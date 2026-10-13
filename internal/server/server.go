@@ -70,15 +70,16 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 		s.events.Publish(events.Event{Type: events.TypeCall, Owner: owner, HookID: string(sum.HookID), Data: sum})
 	}
 	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect}
+
+	mux := http.NewServeMux()
+	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName)}
 	if s.tel.Tracing {
 		s.relay.Tracer = s.tel.Tracer.Tracer(telemetry.ScopeName)
 		if !cfg.NoTracePropagation {
 			s.relay.Propagator = s.tel.Propagator
 		}
+		a.Tracer = s.tel.Tracer.Tracer(telemetry.ScopeName)
 	}
-
-	mux := http.NewServeMux()
-	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, Tunnel: cfg.Tunnel}
 	a.Register(mux)
 	pages := ui.New(a, cfg.CapName)
 	pages.Register(mux)

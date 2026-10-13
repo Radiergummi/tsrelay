@@ -238,6 +238,6 @@ func (r *Registry) CloseAll() {
 	}
 	r.mu.Unlock()
 	for _, t := range ts {
-		t.Close()
+		t.closeWith("shutdown")
 	}
 }

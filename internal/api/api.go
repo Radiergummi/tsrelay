@@ -2,12 +2,17 @@
 package api
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
@@ -31,6 +36,8 @@ type API struct {
 	Audit      *audit.Logger
 	BaseURL    string // e.g. "https://tsrelay.example.ts.net", no trailing slash
 	Tunnel     tunnel.Options
+	Tracer     trace.Tracer // nil: no spans
+	Meter      metric.Meter // nil: no API latency histogram
 
 	// attachLocks holds one *sync.Mutex per user (tailcfg.UserID). It
 	// serializes that user's attaches from the checks through registration.
@@ -78,16 +85,21 @@ type TunnelInfo struct {
 }
 
 func (a *API) Register(mux *http.ServeMux) {
-	mux.Handle("GET /api/v1/me", a.authed(a.me))
-	mux.Handle("GET /api/v1/hooks", a.authed(a.listHooks))
-	mux.Handle("POST /api/v1/hooks", a.authed(a.createHook))
-	mux.Handle("GET /api/v1/hooks/{id}", a.authed(a.getHook))
-	mux.Handle("PATCH /api/v1/hooks/{id}", a.authed(a.updateHook))
-	mux.Handle("DELETE /api/v1/hooks/{id}", a.authed(a.deleteHook))
-	mux.Handle("GET /api/v1/hooks/{id}/calls", a.authed(a.listCalls))
-	mux.Handle("GET /api/v1/hooks/{id}/calls/{callID}", a.authed(a.getCall))
-	mux.Handle("POST /api/v1/hooks/{id}/calls/{callID}/replay", a.authed(a.replayCall))
-	mux.Handle("POST /api/v1/hooks/{id}/test", a.authed(a.testCall))
+	latency := a.latencyHistogram()
+	route := func(pattern string, f func(http.ResponseWriter, *http.Request, authz.Identity)) {
+		mux.Handle(pattern, a.observed(latency, a.authed(f)))
+	}
+	route("GET /api/v1/me", a.me)
+	route("GET /api/v1/hooks", a.listHooks)
+	route("POST /api/v1/hooks", a.createHook)
+	route("GET /api/v1/hooks/{id}", a.getHook)
+	route("PATCH /api/v1/hooks/{id}", a.updateHook)
+	route("DELETE /api/v1/hooks/{id}", a.deleteHook)
+	route("GET /api/v1/hooks/{id}/calls", a.listCalls)
+	route("GET /api/v1/hooks/{id}/calls/{callID}", a.getCall)
+	route("POST /api/v1/hooks/{id}/calls/{callID}/replay", a.replayCall)
+	route("POST /api/v1/hooks/{id}/test", a.testCall)
+	// Long-lived: not observed (the tunnel traces its own attach and detach).
 	mux.Handle("GET /api/v1/events", a.authed(a.eventStream))
 	mux.Handle("GET /api/v1/tunnel", a.authed(a.tunnel))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
@@ -101,6 +113,9 @@ func (a *API) authed(f func(http.ResponseWriter, *http.Request, authz.Identity))
 		if err != nil {
 			problem.New(http.StatusForbidden, problem.Forbidden, "could not identify you on the tailnet").Write(w)
 			return
+		}
+		if span := trace.SpanFromContext(r.Context()); span.IsRecording() {
+			span.SetAttributes(attribute.String("tsrelay.actor.login", cmp.Or(id.Login, id.NodeName)))
 		}
 		f(w, r, id)
 	})
