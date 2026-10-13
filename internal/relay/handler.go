@@ -38,6 +38,10 @@ const (
 // DefaultHoldQueue is how many calls per hook may wait for a tunnel at once.
 const DefaultHoldQueue = 100
 
+// OutcomeSenderCanceled is the audit error of a call whose sender went away
+// before it completed. Nobody receives it, so it is no problem code.
+const OutcomeSenderCanceled = "sender_canceled"
+
 var (
 	errHoldTimeout   = errors.New("no tunnel attached within the hold timeout")
 	errHoldQueueFull = errors.New("too many calls are waiting for a tunnel")
@@ -67,8 +71,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	callID := ids.New("c_")
 	w.Header().Set(HeaderCallID, callID)
 	rec := &recorder{ResponseWriter: w}
+	parent := r.Context() // ends when the sender goes away
 	// Limits cancel the call with a cause that selects the error reported.
-	ctx, cancel := context.WithCancelCause(r.Context())
+	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
 	r = r.WithContext(ctx)
 	body := &countingReader{ReadCloser: r.Body}
@@ -83,15 +88,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			aborted = true // the tunnel failed while streaming the response
 		}
 		code := rec.Header().Get(problem.HeaderError)
-		if aborted && code == "" {
-			switch context.Cause(ctx) {
-			case errIdleTimeout:
+		switch {
+		case code != "":
+		case aborted:
+			// A relay-forced abort (idle timeout, an oversized body) sets its
+			// own cause directly on ctx, so it is identified before falling
+			// back to the sender's own context: SetReadDeadline, used to
+			// unblock a stalled read, also cancels ctx's parent as a side
+			// effect, and must not be mistaken for the sender leaving.
+			switch cause := context.Cause(ctx); {
+			case cause == errIdleTimeout:
 				code = problem.UpstreamTimeout
-			case errBodyTooLarge:
+			case cause == errBodyTooLarge:
 				code = problem.BodyTooLarge
+			case parent.Err() != nil:
+				code = OutcomeSenderCanceled
 			default:
 				code = problem.TunnelLost
 			}
+		case parent.Err() != nil:
+			code = OutcomeSenderCanceled
 		}
 		h.Audit.Log(r.Context(), audit.Call,
 			slog.String("callID", callID), slog.String("kind", "sender"),

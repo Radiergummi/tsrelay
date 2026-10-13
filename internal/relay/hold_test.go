@@ -194,3 +194,17 @@ func TestHeldCallsReleasedOnExpiry(t *testing.T) {
 		t.Fatalf("released after %v; want about 300ms (the expiry), not the 30s hold timeout", res.took)
 	}
 }
+
+// A sender that gives up while its call is held is recorded as
+// sender_canceled, not as ok.
+func TestSenderCanceledWhileHeld(t *testing.T) {
+	e := newEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, "POST", e.srv.URL+"/~moritz/cb", nil)
+	time.AfterFunc(100*time.Millisecond, cancel)
+	if resp, err := e.fake.Client(sender).Do(req); err == nil {
+		resp.Body.Close()
+		t.Fatal("the canceled request succeeded")
+	}
+	e.waitLog(`"error":"sender_canceled"`)
+}

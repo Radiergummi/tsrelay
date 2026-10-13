@@ -2,6 +2,7 @@ package relay
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -203,5 +204,29 @@ func TestTimeoutFiringAsHeadersArrive(t *testing.T) {
 	}
 	if !body.closed {
 		t.Fatal("the late response body was not closed")
+	}
+}
+
+// A sender that hangs up mid-response is recorded as sender_canceled, not
+// as tunnel_lost: the tunnel is fine.
+func TestSenderCanceledMidResponse(t *testing.T) {
+	e := newEnv(t)
+	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "first")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}), tunnel.Options{})
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, "GET", e.srv.URL+"/~moritz/cb", nil)
+	resp, err := e.fake.Client(sender).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.ReadFull(resp.Body, make([]byte, 5))
+	cancel()
+	resp.Body.Close()
+	e.waitLog(`"error":"sender_canceled"`)
+	if strings.Contains(e.log(), `"error":"tunnel_lost"`) {
+		t.Fatalf("recorded as tunnel_lost:\n%s", e.log())
 	}
 }
