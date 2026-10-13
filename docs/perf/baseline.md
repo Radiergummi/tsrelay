@@ -10,6 +10,7 @@ Reference numbers for comparing changes on the request path. The raw benchmark o
   - benchmarks: `e4931de`
   - load runs: `103533a`; the harness changed between the two, the product code did not
 - **Conditions:** nothing else running
+- **Binary size** (stripped, `-trimpath -ldflags='-s -w'`): 27.07 MB on main (`3d58c93`) vs 33.59 MB with telemetry (`8596123`), +6.5 MB (+24%), largely `google.golang.org/grpc` and `genproto` linked through the otlp*http exporters' internals although only HTTP export is used.
 
 Everything runs in-process over loopback: sender, relay, tunnel, CLI forwarder and app. These numbers measure tsrelay's own cost, not tsnet or WireGuard.
 
@@ -179,7 +180,7 @@ Each finding below is a candidate change for the maintainer to decide on. None o
 5. **Tracing overhead.**
    - **Allocations:** tracing adds about 35 allocations and 3 to 6 KiB per call (`BenchmarkCall/tracing=true` against `tracing=false`).
    - **Time:** the difference is within benchmark noise.
-   - **With tracing off:** the instrumentation adds no allocations (`TestTracingOffAllocatesNothing`).
+   - **With tracing off:** the span helpers and `forwardTransport` allocate nothing (`TestTracingOffAllocatesNothing`); no main-vs-branch end-to-end comparison was made.
 
 ## Open questions
 

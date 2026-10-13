@@ -215,9 +215,11 @@ go test -race -tags tailnet ./internal/server      # real tsnet nodes against an
 
 Performance:
 
-    go test -run='^$' -bench=. -count=6 ./internal/server ./internal/tunnel/... ./internal/inspect > new.txt
-    go run golang.org/x/perf/cmd/benchstat@v0.0.0-20261009192801-be2c69fb417e docs/perf/baseline.txt new.txt
-    TSRELAY_LOAD=1 go test ./internal/server -run TestLoad -count=1 -v      # add -cpuprofile cpu.out to profile
+```bash
+go test -run='^$' -bench=. -count=6 -p 1 ./internal/server ./internal/tunnel/... ./internal/inspect > new.txt
+go run golang.org/x/perf/cmd/benchstat@v0.0.0-20261009192801-be2c69fb417e docs/perf/baseline.txt new.txt
+TSRELAY_LOAD=1 go test ./internal/server -run TestLoad -count=1 -v      # add -cpuprofile cpu.out to profile
+```
 
 `TestLoad` drives the relay in-process (knobs: `TSRELAY_LOAD_CONCURRENCY`, `_DURATION`, `_BODY`, `_MODE=plain|streaming`) and reports throughput and the latency the relay adds over calling the app directly.
 
