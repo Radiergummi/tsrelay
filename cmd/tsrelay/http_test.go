@@ -49,20 +49,28 @@ type cliEnv struct {
 	local     *httptest.Server
 	calls     chan string
 	srv       *server.Server
+	mgr       *hooks.Manager
 	offline   atomic.Bool // while set, the CLI's new connections fail
+
+	handlerMu sync.Mutex
+	handler   http.Handler // swapped by restartRelay to simulate a relay restart
 }
 
 func newCLIEnv(t *testing.T) *cliEnv {
 	e := &cliEnv{t: t, fake: &identify.Fake{}, statePath: filepath.Join(t.TempDir(), "state.json"), calls: make(chan string, 8)}
 	store, _ := hooks.OpenJSON(t.TempDir())
 	t.Cleanup(func() { store.Close() })
-	mgr, _ := hooks.NewManager(context.Background(), store, hooks.SlugConfig{})
-	var h http.Handler
-	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { h.ServeHTTP(w, r) }))
+	e.mgr, _ = hooks.NewManager(context.Background(), store, hooks.SlugConfig{})
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		e.handlerMu.Lock()
+		h := e.handler
+		e.handlerMu.Unlock()
+		h.ServeHTTP(w, r)
+	}))
 	e.relayURL = "http://" + ts.Listener.Addr().String()
 	e.srv = server.New(server.Config{BaseURL: e.relayURL, AllowedHosts: []string{"127.0.0.1"}},
-		e.fake, mgr, audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))))
-	h = e.srv.Handler()
+		e.fake, e.mgr, audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))))
+	e.handler = e.srv.Handler()
 	ts.Start()
 	t.Cleanup(func() { e.srv.Close(); ts.Close() })
 	e.local = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +79,19 @@ func newCLIEnv(t *testing.T) *cliEnv {
 	}))
 	t.Cleanup(e.local.Close)
 	return e
+}
+
+// restartRelay replaces the relay with a fresh instance over the same hook
+// store, as a process restart would: the new instance's hook-updated
+// sequence counter starts over at 0, which can be lower than one the CLI
+// already saw from the instance before it.
+func (e *cliEnv) restartRelay() {
+	e.srv.Close() // drops the old tunnel so the CLI reconnects
+	srv := server.New(server.Config{BaseURL: e.relayURL, AllowedHosts: []string{"127.0.0.1"}},
+		e.fake, e.mgr, audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))))
+	e.handlerMu.Lock()
+	e.srv, e.handler = srv, srv.Handler()
+	e.handlerMu.Unlock()
 }
 
 type cliRun struct {
@@ -360,6 +381,42 @@ func TestHTTPFollowsHookUpdate(t *testing.T) {
 	if out := r.stdout.String(); out != oldURL+"\n"+h.URL+"\n" {
 		t.Fatalf("stdout = %q after an update that kept the URL", out)
 	}
+}
+
+// Fix round 1 (Task 3): a relay restart resets its hook-updated sequence
+// counter to 0, which can be lower than one the CLI already saw from
+// before the restart. The CLI must still apply it, because it belongs to
+// a new connection (attached precedes it), not to the one the old
+// sequence number was tracking.
+func TestHTTPAppliesLowerSeqAfterReconnect(t *testing.T) {
+	e := newCLIEnv(t)
+	r := e.start("--name", "old")
+	e.url(r)
+	ctx := context.Background()
+	hs, err := e.api().ListHooks(ctx)
+	if err != nil || len(hs) != 1 {
+		t.Fatalf("hooks = %v, %v", hs, err)
+	}
+	id := hs[0].ID
+
+	// Run the relay's sequence counter up before the restart.
+	for _, p := range []string{"a", "b", "c"} {
+		if _, err := e.api().UpdateHook(ctx, id, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new(p)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitOutput(t, r.stdout, "/c")
+
+	e.restartRelay()
+	waitOutput(t, r.stderr, "Tunnel restored")
+
+	// The new relay's sequence starts over at 1, lower than the 3 the CLI
+	// already saw, but it must still be applied.
+	h, err := e.api().UpdateHook(ctx, id, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new("new")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitOutput(t, r.stdout, h.URL)
 }
 
 func TestDropMessage(t *testing.T) {

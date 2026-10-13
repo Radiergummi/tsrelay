@@ -70,6 +70,35 @@ func TestAttachFollowsHookUpdate(t *testing.T) {
 	waitOutput(t, r.stderr, moved.URL+" was deleted")
 }
 
+// Fix round 1 (Task 3): same as TestHTTPAppliesLowerSeqAfterReconnect, for
+// the attach command's own OnControl.
+func TestAttachAppliesLowerSeqAfterReconnect(t *testing.T) {
+	e := newCLIEnv(t)
+	ctx := context.Background()
+	a, err := e.api().CreateHook(ctx, hooks.CreateRequest{Path: "pay"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := e.startCmd("attach", a.ID, "--forward-to", e.local.URL, "--relay", e.relayURL)
+	waitOutput(t, r.stderr, "Forwarding "+a.URL)
+
+	for _, p := range []string{"a", "b", "c"} {
+		if _, err := e.api().UpdateHook(ctx, a.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new(p)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitOutput(t, r.stdout, "/c")
+
+	e.restartRelay()
+	waitOutput(t, r.stderr, "Tunnel restored")
+
+	h, err := e.api().UpdateHook(ctx, a.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new("new")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitOutput(t, r.stdout, h.URL)
+}
+
 func TestAttachRefusals(t *testing.T) {
 	e := newCLIEnv(t)
 	if code, _, errOut := e.tsrelay("attach", "nope", "--forward-to", "8080"); code != 1 || !strings.Contains(errOut, `"nope"`) {
