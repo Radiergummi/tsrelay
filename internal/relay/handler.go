@@ -99,26 +99,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			aborted = true // the tunnel failed while streaming the response
 		}
 		code := rec.Header().Get(problem.HeaderError)
-		switch {
+		// A relay-forced abort (idle timeout, an oversized body) sets its own
+		// cause directly on ctx, so it is identified before falling back to
+		// the sender's own context: SetReadDeadline, used to unblock a
+		// stalled read, also cancels ctx's parent as a side effect, and must
+		// not be mistaken for the sender leaving.
+		switch cause := context.Cause(ctx); {
 		case code != "":
-		case aborted:
-			// A relay-forced abort (idle timeout, an oversized body) sets its
-			// own cause directly on ctx, so it is identified before falling
-			// back to the sender's own context: SetReadDeadline, used to
-			// unblock a stalled read, also cancels ctx's parent as a side
-			// effect, and must not be mistaken for the sender leaving.
-			switch cause := context.Cause(ctx); {
-			case cause == errIdleTimeout:
-				code = problem.UpstreamTimeout
-			case cause == errBodyTooLarge:
-				code = problem.BodyTooLarge
-			case parent.Err() != nil:
-				code = OutcomeSenderCanceled
-			default:
-				code = problem.TunnelLost
-			}
+		case aborted && cause == errIdleTimeout:
+			code = problem.UpstreamTimeout
+		case aborted && cause == errBodyTooLarge:
+			code = problem.BodyTooLarge
 		case parent.Err() != nil:
 			code = OutcomeSenderCanceled
+		case aborted:
+			code = problem.TunnelLost
 		}
 		h.Audit.Log(r.Context(), audit.Call,
 			slog.String("callID", callID), slog.String("kind", string(kind)),

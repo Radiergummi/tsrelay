@@ -71,14 +71,7 @@ func attachCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d d
 		OnControl: func(c tunnel.Control) {
 			mu.Lock() // control messages arrive concurrently
 			defer mu.Unlock()
-			if c.Type == tunnel.ControlAttached {
-				// A new connection starts its own sequence, and attached
-				// precedes any hook-updated on it; a sequence number
-				// remembered from before a reconnect (e.g. a relay restart,
-				// whose counter starts over at 0) must not suppress one
-				// that is actually new.
-				clear(seqs)
-			}
+			seqs.observe(c)
 			if c.Type == tunnel.ControlHookUpdated {
 				for _, h := range c.Hooks {
 					if u, ok := urlOf[h.ID]; ok && seqs.fresh(h.ID, c.Seq) && u != h.URL {

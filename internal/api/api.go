@@ -272,7 +272,7 @@ func (a *API) visibleHook(r *http.Request, id authz.Identity) (hooks.Hook, bool)
 	if !ok {
 		return hooks.Hook{}, false
 	}
-	return h, (id.IsUser() && h.Owner == id.UserID) || id.Grants.Has(authz.RoleAdmin)
+	return h, owns(id, h) || id.Grants.Has(authz.RoleAdmin)
 }
 
 func (a *API) hookJSON(h hooks.Hook) Hook {

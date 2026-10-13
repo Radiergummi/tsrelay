@@ -117,14 +117,7 @@ func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d dep
 		OnControl: func(c tunnel.Control) {
 			mu.Lock()
 			defer mu.Unlock()
-			if c.Type == tunnel.ControlAttached {
-				// A new connection starts its own sequence, and attached
-				// precedes any hook-updated on it; a sequence number
-				// remembered from before a reconnect (e.g. a relay restart,
-				// whose counter starts over at 0) must not suppress one
-				// that is actually new.
-				clear(seqs)
-			}
+			seqs.observe(c)
 			if c.Type == tunnel.ControlHookUpdated {
 				for _, h := range c.Hooks {
 					if h.ID != hook.ID || !seqs.fresh(h.ID, c.Seq) || h.URL == hook.URL {

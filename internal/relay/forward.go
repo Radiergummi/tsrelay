@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Radiergummi/tsrelay/internal/inspect"
 )
 
 var errResponseTimeout = errors.New("no response headers within the response timeout")
@@ -102,8 +104,8 @@ type recorder struct {
 	http.ResponseWriter
 	status  int
 	bytes   int64
-	wrote   time.Time // when the status was written
-	capture io.Writer // receives the body as it is written; may be nil
+	wrote   time.Time       // when the status was written
+	capture *inspect.Buffer // receives the body as it is written; may be nil
 }
 
 func (r *recorder) WriteHeader(code int) {
@@ -119,9 +121,7 @@ func (r *recorder) Write(b []byte) (int, error) {
 	}
 	n, err := r.ResponseWriter.Write(b)
 	r.bytes += int64(n)
-	if r.capture != nil && n > 0 {
-		r.capture.Write(b[:n])
-	}
+	r.capture.Write(b[:n])
 	return n, err
 }
 
@@ -133,15 +133,13 @@ type countingReader struct {
 	io.ReadCloser
 	n       int64
 	eof     bool
-	capture io.Writer
+	capture *inspect.Buffer
 }
 
 func (c *countingReader) Read(p []byte) (int, error) {
 	n, err := c.ReadCloser.Read(p)
 	c.n += int64(n)
-	if c.capture != nil && n > 0 {
-		c.capture.Write(p[:n])
-	}
+	c.capture.Write(p[:n])
 	if err == io.EOF {
 		c.eof = true
 	}

@@ -189,6 +189,17 @@ func (s updateSeqs) fresh(hook string, seq uint64) bool {
 	return true
 }
 
+// observe forgets every sequence number when c is attached: a new
+// connection starts its own sequence, and attached precedes any
+// hook-updated on it. A number remembered from before a reconnect (e.g. a
+// relay restart, whose counter starts over at 0) must not suppress an
+// update that is actually new.
+func (s updateSeqs) observe(c tunnel.Control) {
+	if c.Type == tunnel.ControlAttached {
+		clear(s)
+	}
+}
+
 // errText renders err for people; relay refusals carry the relay's reason.
 func errText(err error) string {
 	var p *problem.Problem

@@ -65,7 +65,6 @@ func (rc *callRecord) finish(o outcome) {
 		return
 	}
 	now := time.Now()
-	respHeaders, respRedacted := rc.in.Redact(o.header)
 	rc.in.Update(rc.id, func(c *inspect.Call) {
 		c.Outcome = cmp.Or(o.code, inspect.OutcomeOK)
 		c.Status = o.status
@@ -74,6 +73,7 @@ func (rc *callRecord) finish(o outcome) {
 		if o.delivery.IsZero() {
 			return // refused before delivery: no attempt
 		}
+		respHeaders, respRedacted := rc.in.Redact(o.header)
 		a := inspect.Attempt{
 			ID: ids.New("a_"), StartedAt: o.delivery,
 			WaitedFor: hooks.Duration(o.waited), Duration: hooks.Duration(now.Sub(o.delivery)),

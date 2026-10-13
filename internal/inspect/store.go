@@ -60,18 +60,20 @@ func (in *Inspector) Redact(h http.Header) (http.Header, []string) {
 // stays within the capture limit. Headers left out for size are appended to
 // redacted.
 func (in *Inspector) capHeaders(h http.Header, redacted []string) (http.Header, []string) {
+	total := 0
 	names := make([]string, 0, len(h))
-	for k := range h {
+	for k, vs := range h {
 		names = append(names, k)
+		total += headerSize(k, vs)
+	}
+	if total <= in.cfg.CaptureLimit {
+		return h, redacted // redacted is already sorted
 	}
 	slices.Sort(names)
 	kept := make(http.Header, len(h))
-	total := 0
+	total = 0
 	for _, k := range names {
-		size := len(k)
-		for _, v := range h[k] {
-			size += len(v)
-		}
+		size := headerSize(k, h[k])
 		if total+size > in.cfg.CaptureLimit {
 			redacted = append(redacted, k)
 			continue
@@ -81,6 +83,15 @@ func (in *Inspector) capHeaders(h http.Header, redacted []string) (http.Header, 
 	}
 	slices.Sort(redacted)
 	return kept, redacted
+}
+
+// headerSize is the bytes of one header's name and values.
+func headerSize(name string, values []string) int {
+	n := len(name)
+	for _, v := range values {
+		n += len(v)
+	}
+	return n
 }
 
 // TruncateQuery returns q cut to the inspector's capture limit, in bytes.
