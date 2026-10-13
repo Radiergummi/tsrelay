@@ -76,6 +76,7 @@ Every hook has delivery settings, each with a relay-wide default and maximum (`-
 | `idleTimeout` | `60s` | Longest gap in body traffic, either direction, before the call fails |
 | `maxBodyBytes` | unlimited | Request body size limit |
 | `rateLimit` | `100/200` | Calls per second and burst, per hook |
+| `capture` | `true` | Keep request and response bodies for the inspector; metadata and headers are always recorded |
 
 Set them when creating or updating a persistent hook:
 
@@ -84,7 +85,7 @@ tsrelay hooks create payments/v1 --rate-limit 10/20 --host-header rewrite
 tsrelay hooks update payments/v1 --hold-timeout 0s
 ```
 
-`tsrelay http` always uses the relay defaults; use `tsrelay hooks create` plus `tsrelay attach` for a hook with custom settings.
+`tsrelay http` always uses the relay defaults; use `tsrelay hooks create` plus `tsrelay attach` for a hook with custom settings, such as `--capture=false` to stop keeping bodies for just that hook.
 
 ## Managing hooks
 
@@ -122,6 +123,20 @@ Bodies arrive exactly as sent, byte for byte, so signatures from Stripe, GitHub,
 | `Tsrelay-Call-Id` | Also returned to the caller, for matching logs |
 | `X-Forwarded-For`, `-Host`, `-Proto`, `-Prefix` | The original request, for URL-signing schemes |
 
+## Inspecting calls
+
+The relay keeps the last 100 calls of each hook in memory (`--capture-calls`): method, path, query, sender, status and timings, the headers without the redacted ones (`--redact-headers`), and the first 64 KiB of each body (`--capture-limit`). Only the hook's owner sees queries, headers and bodies; admins see the rest. Calls are lost when the relay restarts.
+
+| | |
+|---|---|
+| `GET /api/v1/hooks/{id}/calls` | Call summaries, newest first |
+| `GET /api/v1/hooks/{id}/calls/{callID}` | One call with its captured headers and bodies |
+| `POST /api/v1/hooks/{id}/calls/{callID}/replay` | Send the call again; its body must have been captured in full |
+| `POST /api/v1/hooks/{id}/test` | Send `{"method","path","headers","body"}` through the relay to your app |
+| `GET /api/v1/events` | Server-sent events for your calls and hooks |
+
+Replays and test requests go through the whole relay to your app. The answer is recorded in the inspector and returned by the API, never sent to the original sender. Every response a sender gets carries `Tsrelay-Call-Id`, which names the call here.
+
 ## Errors
 
 Errors produced by the relay itself are `application/problem+json` responses and carry a `Tsrelay-Error` header. Responses from your app are never marked, including its own 5xx.
@@ -156,9 +171,13 @@ Every flag can also be set as an environment variable: `--ephemeral-grace` becom
 | `--tunnel-concurrency` | `32` | Concurrent calls per tunnel |
 | `--hold-queue` | `100` | Calls per hook that may wait for a tunnel to attach at once |
 | `--revalidate-interval` | `60s` | How often an attached tunnel's grant is re-checked |
+| `--capture-calls` | `100` | Calls per hook the inspector keeps in memory |
+| `--capture-limit` | `65536` | Bytes of each request and response body the inspector keeps |
+| `--capture-bodies` | `true` | `false` keeps no bodies for any hook |
+| `--redact-headers` | `Authorization,Proxy-Authorization,Cookie,Set-Cookie,X-Api-Key` | Headers whose values are never kept |
 | `--ops-listen` | off | Host address (e.g. `:9090`) for `/healthz`, `/readyz` and `/metrics`; never on the tailnet |
 
-Every numeric or duration setting from [Hook settings](#hook-settings) also has a relay-wide default and maximum flag, named `--hook-<setting>-default` and `--hook-<setting>-max`, for example `--hook-rate-limit-default=100/200`, or `--hook-max-body-bytes-default=1048576 --hook-max-body-bytes-max=10485760` (the default body size is unlimited, which a maximum would not allow, so set both); `attachPolicy` and `hostHeader` only get a `-default` flag, since there's no sensible maximum for them. A hook may only set a value within the relay's maximum. `--response-timeout` still works as a deprecated alias of `--hook-response-timeout-default`.
+Every numeric or duration setting from [Hook settings](#hook-settings) also has a relay-wide default and maximum flag, named `--hook-<setting>-default` and `--hook-<setting>-max`, for example `--hook-rate-limit-default=100/200`, or `--hook-max-body-bytes-default=1048576 --hook-max-body-bytes-max=10485760` (the default body size is unlimited, which a maximum would not allow, so set both); `attachPolicy`, `hostHeader` and `capture` only get a `-default` flag, since there's no sensible maximum for them. A hook may only set a value within the relay's maximum. `--response-timeout` still works as a deprecated alias of `--hook-response-timeout-default`.
 
 The audit log is JSON on stderr. It never contains bodies, query strings, or header values.
 

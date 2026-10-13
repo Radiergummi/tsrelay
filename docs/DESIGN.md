@@ -209,8 +209,8 @@ The protocol version lives in the `Upgrade` token. An incompatible change gets a
 ### 6.2 Streams
 
 - **Forwarded calls:** each call attempt is one HTTP/2 request from the relay to the CLI. It carries a `Tsrelay-Hook: {id}` header, which the CLI uses to choose that hook's local target. The CLI removes all `Tsrelay-*` tunnel headers before forwarding, except the identity headers (§7.2).
-- **Control messages:** requests with the header `Tsrelay-Control: 1` and a JSON body. They are handled by the CLI itself and never forwarded. Types: `attached` (the hook URLs, sent first), `replaced`, `revoked`, `hook-deleted`, `hook-updated`. Sender requests cannot forge them, because the relay strips every incoming `Tsrelay-*` header.
-- **Status:** the CLI reports its local target per hook when it attaches, as a query parameter on the handshake. The UI uses this for display and for copy-as-curl.
+- **Control messages:** requests with the header `Tsrelay-Control: 1` and a JSON body. They are handled by the CLI itself and never forwarded. Types: `attached` (the hook URLs, sent first), `replaced`, `revoked`, `hook-deleted`, `hook-updated`. Sender requests cannot forge them, because the relay strips every incoming `Tsrelay-*` header. `hook-updated` carries a sequence number `seq`. Messages are sent in the background and can arrive out of order, so a client ignores a `hook-updated` whose `seq` is not above the last it saw for that hook, and forgets that memory on each `attached` message, because the relay's sequence counter restarts with the relay.
+- **Status:** the CLI reports its local target, one per tunnel, as the `target` query parameter on the handshake. The relay keeps it only if it is an `http(s)` URL without credentials, never connects to it, and shows it to the hook's owner (UI, copy-as-curl).
 
 ### 6.3 Liveness and reconnect
 
@@ -273,6 +273,8 @@ Errors produced by the relay itself use `application/problem+json` (RFC 9457) an
 | `tunnel_lost` | 502 | Tunnel dropped mid-call |
 | `upstream_timeout` | 504 | No response headers within `responseTimeout`, or the body was idle for `idleTimeout` |
 
+A call whose sender went away before it completed is recorded with the outcome `sender_canceled` (audit `error`, `tsrelay_calls_total{outcome}`). Nobody receives it, so it is not a `Tsrelay-Error` code.
+
 ## 8. Hook settings
 
 Every setting has a relay-wide default and a relay-wide maximum. Settings that a grant governs are also capped by the owner's effective grant.
@@ -291,7 +293,7 @@ Every setting has a relay-wide default and a relay-wide maximum. Settings that a
 | `idleTimeout` | 60 s | Longest gap in body traffic, in either direction |
 | `maxBodyBytes` | unlimited | Request body |
 | `rateLimit` | 100/s, burst 200 | Token bucket per hook |
-| `capture` | `true` | Capture bodies for the inspector. Metadata is always recorded. |
+| `capture` | `true` | Capture bodies for the inspector. Metadata is always recorded. Relay-wide default `--hook-capture-default`; `--capture-bodies=false` turns capture off for every hook. |
 
 ## 9. Inspector
 
@@ -307,6 +309,13 @@ Attempt  { id, startedAt, tunnelID, node, waitedFor (hold), ttfb, duration,
 Capture  { bytes (≤ captureLimit), size, truncated }
 ```
 
+- `path` is the escaped path below the hook's route, as the local app sees it.
+- `redacted` (on the call and on each attempt) lists the header names whose values were dropped.
+- `status` and `duration` on the call are what the sender received and how long the call took.
+- `Capture.truncated` means the bytes are not the whole body: it was longer than `--capture-limit`, or was never read to the end, as for a call refused before delivery. `Capture.captured` is false when body capture was off.
+- `outcome` is `pending` while the call is delivered, then `ok` (delivered, whatever the local app answered), a `Tsrelay-Error` code, or `sender_canceled`.
+- An attempt starts when delivery starts, holding included. A call refused before that (rate limit, body limit, channel) has no attempts.
+
 Every call has an attempts list from the start, even though v1 only ever creates one attempt per call. Replays create a new call of kind `replay` that refers to the original. Buffered retries (backlog) will add further attempts to the same call.
 
 ### 9.2 Storage and visibility
@@ -318,9 +327,9 @@ Every call has an attempts list from the start, even though v1 only ever creates
 
 ### 9.3 Actions
 
-- **Replay:** re-sends a captured call down the hook's current tunnel, for calls whose request body was captured in full. Redacted headers are left out. The response goes only to the inspector, never back to the original sender. Only the owner can replay.
+- **Replay:** re-sends a captured call down the hook's current tunnel, for calls whose request body was captured in full. Redacted headers are left out. The response goes only to the inspector, never back to the original sender. Only the owner can replay. The `Tsrelay-Sender-*` headers name the original sender, because a replay reproduces that call. A call whose request body was not captured in full gets `409`.
 - **Copy as curl:** two variants. One targets the hook URL, which only works for nodes with the sender role. The other targets the tunnel's local target (e.g. `http://localhost:8080/…`), which is what developers usually want.
-- **Send test request:** the owner writes a request (method, path, headers, body; prefilled with a small JSON sample) and sends it through the normal pipeline as a call of kind `test`. The sender authorization step is skipped, because the owner is calling their own hook. This proves the whole chain works on first setup.
+- **Send test request:** the owner writes a request (method, path, headers, body; prefilled with a small JSON sample) and sends it through the normal pipeline as a call of kind `test`. The sender authorization step is skipped, because the owner is calling their own hook. This proves the whole chain works on first setup. The API takes `{method, path, headers, body}`. `method` defaults to `POST`, `path` to `/`, and `path` may include a query string. The sender is the owner. Replay and test both answer `201` with the finished call; admins get `403`.
 
 ## 10. Web UI and API
 
@@ -330,13 +339,13 @@ Every call has an attempts list from the start, even though v1 only ever creates
 |---|---|
 | `GET /me` | Identity, effective grant (roles, channel patterns, limits), current usage, user slug |
 | `GET /hooks` | The caller's hooks (admins: `?all=true`) |
-| `POST /hooks` | Create. `?dryRun=true` validates without saving. |
-| `GET/PATCH/DELETE /hooks/{id}` | Read, update or delete. `PATCH` also accepts `?dryRun=true`. |
+| `POST /hooks` | Create. `?dryRun=true` validates without saving and answers `200` with the would-be hook. |
+| `GET/PATCH/DELETE /hooks/{id}` | Read, update or delete. `PATCH` also accepts `?dryRun=true`, which validates without saving and answers `200` with the would-be hook. |
 | `GET /hooks/{id}/calls` | Call summaries, newest first |
 | `GET /hooks/{id}/calls/{callID}` | Full call with attempts and captures |
 | `POST /hooks/{id}/calls/{callID}/replay` | Replay |
 | `POST /hooks/{id}/test` | Send a test request |
-| `GET /events` | Server-sent events: the caller's call, tunnel and hook changes |
+| `GET /events` | Server-sent events: `call` (a call summary, on arrival and on completion) and `hook` (`{"id"}` of a hook that changed, or whose tunnel did). Admins may add `?all=true`. A stream that falls 64 events behind is closed; clients reconnect and refetch. |
 | `GET /tunnel` | Tunnel upgrade (§6) |
 
 - **Hook IDs** are short, opaque and random. Hook paths contain slashes, so they can't serve as IDs.
@@ -394,6 +403,7 @@ Relay-wide settings (flag / environment variable):
 | `--capture-limit` / `--capture-calls` | 64 KiB / 100 per hook |
 | `--capture-bodies` | `true` |
 | `--redact-headers` | `Authorization,Proxy-Authorization,Cookie,Set-Cookie,X-Api-Key` |
+| `--hook-capture-default` | `true` |
 | `--ops-listen` | empty (off) |
 | `--log-format` / `--log-level` | `json` / `info` |
 
