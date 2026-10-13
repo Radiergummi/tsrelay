@@ -210,7 +210,7 @@ The protocol version lives in the `Upgrade` token. An incompatible change gets a
 
 - **Forwarded calls:** each call attempt is one HTTP/2 request from the relay to the CLI. It carries a `Tsrelay-Hook: {id}` header, which the CLI uses to choose that hook's local target. The CLI removes all `Tsrelay-*` tunnel headers before forwarding, except the identity headers (§7.2).
 - **Control messages:** requests with the header `Tsrelay-Control: 1` and a JSON body. They are handled by the CLI itself and never forwarded. Types: `attached` (the hook URLs, sent first), `replaced`, `revoked`, `hook-deleted`, `hook-updated`. Sender requests cannot forge them, because the relay strips every incoming `Tsrelay-*` header. `hook-updated` carries a sequence number `seq`. Messages are sent in the background and can arrive out of order, so a client ignores a `hook-updated` whose `seq` is not above the last it saw for that hook, and forgets that memory on each `attached` message, because the relay's sequence counter restarts with the relay.
-- **Status:** the CLI reports its local target, one per tunnel, as the `target` query parameter on the handshake. The relay keeps it only if it is an `http(s)` URL without credentials, never connects to it, and shows it to the hook's owner (UI, copy-as-curl).
+- **Status:** the CLI reports its local target, one per tunnel, as the `target` query parameter on the handshake. The relay keeps it only if it is an `http(s)` URL without credentials, with any query string and fragment stripped, and shows it with the hook's tunnel to the owner and to admins (UI, copy-as-curl). The relay never connects to it.
 
 ### 6.3 Liveness and reconnect
 

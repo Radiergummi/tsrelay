@@ -599,10 +599,11 @@ func TestDryRun(t *testing.T) {
 func TestTunnelTarget(t *testing.T) {
 	e := newEnv(t)
 	for target, want := range map[string]string{
-		"http%3A%2F%2Flocalhost%3A8080%2Fapp": "http://localhost:8080/app",
-		"javascript%3Aalert(1)":               "",
-		"http%3A%2F%2Fuser%3Apw%40localhost":  "", // credentials are never shown
-		"":                                    "",
+		"http%3A%2F%2Flocalhost%3A8080%2Fapp":                    "http://localhost:8080/app",
+		"javascript%3Aalert(1)":                                  "",
+		"http%3A%2F%2Fuser%3Apw%40localhost":                     "",                          // credentials are never shown
+		"http%3A%2F%2Flocalhost%3A8080%2Fapp%3Ftoken%3Dx%23frag": "http://localhost:8080/app", // query and fragment are never shown
+		"": "",
 	} {
 		var h Hook
 		e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{}, &h)

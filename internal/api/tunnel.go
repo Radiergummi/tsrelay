@@ -89,7 +89,8 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 }
 
 // localTarget returns s if it is an http(s) URL without credentials, else
-// "". The target is shown to the hook's owner and never connected to.
+// "", with any query string and fragment stripped. The target is shown
+// with the hook's tunnel and never connected to.
 func localTarget(s string) string {
 	if len(s) > 2048 {
 		return ""
@@ -98,6 +99,8 @@ func localTarget(s string) string {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
 		return ""
 	}
+	u.RawQuery, u.ForceQuery = "", false
+	u.Fragment, u.RawFragment = "", ""
 	return u.String()
 }
 
