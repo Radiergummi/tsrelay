@@ -1,23 +1,150 @@
 package relay
 
 import (
+	"context"
 	"net/http"
+	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
+
+// callTrace is a call's span and the context carrying it. With tracing off
+// span is nil and every method does nothing, without allocating.
+type callTrace struct {
+	ctx  context.Context
+	span trace.Span
+}
+
+// startCall starts a call's server span. A sender's call joins the
+// sender's trace if h.Propagator is set; an injected call is parented by
+// whatever span ctx already carries (the API request's).
+func (h *Handler) startCall(ctx context.Context, header http.Header, injected bool) callTrace {
+	if h.Tracer == nil {
+		return callTrace{ctx: ctx}
+	}
+	if h.Propagator != nil && !injected {
+		ctx = h.Propagator.Extract(ctx, propagation.HeaderCarrier(header))
+	}
+	ctx, span := h.Tracer.Start(ctx, "tsrelay.call", trace.WithSpanKind(trace.SpanKindServer))
+	return callTrace{ctx: ctx, span: span}
+}
+
+// child starts a span below c; end it with end.
+func (c callTrace) child(tracer trace.Tracer, name string) callTrace {
+	if c.span == nil {
+		return c
+	}
+	ctx, span := tracer.Start(c.ctx, name)
+	return callTrace{ctx: ctx, span: span}
+}
+
+func (c callTrace) event(name string) {
+	if c.span != nil {
+		c.span.AddEvent(name)
+	}
+}
+
+// end ends c's span, recording attr first if hasAttr. A fixed argument
+// instead of a variadic one, so calling it with tracing off never
+// allocates a backing array for the call that escapes into SetAttributes.
+func (c callTrace) end(attr attribute.KeyValue, hasAttr bool) {
+	if c.span == nil {
+		return
+	}
+	if hasAttr {
+		c.span.SetAttributes(attr)
+	}
+	c.span.End()
+}
+
+// callAttrs are what a call span records when it ends: the same fields as
+// the call audit record, and never a query string, header value or body.
+type callAttrs struct {
+	callID, kind, hookID, method, path, code string
+	senderNode                               string
+	senderTags                               []string
+	status                                   int
+	bytesIn, bytesOut                        int64
+	waited                                   time.Duration
+}
+
+// finish records attrs on the call span and ends it. The span is an error
+// only if the relay produced the outcome (a Tsrelay-Error code); a sender
+// that went away, or the app's own 5xx, is not.
+func (c callTrace) finish(a callAttrs) {
+	if c.span == nil {
+		return
+	}
+	if c.span.IsRecording() {
+		kv := []attribute.KeyValue{
+			attribute.String("tsrelay.call.id", a.callID),
+			attribute.String("tsrelay.call.kind", a.kind),
+			attribute.String("http.request.method", a.method),
+			attribute.String("url.path", a.path),
+			attribute.String("tsrelay.sender.node", a.senderNode),
+			attribute.Int64("tsrelay.bytes_in", a.bytesIn),
+			attribute.Int64("tsrelay.bytes_out", a.bytesOut),
+		}
+		if a.hookID != "" {
+			kv = append(kv, attribute.String("tsrelay.hook.id", a.hookID))
+		}
+		if len(a.senderTags) > 0 {
+			kv = append(kv, attribute.String("tsrelay.sender.tags", strings.Join(a.senderTags, ",")))
+		}
+		if a.status != 0 {
+			kv = append(kv, attribute.Int("http.response.status_code", a.status))
+		}
+		if a.waited > 0 {
+			kv = append(kv, attribute.Float64("tsrelay.waited", a.waited.Seconds()))
+		}
+		if a.code != "" {
+			kv = append(kv, attribute.String("tsrelay.error", a.code))
+			if a.code != OutcomeSenderCanceled {
+				c.span.SetStatus(codes.Error, a.code)
+			}
+		}
+		c.span.SetAttributes(kv...)
+	}
+	c.span.End()
+}
 
 // forwardTransport sends a call down its tunnel and notes when the app's
 // response headers arrived, which ends the call's time to first byte.
-// The reverse proxy calls it on the handler's goroutine, so headers needs
-// no lock.
+// With a tracer it wraps the round trip in a client span, and with a
+// propagator it passes that span's trace context to the app, replacing
+// the sender's. The reverse proxy calls it on the handler's goroutine, so
+// headers needs no lock.
 type forwardTransport struct {
 	rt      http.RoundTripper
 	headers *time.Time
+	tracer  trace.Tracer                  // nil: no span
+	prop    propagation.TextMapPropagator // nil: forward trace headers untouched
 }
 
 func (t forwardTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	var span trace.Span
+	if t.tracer != nil {
+		var ctx context.Context
+		ctx, span = t.tracer.Start(req.Context(), "tsrelay.forward", trace.WithSpanKind(trace.SpanKindClient))
+		defer span.End()
+		if t.prop != nil {
+			req = req.Clone(ctx) // a RoundTripper must not modify its request
+			req.Header.Del("Traceparent")
+			req.Header.Del("Tracestate")
+			t.prop.Inject(ctx, propagation.HeaderCarrier(req.Header))
+		} else {
+			req = req.WithContext(ctx)
+		}
+	}
 	resp, err := t.rt.RoundTrip(req)
 	if err == nil {
 		*t.headers = time.Now()
+	} else if span != nil {
+		span.SetStatus(codes.Error, "no response from the app")
 	}
 	return resp, err
 }

@@ -413,6 +413,7 @@ Relay-wide settings (flag / environment variable):
 | `--ops-listen` | empty (off) |
 | `--ops-pprof` | `false` |
 | `--otel` | `false` (OTLP/HTTP, configured by `OTEL_*`) |
+| `--trace-propagation` | `true` |
 | `--log-format` / `--log-level` | `json` / `info` |
 
 Per-hook defaults and maxima are listed in §8. Each per-hook setting also has a relay-wide `--hook-<setting>-default` and `--hook-<setting>-max` flag.
@@ -450,6 +451,17 @@ v1 has **no config file**. Flags and environment variables cover binaries and co
 - Go runtime metrics (`go_*`)
 
 Histogram buckets, in seconds: 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120. Labels never carry hook IDs, users, paths or nodes.
+
+### 13.1 Tracing
+
+With `--otel`, the relay records OpenTelemetry spans and exports them, and its metrics, over OTLP/HTTP, configured by the standard `OTEL_*` variables. No instrumentation library is used; every attribute is set explicitly, so no query string, header value or body can reach a span.
+
+- `tsrelay.call` (server): the whole call, response streaming included. Attributes mirror the `call` audit record. Its status is an error only when the relay produced a `Tsrelay-Error`; the app's own 5xx is just a status code. Events: `routed`, `channel_denied`, `body_too_large`, `rate_limited`.
+- `tsrelay.authorize`: identifying the sender (WhoIs); skipped for replays and test requests.
+- `tsrelay.hold`: waiting for a tunnel, with `tsrelay.hold.result` (`attached`, `timeout`, `queue_full`, `hook_gone`, `canceled`).
+- `tsrelay.forward` (client): sending the call down the tunnel until the app's response headers.
+
+With `--trace-propagation` (the default), a sender's call joins the sender's trace, and `traceparent`/`tracestate` sent to the app are replaced by `tsrelay.forward`'s. With `false`, or without `--otel`, they pass through untouched. With tracing off no span code runs at all.
 
 ## 14. Deployment
 

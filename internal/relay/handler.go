@@ -24,6 +24,9 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Headers the relay sets for the local application. Incoming headers with
@@ -59,6 +62,9 @@ type Handler struct {
 	HoldQueue  int                // calls per hook that may wait for a tunnel; 0 means DefaultHoldQueue
 	Inspect    *inspect.Inspector // records calls for the inspector; nil records nothing
 
+	Tracer     trace.Tracer                  // nil: tracing off; no span code runs
+	Propagator propagation.TextMapPropagator // nil: don't join senders' traces or pass ours on
+
 	limiters  limiters
 	heldMu    sync.Mutex
 	held      map[hooks.ID]int
@@ -73,10 +79,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	callID := ids.New("c_")
 	w.Header().Set(HeaderCallID, callID)
 	inj, _ := r.Context().Value(injectKey{}).(*injection) // nil for sender calls
+	ct := h.startCall(r.Context(), r.Header, inj != nil)
 	rec := &recorder{ResponseWriter: w}
 	parent := r.Context() // ends when the sender goes away
 	// Limits cancel the call with a cause that selects the error reported.
-	ctx, cancel := context.WithCancelCause(parent)
+	ctx, cancel := context.WithCancelCause(ct.ctx)
 	defer cancel(nil)
 	r = r.WithContext(ctx)
 	body := &countingReader{ReadCloser: r.Body}
@@ -128,6 +135,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			attrs = append(attrs, slog.Duration("ttfb", headersAt.Sub(delivery.Add(waited))))
 		}
 		h.Audit.Log(r.Context(), audit.Call, attrs...)
+		ct.finish(callAttrs{
+			callID: callID, kind: string(kind), hookID: string(hook.ID), method: r.Method, path: r.URL.Path,
+			code: code, senderNode: sender.NodeName, senderTags: sender.Tags, status: rec.status,
+			bytesIn: body.n, bytesOut: rec.bytes, waited: waited,
+		})
 		record.finish(outcome{
 			code: code, status: rec.status, header: rec.Header(),
 			start: start, delivery: delivery, wrote: rec.wrote, waited: waited, tunnel: served,
@@ -148,11 +160,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if inj != nil {
 		sender = inj.sender // the owner's replay or test: no sender authorization (DESIGN.md §9.3)
-	} else if sender, err = h.Identifier.Identify(r.Context(), r.RemoteAddr); err != nil || !sender.Grants.Has(authz.RoleSender) {
-		h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender),
-			slog.String("action", "call"), slog.String("reason", "no sender role"))
-		problem.New(http.StatusForbidden, problem.SenderForbidden, "this node has no sender role on the relay").Write(rec)
-		return
+	} else {
+		at := ct.child(h.Tracer, "tsrelay.authorize")
+		sender, err = h.Identifier.Identify(at.ctx, r.RemoteAddr)
+		at.end(attribute.KeyValue{}, false)
+		if err != nil || !sender.Grants.Has(authz.RoleSender) {
+			h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender),
+				slog.String("action", "call"), slog.String("reason", "no sender role"))
+			problem.New(http.StatusForbidden, problem.SenderForbidden, "this node has no sender role on the relay").Write(rec)
+			return
+		}
 	}
 	hook, segs, found := h.Hooks.Route(slug, rest)
 	if found && encodedSlashIn(r.URL, 1+segs) {
@@ -168,12 +185,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// 404 as for a missing hook.
 		eff = h.Hooks.Effective(hook)
 		record = h.startRecord(r, callID, start, kind, replayOf, hook, sender, 1+segs, eff.Capture)
+		ct.event("routed")
 		if record != nil {
 			body.capture, rec.capture = record.reqBuf, record.respBuf
 		}
 	}
 	if !found || (inj == nil && !sender.Grants.Allows(authz.RoleSender, hook.Channel)) {
 		if found {
+			ct.event("channel_denied")
 			h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender), audit.Hook(hook),
 				slog.String("action", "call"), slog.String("reason", "channel not allowed"))
 			hook = hooks.Hook{} // do not reveal the hook in the audit record either
@@ -182,11 +201,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if eff.MaxBodyBytes > 0 && r.ContentLength > eff.MaxBodyBytes {
+		ct.event("body_too_large")
 		problem.New(http.StatusRequestEntityTooLarge, problem.BodyTooLarge,
 			fmt.Sprintf("the request body is larger than this hook's limit of %d bytes", eff.MaxBodyBytes)).Write(rec)
 		return
 	}
 	if wait, ok := h.limiters.allow(hook.ID, eff.RateLimit, time.Now(), h.hookExists); !ok {
+		ct.event("rate_limited")
 		rec.Header().Set("Retry-After", retryAfter(wait))
 		problem.New(http.StatusTooManyRequests, problem.RateLimited,
 			fmt.Sprintf("this hook accepts %g calls per second (burst %d)", eff.RateLimit.PerSecond, eff.RateLimit.Burst)).Write(rec)
@@ -197,8 +218,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !attached {
 		// Nothing has been read from the body yet, so holding is safe.
 		holdStart := time.Now()
+		ht := ct.child(h.Tracer, "tsrelay.hold")
 		tun, err = h.hold(ctx, hook, eff.HoldTimeout.Std())
 		waited = time.Since(holdStart)
+		result := "attached"
+		switch {
+		case err != nil && ctx.Err() != nil:
+			result = "canceled"
+		case errors.Is(err, tunnel.ErrHookGone), errors.Is(err, errHookExpired):
+			result = "hook_gone"
+		case errors.Is(err, errHoldQueueFull):
+			result = "queue_full"
+		case err != nil:
+			result = "timeout"
+		}
+		ht.end(attribute.String("tsrelay.hold.result", result), true)
 		switch {
 		case err != nil && ctx.Err() != nil:
 			return // the sender went away; nobody is left to answer (as in proxyError)
@@ -233,7 +267,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			resp.Header.Del(HeaderCallID)
 			return nil
 		},
-		Transport:     forwardTransport{rt: timeoutTransport{rt: tun, timeout: eff.ResponseTimeout.Std()}, headers: &headersAt},
+		Transport: forwardTransport{
+			rt: timeoutTransport{rt: tun, timeout: eff.ResponseTimeout.Std()}, headers: &headersAt,
+			tracer: h.Tracer, prop: h.Propagator,
+		},
 		FlushInterval: -1,
 		ErrorHandler:  proxyError,
 	}

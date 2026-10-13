@@ -188,6 +188,7 @@ Every flag can also be set as an environment variable: `--ephemeral-grace` becom
 | `--ops-listen` | off | Host address (e.g. `:9090`) for `/healthz`, `/readyz` and `/metrics`; never on the tailnet |
 | `--ops-pprof` | `false` | Serve Go's profiler under `/debug/pprof/` on the ops listener |
 | `--otel` | `false` | Export traces and metrics over OTLP/HTTP; see [Tracing](#tracing) |
+| `--trace-propagation` | `true` | With `--otel`: continue a sender's `traceparent` and pass the relay's own to your app, so one trace spans sender, relay and app; `false` forwards trace headers untouched |
 
 Every numeric or duration setting from [Hook settings](#hook-settings) also has a relay-wide default and maximum flag, named `--hook-<setting>-default` and `--hook-<setting>-max`, for example `--hook-rate-limit-default=100/200`, or `--hook-max-body-bytes-default=1048576 --hook-max-body-bytes-max=10485760` (the default body size is unlimited, which a maximum would not allow, so set both); `attachPolicy`, `hostHeader` and `capture` only get a `-default` flag, since there's no sensible maximum for them. A hook may only set a value within the relay's maximum. `--response-timeout` still works as a deprecated alias of `--hook-response-timeout-default`.
 
@@ -233,6 +234,8 @@ Run exactly one relay per state directory (`--state-dir`); see DESIGN.md §11 an
 ## Tracing
 
 With `--otel`, the relay exports traces and metrics over OTLP/HTTP. Everything else is configured with the standard OpenTelemetry variables: `OTEL_EXPORTER_OTLP_ENDPOINT` (default `http://localhost:4318`), `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_TRACES_SAMPLER`, `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES`. An unreachable collector never stops the relay; it logs a warning at most once a minute. Spans and metrics never contain bodies, query strings, or header values.
+
+Each call is a `tsrelay.call` span with children `tsrelay.authorize`, `tsrelay.hold` (only when the call waited for a tunnel) and `tsrelay.forward` (until your app's response headers). With `--trace-propagation` (the default), the relay joins the sender's trace and replaces `traceparent` on the way to your app, so your app's own spans nest under `tsrelay.forward`. Without `--otel`, trace headers pass through untouched.
 
 ## Profiling
 

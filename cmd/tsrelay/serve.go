@@ -54,6 +54,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	opsListen := fs.String("ops-listen", "", "host address for /healthz, /readyz and /metrics, e.g. :9090; never on the tailnet (empty: off)")
 	opsPprof := fs.Bool("ops-pprof", false, "serve /debug/pprof/ on the ops listener")
 	otlp := fs.Bool("otel", false, "export traces and metrics over OTLP/HTTP, configured by the standard OTEL_* environment variables")
+	propagate := fs.Bool("trace-propagation", true, "with --otel: join senders' traces, and pass the relay's trace context on to apps")
 	holdQueue := fs.Int("hold-queue", relay.DefaultHoldQueue, "calls per hook that may wait for a tunnel at once")
 	captureLimit := fs.Int("capture-limit", inspect.DefaultCaptureLimit, "bytes the inspector keeps of each body, of each call's headers, and of its query string")
 	captureCalls := fs.Int("capture-calls", inspect.DefaultCallsPerHook, "calls per hook the inspector keeps")
@@ -122,7 +123,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		server: server.Config{
 			EphemeralGrace: *grace, HoldQueue: *holdQueue, Tunnel: tunnel.Options{Concurrency: *concurrency},
 			Inspect: inspect.Config{CallsPerHook: *captureCalls, CaptureLimit: *captureLimit, NoBodies: !*captureBodies, Redact: redact.Values},
-			CapName: *capName,
+			CapName: *capName, NoTracePropagation: !*propagate,
 		},
 		revalidate: *revalidate,
 		opsListen:  *opsListen,

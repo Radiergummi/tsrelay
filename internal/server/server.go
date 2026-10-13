@@ -31,6 +31,8 @@ type Config struct {
 	Tunnel         tunnel.Options
 	Inspect        inspect.Config
 	Telemetry      *telemetry.Telemetry // nil: Prometheus metrics only, no tracing
+
+	NoTracePropagation bool // don't join senders' traces or pass the relay's to apps (--trace-propagation=false)
 }
 
 type Server struct {
@@ -68,6 +70,12 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 		s.events.Publish(events.Event{Type: events.TypeCall, Owner: owner, HookID: string(sum.HookID), Data: sum})
 	}
 	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect}
+	if s.tel.Tracing {
+		s.relay.Tracer = s.tel.Tracer.Tracer(telemetry.ScopeName)
+		if !cfg.NoTracePropagation {
+			s.relay.Propagator = s.tel.Propagator
+		}
+	}
 
 	mux := http.NewServeMux()
 	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, Tunnel: cfg.Tunnel}
