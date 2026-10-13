@@ -274,13 +274,18 @@ func (a *API) deleteHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// visibleHook returns the hook named in the path if id owns it or is an admin.
+// visibleHook returns the hook named in the path if id may see it.
 func (a *API) visibleHook(r *http.Request, id authz.Identity) (hooks.Hook, bool) {
-	h, ok := a.Hooks.Get(hooks.ID(r.PathValue("id")))
-	if !ok {
+	return a.VisibleHook(hooks.ID(r.PathValue("id")), id)
+}
+
+// VisibleHook returns the hook with the given ID if who may see it (Visible).
+func (a *API) VisibleHook(id hooks.ID, who authz.Identity) (hooks.Hook, bool) {
+	h, ok := a.Hooks.Get(id)
+	if !ok || !Visible(who, h) {
 		return hooks.Hook{}, false
 	}
-	return h, Visible(id, h)
+	return h, true
 }
 
 // HookJSON is h as the API shows it: URL, effective settings and attached tunnel.

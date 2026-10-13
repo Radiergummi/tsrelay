@@ -2,8 +2,10 @@
 
 {{define "sender"}}{{if .Tags}}{{join .Tags ", "}}{{else}}{{.Login}}{{end}}{{with .Node}} <span class="muted">({{.}})</span>{{end}}{{end}}
 
+{{define "outcome"}}<span class="{{outcomeClass .Outcome}}">{{if .Status}}{{.Status}}{{end}}{{if ne .Outcome "ok"}} {{.Outcome}}{{end}}</span>{{end}}
+
 {{define "callSummary"}}<a href="/hooks/{{.HookID}}/calls/{{.ID}}"><code>{{.Method}} {{.Path}}</code></a>
-<span class="{{outcomeClass .Outcome}}">{{if .Status}}{{.Status}}{{end}}{{if ne .Outcome "ok"}} {{.Outcome}}{{end}}</span>
+{{template "outcome" .}}
 <time class="muted" datetime="{{iso .ReceivedAt}}">{{when .ReceivedAt}}</time>{{end}}
 
 {{define "calls"}}{{if .}}
@@ -14,7 +16,7 @@
 <td><time datetime="{{iso .ReceivedAt}}">{{when .ReceivedAt}}</time></td>
 <td><a href="/hooks/{{.HookID}}/calls/{{.ID}}"><code>{{.Method}} {{.Path}}</code></a>{{if ne .Kind "sender"}} <span class="tag">{{.Kind}}</span>{{end}}</td>
 <td>{{template "sender" .Sender}}</td>
-<td><span class="{{outcomeClass .Outcome}}">{{if .Status}}{{.Status}}{{end}}{{if ne .Outcome "ok"}} {{.Outcome}}{{end}}</span></td>
+<td>{{template "outcome" .}}</td>
 <td>{{if ne .Outcome "pending"}}{{dur .Duration}}{{end}}</td>
 </tr>{{end}}
 </tbody>

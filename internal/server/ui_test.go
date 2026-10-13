@@ -150,11 +150,8 @@ func TestUIHooksList(t *testing.T) {
 
 func TestUIHookPage(t *testing.T) {
 	e := newEnv(t, Config{CapName: testCap})
-	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb", Description: "for <ci>",
+	h := e.hook(hooks.CreateRequest{Path: "cb", Description: "for <ci>",
 		Settings: hooks.Settings{HoldTimeout: new(hooks.Duration(0))}})
-	if err != nil {
-		t.Fatal(err)
-	}
 	e.srv.inspect.Add(inspect.Call{ID: "c_1", HookID: hooks.ID(h.ID), Owner: receiver.UserID, ReceivedAt: time.Now(),
 		Kind: inspect.KindSender, Method: "POST", Path: "/done", Query: "token=s3cr3t",
 		Outcome: inspect.OutcomeOK, Status: 202, Attempts: []inspect.Attempt{}})
@@ -199,6 +196,16 @@ func TestUIHookPage(t *testing.T) {
 	}
 }
 
+// hook creates a hook for the test's receiver.
+func (e *env) hook(req hooks.CreateRequest) api.Hook {
+	e.t.Helper()
+	h, err := e.api.CreateHook(context.Background(), req)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return h
+}
+
 // seed records c as a finished call of h for h's owner, filling in what
 // every call has.
 func (e *env) seed(h api.Hook, c inspect.Call) {
@@ -227,10 +234,7 @@ func full(s string) inspect.Capture {
 
 func TestUICallPage(t *testing.T) {
 	e := newEnv(t, Config{CapName: testCap})
-	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	h := e.hook(hooks.CreateRequest{Path: "cb"})
 	local := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer local.Close()
 	defer e.cli(h.ID, local.URL)()
@@ -298,10 +302,7 @@ func TestUICallPage(t *testing.T) {
 // Bodies that cannot be shown or replayed in full say so.
 func TestUICallBodies(t *testing.T) {
 	e := newEnv(t, Config{CapName: testCap})
-	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	h := e.hook(hooks.CreateRequest{Path: "cb"})
 	e.seed(h, inspect.Call{ID: "c_cut", RequestBody: inspect.Capture{Body: []byte("0123"), Size: 4096, Truncated: true, Captured: true}})
 	e.seed(h, inspect.Call{ID: "c_bin", RequestBody: full("\xff\xfe\x00")})
 	e.seed(h, inspect.Call{ID: "c_nul", RequestBody: full("a\x00b")})
@@ -338,10 +339,7 @@ func TestUICallBodies(t *testing.T) {
 
 func TestUIInspectRedirect(t *testing.T) {
 	e := newEnv(t, Config{CapName: testCap})
-	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	h := e.hook(hooks.CreateRequest{Path: "cb"})
 	e.seed(h, inspect.Call{ID: "c_1"})
 	resp, _ := e.page(receiver, "/inspect/c_1")
 	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/hooks/"+h.ID+"/calls/c_1" {
@@ -359,10 +357,7 @@ func TestUIInspectRedirect(t *testing.T) {
 
 func TestUITestRequestForm(t *testing.T) {
 	e := newEnv(t, Config{CapName: testCap})
-	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	h := e.hook(hooks.CreateRequest{Path: "cb"})
 	if _, body := e.page(receiver, "/hooks/"+h.ID); !strings.Contains(body, `id="test-form" data-hook="`+h.ID+`"`) {
 		t.Errorf("the owner's hook page has no test form:\n%s", body)
 	}
@@ -393,11 +388,8 @@ func TestUIHookForm(t *testing.T) {
 	}
 	assertInert(t, body)
 
-	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb", Description: "ci",
+	h := e.hook(hooks.CreateRequest{Path: "cb", Description: "ci",
 		Settings: hooks.Settings{HoldTimeout: new(hooks.Duration(45 * time.Second)), AttachPolicy: new(hooks.AttachReject)}})
-	if err != nil {
-		t.Fatal(err)
-	}
 	resp, body = e.page(receiver, "/hooks/"+h.ID+"/edit")
 	if resp.StatusCode != 200 {
 		t.Fatalf("edit form = %d", resp.StatusCode)

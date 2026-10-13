@@ -67,7 +67,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	mux := http.NewServeMux()
 	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, Tunnel: cfg.Tunnel}
 	a.Register(mux)
-	pages := ui.New(a, s.inspect, cfg.CapName)
+	pages := ui.New(a, cfg.CapName)
 	pages.Register(mux)
 	mux.Handle("/", pages.NotFound())
 

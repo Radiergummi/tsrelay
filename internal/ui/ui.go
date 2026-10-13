@@ -33,14 +33,12 @@ const CSP = "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ance
 // through the API's own view types.
 type UI struct {
 	api     *api.API
-	hooks   *hooks.Manager
-	inspect *inspect.Inspector
 	capName string // shown in the no-access page's example grant
 	pages   map[string]*template.Template
 }
 
-func New(a *api.API, insp *inspect.Inspector, capName string) *UI {
-	return &UI{api: a, hooks: a.Hooks, inspect: insp, capName: capName, pages: parsePages()}
+func New(a *api.API, capName string) *UI {
+	return &UI{api: a, capName: capName, pages: parsePages()}
 }
 
 // Register mounts the UI's routes. They are all GET: changes go through the
@@ -99,13 +97,6 @@ func secure(next http.Handler) http.Handler {
 		h.Set("Referrer-Policy", "same-origin")
 		next.ServeHTTP(w, r)
 	})
-}
-
-// visibleHook returns the hook with the given ID if v may see it, by the
-// API's visibility rule.
-func (u *UI) visibleHook(id string, v viewer) (hooks.Hook, bool) {
-	h, ok := u.hooks.Get(hooks.ID(id))
-	return h, ok && api.Visible(v.ID, h)
 }
 
 // render executes page into a buffer first, so a template error never

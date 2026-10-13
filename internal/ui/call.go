@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Radiergummi/tsrelay/internal/api"
+	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 )
 
@@ -59,8 +60,8 @@ const noCall = "There is no such call. The relay keeps only the most recent call
 
 // callPage shows one call. Admins who do not own the hook see metadata only.
 func (u *UI) callPage(w http.ResponseWriter, r *http.Request, v viewer) {
-	h, ok := u.visibleHook(r.PathValue("id"), v)
-	c, found := u.inspect.Get(r.PathValue("callID"))
+	h, ok := u.api.VisibleHook(hooks.ID(r.PathValue("id")), v.ID)
+	c, found := u.api.Inspect.Get(r.PathValue("callID"))
 	if !ok || !found || c.HookID != h.ID {
 		u.error(w, v, http.StatusNotFound, noCall)
 		return

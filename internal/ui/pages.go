@@ -20,8 +20,8 @@ type hookRow struct {
 
 func (u *UI) row(h hooks.Hook) hookRow {
 	r := hookRow{Hook: u.api.HookJSON(h)}
-	if calls := u.inspect.List(h.ID); len(calls) > 0 {
-		r.Last = &calls[0]
+	if last, ok := u.api.Inspect.Latest(h.ID); ok {
+		r.Last = &last
 	}
 	return r
 }
@@ -36,7 +36,7 @@ func (u *UI) hooksPage(w http.ResponseWriter, r *http.Request, v viewer) {
 		u.noAccess(w, v)
 		return
 	}
-	list := u.hooks.List(v.ID.UserID)
+	list := u.api.Hooks.List(v.ID.UserID)
 	rows := make([]hookRow, len(list))
 	for i, h := range list {
 		rows[i] = u.row(h)
@@ -51,7 +51,7 @@ func (u *UI) hooksPage(w http.ResponseWriter, r *http.Request, v viewer) {
 // hookPage shows one hook: its URL, tunnel, calls and settings. Admins see
 // other users' hooks too, as metadata.
 func (u *UI) hookPage(w http.ResponseWriter, r *http.Request, v viewer) {
-	h, ok := u.visibleHook(r.PathValue("id"), v)
+	h, ok := u.api.VisibleHook(hooks.ID(r.PathValue("id")), v.ID)
 	if !ok {
 		u.error(w, v, http.StatusNotFound, "There is no hook with this ID, or it is not yours.")
 		return
@@ -63,7 +63,7 @@ func (u *UI) hookPage(w http.ResponseWriter, r *http.Request, v viewer) {
 		Owner    bool
 		Calls    []inspect.Summary
 		Settings []settingRow
-	}{v, hook, v.owns(h), u.inspect.List(h.ID), settingRows(hook)})
+	}{v, hook, v.owns(h), u.api.Inspect.List(h.ID), settingRows(hook)})
 }
 
 // settingRow is one effective setting of a hook.
@@ -102,8 +102,8 @@ func settingRows(h api.Hook) []settingRow {
 // inspectRedirect resolves the inspect link the CLI prints for each call
 // (DESIGN.md §15) to the call's page.
 func (u *UI) inspectRedirect(w http.ResponseWriter, r *http.Request, v viewer) {
-	if c, ok := u.inspect.Get(r.PathValue("callID")); ok {
-		if _, visible := u.visibleHook(string(c.HookID), v); visible {
+	if c, ok := u.api.Inspect.Get(r.PathValue("callID")); ok {
+		if _, visible := u.api.VisibleHook(c.HookID, v.ID); visible {
 			http.Redirect(w, r, "/hooks/"+url.PathEscape(string(c.HookID))+"/calls/"+url.PathEscape(c.ID), http.StatusSeeOther)
 			return
 		}
@@ -129,7 +129,7 @@ func (u *UI) adminPage(w http.ResponseWriter, r *http.Request, v viewer) {
 		u.error(w, v, http.StatusForbidden, "Only relay admins can see this page.")
 		return
 	}
-	all := u.hooks.ListAll()
+	all := u.api.Hooks.ListAll()
 	slices.SortFunc(all, func(a, b hooks.Hook) int {
 		return cmp.Or(cmp.Compare(a.OwnerLogin, b.OwnerLogin), cmp.Compare(a.Path, b.Path))
 	})

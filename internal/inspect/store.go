@@ -157,6 +157,17 @@ func (in *Inspector) List(hook hooks.ID) []Summary {
 	return out
 }
 
+// Latest returns the hook's newest call.
+func (in *Inspector) Latest(hook hooks.ID) (Summary, bool) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	list := in.byHook[hook]
+	if len(list) == 0 {
+		return Summary{}, false
+	}
+	return list[len(list)-1].Summary(), true
+}
+
 // Get returns a copy of the call with the given ID.
 func (in *Inspector) Get(id string) (Call, bool) {
 	in.mu.Lock()

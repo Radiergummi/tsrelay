@@ -34,7 +34,7 @@ func (u *UI) newHookPage(w http.ResponseWriter, r *http.Request, v viewer) {
 // editHookPage is for the hook's owner only: admins cannot change other
 // users' hooks (DESIGN.md §5.2).
 func (u *UI) editHookPage(w http.ResponseWriter, r *http.Request, v viewer) {
-	h, ok := u.hooks.Get(hooks.ID(r.PathValue("id")))
+	h, ok := u.api.Hooks.Get(hooks.ID(r.PathValue("id")))
 	if !ok || !v.owns(h) {
 		u.error(w, v, http.StatusNotFound, "There is no hook with this ID, or it is not yours.")
 		return
@@ -46,7 +46,7 @@ func (u *UI) editHookPage(w http.ResponseWriter, r *http.Request, v viewer) {
 func (u *UI) formView(v viewer, h *api.Hook) formView {
 	patterns := v.ID.Grants.Patterns[authz.RoleReceiver]
 	return formView{V: v, Hook: h, Me: u.api.MeOf(v.ID), Values: formValues(h), Channels: channelChoices(patterns),
-		Patterns: strings.Join(patterns, ", "), Policy: u.hooks.Policy()}
+		Patterns: strings.Join(patterns, ", "), Policy: u.api.Hooks.Policy()}
 }
 
 // channelChoices are the channels a receiver may use as they are: "default"
