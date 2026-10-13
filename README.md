@@ -125,7 +125,7 @@ Bodies arrive exactly as sent, byte for byte, so signatures from Stripe, GitHub,
 
 ## Web UI
 
-Open the relay's URL (`https://tsrelay.<your tailnet>/`) in a browser on your tailnet. You see your hooks with their tunnels and latest calls, and can create, edit and delete hooks. Each hook's page shows its calls as they arrive. A call's page shows the request and the response side by side, and lets you replay the call, copy it as a curl command (aimed at your local target or at the hook URL), or send a test request. Admins also get an admin page listing every hook, as metadata only. Each call line `tsrelay http` prints ends with a link to that call.
+Open the relay's URL (`https://tsrelay.<your tailnet>/`) in a browser on your tailnet. You see your hooks with their tunnels and latest calls, and can create, edit and delete hooks. Each hook's page shows its calls as they arrive, and lets you send it a test request. A call's page shows the request and the response side by side, and lets you replay the call or copy it as a curl command (aimed at your local target or at the hook URL). Admins also get an admin page listing every hook, as metadata only. Each call line `tsrelay http` prints ends with a link to that call.
 
 The UI needs JavaScript to make changes; without it, it is read-only. To try the UI locally without a tailnet:
 

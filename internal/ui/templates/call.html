@@ -38,7 +38,6 @@
 <span class="muted">held {{dur .WaitedFor}}, first byte after {{dur .TTFB}}, {{dur .Duration}} in total, {{size .BytesIn}} in, {{size .BytesOut}} out</span>
 </li>{{end}}
 </ol>{{else}}{{if eq .Call.Outcome "pending"}}<p class="muted">Delivering…</p>{{else}}<p class="muted">No attempts: the relay refused the call before delivering it.</p>{{end}}{{end}}
-</section>
 
 {{if .Owner}}
 <h2>Copy as curl</h2>
@@ -46,4 +45,5 @@
 <pre id="curl-{{$i}}">{{$c.Command}}</pre>
 {{else}}<p class="muted">{{.NoCurl}}</p>{{end}}
 {{end}}
+</section>
 {{end}}

@@ -114,6 +114,10 @@ func TestReplayRules(t *testing.T) {
 		Method: "POST", Path: "/done", Outcome: problem.HookNotFound, Status: http.StatusNotFound,
 		Attempts: []inspect.Attempt{},
 	})
+	e.in.Add(inspect.Call{
+		ID: "c_pending", HookID: hooks.ID(h.ID), Owner: moritz.UserID, Kind: inspect.KindSender,
+		Method: "POST", Path: "/done", Outcome: inspect.OutcomePending, Attempts: []inspect.Attempt{},
+	})
 	long := e.seedCall("c_long", h.ID, completeBody(`{}`))
 	e.in.Update(long.ID, func(c *inspect.Call) { c.QueryTruncated = true })
 	replay := func(id authz.Identity, callID string) int {
@@ -124,6 +128,9 @@ func TestReplayRules(t *testing.T) {
 	}
 	if code := replay(moritz, "c_refused"); code != 409 {
 		t.Errorf("replay of a call refused by channel = %d, want 409", code)
+	}
+	if code := replay(moritz, "c_pending"); code != 409 {
+		t.Errorf("replay of a pending call = %d, want 409", code)
 	}
 	if code := replay(moritz, "c_long"); code != 409 {
 		t.Errorf("replay of a truncated query = %d, want 409", code)

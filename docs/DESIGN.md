@@ -360,7 +360,7 @@ The UI is server-rendered with `html/template`, plus a small vanilla JS file for
 - **Hooks:** your hooks, with URL, channel, tunnel status (attached node and local target), and the last call.
 - **Create / edit hook:** the settings in §8. The channel picker is fed by `/me`, and fields are validated live with dry-run. Limits from the grant are shown next to each field.
 - **Hook detail:** settings, attached tunnel, and a live call list.
-- **Call detail:** request and response side by side (headers, body with a JSON pretty-print toggle), the attempts timeline, and the replay, copy-as-curl and test actions.
+- **Call detail:** request and response side by side (headers, body with a JSON pretty-print toggle), the attempts timeline, and the replay and copy-as-curl actions.
 - **No access:** what the caller is missing, with an example grant.
 - **Admin:** all hooks and tunnels (metadata only), with delete.
 

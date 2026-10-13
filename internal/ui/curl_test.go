@@ -47,6 +47,26 @@ func TestCurlCommand(t *testing.T) {
 	}
 }
 
+// A captured Accept-Encoding header makes curl decompress the response
+// itself, instead of printing the compressed bytes raw.
+func TestCurlCommandAcceptEncoding(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh")
+	}
+	cmd := curlCommand("GET", "http://localhost/done", http.Header{"Accept-Encoding": {"gzip"}}, nil)
+	out, err := exec.Command(sh, "-c", `curl() { for a in "$@"; do printf '%s\0' "$a"; done; }; `+cmd).Output()
+	if err != nil {
+		t.Fatalf("%v\n%s", err, cmd)
+	}
+	got := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
+	want := []string{"-g", "-X", "GET", "http://localhost/done", "--compressed",
+		"-H", "Accept-Encoding: gzip"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("curl got %q\nwant %q\ncommand:\n%s", got, want, cmd)
+	}
+}
+
 // A body containing CR survives: the command string never contains a raw
 // CR byte (an HTML parser would turn one into a line feed on its way to
 // the clipboard), yet the shell still passes curl the exact bytes.

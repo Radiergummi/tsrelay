@@ -78,6 +78,8 @@ func (a *API) ownedHook(w http.ResponseWriter, r *http.Request, id authz.Identit
 // nil if it can.
 func ReplayRefusal(c inspect.Call) *problem.Problem {
 	switch {
+	case c.Outcome == inspect.OutcomePending:
+		return problem.New(http.StatusConflict, problem.Conflict, "this call is still being delivered, so it cannot be replayed yet")
 	case c.Outcome == problem.HookNotFound:
 		return problem.New(http.StatusConflict, problem.Conflict, "this call was refused by channel and never delivered, so it cannot be replayed")
 	case c.QueryTruncated:

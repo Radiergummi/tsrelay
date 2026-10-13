@@ -12,20 +12,19 @@ export async function api(method, path, body) {
     init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(body);
   }
-  let resp;
   try {
-    resp = await fetch(path, init);
+    const resp = await fetch(path, init);
+    const text = await resp.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { detail: text };
+    }
+    return { ok: resp.ok, status: resp.status, data };
   } catch (err) {
     return { ok: false, status: 0, data: { detail: `The relay is not reachable: ${err.message}` } };
   }
-  const text = await resp.text();
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = { detail: text };
-  }
-  return { ok: resp.ok, status: resp.status, data };
 }
 
 // problemText says, for people, what went wrong with an API request.
@@ -66,38 +65,57 @@ function live(doc) {
   const parts = () => [...doc.querySelectorAll("[data-live]")];
   if (parts().length === 0) return;
   let timer = null;
+  let seq = 0; // bumped on every refresh, so a stale response is dropped
   const refresh = async () => {
     timer = null;
-    let resp;
+    const mine = ++seq;
     try {
-      resp = await fetch(location.href, { headers: { Accept: "text/html" } });
+      const resp = await fetch(location.href, { headers: { Accept: "text/html" } });
+      if (!resp.ok) return; // e.g. the hook was deleted; keep what is shown
+      const text = await resp.text();
+      if (mine !== seq) return; // a later refresh has already been applied
+      const next = new DOMParser().parseFromString(text, "text/html");
+      for (const el of parts()) {
+        const fresh = next.getElementById(el.id);
+        if (fresh) el.replaceWith(doc.importNode(fresh, true));
+      }
     } catch {
-      return; // the relay is unreachable; the next event or reconnect retries
-    }
-    if (!resp.ok) return; // e.g. the hook was deleted; keep what is shown
-    const next = new DOMParser().parseFromString(await resp.text(), "text/html");
-    for (const el of parts()) {
-      const fresh = next.getElementById(el.id);
-      if (fresh) el.replaceWith(doc.importNode(fresh, true));
+      // the relay is unreachable; the next event or reconnect retries
     }
   };
   const schedule = () => {
     if (!timer) timer = setTimeout(refresh, 200);
   };
   const all = parts().some((el) => el.hasAttribute("data-all"));
-  const events = new EventSource("/api/v1/events" + (all ? "?all=true" : ""));
-  const onEvent = (e) => {
-    const hook = eventHook(e.data);
-    if (parts().some((el) => wantsEvent(el.dataset.hooks, hook))) schedule();
-  };
-  events.addEventListener("call", onEvent);
-  events.addEventListener("hook", onEvent);
-  // The stream ends when the relay restarts or this page falls behind. The
-  // browser reconnects by itself; events may have been missed meanwhile.
+  let events = null;
   let opened = false;
-  events.addEventListener("open", () => {
-    if (opened) schedule();
-    opened = true;
+  const connect = () => {
+    events = new EventSource("/api/v1/events" + (all ? "?all=true" : ""));
+    const onEvent = (e) => {
+      const hook = eventHook(e.data);
+      if (parts().some((el) => wantsEvent(el.dataset.hooks, hook))) schedule();
+    };
+    events.addEventListener("call", onEvent);
+    events.addEventListener("hook", onEvent);
+    // The stream ends when the relay restarts or this page falls behind. The
+    // browser reconnects by itself; events may have been missed meanwhile.
+    events.addEventListener("open", () => {
+      if (opened) schedule();
+      opened = true;
+    });
+  };
+  connect();
+  // A background tab's connection still counts toward the browser's ~6
+  // connections per host over HTTP/1.1, so drop it while hidden and
+  // reconnect, with a refresh for whatever was missed, once shown again.
+  doc.addEventListener("visibilitychange", () => {
+    if (doc.visibilityState === "hidden") {
+      events.close();
+    } else {
+      opened = false;
+      connect();
+      schedule();
+    }
   });
 }
 

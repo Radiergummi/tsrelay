@@ -12,6 +12,10 @@ import (
 func curlCommand(method, url string, h http.Header, body []byte) string {
 	var b strings.Builder
 	b.WriteString("curl -g -X " + shellQuote(method) + " " + shellQuote(url))
+	if h.Get("Accept-Encoding") != "" {
+		// Without this, curl prints the compressed bytes raw.
+		b.WriteString(" --compressed")
+	}
 	for _, l := range headerLines(h) {
 		if curlSets[l.Name] {
 			continue

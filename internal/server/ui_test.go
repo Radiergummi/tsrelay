@@ -308,6 +308,7 @@ func TestUICallBodies(t *testing.T) {
 	e.seed(h, inspect.Call{ID: "c_off", RequestBody: inspect.Capture{Size: 10}})
 	e.seed(h, inspect.Call{ID: "c_empty", RequestBody: inspect.Capture{Captured: true}})
 	e.seed(h, inspect.Call{ID: "c_refused", Outcome: "hook_not_found", Status: 404, RequestBody: inspect.Capture{Captured: true}})
+	e.seed(h, inspect.Call{ID: "c_pending", Outcome: inspect.OutcomePending})
 	for id, tc := range map[string]struct {
 		want   []string
 		replay bool
@@ -318,6 +319,7 @@ func TestUICallBodies(t *testing.T) {
 		"c_off":     {[]string{"not captured: body capture is off"}, false},
 		"c_empty":   {[]string{"No body."}, true},
 		"c_refused": {[]string{"refused by channel", "No attempts"}, false},
+		"c_pending": {[]string{"still being delivered, so it cannot be replayed yet"}, false},
 	} {
 		_, body := e.page(receiver, "/hooks/"+h.ID+"/calls/"+id)
 		for _, w := range tc.want {
@@ -327,6 +329,9 @@ func TestUICallBodies(t *testing.T) {
 		}
 		if got := strings.Contains(body, `data-action="replay"`); got != tc.replay {
 			t.Errorf("%s: replay offered = %v, want %v", id, got, tc.replay)
+		}
+		if id == "c_pending" && strings.Contains(body, `id="curl-0"`) {
+			t.Errorf("%s: page offers a curl command", id)
 		}
 	}
 }
