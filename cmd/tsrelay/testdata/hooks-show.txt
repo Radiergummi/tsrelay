@@ -1,0 +1,16 @@
+  id                h_1
+  url               https://r/~m/payments
+  path              payments
+  channel           default
+  kind              ephemeral
+  description       -
+  expires           -
+  tunnel            laptop → http://localhost:8080
+  hold timeout      30s
+  response timeout  1m0s
+  idle timeout      1m0s
+  max body bytes    unlimited
+  rate limit        10/20
+  attach policy     takeover
+  host header       preserve
+  capture           yes

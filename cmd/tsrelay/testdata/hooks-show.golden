@@ -1,0 +1,16 @@
+  [2mid              [m  h_1
+  [2murl             [m  ]8;;https://r/~m/paymentshttps://r/~m/payments]8;;
+  [2mpath            [m  payments
+  [2mchannel         [m  default
+  [2mkind            [m  ephemeral
+  [2mdescription     [m  -
+  [2mexpires         [m  -
+  [2mtunnel          [m  laptop → http://localhost:8080
+  [2mhold timeout    [m  30s
+  [2mresponse timeout[m  1m0s
+  [2midle timeout    [m  1m0s
+  [2mmax body bytes  [m  unlimited
+  [2mrate limit      [m  10/20
+  [2mattach policy   [m  takeover
+  [2mhost header     [m  preserve
+  [2mcapture         [m  yes

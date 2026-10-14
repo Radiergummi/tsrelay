@@ -53,8 +53,38 @@ func TestHooksCommands(t *testing.T) {
 	}
 	id := hs[0].ID
 
-	if code, out, _ := e.tsrelay("hooks", "ls"); code != 0 || !strings.Contains(out, id) || !strings.Contains(out, "persistent") || !strings.Contains(out, e.relayURL+"/~moritz/cb") {
-		t.Fatalf("ls: exit %d\n%s", code, out)
+	if code, out, _ := e.tsrelay("hooks", "ls"); code != 0 || !strings.Contains(out, id) || !strings.Contains(out, "persistent") ||
+		!strings.Contains(out, e.relayURL+"/~moritz/cb") ||
+		!strings.HasPrefix(out, "ID\tPATH\tCHANNEL\tKIND\tTUNNEL\tEXPIRES\tURL\n") || strings.Contains(out, "\x1b") {
+		t.Fatalf("ls: exit %d\n%q", code, out)
+	}
+
+	code, out, errOut = e.tsrelay("hooks", "create", "--json", "sv")
+	if code != 0 {
+		t.Fatalf("create --json: exit %d\n%s", code, errOut)
+	}
+	var created api.Hook
+	if err := json.Unmarshal([]byte(out), &created); err != nil || created.Path != "sv" {
+		t.Fatalf("create --json: not a Hook with Path %q: %v\n%s", "sv", err, out)
+	}
+	if code, _, errOut := e.tsrelay("hooks", "delete", "sv"); code != 0 {
+		t.Fatalf("delete sv: exit %d\n%s", code, errOut)
+	}
+
+	if code, out, errOut := e.tsrelay("hooks", "show", "cb"); code != 0 ||
+		!strings.Contains(out, "path: cb") || !strings.Contains(out, "hold timeout: 5s") {
+		t.Fatalf("show: exit %d, stdout %q\n%s", code, out, errOut)
+	}
+	if code, out, errOut := e.tsrelay("hooks", "show", "cb", "--json"); code != 0 {
+		t.Fatalf("show --json: exit %d\n%s", code, errOut)
+	} else {
+		var shown api.Hook
+		if err := json.Unmarshal([]byte(out), &shown); err != nil {
+			t.Fatalf("show --json: not a Hook: %v\n%s", err, out)
+		}
+	}
+	if code, _, errOut := e.tsrelay("hooks", "show", "nope"); code != 1 || !strings.Contains(errOut, `"nope"`) {
+		t.Fatalf("show nope: exit %d\n%s", code, errOut)
 	}
 
 	// By path; only the given fields change.
@@ -75,8 +105,8 @@ func TestHooksCommands(t *testing.T) {
 	if code, _, errOut := e.tsrelay("hooks", "delete", "nope"); code != 1 || !strings.Contains(errOut, `"nope"`) {
 		t.Fatalf("delete unknown: exit %d\n%s", code, errOut)
 	}
-	if code, _, errOut := e.tsrelay("hooks", "rm", id); code != 0 {
-		t.Fatalf("rm: exit %d\n%s", code, errOut)
+	if code, out, errOut := e.tsrelay("hooks", "rm", id, "--json"); code != 0 || out != `{"deleted":["`+id+`"]}`+"\n" {
+		t.Fatalf("rm --json: exit %d, stdout %q\n%s", code, out, errOut)
 	}
 	if hs := e.listJSON(); len(hs) != 0 {
 		t.Fatalf("after rm: %+v", hs)
@@ -97,6 +127,9 @@ func TestURLCommand(t *testing.T) {
 		if code, out, errOut := e.tsrelay(args...); code != 0 || strings.TrimSpace(out) != want {
 			t.Errorf("%v: exit %d, stdout %q, want %q\n%s", args, code, out, want, errOut)
 		}
+	}
+	if code, out, errOut := e.tsrelay("url", e.local.URL, "--json"); code != 0 || out != `{"url":"`+want+`"}`+"\n" {
+		t.Errorf("url --json: exit %d, stdout %q, want %q\n%s", code, out, `{"url":"`+want+`"}`+"\n", errOut)
 	}
 	if after := len(e.listJSON()); after != before {
 		t.Fatalf("tsrelay url changed the hooks: %d → %d", before, after)
