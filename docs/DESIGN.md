@@ -337,14 +337,14 @@ Every call has an attempts list from the start, even though v1 only ever creates
 
 | Method & path | Purpose |
 |---|---|
-| `GET /me` | Identity, effective grant (roles, channel patterns, limits), current usage, user slug, the relay's capability name (`capName`), and the relay-wide setting defaults and maxima (`policy`) |
+| `GET /me` | Identity, effective grant (roles, channel patterns, limits), current usage, user slug, the relay's capability name (`capName`), the relay-wide setting defaults and maxima, and how many calls it keeps per hook (`policy`, with `callsPerHook`) |
 | `GET /hooks` | The caller's hooks (admins: `?all=true`). Every hook object, here and elsewhere, carries `lastCall`: its newest call's summary. |
 | `POST /hooks` | Create. `?dryRun=true` validates without saving and answers `200` with the would-be hook. |
 | `GET/PATCH/DELETE /hooks/{id}` | Read, update or delete. `PATCH` also accepts `?dryRun=true`, which validates without saving and answers `200` with the would-be hook. |
 | `GET /hooks/{id}/calls` | Call summaries, newest first |
 | `GET /hooks/{id}/calls/{callID}` | Full call with attempts and captures. For the hook's owner only, `replay: {allowed, reason}` says whether it can be replayed and why not. |
-| `POST /hooks/{id}/calls/{callID}/replay` | Replay |
-| `POST /hooks/{id}/test` | Send a test request |
+| `POST /hooks/{id}/calls/{callID}/replay` | Replay. Answers `201` with the new call as `GET` shows it to its owner, `replay` included. |
+| `POST /hooks/{id}/test` | Send a test request. Answers like a replay. |
 | `GET /events` | Server-sent events: `call` (a call summary, on arrival and on completion) and `hook` (`{"id"}` of a hook that changed, or whose tunnel did). Admins may add `?all=true`. A stream that falls 64 events behind is closed; clients reconnect and refetch. |
 | `GET /tunnel` | Tunnel upgrade (§6) |
 
@@ -365,7 +365,7 @@ The UI is a React single-page app in `web/`, built with Vite and styled with Tai
 
 Data flow: the app reads and writes only through the JSON API (§10.1), so `Guard` protects it like any other client, and the server decides visibility: owners get a call's query, headers and bodies; admins get metadata only. The UI hides owner-only controls when the viewer isn't the owner, but the API enforces it.
 
-Live updates: one `EventSource` per tab on `/api/v1/events` (with `?all=true` on the admin page and on another user's hook), closed while the tab is hidden. `call` events update the cached call list and the hook's last call and refresh an open call; `hook` events refetch the hook and the lists. After a reconnect (with backoff) the app refetches what it shows, because events may have been missed.
+Live updates: one `EventSource` per tab on `/api/v1/events` (with `?all=true` on the admin page and on another user's hook), closed while the tab is hidden. `call` events update the cached call list (trimmed to `policy.callsPerHook`, as the relay keeps no more) and the hook's last call and refresh an open call; `hook` events refetch the hook, the lists and `/me` (its hook count). After a reconnect (with backoff) the app refetches what it shows, because events may have been missed.
 
 Theme: light, dark or the system's, stored in the browser and applied before the first paint by `/theme.js`.
 
