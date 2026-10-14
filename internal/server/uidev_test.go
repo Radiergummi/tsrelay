@@ -158,9 +158,9 @@ func TestUIDev(t *testing.T) {
 	}
 
 	hostileBody := `<script>alert(1)</script><img src=x onerror=alert(2)><a href="javascript:alert(3)">x</a>` +
-		"‮gnp.exe‬ " + strings.Repeat("A", 200_000)
+		"\u202Egnp.exe\u202C " + strings.Repeat("A", 200_000)
 	sample(hostile, me, "c_hostile_html", inspect.Call{Path: `/x"'<script>alert(4)</script>`, Query: `q=<img src=x onerror=alert(5)>`,
-		RequestHeaders: http.Header{"Content-Type": {"text/html"}, "X-Evil": {`</td><script>alert(6)</script>`}, "X-Bidi": {"abc‮def"}},
+		RequestHeaders: http.Header{"Content-Type": {"text/html"}, "X-Evil": {`</td><script>alert(6)</script>`}, "X-Bidi": {"abc\u202Edef"}},
 		RequestBody:    full(hostileBody)})
 	sample(hostile, me, "c_hostile_json", inspect.Call{
 		RequestHeaders: http.Header{"Content-Type": {"application/json"}},
