@@ -1,7 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { server } from "@/test/server";
-import { ApiError, request, requestVoid, paths } from "./client";
+import { ApiError, fieldMessage, request, requestVoid, paths } from "./client";
 import { hook } from "./schemas";
 
 test("a problem response becomes an ApiError with its field errors", async () => {
@@ -26,7 +26,7 @@ test("a problem response becomes an ApiError with its field errors", async () =>
   expect(err).toBeInstanceOf(ApiError);
   expect(err.status).toBe(422);
   expect(err.code).toBe("invalid");
-  expect(err.fieldError("path")).toBe("must be at most 8 segments");
+  expect(fieldMessage(err.fieldErrors, "path")).toBe("must be at most 8 segments");
   expect(err.message).toBe("path: must be at most 8 segments");
 });
 

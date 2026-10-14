@@ -1,6 +1,7 @@
 import type { Summary } from "@/api/schemas";
 import { StatusText } from "@/components/StatusText";
 import { TimeAgo } from "@/components/TimeAgo";
+import { Reveal } from "@/features/inspector/Reveal";
 
 export function LastCall({
   call,
@@ -15,7 +16,7 @@ export function LastCall({
       <StatusText call={call} short />
       {withRequest && (
         <code className="max-w-56 truncate text-xs">
-          {call.method} {call.path}
+          {call.method} <Reveal text={call.path} />
         </code>
       )}
       <TimeAgo iso={call.receivedAt} />

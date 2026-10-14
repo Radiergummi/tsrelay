@@ -13,8 +13,11 @@ import (
 
 // streams returns stdout and stderr with this run's styling decisions.
 func (c *cli) streams() (out, err stream) {
-	return c.stdoutStream(), newStream(c.stderr, c.noColor, c.noLinks)
+	return c.stdoutStream(), c.stderrStream()
 }
+
+// stderrStream returns stderr alone, for reporting an error.
+func (c *cli) stderrStream() stream { return newStream(c.stderr, c.noColor, c.noLinks) }
 
 // stdoutStream returns stdout alone, for commands that write nothing else.
 func (c *cli) stdoutStream() stream { return newStream(c.stdout, c.noColor, c.noLinks) }

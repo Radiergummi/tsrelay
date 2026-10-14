@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { ApiError } from "@/api/client";
 import { useCalls, useHook } from "@/api/queries";
+import type { Hook, Me } from "@/api/schemas";
 import { EmptyState, PageError, TableSkeleton } from "@/components/PageState";
 import { ShortcutsDialog } from "@/components/ShortcutsDialog";
 import { HookHeader } from "@/features/hooks/HookHeader";
@@ -35,13 +36,21 @@ export function HookPage() {
       return <EmptyState title="There is no hook with this ID, or it is not yours." />;
     return <PageError error={hook.error} />;
   }
-  return <Loaded hookId={id} callId={callId} />;
+  return <Loaded hook={hook.data} me={me} owner={owner} callId={callId} />;
 }
 
-function Loaded({ hookId, callId }: { hookId: string; callId: string | undefined }) {
-  const me = useViewer();
-  const hook = useHook(hookId).data!;
-  const owner = owns(me, hook);
+function Loaded({
+  hook,
+  me,
+  owner,
+  callId,
+}: {
+  hook: Hook;
+  me: Me;
+  owner: boolean;
+  callId: string | undefined;
+}) {
+  const hookId = hook.id;
   const calls = useCalls(hookId);
   const [params, setParams] = useSearchParams();
   const query = params.toString();
@@ -55,7 +64,7 @@ function Loaded({ hookId, callId }: { hookId: string; callId: string | undefined
   const [testing, setTesting] = useState(false);
   const [help, setHelp] = useState(false);
   const base = `/hooks/${encodeURIComponent(hookId)}`;
-  const qs = params.toString() ? `?${params}` : "";
+  const qs = query ? `?${query}` : "";
   const select = (id: string | undefined, replace = true) =>
     navigate((id ? `${base}/calls/${encodeURIComponent(id)}` : base) + qs, { replace });
   const at = visible.findIndex((c) => c.id === callId);

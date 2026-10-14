@@ -1,5 +1,5 @@
 import { Monitor, Moon, Sun } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { saveTheme, storedTheme, watchSystemTheme, type Theme } from "@/lib/theme";
 
@@ -9,11 +9,7 @@ const icons = { light: Sun, dark: Moon, system: Monitor };
 /** ThemeToggle cycles light, dark and the system's choice. */
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>(storedTheme);
-  const current = useRef(theme);
-  useEffect(() => {
-    current.current = theme;
-  }, [theme]);
-  useEffect(() => watchSystemTheme(() => current.current), []);
+  useEffect(() => (theme === "system" ? watchSystemTheme() : undefined), [theme]);
   const Icon = icons[theme];
   return (
     <Button

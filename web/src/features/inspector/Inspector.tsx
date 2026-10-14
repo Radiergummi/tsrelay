@@ -80,11 +80,14 @@ function CallView({
   const [tab, setTab] = useState("request");
   const replay = useReplay(hook.id);
   const body = useMemo(() => decodeBody(call.requestBody), [call.requestBody]);
+  // Narrowed to what the commands use: every call event replaces the hook (its lastCall).
+  const { url, tunnel } = hook;
   const curls = useMemo(
-    () => (owner ? curlTargets(hook, call, body) : []),
-    [owner, hook, call, body],
+    () => (owner ? curlTargets({ url, tunnel }, call, body) : []),
+    [owner, url, tunnel, call, body],
   );
   const allowed = owner && call.replay?.allowed === true;
+  const showDiff = call.kind === "replay" && !!call.replayOf && owner;
   const reason = call.replay?.reason ?? "";
   const last = call.attempts.at(-1);
   const ms = parseDuration(call.duration) ?? 0;
@@ -191,9 +194,7 @@ function CallView({
           <TabsTrigger value="request">Request</TabsTrigger>
           <TabsTrigger value="response">Response</TabsTrigger>
           <TabsTrigger value="attempts">Attempts</TabsTrigger>
-          {call.kind === "replay" && call.replayOf && owner && (
-            <TabsTrigger value="diff">Diff</TabsTrigger>
-          )}
+          {showDiff && <TabsTrigger value="diff">Diff</TabsTrigger>}
         </TabsList>
         <TabsContent value="request" className="space-y-4 pt-3">
           {owner && call.query && (
@@ -233,7 +234,7 @@ function CallView({
         <TabsContent value="attempts" className="pt-3">
           <Attempts attempts={call.attempts} />
         </TabsContent>
-        {call.kind === "replay" && call.replayOf && owner && (
+        {showDiff && (
           <TabsContent value="diff" className="pt-3">
             <Suspense fallback={<Skeleton className="h-24 w-full" />}>
               <DiffView call={call} />

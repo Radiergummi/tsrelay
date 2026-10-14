@@ -1,9 +1,7 @@
 import type { Attempt } from "@/api/schemas";
 import { StatusText } from "@/components/StatusText";
-import { parseDuration, formatDuration } from "@/lib/duration";
+import { formatGoDuration } from "@/lib/duration";
 import { absoluteTime, formatSize } from "@/lib/format";
-
-const dur = (go: string) => formatDuration(parseDuration(go) ?? 0);
 
 /** Attempts is the timeline of a call's deliveries: one per tunnel it was sent to. */
 export function Attempts({ attempts }: { attempts: Attempt[] }) {
@@ -30,11 +28,11 @@ export function Attempts({ attempts }: { attempts: Attempt[] }) {
             <dt className="text-muted-foreground">Tunnel</dt>
             <dd className="font-mono">{a.tunnelId ?? "—"}</dd>
             <dt className="text-muted-foreground">Waited for a tunnel</dt>
-            <dd>{dur(a.waitedFor)}</dd>
+            <dd>{formatGoDuration(a.waitedFor)}</dd>
             <dt className="text-muted-foreground">Time to first byte</dt>
-            <dd>{dur(a.ttfb)}</dd>
+            <dd>{formatGoDuration(a.ttfb)}</dd>
             <dt className="text-muted-foreground">Duration</dt>
-            <dd>{dur(a.duration)}</dd>
+            <dd>{formatGoDuration(a.duration)}</dd>
             <dt className="text-muted-foreground">Bytes in / out</dt>
             <dd>
               {formatSize(a.bytesIn)} / {formatSize(a.bytesOut)}

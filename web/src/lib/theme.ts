@@ -32,12 +32,10 @@ export function saveTheme(theme: Theme): void {
   applyTheme(theme);
 }
 
-/** watchSystemTheme follows the system's scheme while the choice is "system". */
-export function watchSystemTheme(current: () => Theme): () => void {
+/** watchSystemTheme follows the system's scheme until the returned function stops it. */
+export function watchSystemTheme(): () => void {
   const media = dark();
-  const onChange = () => {
-    if (current() === "system") applyTheme("system");
-  };
+  const onChange = () => applyTheme("system");
   media.addEventListener("change", onChange);
   return () => media.removeEventListener("change", onChange);
 }

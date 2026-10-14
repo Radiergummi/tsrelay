@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, memo, Suspense, useMemo, useState } from "react";
 import type { Capture } from "@/api/schemas";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -13,8 +13,12 @@ const HexView = lazy(async () => ({ default: (await import("./HexView")).HexView
 
 type View = "tree" | "raw" | "hex" | "text";
 
-/** BodyViewer shows one captured body, or says why there is none to show. */
-export function BodyViewer({
+/**
+ * BodyViewer shows one captured body, or says why there is none to show.
+ * Memoized: its props are stable while the inspector re-renders on every
+ * call event (the hook's lastCall), and a body can be 64 KiB of tokens.
+ */
+export const BodyViewer = memo(function BodyViewer({
   capture,
   contentType,
   metadataOnly,
@@ -47,7 +51,7 @@ export function BodyViewer({
       label={label}
     />
   );
-}
+});
 
 function Captured({
   capture,
@@ -102,14 +106,13 @@ function Captured({
           </span>
         )}
         <span className="ml-auto flex items-center gap-1">
-          {views.length > 1 &&
-            views
-              .filter((v) => v !== view)
-              .map((v) => (
-                <Button key={v} variant="ghost" size="xs" onClick={() => setView(v)}>
-                  {names[v]}
-                </Button>
-              ))}
+          {views
+            .filter((v) => v !== view)
+            .map((v) => (
+              <Button key={v} variant="ghost" size="xs" onClick={() => setView(v)}>
+                {names[v]}
+              </Button>
+            ))}
           {body.text !== null && <CopyButton text={body.text} label={label} />}
         </span>
       </div>

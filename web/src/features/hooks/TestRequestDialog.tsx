@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ApiError } from "@/api/client";
+import { ApiError, fieldMessage, formMessage } from "@/api/client";
 import { useTestRequest } from "@/api/mutations";
 import type { FieldError, Hook } from "@/api/schemas";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,7 @@ export function TestRequestDialog({
   const [errors, setErrors] = useState<FieldError[]>([]);
   const [formError, setFormError] = useState("");
   const test = useTestRequest(hook.id);
-  const err = (f: string) => errors.find((e) => e.field === f)?.message;
+  const err = (f: string) => fieldMessage(errors, f);
   const headerErr =
     errors
       .filter((e) => e.field.startsWith("headers."))
@@ -64,8 +64,7 @@ export function TestRequestDialog({
         onError: (x) => {
           if (x instanceof ApiError && x.status === 422) {
             setErrors(x.fieldErrors);
-            const rest = x.fieldErrors.filter((fe) => !shown(fe.field));
-            setFormError(rest.length || !x.fieldErrors.length ? x.message : "");
+            setFormError(formMessage(x, shown));
           } else {
             // A non-422 failure already shows as a toast (the query client's MutationCache).
             setErrors([]);

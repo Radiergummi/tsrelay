@@ -24,11 +24,19 @@ export class ApiError extends Error {
     this.detail = init.detail;
     this.fieldErrors = init.fieldErrors;
   }
+}
 
-  /** fieldError is the message for one field, or for the whole form when name is "". */
-  fieldError(name: string): string | undefined {
-    return this.fieldErrors.find((e) => e.field === name)?.message;
-  }
+/** fieldMessage is the message for one field, or for the whole form when name is "". */
+export const fieldMessage = (errors: FieldError[], name: string): string | undefined =>
+  errors.find((e) => e.field === name)?.message;
+
+/**
+ * formMessage is a 422's form-level message: its message when some field
+ * error has no slot of its own (shown is false), or there are none at all.
+ */
+export function formMessage(err: ApiError, shown: (field: string) => boolean): string {
+  const rest = err.fieldErrors.filter((e) => !shown(e.field));
+  return rest.length || !err.fieldErrors.length ? err.message : "";
 }
 
 const id = encodeURIComponent;

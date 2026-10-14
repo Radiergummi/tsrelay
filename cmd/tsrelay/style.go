@@ -187,7 +187,7 @@ func (c *cli) handleError(_ io.Writer, _ fang.Styles, err error) {
 	if errors.As(err, &ec) {
 		return
 	}
-	s := newStream(c.stderr, c.noColor, c.noLinks)
+	s := c.stderrStream()
 	if c.json {
 		writeJSON(s, newJSONError(err))
 		return

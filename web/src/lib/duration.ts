@@ -29,4 +29,7 @@ export function formatDuration(ms: number): string {
   return `${m}m${trim((ms - m * 60_000) / 1000)}s`;
 }
 
+/** formatGoDuration formats a Go duration string, showing an unreadable one as 0. */
+export const formatGoDuration = (go: string) => formatDuration(parseDuration(go) ?? 0);
+
 const trim = (n: number) => String(Number(n.toFixed(3)));

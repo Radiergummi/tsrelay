@@ -137,7 +137,8 @@ func (s *Server) newMetrics(mp metric.MeterProvider) func(event string, attrs []
 			}
 			outcome = cmp.Or(outcome, "ok")
 			o := attribute.String("outcome", outcome)
-			calls.Add(ctx, 1, metric.WithAttributes(o))
+			byOutcome := metric.WithAttributes(o)
+			calls.Add(ctx, 1, byOutcome)
 			callBytes.Add(ctx, in, bytesIn)
 			callBytes.Add(ctx, out, bytesOut)
 			ok := metric.WithAttributes(o, attribute.String("kind", kind))
@@ -146,7 +147,7 @@ func (s *Server) newMetrics(mp metric.MeterProvider) func(event string, attrs []
 				ttfb.Record(ctx, firstByte.Seconds(), ok)
 			}
 			if waited > 0 {
-				hold.Record(ctx, waited.Seconds(), metric.WithAttributes(o))
+				hold.Record(ctx, waited.Seconds(), byOutcome)
 			}
 		case audit.AuthzDeny:
 			denials.Add(ctx, 1, metric.WithAttributes(attribute.String("action", attrString(attrs, "action"))))

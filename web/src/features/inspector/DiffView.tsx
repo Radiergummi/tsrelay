@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { useCall } from "@/api/queries";
 import type { Attempt, Call } from "@/api/schemas";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -52,8 +53,11 @@ const style = {
 };
 const mark = { same: "  ", add: "+ ", del: "- " };
 
-/** DiffView compares a replay's response with its original's, line by line. */
-export function DiffView({ call }: { call: Call }) {
+/**
+ * DiffView compares a replay's response with its original's, line by line.
+ * Memoized, like BodyViewer: call is stable across the inspector's re-renders.
+ */
+export const DiffView = memo(function DiffView({ call }: { call: Call }) {
   const original = useCall(call.hookId, call.replayOf);
   if (original.isPending) return <Skeleton className="h-24 w-full" />;
   if (original.isError)
@@ -85,4 +89,4 @@ export function DiffView({ call }: { call: Call }) {
       </pre>
     </div>
   );
-}
+});

@@ -84,13 +84,9 @@ func (a *API) latencyHistogram() metric.Float64Histogram {
 	if a.Meter == nil {
 		return nil
 	}
-	h, err := a.Meter.Float64Histogram("tsrelay_api_request_duration_seconds",
+	return telemetry.Must(a.Meter.Float64Histogram("tsrelay_api_request_duration_seconds",
 		metric.WithDescription("JSON API requests, by method, route pattern and status; the event stream and tunnel attaches excluded."),
-		metric.WithExplicitBucketBoundaries(telemetry.Buckets...))
-	if err != nil {
-		panic(err) // a constant, valid name
-	}
-	return h
+		metric.WithExplicitBucketBoundaries(telemetry.Buckets...)))
 }
 
 // startTunnelSpan starts the span of a tunnel attach. Without a tracer it
