@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -31,17 +30,11 @@ func exitStatus(err error) int {
 		return 0
 	case errors.As(err, &ec):
 		return int(ec)
-	case errors.As(err, &ue), isCobraUsage(err):
+	case errors.As(err, &ue):
 		return 2
 	default:
 		return 1
 	}
-}
-
-// isCobraUsage recognizes the usage errors cobra returns untyped. Flag
-// errors are typed by the root's FlagErrorFunc; these are the rest.
-func isCobraUsage(err error) bool {
-	return strings.HasPrefix(err.Error(), "unknown command ")
 }
 
 // usageArgs makes an argument validator's errors usage errors.

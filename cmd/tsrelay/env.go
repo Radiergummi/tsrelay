@@ -17,6 +17,16 @@ const envAnnotation = "tsrelay-env"
 // argument the caller typed.
 func envSet(f *pflag.Flag) bool { return len(f.Annotations[envAnnotation]) > 0 }
 
+// visitTyped calls fn for each flag of fs the caller gave on the command
+// line, skipping flags set only from a TSRELAY_* variable.
+func visitTyped(fs *pflag.FlagSet, fn func(*pflag.Flag)) {
+	fs.Visit(func(f *pflag.Flag) {
+		if !envSet(f) {
+			fn(f)
+		}
+	})
+}
+
 // envDefaults sets every flag of fs not given on the command line from
 // TSRELAY_<NAME>, with dashes turned into underscores (e.g.
 // --ephemeral-grace ← TSRELAY_EPHEMERAL_GRACE). Variables that match no

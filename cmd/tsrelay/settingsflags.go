@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -172,27 +173,25 @@ var hookSettingFlagNames = []string{
 // hook-setting flag on the command line, as opposed to only a TSRELAY_*
 // variable setting it.
 func anyHookSettingGivenOnCLI(fs *pflag.FlagSet) bool {
-	for _, name := range hookSettingFlagNames {
-		if f := fs.Lookup(name); f != nil && f.Changed && !envSet(f) {
-			return true
-		}
-	}
-	return false
+	given := false
+	visitTyped(fs, func(f *pflag.Flag) { given = given || slices.Contains(hookSettingFlagNames, f.Name) })
+	return given
 }
 
 // registerHookSettingFlags registers the per-hook setting flags used by
-// commands that create or update hooks. unsetDefault describes, in the
-// flags' help text, what an omitted flag keeps: "the relay's" default for a
-// newly created hook, or the hook's current value on an update. The flags'
-// own DefValue is cleared so fang's help does not also print it, duplicating
-// unsetDefault.
+// commands that create or update hooks. The help text says what an omitted
+// flag keeps: the relay's default for a new hook, or the hook's current
+// value on an update. The flags' own DefValue is cleared so fang's help
+// does not print a second default.
 //
-// onlyCLI restricts the returned Settings to flags actually given on the
-// command line, ignoring ones only set by a TSRELAY_* variable; it must be
-// true for hooks update, whose patch should ignore a stray environment
-// value, and false for http and hooks create, where TSRELAY_* still acts as
-// a default.
-func registerHookSettingFlags(fs *pflag.FlagSet, onlyCLI bool, unsetDefault string) func() (hooks.Settings, error) {
+// For an update, the returned Settings hold only flags given on the command
+// line, so a stray TSRELAY_* variable never patches a hook; for http and
+// hooks create, TSRELAY_* still act as defaults.
+func registerHookSettingFlags(fs *pflag.FlagSet, forUpdate bool) func() (hooks.Settings, error) {
+	unsetDefault := "the relay's"
+	if forUpdate {
+		unsetDefault = "the hook's current value"
+	}
 	hold := fs.Duration("hold-timeout", 0, fmt.Sprintf("how long calls wait for a tunnel to attach; 0 disables holding (default: %s)", unsetDefault))
 	resp := fs.Duration("response-timeout", 0, fmt.Sprintf("how long to wait for the local app's response headers (default: %s)", unsetDefault))
 	idle := fs.Duration("idle-timeout", 0, fmt.Sprintf("longest gap in body traffic, in either direction (default: %s)", unsetDefault))
@@ -211,10 +210,11 @@ func registerHookSettingFlags(fs *pflag.FlagSet, onlyCLI bool, unsetDefault stri
 			return hooks.Settings{}, err
 		}
 		var s hooks.Settings
-		fs.Visit(func(f *pflag.Flag) {
-			if onlyCLI && envSet(f) {
-				return
-			}
+		visit := fs.Visit
+		if forUpdate {
+			visit = func(fn func(*pflag.Flag)) { visitTyped(fs, fn) }
+		}
+		visit(func(f *pflag.Flag) {
 			switch f.Name {
 			case "hold-timeout":
 				s.HoldTimeout = new(hooks.Duration(*hold))

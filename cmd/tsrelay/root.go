@@ -25,12 +25,7 @@ func newRoot(c *cli) *cobra.Command {
 			"Every flag can also be set as TSRELAY_<FLAG>, e.g. TSRELAY_RELAY for --relay; " +
 			"the command line wins.",
 		Args: usageArgs(cobra.NoArgs),
-		// Without a command, show the help and exit 2.
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			cmd.SetOut(c.stderr)
-			_ = cmd.Help()
-			return exitCodeError(2)
-		},
+		RunE: c.helpAndFail,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			return envDefaults(cmd.Flags())
 		},
@@ -53,4 +48,12 @@ func exitWith(code int) error {
 		return nil
 	}
 	return exitCodeError(code)
+}
+
+// helpAndFail is the RunE of a command that needs a subcommand: without
+// one, it shows the help on stderr and exits 2.
+func (c *cli) helpAndFail(cmd *cobra.Command, _ []string) error {
+	cmd.SetOut(c.stderr)
+	_ = cmd.Help()
+	return exitCodeError(2)
 }

@@ -13,8 +13,11 @@ import (
 
 // streams returns stdout and stderr with this run's styling decisions.
 func (c *cli) streams() (out, err stream) {
-	return newStream(c.stdout, c.noColor, c.noLinks), newStream(c.stderr, c.noColor, c.noLinks)
+	return c.stdoutStream(), newStream(c.stderr, c.noColor, c.noLinks)
 }
+
+// stdoutStream returns stdout alone, for commands that write nothing else.
+func (c *cli) stdoutStream() stream { return newStream(c.stdout, c.noColor, c.noLinks) }
 
 func hookKind(h api.Hook) string {
 	if h.Ephemeral {

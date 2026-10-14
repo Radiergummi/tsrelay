@@ -19,7 +19,6 @@ func TestExitStatus(t *testing.T) {
 		{fmt.Errorf("wrapped: %w", usagef("x")), 2},
 		{exitCodeError(3), 3},
 		{fmt.Errorf("wrapped: %w", exitCodeError(0)), 0},
-		{errors.New(`unknown command "bogus" for "tsrelay"`), 2}, // cobra's own, untyped
 		{errors.New("boom"), 1},
 	} {
 		if got := exitStatus(tc.err); got != tc.want {
