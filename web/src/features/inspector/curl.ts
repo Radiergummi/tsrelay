@@ -39,11 +39,18 @@ function printfEscape(bytes: Uint8Array): string {
   return out;
 }
 
+/** terminalControl matches the control characters shellQuote can't keep out of a pasted command. */
+// eslint-disable-next-line no-control-regex -- matching these control characters is the point.
+const terminalControl = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
+
 /**
  * curlCommand renders a curl command that sends method, headers and body
  * to url (DESIGN.md §9.3). -g keeps curl from reading [...] and {...} in
  * the URL as globs. A body a shell argument can't hold (NUL bytes, or not
- * UTF-8) is piped in through printf instead, byte for byte.
+ * UTF-8) is piped in through printf instead, byte for byte, and so is one
+ * with control characters a terminal would act on when the command is
+ * pasted (C0 other than tab, LF and CR, DEL, and C1): the command never
+ * holds them raw.
  */
 export function curlCommand(
   method: string,
@@ -51,7 +58,7 @@ export function curlCommand(
   headers: Record<string, string[]> | undefined,
   body: DecodedBody,
 ): string {
-  const pipe = body.bytes.length > 0 && body.binary;
+  const pipe = body.bytes.length > 0 && (body.binary || terminalControl.test(body.text!));
   let cmd =
     (pipe ? `printf '%b' ${shellQuote(printfEscape(body.bytes))} | ` : "") +
     `curl -g -X ${shellQuote(method)} ${shellQuote(url)}`;

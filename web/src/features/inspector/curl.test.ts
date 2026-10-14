@@ -2,8 +2,9 @@
 /// <reference types="node" />
 import { execFileSync } from "node:child_process";
 import { expect, test } from "vitest";
+import { fixtures } from "@/test/fixtures";
 import { decodeBody, type DecodedBody } from "./bytes";
-import { curlCommand, shellQuote } from "./curl";
+import { curlCommand, curlTargets, shellQuote } from "./curl";
 
 const text = (s: string): DecodedBody =>
   decodeBody({
@@ -106,4 +107,43 @@ test("bodies with NUL bytes or invalid UTF-8 reach curl's stdin byte for byte", 
     const stdin = execFileSync("sh", ["-c", `curl() { cat; }; ${cmd}`]);
     expect([...stdin]).toEqual(bytes);
   }
+});
+
+// Pasted into a terminal, raw control bytes would act there (ESC [201~
+// ends bracketed paste, ^C and ^U edit the line), so the command holds
+// none of them: such bodies go through printf too.
+test("bodies with terminal control characters reach curl's stdin byte for byte, never raw", () => {
+  for (const body of ["a\u001b[201~b", "x\u0003y", "x\u0015y", "x\u009by ü", "del\u007f"]) {
+    const cmd = curlCommand("POST", "http://localhost/up", {}, text(body));
+    expect(cmd).toContain("--data-binary @-");
+    // eslint-disable-next-line no-control-regex -- matching these control characters is the point.
+    expect(cmd).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
+    const stdin = execFileSync("sh", ["-c", `curl() { cat; }; ${cmd}`]);
+    expect([...stdin]).toEqual([...Buffer.from(body)]);
+  }
+});
+
+test("curlTargets puts the local target first when a tunnel has one, and the hook URL always", () => {
+  const body = decodeBody({ size: 0, captured: true });
+  const call = { ...fixtures.callJson, path: "/done", query: "a=1" };
+  const withTarget = curlTargets(
+    {
+      ...fixtures.hook,
+      url: "https://relay.example/~dev/cb",
+      tunnel: { id: "t_1", node: "n", target: "http://localhost:8080/" },
+    },
+    call,
+    body,
+  );
+  expect(withTarget.map((t) => t.label)).toEqual(["local target", "hook URL"]);
+  expect(argv(withTarget[0]!.command)[3]).toBe("http://localhost:8080/done?a=1");
+  expect(argv(withTarget[1]!.command)[3]).toBe("https://relay.example/~dev/cb/done?a=1");
+
+  const without = curlTargets(
+    { ...fixtures.hook, url: "https://relay.example/~dev/cb", tunnel: undefined },
+    call,
+    body,
+  );
+  expect(without.map((t) => t.label)).toEqual(["hook URL"]);
+  expect(argv(without[0]!.command)[3]).toBe("https://relay.example/~dev/cb/done?a=1");
 });
