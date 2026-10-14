@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -77,6 +78,43 @@ func TestCallVisibility(t *testing.T) {
 	}
 	if resp := e.call(moritz, "GET", "/api/v1/hooks/"+h2.ID+"/calls/c_1", nil, nil); resp.StatusCode != 404 {
 		t.Errorf("call under another hook = %d, want 404", resp.StatusCode)
+	}
+}
+
+// The owner learns whether a call can be replayed and why not; admins get
+// no replay field at all, since they may never replay, and no captures.
+func TestCallReplayField(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.seedCall("c_ok", h.ID, completeBody("x"))
+	e.in.Add(inspect.Call{ID: "c_pending", HookID: hooks.ID(h.ID), Owner: moritz.UserID, ReceivedAt: time.Now(),
+		Kind: inspect.KindSender, Method: "POST", Path: "/done", Outcome: inspect.OutcomePending, Attempts: []inspect.Attempt{}})
+
+	var ok CallJSON
+	e.call(moritz, "GET", "/api/v1/hooks/"+h.ID+"/calls/c_ok", nil, &ok)
+	if ok.Replay == nil || !ok.Replay.Allowed || ok.Replay.Reason != "" {
+		t.Errorf("c_ok replay = %+v", ok.Replay)
+	}
+	var p CallJSON
+	e.call(moritz, "GET", "/api/v1/hooks/"+h.ID+"/calls/c_pending", nil, &p)
+	if p.Replay == nil || p.Replay.Allowed || !strings.Contains(p.Replay.Reason, "still being delivered") {
+		t.Errorf("c_pending replay = %+v", p.Replay)
+	}
+
+	var raw json.RawMessage
+	if resp := e.call(admin, "GET", "/api/v1/hooks/"+h.ID+"/calls/c_ok", nil, &raw); resp.StatusCode != 200 {
+		t.Fatalf("admin detail = %d", resp.StatusCode)
+	}
+	for _, leak := range []string{`"replay"`, "s3cr3t", "secret-header", "secret-reply", `"body"`} {
+		if strings.Contains(string(raw), leak) {
+			t.Errorf("the admin's call detail contains %s:\n%s", leak, raw)
+		}
+	}
+	for _, path := range []string{"/api/v1/hooks/" + h.ID + "/calls", "/api/v1/hooks/" + h.ID + "/calls/c_ok"} {
+		if resp := e.call(other, "GET", path, nil, nil); resp.StatusCode != 404 {
+			t.Errorf("another user's %s = %d, want 404", path, resp.StatusCode)
+		}
 	}
 }
 

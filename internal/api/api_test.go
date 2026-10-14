@@ -54,6 +54,7 @@ func newEnv(t *testing.T) *env {
 		Identifier: e.fake, Hooks: e.mgr, Tunnels: e.reg, Inspect: e.in,
 		Audit: al, Relay: rh,
 		BaseURL: "https://tsrelay.example.ts.net",
+		CapName: "example.com/cap/relay",
 	}
 	mux := http.NewServeMux()
 	a.Register(mux)
@@ -99,6 +100,56 @@ func TestMe(t *testing.T) {
 	var w Me
 	if resp := e.call(worker, "GET", "/api/v1/me", nil, &w); resp.StatusCode != 200 || w.Slug != "" || w.Login != "" {
 		t.Fatalf("tagged me = %d %+v", resp.StatusCode, w)
+	}
+}
+
+func TestMeNamesCapAndPolicy(t *testing.T) {
+	e := newEnv(t)
+	var me Me
+	if resp := e.call(moritz, "GET", "/api/v1/me", nil, &me); resp.StatusCode != 200 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if me.CapName != "example.com/cap/relay" {
+		t.Errorf("capName = %q", me.CapName)
+	}
+	d, m := me.Policy.Defaults, me.Policy.Max
+	if d.HoldTimeout != hooks.Duration(30*time.Second) || d.AttachPolicy != hooks.AttachTakeover || m.HoldTimeout != hooks.Duration(5*time.Minute) {
+		t.Errorf("policy = %+v", me.Policy)
+	}
+}
+
+// Every hook response carries the hook's newest call as a summary, which
+// is metadata only, so admins listing every hook see nothing more.
+func TestHookLastCall(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	if h.LastCall != nil {
+		t.Fatalf("a new hook has lastCall %+v", h.LastCall)
+	}
+	e.seedCall("c_1", h.ID, completeBody(`{"secret":true}`))
+
+	var list []Hook
+	e.call(moritz, "GET", "/api/v1/hooks", nil, &list)
+	if len(list) != 1 || list[0].LastCall == nil || list[0].LastCall.ID != "c_1" {
+		t.Fatalf("list = %+v", list)
+	}
+	var one Hook
+	e.call(moritz, "GET", "/api/v1/hooks/"+h.ID, nil, &one)
+	if one.LastCall == nil || one.LastCall.ID != "c_1" {
+		t.Fatalf("hook = %+v", one)
+	}
+	var raw json.RawMessage
+	if resp := e.call(admin, "GET", "/api/v1/hooks?all=true", nil, &raw); resp.StatusCode != 200 || !strings.Contains(string(raw), `"lastCall"`) {
+		t.Fatalf("admin list = %d %s", resp.StatusCode, raw)
+	}
+	for _, secret := range []string{"s3cr3t", "secret-header", "secret-reply", "c2VjcmV0"} {
+		if strings.Contains(string(raw), secret) {
+			t.Errorf("the admin's hook list contains %q", secret)
+		}
+	}
+	if resp := e.call(other, "GET", "/api/v1/hooks/"+h.ID, nil, nil); resp.StatusCode != 404 {
+		t.Errorf("another user's GET hook = %d, want 404", resp.StatusCode)
 	}
 }
 
