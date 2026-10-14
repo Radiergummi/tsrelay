@@ -32,7 +32,7 @@ func newAttachCmd(c *cli) *cobra.Command {
 		if err != nil {
 			return &usageError{err.Error()}
 		}
-		out := newOutput(c.stdout, c.stderr, c.json)
+		out := newOutput(c)
 
 		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
 		if err != nil {
@@ -49,13 +49,14 @@ func newAttachCmd(c *cli) *cobra.Command {
 				list = append(list, h)
 			}
 		}
-		ids, urls := make([]string, len(list)), make([]string, len(list))
+		ids := make([]string, len(list))
 		urlOf := make(map[string]string, len(list)) // guarded by mu once the tunnel runs
 		seqs := updateSeqs{}                        // guarded by mu
 		var mu sync.Mutex
 		hold := list[0].Effective.HoldTimeout.Std()
+		out.headline(target.String())
 		for i, h := range list {
-			ids[i], urls[i], urlOf[h.ID] = h.ID, h.URL, h.URL
+			ids[i], urlOf[h.ID] = h.ID, h.URL
 			hold = min(hold, h.Effective.HoldTimeout.Std())
 			out.url(h, false)
 		}
@@ -67,20 +68,20 @@ func newAttachCmd(c *cli) *cobra.Command {
 				return tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, ids...))
 			},
 			Handler: callHandler(target, *insecure, out),
-			OnState: out.onState(urls, target.String(), hold),
-			OnControl: func(c tunnel.Control) {
+			OnState: out.onState(target.String(), hold),
+			OnControl: func(ctl tunnel.Control) {
 				mu.Lock() // control messages arrive concurrently
 				defer mu.Unlock()
-				seqs.observe(c)
-				if c.Type == tunnel.ControlHookUpdated {
-					for _, h := range c.Hooks {
-						if u, ok := urlOf[h.ID]; ok && seqs.fresh(h.ID, c.Seq) && u != h.URL {
+				seqs.observe(ctl)
+				if ctl.Type == tunnel.ControlHookUpdated {
+					for _, h := range ctl.Hooks {
+						if u, ok := urlOf[h.ID]; ok && seqs.fresh(h.ID, ctl.Seq) && u != h.URL {
 							urlOf[h.ID] = h.URL
 							out.url(api.Hook{ID: h.ID, URL: h.URL}, false)
 						}
 					}
 				}
-				out.dropped(c, func(id string) string { return urlOf[id] })
+				out.dropped(ctl, func(id string) string { return urlOf[id] })
 			},
 		}
 		return exitWith(out.finish(tc.Run(ctx)))

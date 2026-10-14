@@ -22,8 +22,9 @@ func TestAttach(t *testing.T) {
 	}
 	// By ID and by path; naming a hook twice attaches it once.
 	r := e.startCmd("attach", a.ID, "ship/v1", "pay", "--to", e.local.URL, "--relay", e.relayURL)
-	waitOutput(t, r.stderr, "Forwarding "+a.URL)
-	waitOutput(t, r.stderr, "Forwarding "+b.URL)
+	waitOutput(t, r.stdout, a.URL)
+	waitOutput(t, r.stdout, b.URL)
+	waitOutput(t, r.stderr, "connected")
 	if out := r.stdout.String(); out != a.URL+"\n"+b.URL+"\n" {
 		t.Fatalf("stdout = %q, want both URLs once", out)
 	}
@@ -57,7 +58,8 @@ func TestAttachFollowsHookUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := e.startCmd("attach", a.ID, "--to", e.local.URL, "--relay", e.relayURL)
-	waitOutput(t, r.stderr, "Forwarding "+a.URL)
+	waitOutput(t, r.stdout, a.URL)
+	waitOutput(t, r.stderr, "connected")
 	moved, err := e.api().UpdateHook(ctx, a.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new("billing")}})
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +82,8 @@ func TestAttachAppliesLowerSeqAfterReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := e.startCmd("attach", a.ID, "--to", e.local.URL, "--relay", e.relayURL)
-	waitOutput(t, r.stderr, "Forwarding "+a.URL)
+	waitOutput(t, r.stdout, a.URL)
+	waitOutput(t, r.stderr, "connected")
 
 	for _, p := range []string{"a", "b", "c"} {
 		if _, err := e.api().UpdateHook(ctx, a.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new(p)}}); err != nil {
@@ -90,7 +93,7 @@ func TestAttachAppliesLowerSeqAfterReconnect(t *testing.T) {
 	waitOutput(t, r.stdout, "/c")
 
 	e.restartRelay()
-	waitOutput(t, r.stderr, "Tunnel restored")
+	waitOutput(t, r.stderr, "reconnected")
 
 	h, err := e.api().UpdateHook(ctx, a.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new("new")}})
 	if err != nil {

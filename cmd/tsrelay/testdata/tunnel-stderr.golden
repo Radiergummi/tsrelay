@@ -1,0 +1,14 @@
+  [1;35mtsrelay[m  forwarding to [2mhttp://localhost:8080[m
+  [2mhook h_1  ephemeral  channel default[m
+  [32m●[m connected
+  [2m15:04:05[m  [1mPOST  [m  /done                                     [32m200[m  [2m   12ms[m  [2mtag:ci[m  ]8;;https://r/inspect/c_1c_1]8;; ↗
+  [2m15:04:05[m  [1mPOST  [m  /done                                     [36m302[m  [2m   12ms[m  [2mtag:ci[m  ]8;;https://r/inspect/c_1c_1]8;; ↗
+  [2m15:04:05[m  [1mPOST  [m  /done                                     [33m404[m  [2m   12ms[m  [2mtag:ci[m  ]8;;https://r/inspect/c_1c_1]8;; ↗
+  [2m15:04:05[m  [1mPOST  [m  /done                                     [31m502[m  [2m   12ms[m  [2mtag:ci[m  ]8;;https://r/inspect/c_1c_1]8;; ↗
+  [2m15:04:05[m  [1mGET   [m  /very-long-segment/very-long-segment/ve…  [32m200[m  [2m     1s[m  [2mnode build-01[m  ]8;;https://r/inspect/c_2c_2]8;; ↗
+  [33m●[m tunnel lost (boom), reconnecting… calls are held for 30s
+  [32m●[m reconnected
+  [33m●[m tunnel lost (boom), reconnecting… calls fail until it is back
+  [31m●[m could not reach http://localhost:8080: connection refused
+  [33m●[m your grants no longer allow serving https://r/~m/cb
+  [33m●[m no hooks left to serve; stopping

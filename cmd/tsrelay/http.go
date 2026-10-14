@@ -51,7 +51,6 @@ func newHTTPCmd(c *cli) *cobra.Command {
 	cmd.Long += " Settings flags apply only when the hook is created."
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
-		stderr := c.stderr
 		var command []string
 		if d := cmd.ArgsLenAtDash(); d >= 0 {
 			command = args[d:]
@@ -64,7 +63,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 		if err != nil {
 			return &usageError{err.Error()}
 		}
-		out := newOutput(c.stdout, c.stderr, c.json)
+		out := newOutput(c)
 
 		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
 		if err != nil {
@@ -83,8 +82,9 @@ func newHTTPCmd(c *cli) *cobra.Command {
 			return exitWith(out.fail(err))
 		}
 		if err := state.Remember(key, hook.Path, hook.URL); err != nil {
-			out.text(stderr, "tsrelay: warning: could not remember the hook path: %v", err)
+			out.status(styleWarn, "could not remember the hook path: "+err.Error())
 		}
+		out.headline(target.String())
 		out.url(hook, false)
 
 		startURL := hook.URL // what a command started after "--" gets
@@ -119,26 +119,26 @@ func newHTTPCmd(c *cli) *cobra.Command {
 				return tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, h.ID))
 			},
 			Handler: callHandler(target, *insecure, out),
-			OnState: out.onState([]string{hook.URL}, target.String(), hook.Effective.HoldTimeout.Std()),
-			OnControl: func(c tunnel.Control) {
+			OnState: out.onState(target.String(), hook.Effective.HoldTimeout.Std()),
+			OnControl: func(ctl tunnel.Control) {
 				mu.Lock()
 				defer mu.Unlock()
-				seqs.observe(c)
-				if c.Type == tunnel.ControlHookUpdated {
-					for _, h := range c.Hooks {
-						if h.ID != hook.ID || !seqs.fresh(h.ID, c.Seq) || h.URL == hook.URL {
+				seqs.observe(ctl)
+				if ctl.Type == tunnel.ControlHookUpdated {
+					for _, h := range ctl.Hooks {
+						if h.ID != hook.ID || !seqs.fresh(h.ID, ctl.Seq) || h.URL == hook.URL {
 							continue
 						}
 						// Only the path can change the URL; the prefix before it stays.
 						hook.Path = strings.TrimPrefix(h.URL, strings.TrimSuffix(hook.URL, hook.Path))
 						hook.URL = h.URL
 						if err := state.Remember(key, hook.Path, hook.URL); err != nil {
-							out.text(stderr, "tsrelay: warning: could not remember the hook path: %v", err)
+							out.status(styleWarn, "could not remember the hook path: "+err.Error())
 						}
 						out.url(hook, false)
 					}
 				}
-				out.dropped(c, func(string) string { return hook.URL })
+				out.dropped(ctl, func(string) string { return hook.URL })
 			},
 		}
 		return exitWith(runTunnel(ctx, tc, command, startURL, out))
