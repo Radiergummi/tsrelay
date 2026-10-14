@@ -147,7 +147,7 @@ func waitOutput(t *testing.T, b *syncBuf, want string) {
 func (e *cliEnv) url(r *cliRun) string {
 	e.t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
-	for !strings.Contains(r.stderr.String(), "Forwarding") {
+	for !strings.Contains(r.stderr.String(), "connected") {
 		if time.Now().After(deadline) {
 			e.t.Fatalf("CLI did not attach; stderr:\n%s", r.stderr)
 		}
@@ -301,7 +301,7 @@ func TestHTTPRecreatesReapedHook(t *testing.T) {
 	e.offline.Store(true)
 	r.hc.CloseIdleConnections()
 	e.srv.Close() // drops the tunnel; the CLI cannot redial while offline
-	waitOutput(t, r.stderr, "Tunnel lost")
+	waitOutput(t, r.stderr, "tunnel lost")
 	if err := e.api().DeleteHook(ctx, hs[0].ID); err != nil { // what the reaper does
 		t.Fatal(err)
 	}
@@ -406,7 +406,7 @@ func TestHTTPAppliesLowerSeqAfterReconnect(t *testing.T) {
 	waitOutput(t, r.stdout, "/c")
 
 	e.restartRelay()
-	waitOutput(t, r.stderr, "Tunnel restored")
+	waitOutput(t, r.stderr, "reconnected")
 
 	// The new relay's sequence starts over at 1, lower than the 3 the CLI
 	// already saw, but it must still be applied.

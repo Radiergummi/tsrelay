@@ -1,0 +1,14 @@
+  tsrelay  forwarding to http://localhost:8080
+  hook h_1  ephemeral  channel default
+  ● connected
+  15:04:05  POST    /done                                     200     12ms  tag:ci  c_1 ↗
+  15:04:05  POST    /done                                     302     12ms  tag:ci  c_1 ↗
+  15:04:05  POST    /done                                     404     12ms  tag:ci  c_1 ↗
+  15:04:05  POST    /done                                     502     12ms  tag:ci  c_1 ↗
+  15:04:05  GET     /very-long-segment/very-long-segment/ve…  200       1s  node build-01  c_2 ↗
+  ● tunnel lost (boom), reconnecting… calls are held for 30s
+  ● reconnected
+  ● tunnel lost (boom), reconnecting… calls fail until it is back
+  ● could not reach http://localhost:8080: connection refused
+  ● your grants no longer allow serving https://r/~m/cb
+  ● no hooks left to serve; stopping
