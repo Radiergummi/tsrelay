@@ -3,11 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
+	"errors"
 	"fmt"
-	"io"
-	"net/url"
-	"os"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -16,229 +13,207 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
-const hooksUsage = `Usage:
-  tsrelay hooks ls [--json]               list your hooks
-  tsrelay hooks create [<path>] [flags]   create a persistent hook
-  tsrelay hooks update <id|path> [flags]  change a hook
-  tsrelay hooks rm <id|path>...           delete hooks
-
-Run "tsrelay hooks <command> --help" for the flags of a command.
-`
-
-func hooksCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) int {
-	if len(args) == 0 {
-		fmt.Fprint(stderr, hooksUsage)
-		return 2
+func newHooksCmd(c *cli) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "hooks",
+		Short: "Manage your hooks",
+		Args:  usageArgs(cobra.NoArgs),
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cmd.SetOut(c.stderr)
+			_ = cmd.Help()
+			return exitCodeError(2)
+		},
 	}
-	switch args[0] {
-	case "ls":
-		return hooksLs(ctx, args[1:], stdout, stderr, d)
-	case "create":
-		return hooksCreate(ctx, args[1:], stdout, stderr, d)
-	case "update":
-		return hooksUpdate(ctx, args[1:], stdout, stderr, d)
-	case "rm":
-		return hooksRm(ctx, args[1:], stderr, d)
-	default:
-		fmt.Fprintf(stderr, "tsrelay hooks: unknown command %q\n\n%s", args[0], hooksUsage)
-		return 2
-	}
+	cmd.AddCommand(newHooksListCmd(c), newHooksCreateCmd(c), newHooksUpdateCmd(c), newHooksDeleteCmd(c))
+	return cmd
 }
 
-// commandFlags starts the flag set of a client command. Every one of them
-// takes --relay.
-func commandFlags(name, usage string, stderr io.Writer) (*flag.FlagSet, *string) {
-	fs := flag.NewFlagSet("tsrelay "+name, flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {
-		fmt.Fprintln(stderr, "Usage: tsrelay "+usage)
-		fs.PrintDefaults()
+func newHooksListCmd(c *cli) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List your hooks",
+		Args:    usageArgs(cobra.NoArgs),
 	}
-	relay := fs.String("relay", "", "relay URL or host (default: $TSRELAY_RELAY, else https://tsrelay.<your tailnet>)")
-	return fs, relay
-}
-
-// failed prints err for a client command and returns exit code 1.
-func failed(stderr io.Writer, err error) int {
-	fmt.Fprintf(stderr, "tsrelay: %s\n", errText(err))
-	return 1
-}
-
-func hooksLs(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) int {
-	fs, relay := commandFlags("hooks ls", "hooks ls [--json]", stderr)
-	asJSON := fs.Bool("json", false, "print the hooks as a JSON array")
-	rest, err := parseArgs(fs, args)
-	if err != nil {
-		return 2
-	}
-	if len(rest) > 0 {
-		fs.Usage()
-		return 2
-	}
-	c, err := newRelayAPI(ctx, *relay, d)
-	if err != nil {
-		return failed(stderr, err)
-	}
-	hs, err := c.ListHooks(ctx)
-	if err != nil {
-		return failed(stderr, err)
-	}
-	if *asJSON {
-		enc := json.NewEncoder(stdout)
-		enc.SetIndent("", "  ")
-		enc.Encode(hs)
-		return 0
-	}
-	tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tPATH\tCHANNEL\tKIND\tTUNNEL\tEXPIRES\tURL")
-	for _, h := range hs {
-		kind, tun, exp := "persistent", "-", "-"
-		if h.Ephemeral {
-			kind = "ephemeral"
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		ctx := cmd.Context()
+		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
+		if err != nil {
+			return errors.New(errText(err))
 		}
-		if h.Tunnel != nil {
-			tun = h.Tunnel.Node
+		hs, err := relayAPI.ListHooks(ctx)
+		if err != nil {
+			return errors.New(errText(err))
 		}
-		if h.ExpiresAt != nil {
-			exp = h.ExpiresAt.Local().Format(time.DateTime)
+		if c.json {
+			enc := json.NewEncoder(c.stdout)
+			enc.SetIndent("", "  ")
+			enc.Encode(hs)
+			return nil
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", h.ID, h.Path, h.Channel, kind, tun, exp, h.URL)
+		tw := tabwriter.NewWriter(c.stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "ID\tPATH\tCHANNEL\tKIND\tTUNNEL\tEXPIRES\tURL")
+		for _, h := range hs {
+			kind, tun, exp := "persistent", "-", "-"
+			if h.Ephemeral {
+				kind = "ephemeral"
+			}
+			if h.Tunnel != nil {
+				tun = h.Tunnel.Node
+			}
+			if h.ExpiresAt != nil {
+				exp = h.ExpiresAt.Local().Format(time.DateTime)
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", h.ID, h.Path, h.Channel, kind, tun, exp, h.URL)
+		}
+		tw.Flush()
+		return nil
 	}
-	tw.Flush()
-	return 0
+	return cmd
 }
 
-func hooksCreate(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) int {
-	fs, relay := commandFlags("hooks create", "hooks create [<path>] [flags]", stderr)
-	channel := fs.String("channel", "", `hook channel (default: "default")`)
+func newHooksCreateCmd(c *cli) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "create [<path>]",
+		Short: "Create a persistent hook",
+		Args:  usageArgs(cobra.MaximumNArgs(1)),
+	}
+	fs := cmd.Flags()
+	channel := fs.StringP("channel", "c", "", `hook channel (default: "default")`)
 	description := fs.String("description", "", "free text, at most 280 characters")
 	ephemeral := fs.Bool("ephemeral", false, "delete the hook once it had no tunnel for the relay's grace period")
 	expiresIn := fs.Duration("expires-in", 0, "delete the hook after this long (0: never)")
 	settings := registerHookSettingFlags(fs)
-	rest, err := parseArgs(fs, args)
-	if err != nil {
-		return 2
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		if *expiresIn < 0 {
+			return usagef("--expires-in must not be negative")
+		}
+		s, err := settings()
+		if err != nil {
+			return &usageError{err.Error()}
+		}
+		req := hooks.CreateRequest{Channel: *channel, Description: *description, Ephemeral: *ephemeral, Settings: s}
+		if len(args) == 1 {
+			req.Path = args[0]
+		}
+		if *expiresIn != 0 {
+			at := time.Now().Add(*expiresIn)
+			req.ExpiresAt = &at
+		}
+		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
+		if err != nil {
+			return errors.New(errText(err))
+		}
+		h, err := relayAPI.CreateHook(ctx, req)
+		if err != nil {
+			return errors.New(errText(err))
+		}
+		fmt.Fprintln(c.stdout, h.URL)
+		return nil
 	}
-	if len(rest) > 1 {
-		fs.Usage()
-		return 2
-	}
-	s, err := settings()
-	if err != nil {
-		fmt.Fprintln(stderr, "tsrelay hooks create:", err)
-		return 2
-	}
-	req := hooks.CreateRequest{Channel: *channel, Description: *description, Ephemeral: *ephemeral, Settings: s}
-	if len(rest) == 1 {
-		req.Path = rest[0]
-	}
-	if *expiresIn != 0 {
-		at := time.Now().Add(*expiresIn)
-		req.ExpiresAt = &at
-	}
-	c, err := newRelayAPI(ctx, *relay, d)
-	if err != nil {
-		return failed(stderr, err)
-	}
-	h, err := c.CreateHook(ctx, req)
-	if err != nil {
-		return failed(stderr, err)
-	}
-	fmt.Fprintln(stdout, h.URL)
-	return 0
+	return cmd
 }
 
-func hooksUpdate(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) int {
-	fs, relay := commandFlags("hooks update", "hooks update <id|path> [flags]", stderr)
+func newHooksUpdateCmd(c *cli) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "update <hook>",
+		Short: "Change a hook",
+		Args:  usageArgs(cobra.ExactArgs(1)),
+	}
+	fs := cmd.Flags()
 	path := fs.String("path", "", "move the hook to this path (changes its URL)")
-	channel := fs.String("channel", "", "move the hook to this channel")
+	channel := fs.StringP("channel", "c", "", "move the hook to this channel")
 	description := fs.String("description", "", "replace the description")
 	ephemeral := fs.Bool("ephemeral", false, "make the hook ephemeral, or persistent with --ephemeral=false")
 	expiresIn := fs.Duration("expires-in", 0, "expire this long from now (0: never)")
 	settings := registerHookSettingFlags(fs)
-	rest, err := parseArgs(fs, args)
-	if err != nil {
-		return 2
-	}
-	if len(rest) != 1 {
-		fs.Usage()
-		return 2
-	}
-	s, err := settings()
-	if err != nil {
-		fmt.Fprintln(stderr, "tsrelay hooks update:", err)
-		return 2
-	}
-	req := hooks.UpdateRequest{Settings: settingsPatch(s)}
-	changes := 0
-	fs.Visit(func(f *flag.Flag) {
-		if f.Name != "relay" {
-			changes++
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		s, err := settings()
+		if err != nil {
+			return &usageError{err.Error()}
 		}
-		switch f.Name {
-		case "path":
-			req.Path = optPtr(path)
-		case "channel":
-			req.Channel = optPtr(channel)
-		case "description":
-			req.Description = optPtr(description)
-		case "ephemeral":
-			req.Ephemeral = optPtr(ephemeral)
-		case "expires-in":
-			req.ExpiresAt = hooks.Opt[time.Time]{Set: true} // 0 removes the expiry
-			if *expiresIn != 0 {
-				req.ExpiresAt.Value = new(time.Now().Add(*expiresIn))
+		req := hooks.UpdateRequest{Settings: settingsPatch(s)}
+		changes := 0
+		// cmd.LocalFlags().Visit would not do: LocalFlags() builds a fresh
+		// FlagSet that shares the *Flag pointers but never calls Set on
+		// itself, so its own Visit (which walks its private "actual" map,
+		// not each flag's Changed field) never finds anything. Visiting
+		// cmd.Flags() and excluding what InheritedFlags() knows about
+		// achieves the same "local, changed" set correctly.
+		cmd.Flags().Visit(func(f *pflag.Flag) {
+			if cmd.InheritedFlags().Lookup(f.Name) != nil {
+				return
 			}
+			changes++
+			switch f.Name {
+			case "path":
+				req.Path = optPtr(path)
+			case "channel":
+				req.Channel = optPtr(channel)
+			case "description":
+				req.Description = optPtr(description)
+			case "ephemeral":
+				req.Ephemeral = optPtr(ephemeral)
+			case "expires-in":
+				req.ExpiresAt = hooks.Opt[time.Time]{Set: true} // 0 removes the expiry
+				if *expiresIn != 0 {
+					req.ExpiresAt.Value = new(time.Now().Add(*expiresIn))
+				}
+			}
+		})
+		if changes == 0 {
+			return usagef("nothing to change; give at least one flag (see tsrelay hooks update --help)")
 		}
-	})
-	if changes == 0 {
-		fmt.Fprintln(stderr, "tsrelay hooks update: nothing to change")
-		fs.Usage()
-		return 2
+		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
+		if err != nil {
+			return errors.New(errText(err))
+		}
+		found, err := resolveHooks(ctx, relayAPI, args)
+		if err != nil {
+			return errors.New(errText(err))
+		}
+		h, err := relayAPI.UpdateHook(ctx, found[0].ID, req)
+		if err != nil {
+			return errors.New(errText(err))
+		}
+		fmt.Fprintln(c.stdout, h.URL)
+		return nil
 	}
-	c, err := newRelayAPI(ctx, *relay, d)
-	if err != nil {
-		return failed(stderr, err)
-	}
-	found, err := resolveHooks(ctx, c, rest)
-	if err != nil {
-		return failed(stderr, err)
-	}
-	h, err := c.UpdateHook(ctx, found[0].ID, req)
-	if err != nil {
-		return failed(stderr, err)
-	}
-	fmt.Fprintln(stdout, h.URL)
-	return 0
+	return cmd
 }
 
-func hooksRm(ctx context.Context, args []string, stderr io.Writer, d deps) int {
-	fs, relay := commandFlags("hooks rm", "hooks rm <id|path>...", stderr)
-	refs, err := parseArgs(fs, args)
-	if err != nil {
-		return 2
+func newHooksDeleteCmd(c *cli) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "delete <hook>...",
+		Aliases: []string{"rm"},
+		Short:   "Delete hooks",
+		Args:    usageArgs(cobra.MinimumNArgs(1)),
 	}
-	if len(refs) == 0 {
-		fs.Usage()
-		return 2
-	}
-	c, err := newRelayAPI(ctx, *relay, d)
-	if err != nil {
-		return failed(stderr, err)
-	}
-	found, err := resolveHooks(ctx, c, refs)
-	if err != nil {
-		return failed(stderr, err)
-	}
-	for _, h := range found {
-		if err := c.DeleteHook(ctx, h.ID); err != nil {
-			return failed(stderr, err)
+	cmd.RunE = func(cmd *cobra.Command, refs []string) error {
+		ctx := cmd.Context()
+		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
+		if err != nil {
+			return errors.New(errText(err))
 		}
-		fmt.Fprintf(stderr, "Deleted %s\n", h.URL)
+		found, err := resolveHooks(ctx, relayAPI, refs)
+		if err != nil {
+			return errors.New(errText(err))
+		}
+		for _, h := range found {
+			if err := relayAPI.DeleteHook(ctx, h.ID); err != nil {
+				return errors.New(errText(err))
+			}
+			fmt.Fprintf(c.stderr, "Deleted %s\n", h.URL)
+		}
+		return nil
 	}
-	return 0
+	return cmd
 }
 
 // resolveHooks finds the caller's hooks named by ID or path, in order. It
@@ -255,7 +230,7 @@ func resolveHooks(ctx context.Context, c *client.API, refs []string) ([]api.Hook
 			i = slices.IndexFunc(all, func(h api.Hook) bool { return h.Path == strings.Trim(ref, "/") })
 		}
 		if i < 0 {
-			return nil, fmt.Errorf("you have no hook with ID or path %q (see tsrelay hooks ls)", ref)
+			return nil, fmt.Errorf("you have no hook with ID or path %q (see tsrelay hooks list)", ref)
 		}
 		found = append(found, all[i])
 	}
@@ -277,53 +252,4 @@ func settingsPatch(s hooks.Settings) hooks.SettingsPatch {
 		RateLimit:       optPtr(s.RateLimit),
 		Capture:         optPtr(s.Capture),
 	}
-}
-
-// urlCmd prints the URL tsrelay http would use here, from the state file.
-// It never contacts the relay, so it creates nothing.
-func urlCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) int {
-	fs, relay := commandFlags("url", "url [<port|url>]", stderr)
-	rest, err := parseArgs(fs, args)
-	if err != nil {
-		return 2
-	}
-	if len(rest) > 1 {
-		fs.Usage()
-		return 2
-	}
-	base, err := relayBase(ctx, *relay, d)
-	if err != nil {
-		return failed(stderr, err)
-	}
-	state, err := openState(d)
-	if err != nil {
-		return failed(stderr, err)
-	}
-	cwd, _ := os.Getwd()
-	var target *url.URL
-	if len(rest) == 1 {
-		if target, err = client.ParseTarget(rest[0]); err != nil {
-			fmt.Fprintln(stderr, "tsrelay url:", err)
-			return 2
-		}
-	} else {
-		switch targets := state.Targets(base, cwd); len(targets) {
-		case 0:
-		case 1:
-			target, _ = url.Parse(targets[0])
-		default:
-			fmt.Fprintf(stderr, "tsrelay url: this directory has hooks for several targets (%s); name one\n", strings.Join(targets, ", "))
-			return 2
-		}
-	}
-	hookURL := ""
-	if target != nil {
-		hookURL = state.URL(client.StateKey(base, cwd, target))
-	}
-	if hookURL == "" {
-		fmt.Fprintln(stderr, "tsrelay url: no hook is known for this directory and target yet; run tsrelay http first")
-		return 1
-	}
-	fmt.Fprintln(stdout, hookURL)
-	return 0
 }

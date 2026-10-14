@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"math"
 	"strconv"
@@ -50,14 +49,6 @@ func (f *rateLimitFlag) Set(s string) error {
 }
 
 func (f *rateLimitFlag) Type() string { return "perSecond/burst" }
-
-// wasSet reports whether the flag name was given on the command line or
-// applied from the environment by applyEnv.
-func wasSet(fs *flag.FlagSet, name string) bool {
-	set := false
-	fs.Visit(func(f *flag.Flag) { set = set || f.Name == name })
-	return set
-}
 
 type durationFlag struct {
 	name string
@@ -175,7 +166,7 @@ func checkDefaultsWithinMaxima(fs *pflag.FlagSet, p hooks.Policy) error {
 // commands that create or update hooks. The returned function yields
 // Settings in which only the flags given on the command line are set, so
 // everything else keeps the relay default (or, on update, its current value).
-func registerHookSettingFlags(fs *flag.FlagSet) func() (hooks.Settings, error) {
+func registerHookSettingFlags(fs *pflag.FlagSet) func() (hooks.Settings, error) {
 	hold := fs.Duration("hold-timeout", 0, "how long calls wait for a tunnel to attach; 0 disables holding (default: the relay's)")
 	resp := fs.Duration("response-timeout", 0, "how long to wait for the local app's response headers (default: the relay's)")
 	idle := fs.Duration("idle-timeout", 0, "longest gap in body traffic, in either direction (default: the relay's)")
@@ -191,7 +182,7 @@ func registerHookSettingFlags(fs *flag.FlagSet) func() (hooks.Settings, error) {
 			return hooks.Settings{}, err
 		}
 		var s hooks.Settings
-		fs.Visit(func(f *flag.Flag) {
+		fs.Visit(func(f *pflag.Flag) {
 			switch f.Name {
 			case "hold-timeout":
 				s.HoldTimeout = new(hooks.Duration(*hold))

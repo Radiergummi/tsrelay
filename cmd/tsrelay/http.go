@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -21,6 +19,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"github.com/spf13/cobra"
 	"tailscale.com/client/local"
 )
 
@@ -28,115 +27,131 @@ import (
 // after SIGTERM before it is killed.
 const childStopTimeout = 5 * time.Second
 
-func httpCmd(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) int {
-	fs := flag.NewFlagSet("tsrelay http", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {
-		fmt.Fprintln(stderr, "Usage: tsrelay http <port|url> [flags] [-- command args...]")
-		fs.PrintDefaults()
-	}
-	relayFlag := fs.String("relay", "", "relay URL or host (default: https://tsrelay.<your tailnet>)")
-	name := fs.String("name", "", "hook path below your ~user prefix (default: remembered, else three random words)")
-	channel := fs.String("channel", "", `hook channel (default: "default")`)
-	persistent := fs.Bool("persistent", false, "keep the hook after this command exits")
-	insecure := fs.Bool("insecure", false, "skip TLS certificate verification for an https:// target")
-	asJSON := fs.Bool("json", false, "print one JSON object per event on stdout")
-	own, command := splitCommand(args)
-	rest, err := parseArgs(fs, own)
-	if err != nil {
-		return 2
-	}
-	if err := applyEnv(fs, "TSRELAY_"); err != nil {
-		fmt.Fprintln(stderr, "tsrelay http:", err)
-		return 2
-	}
-	if len(rest) != 1 {
-		fs.Usage()
-		return 2
-	}
-	target, err := client.ParseTarget(rest[0])
-	if err != nil {
-		fmt.Fprintln(stderr, "tsrelay http:", err)
-		return 2
-	}
-	out := newOutput(stdout, stderr, *asJSON)
-
-	relayAPI, err := newRelayAPI(ctx, *relayFlag, d)
-	if err != nil {
-		return out.fail(err)
-	}
-	out.inspectBase = relayAPI.BaseURL
-	state, err := openState(d)
-	if err != nil {
-		return out.fail(err)
-	}
-	cwd, _ := os.Getwd()
-	key := client.StateKey(relayAPI.BaseURL, cwd, target)
-	req := hooks.CreateRequest{Channel: *channel, Ephemeral: !*persistent}
-	hook, err := ensureHook(ctx, relayAPI, *name, state.Path(key), req)
-	if err != nil {
-		return out.fail(err)
-	}
-	if err := state.Remember(key, hook.Path, hook.URL); err != nil {
-		out.text(stderr, "tsrelay: warning: could not remember the hook path: %v", err)
-	}
-	out.url(hook, false)
-
-	startURL := hook.URL // what a command started after "--" gets
-	// hook and seqs change when the hook is recreated or updated; mu guards
-	// them, as control messages arrive concurrently.
-	var mu sync.Mutex
-	seqs := updateSeqs{}
-	var tc *tunnel.Client
-	tc = &tunnel.Client{
-		Hooks:  []string{hook.ID},
-		Target: target.Redacted(),
-		Dial: func(ctx context.Context, ids []string, a tunnel.Attach) (net.Conn, error) {
-			conn, err := tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, ids...))
-			if !isNotFound(err) {
-				return conn, err
+func newHTTPCmd(c *cli) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "http <port|url> [flags] [-- command args...]",
+		Short: "Forward a new or remembered hook to a local app",
+		Long: "Forward a hook to a local app. The hook is remembered per directory and target, " +
+			"so its URL stays the same across runs. A command given after -- is started with " +
+			"TSRELAY_URL set and stopped when tsrelay stops.",
+		Example: "  tsrelay http 8080\n  tsrelay http 8080 -n payments -- npm run dev",
+		Args: usageArgs(func(cmd *cobra.Command, args []string) error {
+			if n := targetArgs(cmd, args); n != 1 {
+				return fmt.Errorf("want one <port|url>, got %d", n)
 			}
-			// The relay reaped the hook while this CLI was disconnected for
-			// longer than the ephemeral grace period: recreate it at the
-			// same path, so its URL keeps working.
-			mu.Lock()
-			old := hook
-			mu.Unlock()
-			h, err := ensureHook(ctx, relayAPI, old.Path, "", req)
-			if err != nil {
-				return nil, err
-			}
-			tc.Replace(old.ID, h.ID)
-			mu.Lock()
-			hook = h
-			mu.Unlock()
-			out.url(h, true)
-			return tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, h.ID))
-		},
-		Handler: callHandler(target, *insecure, out),
-		OnState: out.onState([]string{hook.URL}, target.String(), hook.Effective.HoldTimeout.Std()),
-		OnControl: func(c tunnel.Control) {
-			mu.Lock()
-			defer mu.Unlock()
-			seqs.observe(c)
-			if c.Type == tunnel.ControlHookUpdated {
-				for _, h := range c.Hooks {
-					if h.ID != hook.ID || !seqs.fresh(h.ID, c.Seq) || h.URL == hook.URL {
-						continue
-					}
-					// Only the path can change the URL; the prefix before it stays.
-					hook.Path = strings.TrimPrefix(h.URL, strings.TrimSuffix(hook.URL, hook.Path))
-					hook.URL = h.URL
-					if err := state.Remember(key, hook.Path, hook.URL); err != nil {
-						out.text(stderr, "tsrelay: warning: could not remember the hook path: %v", err)
-					}
-					out.url(hook, false)
+			return nil
+		}),
+	}
+	fs := cmd.Flags()
+	name := fs.StringP("name", "n", "", "hook path below your ~user prefix (default: remembered, else three random words)")
+	channel := fs.StringP("channel", "c", "", `hook channel (default: "default")`)
+	persistent := fs.BoolP("persistent", "p", false, "keep the hook after tsrelay exits")
+	insecure := fs.BoolP("insecure", "k", false, "skip TLS certificate verification for an https:// target")
+	settings := registerHookSettingFlags(fs)
+	cmd.Long += " Settings flags apply only when the hook is created."
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		stderr := c.stderr
+		var command []string
+		if d := cmd.ArgsLenAtDash(); d >= 0 {
+			command = args[d:]
+		}
+		target, err := client.ParseTarget(args[0])
+		if err != nil {
+			return &usageError{err.Error()}
+		}
+		s, err := settings()
+		if err != nil {
+			return &usageError{err.Error()}
+		}
+		out := newOutput(c.stdout, c.stderr, c.json)
+
+		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
+		if err != nil {
+			return exitWith(out.fail(err))
+		}
+		out.inspectBase = relayAPI.BaseURL
+		state, err := openState(c.d)
+		if err != nil {
+			return exitWith(out.fail(err))
+		}
+		cwd, _ := os.Getwd()
+		key := client.StateKey(relayAPI.BaseURL, cwd, target)
+		req := hooks.CreateRequest{Channel: *channel, Ephemeral: !*persistent, Settings: s}
+		hook, err := ensureHook(ctx, relayAPI, *name, state.Path(key), req)
+		if err != nil {
+			return exitWith(out.fail(err))
+		}
+		if err := state.Remember(key, hook.Path, hook.URL); err != nil {
+			out.text(stderr, "tsrelay: warning: could not remember the hook path: %v", err)
+		}
+		out.url(hook, false)
+
+		startURL := hook.URL // what a command started after "--" gets
+		// hook and seqs change when the hook is recreated or updated; mu guards
+		// them, as control messages arrive concurrently.
+		var mu sync.Mutex
+		seqs := updateSeqs{}
+		var tc *tunnel.Client
+		tc = &tunnel.Client{
+			Hooks:  []string{hook.ID},
+			Target: target.Redacted(),
+			Dial: func(ctx context.Context, ids []string, a tunnel.Attach) (net.Conn, error) {
+				conn, err := tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, ids...))
+				if !isNotFound(err) {
+					return conn, err
 				}
-			}
-			out.dropped(c, func(string) string { return hook.URL })
-		},
+				// The relay reaped the hook while this CLI was disconnected for
+				// longer than the ephemeral grace period: recreate it at the
+				// same path, so its URL keeps working.
+				mu.Lock()
+				old := hook
+				mu.Unlock()
+				h, err := ensureHook(ctx, relayAPI, old.Path, "", req)
+				if err != nil {
+					return nil, err
+				}
+				tc.Replace(old.ID, h.ID)
+				mu.Lock()
+				hook = h
+				mu.Unlock()
+				out.url(h, true)
+				return tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, h.ID))
+			},
+			Handler: callHandler(target, *insecure, out),
+			OnState: out.onState([]string{hook.URL}, target.String(), hook.Effective.HoldTimeout.Std()),
+			OnControl: func(c tunnel.Control) {
+				mu.Lock()
+				defer mu.Unlock()
+				seqs.observe(c)
+				if c.Type == tunnel.ControlHookUpdated {
+					for _, h := range c.Hooks {
+						if h.ID != hook.ID || !seqs.fresh(h.ID, c.Seq) || h.URL == hook.URL {
+							continue
+						}
+						// Only the path can change the URL; the prefix before it stays.
+						hook.Path = strings.TrimPrefix(h.URL, strings.TrimSuffix(hook.URL, hook.Path))
+						hook.URL = h.URL
+						if err := state.Remember(key, hook.Path, hook.URL); err != nil {
+							out.text(stderr, "tsrelay: warning: could not remember the hook path: %v", err)
+						}
+						out.url(hook, false)
+					}
+				}
+				out.dropped(c, func(string) string { return hook.URL })
+			},
+		}
+		return exitWith(runTunnel(ctx, tc, command, startURL, out))
 	}
-	return runTunnel(ctx, tc, command, startURL, out)
+	return cmd
+}
+
+// targetArgs is how many positional arguments come before "--".
+func targetArgs(cmd *cobra.Command, args []string) int {
+	if d := cmd.ArgsLenAtDash(); d >= 0 {
+		return d
+	}
+	return len(args)
 }
 
 // runTunnel runs tc until it stops and returns the exit code. With a
@@ -201,12 +216,10 @@ func exitCode(err error) int {
 	}
 }
 
-// relayBase finds the relay: --relay, then $TSRELAY_RELAY, then
-// https://tsrelay.<MagicDNS suffix> from the local Tailscale.
+// relayBase finds the relay: --relay (envDefaults already applies
+// $TSRELAY_RELAY), else https://tsrelay.<MagicDNS suffix> from the local
+// Tailscale.
 func relayBase(ctx context.Context, relayFlag string, d deps) (string, error) {
-	if relayFlag == "" {
-		relayFlag = os.Getenv("TSRELAY_RELAY")
-	}
 	status := d.Status
 	if status == nil {
 		status = (&local.Client{}).StatusWithoutPeers

@@ -1,40 +1,12 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 
 	"github.com/spf13/pflag"
 )
-
-// applyEnv sets every flag not given on the command line from the
-// environment variable prefix + NAME, with dashes turned into underscores
-// (e.g. --ephemeral-grace ← TSRELAY_EPHEMERAL_GRACE).
-func applyEnv(fs *flag.FlagSet, prefix string) error {
-	set := map[string]bool{}
-	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
-	var errs []string
-	fs.VisitAll(func(f *flag.Flag) {
-		if set[f.Name] {
-			return
-		}
-		name := prefix + strings.ToUpper(strings.ReplaceAll(f.Name, "-", "_"))
-		v, ok := os.LookupEnv(name)
-		if !ok {
-			return
-		}
-		if err := fs.Set(f.Name, v); err != nil {
-			errs = append(errs, fmt.Sprintf("%s=%q: %v", name, v, err))
-		}
-	})
-	if len(errs) > 0 {
-		return fmt.Errorf("invalid environment: %s", strings.Join(errs, "; "))
-	}
-	return nil
-}
 
 // envDefaults sets every flag of fs not given on the command line from
 // TSRELAY_<NAME>, with dashes turned into underscores (e.g.
@@ -105,30 +77,4 @@ func (m mapFlag) Set(v string) error {
 		m[k] = val
 	}
 	return nil
-}
-
-// parseArgs parses flags given anywhere among the positional arguments, as
-// people type both "tsrelay http 8080 --name x" and "--name x 8080". It
-// returns the positional arguments.
-func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
-	var rest []string
-	for {
-		if err := fs.Parse(args); err != nil {
-			return nil, err
-		}
-		if fs.NArg() == 0 {
-			return rest, nil
-		}
-		rest = append(rest, fs.Arg(0))
-		args = fs.Args()[1:]
-	}
-}
-
-// splitCommand separates tsrelay's own arguments from a command given
-// after "--".
-func splitCommand(args []string) (own, command []string) {
-	if i := slices.Index(args, "--"); i >= 0 {
-		return args[:i], args[i+1:]
-	}
-	return args, nil
 }
