@@ -17,6 +17,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/telemetry"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"github.com/Radiergummi/tsrelay/internal/ui"
+	"github.com/Radiergummi/tsrelay/web"
 	"tailscale.com/tailcfg"
 )
 
@@ -81,9 +82,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 		a.Tracer = s.tel.Tracer.Tracer(telemetry.ScopeName)
 	}
 	a.Register(mux)
-	pages := ui.New(a, cfg.CapName)
-	pages.Register(mux)
-	mux.Handle("/", pages.NotFound())
+	ui.New(a, web.Dist).Register(mux)
 
 	// Callbacks bypass the mux, whose path cleaning would rewrite paths
 	// such as "/~m/cb//x" that must reach the local app unchanged.

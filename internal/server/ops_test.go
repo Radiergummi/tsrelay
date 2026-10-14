@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/Radiergummi/tsrelay/internal/ui"
 )
 
 func TestOps(t *testing.T) {
@@ -124,8 +125,10 @@ func TestOpsPprof(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode == 200 {
-		t.Fatal("/debug/pprof/ answered 200 on the relay's own listener")
+	// The relay's own listener has no pprof route; unmatched GETs fall
+	// through to the UI's catch-all, so a 200 there is the app, not pprof.
+	if resp.Header.Get("Content-Security-Policy") != ui.CSP {
+		t.Fatalf("/debug/pprof/ on the relay's own listener = %d %v, want the UI's app, not pprof", resp.StatusCode, resp.Header)
 	}
 	// pprof works before the relay is ready, like /healthz: it profiles the process.
 	if code := get(&Ops{Pprof: true}, "/debug/pprof/"); code != 200 {
