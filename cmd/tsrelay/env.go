@@ -8,6 +8,15 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// envAnnotation marks a flag's pflag.Flag.Changed as having been set from a
+// TSRELAY_* variable rather than the command line, so a command that cares
+// about the caller's intent (e.g. hooks update) can tell the two apart.
+const envAnnotation = "tsrelay-env"
+
+// envSet reports whether f was changed only by envDefaults, not by an
+// argument the caller typed.
+func envSet(f *pflag.Flag) bool { return len(f.Annotations[envAnnotation]) > 0 }
+
 // envDefaults sets every flag of fs not given on the command line from
 // TSRELAY_<NAME>, with dashes turned into underscores (e.g.
 // --ephemeral-grace ← TSRELAY_EPHEMERAL_GRACE). Variables that match no
@@ -25,7 +34,9 @@ func envDefaults(fs *pflag.FlagSet) error {
 		}
 		if err := fs.Set(f.Name, v); err != nil {
 			errs = append(errs, fmt.Sprintf("%s=%q: %v", name, v, err))
+			return
 		}
+		fs.SetAnnotation(f.Name, envAnnotation, []string{"1"})
 	})
 	if len(errs) > 0 {
 		return usagef("invalid environment: %s", strings.Join(errs, "; "))

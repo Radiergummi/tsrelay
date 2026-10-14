@@ -47,7 +47,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 	channel := fs.StringP("channel", "c", "", `hook channel (default: "default")`)
 	persistent := fs.BoolP("persistent", "p", false, "keep the hook after tsrelay exits")
 	insecure := fs.BoolP("insecure", "k", false, "skip TLS certificate verification for an https:// target")
-	settings := registerHookSettingFlags(fs)
+	settings := registerHookSettingFlags(fs, false, "the relay's")
 	cmd.Long += " Settings flags apply only when the hook is created."
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -77,9 +77,12 @@ func newHTTPCmd(c *cli) *cobra.Command {
 		cwd, _ := os.Getwd()
 		key := client.StateKey(relayAPI.BaseURL, cwd, target)
 		req := hooks.CreateRequest{Channel: *channel, Ephemeral: !*persistent, Settings: s}
-		hook, err := ensureHook(ctx, relayAPI, *name, state.Path(key), req)
+		hook, created, err := ensureHook(ctx, relayAPI, *name, state.Path(key), req)
 		if err != nil {
 			return exitWith(out.fail(err))
+		}
+		if !created && !c.json && anyHookSettingGivenOnCLI(fs) {
+			out.status(styleWarn, fmt.Sprintf("settings flags apply only when the hook is created; use tsrelay hooks update to change %s", hook.Path))
 		}
 		if err := state.Remember(key, hook.Path, hook.URL); err != nil {
 			out.status(styleWarn, "could not remember the hook path: "+err.Error())
@@ -107,7 +110,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 				mu.Lock()
 				old := hook
 				mu.Unlock()
-				h, err := ensureHook(ctx, relayAPI, old.Path, "", req)
+				h, _, err := ensureHook(ctx, relayAPI, old.Path, "", req)
 				if err != nil {
 					return nil, err
 				}
@@ -243,8 +246,9 @@ func newRelayAPI(ctx context.Context, relayFlag string, d deps) (*client.API, er
 // ensureHook reuses the caller's hook at the wanted path or creates one. An
 // explicit name wins over the remembered path. A remembered path that can no
 // longer be created (e.g. another hook now overlaps it) falls back to a new
-// random path; an explicit name never does.
-func ensureHook(ctx context.Context, c *client.API, explicit, remembered string, req hooks.CreateRequest) (api.Hook, error) {
+// random path; an explicit name never does. created reports whether this
+// call made a new hook rather than reusing one that already existed.
+func ensureHook(ctx context.Context, c *client.API, explicit, remembered string, req hooks.CreateRequest) (h api.Hook, created bool, err error) {
 	want := explicit
 	if want == "" {
 		want = remembered
@@ -252,7 +256,7 @@ func ensureHook(ctx context.Context, c *client.API, explicit, remembered string,
 	if want != "" {
 		existing, err := c.ListHooks(ctx)
 		if err != nil {
-			return api.Hook{}, err
+			return api.Hook{}, false, err
 		}
 		for _, h := range existing {
 			if h.Path != want {
@@ -260,21 +264,21 @@ func ensureHook(ctx context.Context, c *client.API, explicit, remembered string,
 			}
 			switch {
 			case req.Channel != "" && h.Channel != req.Channel:
-				return api.Hook{}, fmt.Errorf("your hook %q is in channel %q, not %q; delete it or pick another --name", h.Path, h.Channel, req.Channel)
+				return api.Hook{}, false, fmt.Errorf("your hook %q is in channel %q, not %q; delete it or pick another --name", h.Path, h.Channel, req.Channel)
 			case !req.Ephemeral && h.Ephemeral:
-				return api.Hook{}, fmt.Errorf("your hook %q is ephemeral, but --persistent was given; delete it or pick another --name", h.Path)
+				return api.Hook{}, false, fmt.Errorf("your hook %q is ephemeral, but --persistent was given; delete it or pick another --name", h.Path)
 			}
-			return h, nil
+			return h, false, nil
 		}
 	}
 	req.Path = want
-	h, err := c.CreateHook(ctx, req)
+	h, err = c.CreateHook(ctx, req)
 	var p *problem.Problem
 	if err != nil && explicit == "" && remembered != "" && errors.As(err, &p) && p.Status == 422 {
 		req.Path = ""
-		return c.CreateHook(ctx, req)
+		h, err = c.CreateHook(ctx, req)
 	}
-	return h, err
+	return h, err == nil, err
 }
 
 // isNotFound reports whether err is the relay's 404, which a tunnel dial

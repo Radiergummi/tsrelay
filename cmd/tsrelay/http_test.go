@@ -24,6 +24,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/server"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
@@ -266,6 +267,28 @@ func TestHTTPRelayRefusal(t *testing.T) {
 
 // Reusing a hook whose channel or persistence differs from the flags would
 // silently ignore them; the CLI must say so instead.
+// Minor 2: with --json, a relay refusal must also land on stderr as JSON,
+// carrying the problem, not only flattened into the stopped event on stdout.
+func TestHTTPRelayRefusalJSON(t *testing.T) {
+	e := newCLIEnv(t)
+	r := e.start("--channel", "Not Valid", "--json")
+	if code := waitExit(t, r); code != 1 {
+		t.Fatalf("exit %d, want 1\n%s", code, r.stderr)
+	}
+	var je struct {
+		Error   string           `json:"error"`
+		Problem *problem.Problem `json:"problem"`
+	}
+	if err := json.Unmarshal([]byte(r.stderr.String()), &je); err != nil || je.Problem == nil || je.Problem.Status != 422 {
+		t.Fatalf("stderr should be a JSON error carrying the problem: %v\n%s", err, r.stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(r.stdout.String()), "\n")
+	var last jsonEvent
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &last); err != nil || last.Event != "stopped" {
+		t.Fatalf("stdout's last line should be the stopped event: %v\n%s", err, r.stdout)
+	}
+}
+
 func TestHTTPRefusesMismatchedReuse(t *testing.T) {
 	e := newCLIEnv(t)
 	r1 := e.start("--name", "cb")
@@ -284,6 +307,42 @@ func TestHTTPRefusesMismatchedReuse(t *testing.T) {
 	}
 	r := e.start("--name", "cb", "--channel=default")
 	e.url(r) // matching flags still reuse the hook
+}
+
+// Minor 9: reusing an existing hook silently ignored settings flags; it must
+// now warn, naming the hook and pointing at hooks update.
+func TestHTTPWarnsSettingsIgnoredOnReuse(t *testing.T) {
+	e := newCLIEnv(t)
+	r1 := e.start("--name", "cb")
+	e.url(r1)
+	r1.cancel()
+	waitExit(t, r1)
+
+	r2 := e.start("--name", "cb", "--hold-timeout", "5s")
+	e.url(r2)
+	if out := r2.stderr.String(); !strings.Contains(out, "settings flags apply only when the hook is created") ||
+		!strings.Contains(out, "tsrelay hooks update") || !strings.Contains(out, "cb") {
+		t.Errorf("stderr should warn that settings were ignored:\n%s", out)
+	}
+	r2.cancel()
+	waitExit(t, r2)
+}
+
+// The same reuse must not warn when no settings flag was given.
+func TestHTTPNoWarningWithoutSettingsFlags(t *testing.T) {
+	e := newCLIEnv(t)
+	r1 := e.start("--name", "cb")
+	e.url(r1)
+	r1.cancel()
+	waitExit(t, r1)
+
+	r2 := e.start("--name", "cb")
+	e.url(r2)
+	if strings.Contains(r2.stderr.String(), "settings flags apply only when the hook is created") {
+		t.Errorf("no settings flag was given; stderr should not warn:\n%s", r2.stderr)
+	}
+	r2.cancel()
+	waitExit(t, r2)
 }
 
 // Minor 12: a hook the relay reaped during a long disconnect is recreated

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -106,5 +107,26 @@ func TestAttachRefusals(t *testing.T) {
 	e := newCLIEnv(t)
 	if code, _, errOut := e.tsrelay("attach", "nope", "--to", "8080"); code != 1 || !strings.Contains(errOut, `"nope"`) {
 		t.Fatalf("unknown hook: exit %d\n%s", code, errOut)
+	}
+}
+
+// Minor 2: with --json, an error must also land on stderr as JSON, not only
+// flattened into the stopped event's Error string on stdout.
+func TestAttachRefusalsJSON(t *testing.T) {
+	e := newCLIEnv(t)
+	code, out, errOut := e.tsrelay("attach", "nope", "--to", "8080", "--json")
+	if code != 1 {
+		t.Fatalf("exit %d, want 1\n%s", code, errOut)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	var last jsonEvent
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &last); err != nil || last.Event != "stopped" {
+		t.Fatalf("stdout's last line should be the stopped event: %v\n%s", err, out)
+	}
+	var je struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(errOut), &je); err != nil || !strings.Contains(je.Error, "nope") {
+		t.Fatalf("stderr should be a JSON error mentioning %q: %v\n%s", "nope", err, errOut)
 	}
 }

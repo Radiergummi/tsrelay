@@ -178,6 +178,18 @@ func TestUpdateSeqs(t *testing.T) {
 	}
 }
 
+// Minor 7: a fancy call line with no inspector link (no call ID) must not
+// end in trailing spaces for the dropped ref column.
+func TestCallLineNoInspectLink(t *testing.T) {
+	forceTerminal(t)
+	o, _, stderr := testOutput(t, false)
+	o.call(client.Call{Method: "POST", Path: "/done", Status: 200, Duration: 12 * time.Millisecond, Sender: "tag:ci"})
+	line := strings.TrimRight(stderr.String(), "\n")
+	if strings.HasSuffix(line, " ") {
+		t.Fatalf("fancy call line without a link must not end in trailing spaces: %q", line)
+	}
+}
+
 func TestOutputCallLinks(t *testing.T) {
 	t.Setenv("TTY_FORCE", "0")
 	o, _, stderr := testOutput(t, false)

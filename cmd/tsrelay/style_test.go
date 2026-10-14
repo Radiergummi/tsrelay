@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
@@ -42,6 +43,9 @@ func TestNewStream(t *testing.T) {
 		{name: "NO_COLOR=yes", env: map[string]string{"NO_COLOR": "yes"}, tty: true}, // any non-empty value
 		{name: "--no-color", noColor: true, tty: true},
 		{name: "--no-hyperlinks", noLinks: true, tty: true, fancy: true},
+		// Minor 6: forcing color on a pipe must not also make --json think
+		// it is writing to a terminal.
+		{name: "CLICOLOR_FORCE=1 on a pipe", env: map[string]string{"TTY_FORCE": "0", "CLICOLOR_FORCE": "1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			forceTerminal(t)
@@ -121,6 +125,18 @@ func TestFormatError(t *testing.T) {
 	forceTerminal(t)
 	if fancy := formatError(newStream(&bytes.Buffer{}, false, false), p); !strings.Contains(fancy, "\x1b[") {
 		t.Errorf("fancy error is unstyled: %q", fancy)
+	}
+}
+
+// Minor 8: an unreachable relay gets its own hint, like a relay refusal's.
+func TestFormatErrorUnreachable(t *testing.T) {
+	t.Setenv("TTY_FORCE", "0")
+	err := &client.UnreachableError{Base: "http://relay.example", Err: errors.New("dial tcp: connection refused")}
+	got := formatError(newStream(&bytes.Buffer{}, false, false), err)
+	for _, want := range []string{"could not reach the relay at http://relay.example", "connection refused", "hint: check --relay or TSRELAY_RELAY"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("formatError lacks %q:\n%s", want, got)
+		}
 	}
 }
 
