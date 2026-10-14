@@ -139,11 +139,7 @@ Bodies arrive exactly as sent, byte for byte, so signatures from Stripe, GitHub,
 
 Open the relay's URL (`https://tsrelay.<your tailnet>/`) in a browser on your tailnet. You see your hooks with their tunnels and latest calls, and can create, edit and delete hooks. Each hook's page shows its calls as they arrive, and lets you send it a test request. A call's page shows the request and the response side by side, and lets you replay the call or copy it as a curl command (aimed at your local target or at the hook URL). Admins also get an admin page listing every hook, as metadata only. Each call line `tsrelay http` prints ends with a link to that call.
 
-The UI needs JavaScript to make changes; without it, it is read-only. To try the UI locally without a tailnet:
-
-```bash
-TSRELAY_UI_DEV=1 go test ./internal/server -run TestUIDev -timeout 0 -v   # then open http://127.0.0.1:8099
-```
+Each hook's page has the call list on the left and the selected call on the right; the list updates live, and you can filter it by status, method, path and sender. Keyboard shortcuts: `j`/`k` move through the calls, `Enter`/`Esc` select and deselect, `/` focuses the filter, `r` replays, `c` copies as curl, `t` sends a test request, and `?` lists them. The UI needs JavaScript; the CLI and the JSON API under `/api/v1` don't.
 
 ## Inspecting calls
 
@@ -219,11 +215,15 @@ The automated tests cover everything except real certificates. Before a release:
 ## Development
 
 ```bash
-go vet ./...
-gofmt -l .                                         # expect no output
-go test -race ./...                                # everything except the tailnet test
+make check     # go vet, gofmt, go test -race -p 2 ./..., and the web UI's lint, format, type and unit checks
+make ui        # build the web UI into web/dist, which the binary embeds
+make build     # make ui, then build ./tsrelay
+make dev       # the UI with hot reload on http://127.0.0.1:5173, against a dev relay with sample data
+make e2e       # the end-to-end tests (Playwright, Chromium)
 go test -race -tags tailnet ./internal/server      # real tsnet nodes against an in-process control server
 ```
+
+The web UI needs Node (the version in `web/.nvmrc`) and pnpm (`corepack enable` picks up the version in `web/package.json`). A plain `go build` works without them; its binary serves a placeholder page instead of the UI.
 
 Performance:
 
@@ -235,9 +235,7 @@ TSRELAY_LOAD=1 go test ./internal/server -run TestLoad -count=1 -v      # add -c
 
 `TestLoad` drives the relay in-process (knobs: `TSRELAY_LOAD_CONCURRENCY`, `_DURATION`, `_BODY`, `_MODE=plain|streaming`) and reports throughput and the latency the relay adds over calling the app directly.
 
-The UI script's unit tests run with `node --test` as part of `go test ./internal/ui` when `node` is installed, and are skipped otherwise.
-
-`.github/workflows/ci.yml` runs the same four commands on every push and pull request. `.github/workflows/release.yml` builds binaries and a container image for tags matching `v*`; `tsrelay --version` reports the version baked in at build time (`dev` for a local build).
+`.github/workflows/ci.yml` runs these checks, the UI build with its bundle budget, and the end-to-end tests on every push and pull request. `.github/workflows/release.yml` builds binaries and a container image for tags matching `v*`; `tsrelay --version` reports the version baked in at build time (`dev` for a local build).
 
 The design is in [docs/DESIGN.md](docs/DESIGN.md).
 

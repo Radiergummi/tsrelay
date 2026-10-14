@@ -337,12 +337,12 @@ Every call has an attempts list from the start, even though v1 only ever creates
 
 | Method & path | Purpose |
 |---|---|
-| `GET /me` | Identity, effective grant (roles, channel patterns, limits), current usage, user slug |
-| `GET /hooks` | The caller's hooks (admins: `?all=true`) |
+| `GET /me` | Identity, effective grant (roles, channel patterns, limits), current usage, user slug, the relay's capability name (`capName`), and the relay-wide setting defaults and maxima (`policy`) |
+| `GET /hooks` | The caller's hooks (admins: `?all=true`). Every hook object, here and elsewhere, carries `lastCall`: its newest call's summary. |
 | `POST /hooks` | Create. `?dryRun=true` validates without saving and answers `200` with the would-be hook. |
 | `GET/PATCH/DELETE /hooks/{id}` | Read, update or delete. `PATCH` also accepts `?dryRun=true`, which validates without saving and answers `200` with the would-be hook. |
 | `GET /hooks/{id}/calls` | Call summaries, newest first |
-| `GET /hooks/{id}/calls/{callID}` | Full call with attempts and captures |
+| `GET /hooks/{id}/calls/{callID}` | Full call with attempts and captures. For the hook's owner only, `replay: {allowed, reason}` says whether it can be replayed and why not. |
 | `POST /hooks/{id}/calls/{callID}/replay` | Replay |
 | `POST /hooks/{id}/test` | Send a test request |
 | `GET /events` | Server-sent events: `call` (a call summary, on arrival and on completion) and `hook` (`{"id"}` of a hook that changed, or whose tunnel did). Admins may add `?all=true`. A stream that falls 64 events behind is closed; clients reconnect and refetch. |
@@ -355,20 +355,23 @@ The CLI uses this same API.
 
 ### 10.2 UI
 
-The UI is server-rendered with `html/template`, plus a small vanilla JS file for live updates (over SSE) and dry-run validation as the user types. All assets are embedded with `embed.FS`, and there is no frontend build step. Pages:
+The UI is a React single-page app in `web/`, built with Vite and styled with Tailwind, and embedded in the binary from `web/dist` (`make ui`). A binary built without it (a plain `go build`) serves a placeholder page that says how to build it. Screens:
 
-- **Hooks:** your hooks, with URL, channel, tunnel status (attached node and local target), and the last call.
-- **Create / edit hook:** the settings in §8. The channel picker is fed by `/me`, and fields are validated live with dry-run. Limits from the grant are shown next to each field.
-- **Hook detail:** settings, attached tunnel, and a live call list.
-- **Call detail:** request and response side by side (headers, body with a JSON pretty-print toggle), the attempts timeline, and the replay and copy-as-curl actions.
+- **Hooks:** your hooks, with path, channel, kind, tunnel (attached node and local target), last call, expiry and URL.
+- **Create / edit hook:** the settings in §8. Every change is checked with a dry run, and the relay's errors appear under their fields. Each setting shows the relay default and maximum from `/me`; the channel picker is fed by the receiver patterns.
+- **Hook:** a split pane. The call list (live, newest first, filtered in the browser by status class, method, path and sender, with the filters in the URL) is on the left, and the inspector is on the right: the request and the response (headers with redacted ones marked, bodies as a JSON tree, highlighted text or hex), the attempts, a diff of a replay against its original, and replay and copy-as-curl. Below about 900px the panes stack. Keyboard: `j`/`k`, `Enter`/`Esc`, `/`, `r`, `c`, `t`, `?`.
 - **No access:** what the caller is missing, with an example grant.
 - **Admin:** all hooks and tunnels (metadata only), with delete.
 
-Pages read hooks and calls in-process and render them on the server. The UI has no write endpoints of its own: the script sends every change (create, edit, delete, replay, test) to the JSON API, so the API's `Guard` protects the UI too. Without JavaScript the UI is read-only.
+Data flow: the app reads and writes only through the JSON API (§10.1), so `Guard` protects it like any other client, and the server decides visibility: owners get a call's query, headers and bodies; admins get metadata only. The UI hides owner-only controls when the viewer isn't the owner, but the API enforces it.
 
-Live updates: the script subscribes to `/api/v1/events`. When an event concerns what a page shows, it refetches the page and swaps the parts marked `data-live`. Rows are rendered only by the templates. After a reconnect it refetches, because events may have been missed.
+Live updates: one `EventSource` per tab on `/api/v1/events` (with `?all=true` on the admin page and on another user's hook), closed while the tab is hidden. `call` events update the cached call list and the hook's last call and refresh an open call; `hook` events refetch the hook and the lists. After a reconnect (with backoff) the app refetches what it shows, because events may have been missed.
 
-Routes: `/` (hooks, or no access), `/hooks/new`, `/hooks/{id}`, `/hooks/{id}/edit`, `/hooks/{id}/calls/{callID}`, `/inspect/{callID}` (redirects to the call; the CLI links here), `/admin`, `/static/…`. An admin without the receiver role starts on `/admin`.
+Theme: light, dark or the system's, stored in the browser and applied before the first paint by `/theme.js`.
+
+CSP (§5.7): every UI response carries `default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`. There is no inline script or style; the theme script is a file, and Base UI is told not to render `<style>` elements. Captured data is only ever rendered as text: the highlighting comes from the app's own tokenizer, invisible and bidi control characters are shown as `⟨U+XXXX⟩`, and only the hook's URL and the relay's own routes are links. CI fails on any HTML sink in the app's source and on any CSP violation in the end-to-end tests.
+
+Routes: `/`, `/hooks/new`, `/hooks/{id}`, `/hooks/{id}/edit`, `/hooks/{id}/calls/{callID}`, `/admin`, and `/inspect/{callID}`, which redirects to the call on the server (the CLI links here) or shows that the call has expired. Every other path that isn't a built file gets the app (for browsers) or a 404 problem. An admin without the receiver role starts on `/admin`.
 
 ## 11. Storage
 
