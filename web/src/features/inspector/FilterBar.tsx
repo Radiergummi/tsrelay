@@ -48,7 +48,7 @@ export function FilterBar({
     return () => clearTimeout(t);
   }, [path]);
   return (
-    <div className="space-y-2 pb-3">
+    <div className="flex flex-col gap-2 pb-4">
       <fieldset
         className="m-0 flex min-w-0 flex-wrap gap-1 border-0 p-0"
         aria-label="Filter by status"

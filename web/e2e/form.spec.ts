@@ -11,6 +11,7 @@ test("creating a hook shows dry-run errors under their fields, then saves", asyn
   const name = `e2e-${test.info().project.name}-${Date.now()}`;
   await path.fill(name);
   await expect(path).not.toHaveAttribute("aria-invalid", "true");
+  await page.getByRole("button", { name: /Delivery/ }).click();
   await page.getByLabel("Hold timeout").fill("soon");
   await expect(page.getByText("must be a duration like 30s, 2m or 1h30m")).toBeVisible();
   await page.getByLabel("Hold timeout").fill("45s");

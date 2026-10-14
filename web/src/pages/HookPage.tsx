@@ -133,14 +133,7 @@ function Loaded({
           )}
         </section>
       </div>
-      {owner && (
-        <TestRequestDialog
-          hook={hook}
-          open={testing}
-          onOpenChange={setTesting}
-          onSent={(id) => select(id, false)}
-        />
-      )}
+      {owner && <TestRequestDialog hook={hook} open={testing} onOpenChange={setTesting} />}
       <ShortcutsDialog open={help} onOpenChange={setHelp} />
     </div>
   );
