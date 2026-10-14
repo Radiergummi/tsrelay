@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +16,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
@@ -82,6 +85,50 @@ func TestForwarder(t *testing.T) {
 	}
 	if !bytes.Equal(rec.Body.Bytes(), gz.Bytes()) || rec.Header().Get("Content-Encoding") != "gzip" {
 		t.Fatal("gzip response altered")
+	}
+}
+
+// The forwarder keeps a connection to the app for every call in flight, so
+// concurrent calls reuse connections instead of opening (and running out
+// of local ports for) a new one each time.
+func TestForwarderReusesConnections(t *testing.T) {
+	const concurrency, rounds = 16, 5
+	var opened atomic.Int32
+	release := make(chan struct{})
+	var arrived sync.WaitGroup
+	local := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		arrived.Done()
+		<-release // hold every call of a round open at once
+	}))
+	local.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		if s == http.StateNew {
+			opened.Add(1)
+		}
+	}
+	local.Start()
+	defer local.Close()
+	fwd := NewForwarder(must(url.Parse(local.URL)), Options{})
+
+	for range rounds {
+		arrived.Add(concurrency)
+		var done sync.WaitGroup
+		for range concurrency {
+			done.Go(func() {
+				rec := httptest.NewRecorder()
+				fwd.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+				if rec.Code != http.StatusOK {
+					t.Errorf("status = %d", rec.Code)
+				}
+			})
+		}
+		arrived.Wait()
+		for range concurrency {
+			release <- struct{}{}
+		}
+		done.Wait()
+	}
+	if n := opened.Load(); n > concurrency {
+		t.Fatalf("%d rounds of %d concurrent calls opened %d connections, want at most %d", rounds, concurrency, n, concurrency)
 	}
 }
 
