@@ -1,9 +1,11 @@
+import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ApiError, fieldMessage, formMessage } from "@/api/client";
 import { dryRunHook, useCreateHook, useUpdateHook } from "@/api/mutations";
 import type { FieldError, Hook, Me } from "@/api/schemas";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
@@ -22,6 +24,12 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   const [values, setValues] = useState(() => initialValues(hook));
   const [errors, setErrors] = useState<FieldError[]>([]);
   const [formError, setFormError] = useState("");
+  // Delivery starts shut unless the hook overrides a default, and opens
+  // (and stays open) when one of its fields has an error.
+  const [delivery, setDelivery] = useState(() =>
+    Object.entries(values).some(([k, v]) => k.startsWith("settings.") && v !== ""),
+  );
+  if (!delivery && errors.some((e) => e.field.startsWith("settings."))) setDelivery(true);
   const dirty = useRef(false);
   const navigate = useNavigate();
   const create = useCreateHook();
@@ -170,79 +178,95 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
         <Input {...text("expiresAt")} placeholder="2026-12-31T00:00:00Z" autoComplete="off" />
       </Field>
 
-      <fieldset className="space-y-4 border-t pt-4">
-        <legend className="pr-2 font-medium">Delivery</legend>
-        <p className="text-xs text-muted-foreground">
-          Leave a field empty to use the relay default.
-        </p>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Attach policy" error={err("settings.attachPolicy")}>
-            <NativeSelect {...text("settings.attachPolicy")}>
-              <option value="">relay default ({defaults.attachPolicy})</option>
-              <option value="takeover">takeover: a new tunnel replaces the attached one</option>
-              <option value="reject">reject: a new tunnel is refused while one is attached</option>
-            </NativeSelect>
-          </Field>
-          <Field label="Host header" error={err("settings.hostHeader")}>
-            <NativeSelect {...text("settings.hostHeader")}>
-              <option value="">relay default ({defaults.hostHeader})</option>
-              <option value="preserve">preserve: your app sees the relay's host</option>
-              <option value="rewrite">rewrite: your app sees its own host</option>
-            </NativeSelect>
-          </Field>
-          <Field
-            label="Hold timeout"
-            error={err("settings.holdTimeout")}
-            hint={`How long calls wait for a tunnel; 0s disables holding.${max.holdTimeout ? ` At most ${max.holdTimeout}.` : ""}`}
-          >
-            <Input {...text("settings.holdTimeout")} placeholder={defaults.holdTimeout} />
-          </Field>
-          <Field
-            label="Response timeout"
-            error={err("settings.responseTimeout")}
-            hint={`Until your app's response headers arrive.${max.responseTimeout ? ` At most ${max.responseTimeout}.` : ""}`}
-          >
-            <Input {...text("settings.responseTimeout")} placeholder={defaults.responseTimeout} />
-          </Field>
-          <Field
-            label="Idle timeout"
-            error={err("settings.idleTimeout")}
-            hint={`Longest pause in body traffic.${max.idleTimeout ? ` At most ${max.idleTimeout}.` : ""}`}
-          >
-            <Input {...text("settings.idleTimeout")} placeholder={defaults.idleTimeout} />
-          </Field>
-          <Field
-            label="Max body size"
-            error={err("settings.maxBodyBytes")}
-            hint={`In bytes; 0 means unlimited.${max.maxBodyBytes ? ` At most ${formatSize(max.maxBodyBytes)}.` : ""}`}
-          >
-            <Input
-              {...text("settings.maxBodyBytes")}
-              inputMode="numeric"
-              placeholder={defaults.maxBodyBytes ? String(defaults.maxBodyBytes) : "unlimited"}
-            />
-          </Field>
-          <Field
-            label="Rate limit"
-            error={err("settings.rateLimit")}
-            hint={`Calls per second / burst.${max.rateLimit?.perSecond ? ` At most ${max.rateLimit.perSecond}/s.` : ""}${max.rateLimit?.burst ? ` Burst at most ${max.rateLimit.burst}.` : ""}`}
-          >
-            <Input
-              {...text("settings.rateLimit")}
-              placeholder={`${defaults.rateLimit.perSecond}/${defaults.rateLimit.burst}`}
-            />
-          </Field>
-          <Field label="Capture" error={err("settings.capture")}>
-            <NativeSelect {...text("settings.capture")}>
-              <option value="">
-                relay default ({defaults.capture ? "bodies and metadata" : "metadata only"})
-              </option>
-              <option value="true">bodies and metadata</option>
-              <option value="false">metadata only</option>
-            </NativeSelect>
-          </Field>
-        </div>
-      </fieldset>
+      <Collapsible open={delivery} onOpenChange={setDelivery} className="border-t pt-4">
+        <CollapsibleTrigger className="group flex w-full items-baseline gap-2 text-left">
+          <ChevronRight className="size-4 self-center text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-90 motion-reduce:transition-none" />
+          <span className="font-medium">Delivery</span>
+          <span className="text-xs text-muted-foreground">
+            Timeouts, limits and capture; the relay's defaults unless set
+          </span>
+        </CollapsibleTrigger>
+        <CollapsiblePanel className="-mx-1 px-1">
+          <fieldset className="space-y-4 pt-4 pb-1">
+            <legend className="sr-only">Delivery</legend>
+            <p className="text-xs text-muted-foreground">
+              Leave a field empty to use the relay default.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Attach policy" error={err("settings.attachPolicy")}>
+                <NativeSelect {...text("settings.attachPolicy")}>
+                  <option value="">relay default ({defaults.attachPolicy})</option>
+                  <option value="takeover">takeover: a new tunnel replaces the attached one</option>
+                  <option value="reject">
+                    reject: a new tunnel is refused while one is attached
+                  </option>
+                </NativeSelect>
+              </Field>
+              <Field label="Host header" error={err("settings.hostHeader")}>
+                <NativeSelect {...text("settings.hostHeader")}>
+                  <option value="">relay default ({defaults.hostHeader})</option>
+                  <option value="preserve">preserve: your app sees the relay's host</option>
+                  <option value="rewrite">rewrite: your app sees its own host</option>
+                </NativeSelect>
+              </Field>
+              <Field
+                label="Hold timeout"
+                error={err("settings.holdTimeout")}
+                hint={`How long calls wait for a tunnel; 0s disables holding.${max.holdTimeout ? ` At most ${max.holdTimeout}.` : ""}`}
+              >
+                <Input {...text("settings.holdTimeout")} placeholder={defaults.holdTimeout} />
+              </Field>
+              <Field
+                label="Response timeout"
+                error={err("settings.responseTimeout")}
+                hint={`Until your app's response headers arrive.${max.responseTimeout ? ` At most ${max.responseTimeout}.` : ""}`}
+              >
+                <Input
+                  {...text("settings.responseTimeout")}
+                  placeholder={defaults.responseTimeout}
+                />
+              </Field>
+              <Field
+                label="Idle timeout"
+                error={err("settings.idleTimeout")}
+                hint={`Longest pause in body traffic.${max.idleTimeout ? ` At most ${max.idleTimeout}.` : ""}`}
+              >
+                <Input {...text("settings.idleTimeout")} placeholder={defaults.idleTimeout} />
+              </Field>
+              <Field
+                label="Max body size"
+                error={err("settings.maxBodyBytes")}
+                hint={`In bytes; 0 means unlimited.${max.maxBodyBytes ? ` At most ${formatSize(max.maxBodyBytes)}.` : ""}`}
+              >
+                <Input
+                  {...text("settings.maxBodyBytes")}
+                  inputMode="numeric"
+                  placeholder={defaults.maxBodyBytes ? String(defaults.maxBodyBytes) : "unlimited"}
+                />
+              </Field>
+              <Field
+                label="Rate limit"
+                error={err("settings.rateLimit")}
+                hint={`Calls per second / burst.${max.rateLimit?.perSecond ? ` At most ${max.rateLimit.perSecond}/s.` : ""}${max.rateLimit?.burst ? ` Burst at most ${max.rateLimit.burst}.` : ""}`}
+              >
+                <Input
+                  {...text("settings.rateLimit")}
+                  placeholder={`${defaults.rateLimit.perSecond}/${defaults.rateLimit.burst}`}
+                />
+              </Field>
+              <Field label="Capture" error={err("settings.capture")}>
+                <NativeSelect {...text("settings.capture")}>
+                  <option value="">
+                    relay default ({defaults.capture ? "bodies and metadata" : "metadata only"})
+                  </option>
+                  <option value="true">bodies and metadata</option>
+                  <option value="false">metadata only</option>
+                </NativeSelect>
+              </Field>
+            </div>
+          </fieldset>
+        </CollapsiblePanel>
+      </Collapsible>
 
       <div className="flex gap-2">
         <Button type="submit" disabled={pending}>

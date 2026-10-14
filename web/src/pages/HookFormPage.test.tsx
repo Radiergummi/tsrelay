@@ -50,6 +50,7 @@ test("hints show the relay's defaults and maxima, and channels come from the gra
     path: "/hooks/new",
     context: fixtures.me,
   });
+  await userEvent.click(await screen.findByRole("button", { name: /Delivery/ }));
   expect(await screen.findByLabelText("Hold timeout")).toHaveAttribute("placeholder", "30s");
   expect(screen.getByText(/At most 5m0s\./)).toBeInTheDocument();
   const options = [...document.querySelectorAll("#channels option")].map((o) =>
@@ -75,7 +76,8 @@ test("creating saves, toasts and goes to the new hook", async () => {
     context: fixtures.me,
   });
   await userEvent.type(await screen.findByLabelText("Path"), "idle");
-  await userEvent.type(screen.getByLabelText("Hold timeout"), "45s");
+  await userEvent.click(screen.getByRole("button", { name: /Delivery/ }));
+  await userEvent.type(await screen.findByLabelText("Hold timeout"), "45s");
   await userEvent.click(screen.getByRole("button", { name: "Create hook" }));
   await waitFor(() => expect(router.state.location.pathname).toBe(`/hooks/${fixtures.idle.id}`));
   expect(saved).toEqual({ path: "idle", ephemeral: false, settings: { holdTimeout: "45s" } });
@@ -84,6 +86,33 @@ test("creating saves, toasts and goes to the new hook", async () => {
 
 // The app's query client toasts failed writes other than 422s; the form
 // doesn't repeat them.
+test("delivery starts shut, and opens for an error in one of its fields", async () => {
+  server.use(
+    http.post("/api/v1/hooks", () =>
+      HttpResponse.json(
+        {
+          status: 422,
+          code: "validation",
+          title: "Validation failed",
+          errors: [{ field: "settings.holdTimeout", message: "must be at most 5m0s" }],
+        },
+        { status: 422 },
+      ),
+    ),
+  );
+  renderWithProviders(<HookFormPage />, {
+    route: "/hooks/new",
+    path: "/hooks/new",
+    context: fixtures.me,
+  });
+  const trigger = await screen.findByRole("button", { name: /Delivery/ });
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByLabelText("Hold timeout")).not.toBeInTheDocument();
+  await userEvent.type(screen.getByLabelText("Path"), "idle");
+  expect(await screen.findByText("must be at most 5m0s")).toBeInTheDocument();
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+});
+
 test("a failed save other than a 422 is reported once, by the toast", async () => {
   server.use(
     http.post("/api/v1/hooks", ({ request }) =>

@@ -151,7 +151,7 @@ test("a hook deleted while open says so", async () => {
   ).toBeInTheDocument();
 });
 
-test("t opens the test request dialog, which sends and selects the new call", async () => {
+test("t opens the test request dialog, which shuts on send and toasts the outcome", async () => {
   let sent: unknown;
   server.use(
     http.post("/api/v1/hooks/:id/test", async ({ request }) => {
@@ -171,7 +171,11 @@ test("t opens the test request dialog, which sends and selects the new call", as
   await userEvent.type(within(dialog).getByLabelText("Headers"), "X-Test: yes");
   await userEvent.type(within(dialog).getByLabelText("Body"), "hello");
   await userEvent.click(within(dialog).getByRole("button", { name: "Send" }));
-  await waitFor(() => expect(router.state.location.pathname).toMatch(/\/calls\/c_test$/));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Send test request" })).not.toBeInTheDocument(),
+  );
+  expect(await screen.findByText(/^Sent: /)).toBeInTheDocument();
+  expect(router.state.location.pathname).toBe(`/hooks/${fixtures.hook.id}`);
   expect(sent).toEqual({
     method: "POST",
     path: "/ping?x=1",
@@ -200,7 +204,9 @@ test("a 422 whose errors don't map to a shown field shows a form-level message i
   await userEvent.keyboard("t");
   const dialog = await screen.findByRole("dialog", { name: "Send test request" });
   await userEvent.click(within(dialog).getByRole("button", { name: "Send" }));
+  // The dialog shuts on send, and the 422 opens it again.
+  const reopened = await screen.findByRole("dialog", { name: "Send test request" });
   expect(
-    await within(dialog).findByText("the body is too large for this hook"),
+    await within(reopened).findByText("the body is too large for this hook"),
   ).toBeInTheDocument();
 });

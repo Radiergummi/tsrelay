@@ -140,17 +140,9 @@ function CallView({
               )}
             </span>
           )}
-          <span className="text-muted-foreground">
-            from {senderLabel(call.sender)}
-            {call.sender.node && call.sender.tags?.length ? ` (${call.sender.node})` : ""}
-          </span>
-          <span className="text-muted-foreground">
-            {absoluteTime(call.receivedAt)} · <TimeAgo iso={call.receivedAt} />
-          </span>
-          <span className="flex items-center font-mono text-xs text-muted-foreground">
-            {call.id}
-            <CopyButton text={call.id} label="call ID" />
-          </span>
+          {call.kind === "test" && (
+            <span className="rounded-sm bg-muted px-1.5 text-xs">test request</span>
+          )}
           {call.kind === "replay" && call.replayOf && (
             <span className="text-muted-foreground">
               replay of{" "}
@@ -162,9 +154,19 @@ function CallView({
               </Link>
             </span>
           )}
-          {call.kind === "test" && (
-            <span className="rounded-sm bg-muted px-1.5 text-xs">test request</span>
-          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>
+            from {senderLabel(call.sender)}
+            {call.sender.node && call.sender.tags?.length ? ` (${call.sender.node})` : ""}
+          </span>
+          <span>
+            {absoluteTime(call.receivedAt)} · <TimeAgo iso={call.receivedAt} />
+          </span>
+          <span className="group flex items-center font-mono">
+            {call.id}
+            <CopyButton text={call.id} label="call ID" onHover />
+          </span>
         </div>
         {owner ? (
           <div className="flex flex-wrap items-center gap-2">

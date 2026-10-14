@@ -25,13 +25,13 @@ export function HeaderTable({
     <table className="w-full text-xs">
       <tbody>
         {lines.map(([name, value], i) => (
-          <tr key={i} className="border-b align-top last:border-0">
+          <tr key={i} className="group border-b align-top last:border-0">
             <th className="w-1/3 py-1 pr-3 text-left font-mono font-medium break-all">{name}</th>
             <td className="py-1 font-mono break-all">
               <Reveal text={value} />
             </td>
             <td className="w-6 py-0.5">
-              <CopyButton text={value} label={`${name} value`} />
+              <CopyButton text={value} label={`${name} value`} onHover />
             </td>
           </tr>
         ))}

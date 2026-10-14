@@ -23,12 +23,10 @@ export function TestRequestDialog({
   hook,
   open,
   onOpenChange,
-  onSent,
 }: {
   hook: Hook;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSent: (callId: string) => void;
 }) {
   const [method, setMethod] = useState("POST");
   const [path, setPath] = useState("/");
@@ -48,23 +46,27 @@ export function TestRequestDialog({
   const shown = (field: string) =>
     field === "method" || field === "path" || field.startsWith("headers.");
 
+  // The dialog shuts as soon as the request is sent: the call shows in the
+  // list as pending, and may wait out the hold timeout for a tunnel, so its
+  // outcome is only toasted. Only a 422, which the relay answers before
+  // delivering, brings the dialog back.
   const send = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError("");
+    onOpenChange(false);
     test.mutate(
       { method, path, headers: parseHeaders(headers), body },
       {
         onSuccess: (c) => {
           setErrors([]);
           setFormError("");
-          onOpenChange(false);
           toast.success(`Sent: ${outcomeLabel(c)}`);
-          onSent(c.id);
         },
         onError: (x) => {
           if (x instanceof ApiError && x.status === 422) {
             setErrors(x.fieldErrors);
             setFormError(formMessage(x, shown));
+            onOpenChange(true);
           } else {
             // A non-422 failure already shows as a toast (the query client's MutationCache).
             setErrors([]);

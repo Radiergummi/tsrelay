@@ -90,7 +90,7 @@ function Captured({
     text: "Show as text",
   };
   return (
-    <div className="space-y-2">
+    <div className="group space-y-2">
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <span>
           {formatSize(capture.size)}
@@ -113,7 +113,7 @@ function Captured({
                 {names[v]}
               </Button>
             ))}
-          {body.text !== null && <CopyButton text={body.text} label={label} />}
+          {body.text !== null && <CopyButton text={body.text} label={label} onHover />}
         </span>
       </div>
       <Suspense fallback={<Skeleton className="h-24 w-full" />}>
