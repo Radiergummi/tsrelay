@@ -113,6 +113,55 @@ func TestHooksCommands(t *testing.T) {
 	}
 }
 
+// Fix round "final": a stray TSRELAY_* variable must not silently change
+// hooks update settings it was never asked to change, and must not count
+// towards "give at least one flag".
+func TestHooksUpdateIgnoresEnvVars(t *testing.T) {
+	e := newCLIEnv(t)
+	code, _, errOut := e.tsrelay("hooks", "create", "cb", "--description", "payments", "--hold-timeout", "5s")
+	if code != 0 {
+		t.Fatalf("create: exit %d\n%s", code, errOut)
+	}
+
+	t.Setenv("TSRELAY_DESCRIPTION", "from-env")
+	t.Setenv("TSRELAY_HOLD_TIMEOUT", "2s")
+
+	// Only --path should take effect; the env-set description and hold
+	// timeout must be left alone.
+	code, out, errOut := e.tsrelay("hooks", "update", "cb", "--path", "cb2")
+	if code != 0 || strings.TrimSpace(out) != e.relayURL+"/~moritz/cb2" {
+		t.Fatalf("update: exit %d, stdout %q\n%s", code, out, errOut)
+	}
+	h := e.listJSON()[0]
+	if h.Path != "cb2" {
+		t.Fatalf("path = %q, want cb2", h.Path)
+	}
+	if h.Description != "payments" {
+		t.Fatalf("description = %q, a stray TSRELAY_DESCRIPTION must not have changed it", h.Description)
+	}
+	if h.Effective.HoldTimeout != hooks.Duration(5*time.Second) {
+		t.Fatalf("hold timeout = %v, a stray TSRELAY_HOLD_TIMEOUT must not have changed it", h.Effective.HoldTimeout)
+	}
+
+	// With no flags at all, env vars alone must not count as a change.
+	if code, _, _ := e.tsrelay("hooks", "update", "cb2"); code != 2 {
+		t.Fatalf("update with only env vars: exit %d, want 2", code)
+	}
+}
+
+// TSRELAY_* must still act as a default for hooks create.
+func TestHooksCreateAppliesEnvVars(t *testing.T) {
+	e := newCLIEnv(t)
+	t.Setenv("TSRELAY_DESCRIPTION", "from-env")
+	code, _, errOut := e.tsrelay("hooks", "create", "envcb")
+	if code != 0 {
+		t.Fatalf("create: exit %d\n%s", code, errOut)
+	}
+	if h := e.listJSON()[0]; h.Description != "from-env" {
+		t.Fatalf("description = %q, want the TSRELAY_DESCRIPTION default", h.Description)
+	}
+}
+
 func TestURLCommand(t *testing.T) {
 	e := newCLIEnv(t)
 	if code, out, errOut := e.tsrelay("url", e.local.URL); code != 1 || out != "" || !strings.Contains(errOut, "tsrelay http") {
@@ -164,6 +213,23 @@ func TestJSONErrorUnreachableRelay(t *testing.T) {
 	code := run(t.Context(), []string{"hooks", "list", "--json", "--relay", "http://127.0.0.1:1"}, &out, &errOut, deps{})
 	if code != 1 || out.String() != "" || !json.Valid([]byte(errOut.String())) {
 		t.Fatalf("exit %d, stdout %q, stderr %q", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "could not reach the relay at http://127.0.0.1:1") {
+		t.Fatalf("stderr should name the unreachable relay: %s", errOut.String())
+	}
+}
+
+// Minor 8: in text mode, an unreachable relay reads as a friendly message
+// with a hint, not a raw Go dial error.
+func TestUnreachableRelayText(t *testing.T) {
+	var out, errOut syncBuf
+	code := run(t.Context(), []string{"hooks", "list", "--relay", "http://127.0.0.1:1"}, &out, &errOut, deps{})
+	if code != 1 || out.String() != "" {
+		t.Fatalf("exit %d, stdout %q", code, out.String())
+	}
+	if !strings.Contains(errOut.String(), "could not reach the relay at http://127.0.0.1:1") ||
+		!strings.Contains(errOut.String(), "check --relay or TSRELAY_RELAY") {
+		t.Fatalf("stderr = %q", errOut.String())
 	}
 }
 

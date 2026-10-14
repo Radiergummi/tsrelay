@@ -176,19 +176,25 @@ func (o *output) callLine(s stream, c client.Call, link string) string {
 		ref = s.link(c.CallID, link) + " ↗"
 	}
 	const sep = 2
-	fixed := 2 + 8 + sep + 6 + sep + sep + 3 + sep + 7 + sep + ansi.StringWidth(c.Sender) + sep + ansi.StringWidth(ref)
+	fixed := 2 + 8 + sep + 6 + sep + sep + 3 + sep + 7 + sep + ansi.StringWidth(c.Sender)
+	if ref != "" {
+		fixed += sep + ansi.StringWidth(ref)
+	}
 	pathW := min(max(s.width-fixed, 10), 40)
 	path := ansi.Truncate(c.Path, pathW, "…")
 	path += strings.Repeat(" ", pathW-ansi.StringWidth(path))
-	return strings.Join([]string{
+	cols := []string{
 		s.style(styleDim, ts),
 		s.style(styleBold, fmt.Sprintf("%-6s", c.Method)),
 		path,
 		s.style(statusStyle(c.Status), fmt.Sprintf("%3d", c.Status)),
 		s.style(styleDim, fmt.Sprintf("%7s", dur)),
 		s.style(styleDim, c.Sender),
-		ref,
-	}, "  ")
+	}
+	if ref != "" {
+		cols = append(cols, ref)
+	}
+	return strings.Join(cols, "  ")
 }
 
 func statusStyle(code int) lipgloss.Style {
@@ -224,11 +230,18 @@ func (o *output) dropped(c tunnel.Control, urlOf func(hookID string) string) {
 // only learns that it is unreachable.
 func (o *output) upstreamError(err error) { o.status(styleBad, err.Error()) }
 
-// stopped reports why the command ends and returns its exit code.
+// stopped reports why the command ends and returns its exit code. With
+// --json, an error also goes to stderr as JSON, keeping the relay's problem
+// structured instead of flattening it into the stopped event's Error string.
 func (o *output) stopped(reason string, err error, code int) int {
 	switch {
 	case o.json:
 		o.emit(jsonEvent{Event: "stopped", Reason: reason, Error: errText(err), ExitCode: &code})
+		if err != nil {
+			o.mu.Lock()
+			writeJSON(o.err, newJSONError(err))
+			o.mu.Unlock()
+		}
 	case err != nil:
 		o.line(o.err, formatError(o.err, err))
 	case reason == "no-hooks":

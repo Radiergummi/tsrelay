@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"charm.land/fang/v2"
@@ -13,6 +14,7 @@ import (
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/term"
 
+	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
@@ -31,7 +33,7 @@ type stream struct {
 // --no-color, as https://no-color.org asks.
 func newStream(w io.Writer, noColor, noLinks bool) stream {
 	p := colorprofile.Detect(w, os.Environ())
-	s := stream{w: w, tty: p > colorprofile.NoTTY, width: 100}
+	s := stream{w: w, tty: isTerminal(w), width: 100}
 	s.fancy = s.tty && p >= colorprofile.ANSI && !noColor && os.Getenv("NO_COLOR") == ""
 	s.links = s.fancy && !noLinks
 	if s.fancy {
@@ -43,6 +45,24 @@ func newStream(w io.Writer, noColor, noLinks bool) stream {
 		}
 	}
 	return s
+}
+
+// isTerminal reports whether w is a real terminal, honoring TTY_FORCE (the
+// override colorprofile's own detection understands) so tests can simulate
+// one, and TERM=dumb (which colorprofile also treats as no terminal at
+// all). Unlike colorprofile.Detect's color profile, this must not go fancy
+// just because CLICOLOR_FORCE or FORCE_COLOR is set on a pipe: --json's
+// choice between indented and one-object-per-line output depends on it.
+func isTerminal(w io.Writer) bool {
+	if os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	if v, ok := os.LookupEnv("TTY_FORCE"); ok {
+		forced, _ := strconv.ParseBool(v)
+		return forced
+	}
+	f, ok := w.(term.File)
+	return ok && term.IsTerminal(f.Fd())
 }
 
 // The palette uses the terminal's own 16 colors, so it follows its theme.
@@ -107,11 +127,16 @@ var problemHints = map[string]string{
 func problemHint(code string) string { return problemHints[code] }
 
 // formatError renders err for people: a relay refusal as its title, its
-// detail and a hint; anything else on one line.
+// detail and a hint; anything else on one line, with its own hint if it has
+// one (e.g. an unreachable relay).
 func formatError(s stream, err error) string {
 	var p *problem.Problem
 	if !errors.As(err, &p) {
-		return s.glyph(s.style(styleBad, "✗")) + s.style(styleBad, "tsrelay: ") + err.Error()
+		msg := s.glyph(s.style(styleBad, "✗")) + s.style(styleBad, "tsrelay: ") + err.Error()
+		if h := errHint(err); h != "" {
+			msg += "\n  " + s.style(styleDim, "hint: "+h)
+		}
+		return msg
 	}
 	var b strings.Builder
 	b.WriteString(s.glyph(s.style(styleBad, "✗")))
@@ -123,6 +148,16 @@ func formatError(s stream, err error) string {
 		b.WriteString("\n  " + s.style(styleDim, "hint: "+h))
 	}
 	return b.String()
+}
+
+// errHint gives a hint for an error that is not a relay refusal, e.g. one
+// that means the relay could not be reached at all.
+func errHint(err error) string {
+	var ue *client.UnreachableError
+	if errors.As(err, &ue) {
+		return "check --relay or TSRELAY_RELAY"
+	}
+	return ""
 }
 
 // jsonError is how an error is reported on stderr with --json.

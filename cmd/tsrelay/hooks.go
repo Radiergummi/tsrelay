@@ -95,7 +95,7 @@ func newHooksCreateCmd(c *cli) *cobra.Command {
 	description := fs.String("description", "", "free text, at most 280 characters")
 	ephemeral := fs.Bool("ephemeral", false, "delete the hook once it had no tunnel for the relay's grace period")
 	expiresIn := fs.Duration("expires-in", 0, "delete the hook after this long (0: never)")
-	settings := registerHookSettingFlags(fs)
+	settings := registerHookSettingFlags(fs, false, "the relay's")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if *expiresIn < 0 {
@@ -143,7 +143,7 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 	description := fs.String("description", "", "replace the description")
 	ephemeral := fs.Bool("ephemeral", false, "make the hook ephemeral, or persistent with --ephemeral=false")
 	expiresIn := fs.Duration("expires-in", 0, "expire this long from now (0: never)")
-	settings := registerHookSettingFlags(fs)
+	settings := registerHookSettingFlags(fs, true, "the hook's current value")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if *expiresIn < 0 {
@@ -164,6 +164,9 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 		cmd.Flags().Visit(func(f *pflag.Flag) {
 			if cmd.InheritedFlags().Lookup(f.Name) != nil {
 				return
+			}
+			if envSet(f) {
+				return // a stray TSRELAY_* value is not a change the caller asked for
 			}
 			changes++
 			switch f.Name {

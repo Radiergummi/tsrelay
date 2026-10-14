@@ -66,7 +66,7 @@ func newServeCmd(c *cli) *cobra.Command {
 	captureBodies := fs.Bool("capture-bodies", true, "keep bodies for the inspector; false records metadata and headers only, whatever hooks set")
 	redact := listFlag{Values: slices.Clone(inspect.DefaultRedact)}
 	fs.Var(&redact, "redact-headers", "headers whose values the inspector never keeps (comma-separated)")
-	logFormat := fs.String("log-format", "json", `"json" or "text"`)
+	logFormat := fs.String("log-format", "json", `the log line format: "json" or "text"`)
 	logLevel := fs.String("log-level", "info", "debug, info, warn or error")
 	verbose := fs.Bool("verbose-tailscale", false, "include tsnet's own logs")
 

@@ -40,7 +40,7 @@ func newRoot(c *cli) *cobra.Command {
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &usageError{err.Error()} })
 	pf := root.PersistentFlags()
 	pf.StringVar(&c.relay, "relay", "", "relay URL or host (default: https://tsrelay.<your tailnet>)")
-	pf.BoolVarP(&c.json, "json", "j", false, "print JSON on stdout: one object per event, indented on a terminal")
+	pf.BoolVarP(&c.json, "json", "j", false, "print JSON on stdout (indented on a terminal)")
 	pf.BoolVar(&c.noColor, "no-color", false, "print plain text, as NO_COLOR does")
 	pf.BoolVar(&c.noLinks, "no-hyperlinks", false, "print full inspector URLs instead of clickable call IDs")
 	root.AddCommand(newHTTPCmd(c), newAttachCmd(c), newHooksCmd(c), newURLCmd(c), newServeCmd(c))

@@ -99,7 +99,7 @@ func TestPolicyFlagDefaultAboveMax(t *testing.T) {
 
 func TestHookSettingFlags(t *testing.T) {
 	fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
-	get := registerHookSettingFlags(fs)
+	get := registerHookSettingFlags(fs, false, "the relay's")
 	if err := fs.Parse([]string{"--hold-timeout=0s", "--rate-limit=5/10", "--host-header=rewrite", "--max-body-bytes=0"}); err != nil {
 		t.Fatal(err)
 	}
@@ -118,13 +118,13 @@ func TestHookSettingFlags(t *testing.T) {
 	}
 
 	fs = pflag.NewFlagSet("t", pflag.ContinueOnError)
-	get = registerHookSettingFlags(fs)
+	get = registerHookSettingFlags(fs, false, "the relay's")
 	fs.Parse([]string{"--idle-timeout=-1s"})
 	if _, err := get(); err == nil {
 		t.Error("a negative duration must fail")
 	}
 	fs = pflag.NewFlagSet("t", pflag.ContinueOnError)
-	get = registerHookSettingFlags(fs)
+	get = registerHookSettingFlags(fs, false, "the relay's")
 	fs.Parse(nil)
 	if s, err := get(); err != nil || s != (hooks.Settings{}) {
 		t.Errorf("no flags = %+v, %v", s, err)
@@ -133,7 +133,7 @@ func TestHookSettingFlags(t *testing.T) {
 
 func TestCaptureFlags(t *testing.T) {
 	fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
-	get := registerHookSettingFlags(fs)
+	get := registerHookSettingFlags(fs, false, "the relay's")
 	fs.Parse([]string{"--capture=false"})
 	if s, err := get(); err != nil || s.Capture == nil || *s.Capture {
 		t.Fatalf("--capture=false = %+v, %v", s, err)
@@ -141,5 +141,37 @@ func TestCaptureFlags(t *testing.T) {
 	p, err := policyFrom(t, "--hook-capture-default=false")
 	if err != nil || p.Defaults.Capture {
 		t.Fatalf("--hook-capture-default=false = %+v, %v", p.Defaults, err)
+	}
+}
+
+// Minor 4: help for a hook setting flag must show exactly one default,
+// worded for the command it belongs to, not pflag's own DefValue as well.
+func TestHookSettingFlagsDefaultWording(t *testing.T) {
+	fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
+	registerHookSettingFlags(fs, true, "the hook's current value")
+	for _, name := range hookSettingFlagNames {
+		f := fs.Lookup(name)
+		if f == nil {
+			t.Fatalf("no flag %q", name)
+		}
+		if f.DefValue != "" {
+			t.Errorf("%s: DefValue = %q, fang would print it alongside our own default text", name, f.DefValue)
+		}
+		if !strings.Contains(f.Usage, "the hook's current value") {
+			t.Errorf("%s: usage = %q, want it to mention the given default", name, f.Usage)
+		}
+	}
+}
+
+// Minor 3: fang capitalizes a flag description's first word, so a quoted
+// value must never be first.
+func TestHookSettingFlagDescriptionsDontStartWithAQuote(t *testing.T) {
+	fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
+	registerHookSettingFlags(fs, false, "the relay's")
+	registerPolicyFlags(fs)
+	for _, name := range []string{"attach-policy", "host-header", "hook-attach-policy-default", "hook-host-header-default"} {
+		if u := fs.Lookup(name).Usage; strings.HasPrefix(u, `"`) {
+			t.Errorf("%s usage starts with a quote, which fang would capitalize wrong: %q", name, u)
+		}
 	}
 }

@@ -162,20 +162,49 @@ func checkDefaultsWithinMaxima(fs *pflag.FlagSet, p hooks.Policy) error {
 	return nil
 }
 
+// hookSettingFlagNames are the flags registerHookSettingFlags registers.
+var hookSettingFlagNames = []string{
+	"hold-timeout", "response-timeout", "idle-timeout", "max-body-bytes",
+	"rate-limit", "attach-policy", "host-header", "capture",
+}
+
+// anyHookSettingGivenOnCLI reports whether the caller typed at least one
+// hook-setting flag on the command line, as opposed to only a TSRELAY_*
+// variable setting it.
+func anyHookSettingGivenOnCLI(fs *pflag.FlagSet) bool {
+	for _, name := range hookSettingFlagNames {
+		if f := fs.Lookup(name); f != nil && f.Changed && !envSet(f) {
+			return true
+		}
+	}
+	return false
+}
+
 // registerHookSettingFlags registers the per-hook setting flags used by
-// commands that create or update hooks. The returned function yields
-// Settings in which only the flags given on the command line are set, so
-// everything else keeps the relay default (or, on update, its current value).
-func registerHookSettingFlags(fs *pflag.FlagSet) func() (hooks.Settings, error) {
-	hold := fs.Duration("hold-timeout", 0, "how long calls wait for a tunnel to attach; 0 disables holding (default: the relay's)")
-	resp := fs.Duration("response-timeout", 0, "how long to wait for the local app's response headers (default: the relay's)")
-	idle := fs.Duration("idle-timeout", 0, "longest gap in body traffic, in either direction (default: the relay's)")
-	body := fs.Int64("max-body-bytes", 0, "largest request body in bytes; 0 means unlimited (default: the relay's)")
+// commands that create or update hooks. unsetDefault describes, in the
+// flags' help text, what an omitted flag keeps: "the relay's" default for a
+// newly created hook, or the hook's current value on an update. The flags'
+// own DefValue is cleared so fang's help does not also print it, duplicating
+// unsetDefault.
+//
+// onlyCLI restricts the returned Settings to flags actually given on the
+// command line, ignoring ones only set by a TSRELAY_* variable; it must be
+// true for hooks update, whose patch should ignore a stray environment
+// value, and false for http and hooks create, where TSRELAY_* still acts as
+// a default.
+func registerHookSettingFlags(fs *pflag.FlagSet, onlyCLI bool, unsetDefault string) func() (hooks.Settings, error) {
+	hold := fs.Duration("hold-timeout", 0, fmt.Sprintf("how long calls wait for a tunnel to attach; 0 disables holding (default: %s)", unsetDefault))
+	resp := fs.Duration("response-timeout", 0, fmt.Sprintf("how long to wait for the local app's response headers (default: %s)", unsetDefault))
+	idle := fs.Duration("idle-timeout", 0, fmt.Sprintf("longest gap in body traffic, in either direction (default: %s)", unsetDefault))
+	body := fs.Int64("max-body-bytes", 0, fmt.Sprintf("largest request body in bytes; 0 means unlimited (default: %s)", unsetDefault))
 	var rate rateLimitFlag
-	fs.Var(&rate, "rate-limit", `calls per second and burst, as "perSecond/burst" (default: the relay's)`)
-	attach := fs.String("attach-policy", "", `"takeover" or "reject" (default: the relay's)`)
-	host := fs.String("host-header", "", `"preserve" or "rewrite" (default: the relay's)`)
-	capture := fs.Bool("capture", true, "keep bodies for the inspector; --capture=false records metadata only (default: the relay's)")
+	fs.Var(&rate, "rate-limit", fmt.Sprintf(`calls per second and burst, as "perSecond/burst" (default: %s)`, unsetDefault))
+	attach := fs.String("attach-policy", "", fmt.Sprintf(`what a second tunnel does: "takeover" or "reject" (default: %s)`, unsetDefault))
+	host := fs.String("host-header", "", fmt.Sprintf(`the Host header the local app sees: "preserve" or "rewrite" (default: %s)`, unsetDefault))
+	capture := fs.Bool("capture", true, fmt.Sprintf("keep bodies for the inspector; --capture=false records metadata only (default: %s)", unsetDefault))
+	for _, name := range hookSettingFlagNames {
+		fs.Lookup(name).DefValue = "" // help already states the one true default above
+	}
 
 	return func() (hooks.Settings, error) {
 		if err := checkDurations([]durationFlag{{"hold-timeout", hold}, {"response-timeout", resp}, {"idle-timeout", idle}}); err != nil {
@@ -183,6 +212,9 @@ func registerHookSettingFlags(fs *pflag.FlagSet) func() (hooks.Settings, error) 
 		}
 		var s hooks.Settings
 		fs.Visit(func(f *pflag.Flag) {
+			if onlyCLI && envSet(f) {
+				return
+			}
 			switch f.Name {
 			case "hold-timeout":
 				s.HoldTimeout = new(hooks.Duration(*hold))

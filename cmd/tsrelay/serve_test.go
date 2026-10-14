@@ -62,3 +62,12 @@ func TestServeRejectsBadRevalidateInterval(t *testing.T) {
 		}
 	}
 }
+
+// Minor 3: fang capitalizes a flag description's first word, so a quoted
+// value (here "json" or "text") must never be first.
+func TestLogFormatDescriptionDoesNotStartWithAQuote(t *testing.T) {
+	cmd := newServeCmd(&cli{})
+	if u := cmd.Flags().Lookup("log-format").Usage; strings.HasPrefix(u, `"`) {
+		t.Errorf("--log-format usage starts with a quote, which fang would capitalize wrong: %q", u)
+	}
+}
