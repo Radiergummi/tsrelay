@@ -496,7 +496,7 @@ tsrelay completion bash|zsh|fish|powershell       cobra's generated completion
 tsrelay --version                                 fang; there is no `version` subcommand
 ```
 
-`<hook>` is a hook ID or path, resolved as today (`resolveHooks`).
+`<hook>` is a hook ID or path; `resolveHooks` looks it up among the caller's hooks.
 
 - **`tsrelay http 8080`** creates or reclaims an ephemeral hook, attaches a tunnel, prints the URL, and then prints one line per call. On a terminal, a call line has the time, method, path, status, duration and sender in aligned columns, and ends in the call ID as an OSC 8 hyperlink to `<relay>/inspect/<callID>`. Plain output prints the full link. With `--json`, call events carry `callId` and `inspect`.
 - **Flags** are GNU style, with shorthands where they read naturally: `-n`, `-c`, `-p`, `-k` on `http`; `-t`, `-k` on `attach`; `-j` everywhere. `serve` has none.
