@@ -24,9 +24,8 @@ export function renderWithProviders(
   );
   const result = render(
     <QueryClientProvider client={client}>
-      <Toaster>
-        <RouterProvider router={router} />
-      </Toaster>
+      <RouterProvider router={router} />
+      <Toaster />
     </QueryClientProvider>,
   );
   return { ...result, client, router };

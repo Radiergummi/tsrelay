@@ -2,13 +2,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Navigate, Outlet, useLocation } from "react-router";
 import { ApiError } from "@/api/client";
 import { useMe } from "@/api/queries";
-import { Button } from "@/components/ui/button";
 import { LiveProvider } from "@/lib/live";
 import { isAdmin, isReceiver, isUser } from "@/lib/viewer";
 import { NoAccessPage } from "@/pages/NoAccessPage";
 import { Header } from "./Header";
 import { LiveBar } from "./LiveBar";
-import { TableSkeleton } from "./PageState";
 
 /**
  * Layout loads /me before any page: who the viewer is decides the header,
@@ -22,7 +20,7 @@ export function Layout() {
   if (me.isPending) {
     return (
       <main className="mx-auto max-w-[1400px] px-6 py-6">
-        <TableSkeleton />
+        <LoadingSkeleton />
       </main>
     );
   }
@@ -42,6 +40,21 @@ export function Layout() {
   );
 }
 
+// Not the shared <TableSkeleton/> (components/PageState.tsx): that goes
+// through <Skeleton/>, which uses cn()/tailwind-merge, and pulling that into
+// the layout's own eager bundle blows the 120 KiB budget for one loading
+// flash. This renders the exact same markup without it; PageState's
+// TableSkeleton is untouched for the lazy-loaded pages that use it.
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-2" aria-busy="true" aria-label="Loading">
+      {Array.from({ length: 5 }, (_, i) => (
+        <div key={i} className="h-8 w-full animate-pulse rounded-md bg-muted" />
+      ))}
+    </div>
+  );
+}
+
 function NotIdentified({ error }: { error: unknown }) {
   const unidentified = error instanceof ApiError && error.status === 403;
   return (
@@ -56,7 +69,19 @@ function NotIdentified({ error }: { error: unknown }) {
             ? error.message
             : String(error)}
       </p>
-      <Button onClick={() => window.location.reload()}>Reload</Button>
+      {/*
+        Not the shared <Button/>: it goes through cn()/tailwind-merge via
+        buttonVariants(), and nothing else in the initial bundle needs that
+        library once the theme toggle is lazy too. These are the exact
+        classes buttonVariants({variant:"default", size:"default"}) produces.
+      */}
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        className="group/button inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-transparent bg-primary bg-clip-padding px-2.5 text-sm font-medium whitespace-nowrap text-primary-foreground transition-all outline-none select-none hover:bg-primary/90 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
+      >
+        Reload
+      </button>
     </main>
   );
 }
