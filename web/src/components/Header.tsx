@@ -1,11 +1,18 @@
+import { lazy, Suspense } from "react";
 import { Link, NavLink } from "react-router";
 import type { Me } from "@/api/schemas";
-import { cn } from "@/lib/utils";
 import { isAdmin, isReceiver } from "@/lib/viewer";
-import { ThemeToggle } from "./ThemeToggle";
 
-const nav = ({ isActive }: { isActive: boolean }) =>
-  cn("text-muted-foreground hover:text-foreground", isActive && "font-medium text-foreground");
+// Lazy: @base-ui/react/button and its lucide-react icons aren't needed for
+// the first paint, and deferring them keeps the initial chunk under the
+// 120 KiB gzip budget. The toggle pops in right after.
+const ThemeToggle = lazy(() => import("./ThemeToggle").then((m) => ({ default: m.ThemeToggle })));
+
+// No cn()/tailwind-merge here: the two states are fully disjoint strings
+// (never both applied at once), so there's nothing to merge or resolve —
+// and avoiding it keeps tailwind-merge out of the initial bundle too.
+const navClass = (isActive: boolean) =>
+  isActive ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground";
 
 export function Header({ me }: { me: Me }) {
   const roles = Object.keys(me.roles).sort();
@@ -17,18 +24,20 @@ export function Header({ me }: { me: Me }) {
         </Link>
         <nav className="flex gap-4">
           {isReceiver(me) && (
-            <NavLink to="/" end className={nav}>
+            <NavLink to="/" end className={({ isActive }) => navClass(isActive)}>
               Hooks
             </NavLink>
           )}
           {isAdmin(me) && (
-            <NavLink to="/admin" className={nav}>
+            <NavLink to="/admin" className={({ isActive }) => navClass(isActive)}>
               Admin
             </NavLink>
           )}
         </nav>
         <div className="ml-auto flex min-w-0 items-center gap-3">
-          <ThemeToggle />
+          <Suspense fallback={<span className="size-7" />}>
+            <ThemeToggle />
+          </Suspense>
           <span className="truncate">{me.login ?? me.node}</span>
           {roles.length > 0 && (
             <span className="hidden text-xs text-muted-foreground sm:inline">

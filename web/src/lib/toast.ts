@@ -1,14 +1,22 @@
-import { Toast } from "@base-ui/react/toast";
+interface ToastOptions {
+  title: string;
+  type: "success" | "error";
+  timeout?: number;
+  description?: string;
+}
 
-/** toastManager lets code outside React (mutation callbacks) show toasts. */
-export const toastManager = Toast.createToastManager();
+async function show(opts: ToastOptions): Promise<void> {
+  const { toastManager } = await import("./toastRuntime");
+  toastManager.add(opts);
+}
 
+/** toast lets code outside React (mutation callbacks) show toasts, without statically pulling in the Base UI toast runtime. */
 export const toast = {
   success(title: string) {
-    toastManager.add({ title, type: "success" });
+    void show({ title, type: "success" });
   },
   error(title: string, description?: string) {
-    toastManager.add({
+    void show({
       title,
       type: "error",
       timeout: 8000,

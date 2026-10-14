@@ -1,7 +1,6 @@
 import { Toast } from "@base-ui/react/toast";
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
-import { toastManager } from "@/lib/toast";
+import { toastManager } from "@/lib/toastRuntime";
 import { cn } from "@/lib/utils";
 
 function ToastList() {
@@ -27,11 +26,14 @@ function ToastList() {
   ));
 }
 
-/** Toaster provides toasts to children and shows them in the bottom right. */
-export function Toaster({ children }: { children: ReactNode }) {
+/**
+ * Toaster shows toasts in the bottom right. It's a sibling of the app, not a
+ * wrapper: toasts are added through the shared toastManager, not React
+ * context, so nothing needs to render underneath it.
+ */
+export function Toaster() {
   return (
     <Toast.Provider toastManager={toastManager} timeout={5000}>
-      {children}
       <Toast.Portal>
         <Toast.Viewport className="fixed right-4 bottom-4 z-50 flex w-80 flex-col gap-2">
           <ToastList />
