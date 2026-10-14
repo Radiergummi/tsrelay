@@ -1,22 +1,23 @@
 package main
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
 
-func TestVersionCommand(t *testing.T) {
-	saved := version
-	version = "v1.2.3"
-	defer func() { version = saved }()
-
-	var out strings.Builder
-	if code := run(context.Background(), []string{"version"}, &out, new(nopWriter), deps{}); code != 0 {
-		t.Fatalf("exit %d", code)
+func TestVersionFlag(t *testing.T) {
+	var stdout syncBuf
+	if code := run(t.Context(), []string{"--version"}, &stdout, new(nopWriter), deps{}); code != 0 {
+		t.Fatalf("--version exited %d", code)
 	}
-	if got := out.String(); got != "tsrelay v1.2.3\n" {
-		t.Fatalf("output = %q", got)
+	if !strings.Contains(stdout.String(), version) {
+		t.Fatalf("--version printed %q, want it to contain %q", stdout.String(), version)
+	}
+}
+
+func TestVersionSubcommandIsGone(t *testing.T) {
+	if code := run(t.Context(), []string{"version"}, new(nopWriter), new(nopWriter), deps{}); code != 2 {
+		t.Fatalf("version subcommand exited %d, want 2 (unknown command)", code)
 	}
 }
 

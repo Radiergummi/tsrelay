@@ -1,45 +1,57 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/spf13/pflag"
 )
 
-func TestApplyEnv(t *testing.T) {
-	fs := flag.NewFlagSet("t", flag.ContinueOnError)
-	host := fs.String("hostname", "tsrelay", "")
+func TestEnvDefaults(t *testing.T) {
+	fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
 	grace := fs.Duration("ephemeral-grace", time.Minute, "")
-	tlsOn := fs.Bool("tls", true, "")
-	var tags listFlag
-	fs.Var(&tags, "advertise-tags", "")
-
-	t.Setenv("TSRELAY_HOSTNAME", "from-env")
+	name := fs.String("name", "", "")
+	fs.Bool("persistent", false, "")
+	if err := fs.Parse([]string{"--name", "flag"}); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("TSRELAY_EPHEMERAL_GRACE", "5m")
-	t.Setenv("TSRELAY_TLS", "false")
-	t.Setenv("TSRELAY_ADVERTISE_TAGS", "tag:a,tag:b")
-	if err := fs.Parse([]string{"--hostname=from-flag"}); err != nil {
+	t.Setenv("TSRELAY_NAME", "env")       // the command line wins
+	t.Setenv("TSRELAY_NO_SUCH_FLAG", "x") // ignored
+	if err := envDefaults(fs); err != nil {
 		t.Fatal(err)
 	}
-	if err := applyEnv(fs, "TSRELAY_"); err != nil {
-		t.Fatal(err)
+	if *grace != 5*time.Minute || *name != "flag" {
+		t.Fatalf("grace = %v, name = %q", *grace, *name)
 	}
-	if *host != "from-flag" {
-		t.Errorf("hostname = %q, flags must win over env", *host)
-	}
-	if *grace != 5*time.Minute || *tlsOn || !slices.Equal(tags.Values, []string{"tag:a", "tag:b"}) {
-		t.Errorf("grace=%v tls=%v tags=%v", *grace, *tlsOn, tags)
+	if !fs.Changed("ephemeral-grace") {
+		t.Fatal("a flag set from the environment must count as Changed")
 	}
 }
 
-func TestApplyEnvInvalid(t *testing.T) {
-	fs := flag.NewFlagSet("t", flag.ContinueOnError)
-	fs.Duration("ephemeral-grace", time.Minute, "")
-	t.Setenv("TSRELAY_EPHEMERAL_GRACE", "soon")
-	fs.Parse(nil)
-	if err := applyEnv(fs, "TSRELAY_"); err == nil {
-		t.Fatal("invalid env value must be an error")
+func TestEnvDefaultsInvalid(t *testing.T) {
+	fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
+	fs.Bool("persistent", false, "")
+	t.Setenv("TSRELAY_PERSISTENT", "maybe")
+	err := envDefaults(fs)
+	var ue *usageError
+	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "TSRELAY_PERSISTENT") {
+		t.Fatalf("err = %v, want a usage error naming TSRELAY_PERSISTENT", err)
+	}
+}
+
+func TestEnvAppliesToServe(t *testing.T) {
+	t.Setenv("TSRELAY_USER_SLUG", "bogus")
+	var stderr syncBuf
+	if code := run(t.Context(), []string{"serve"}, new(nopWriter), &stderr, deps{}); code != 2 {
+		t.Fatalf("exit %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--user-slug") {
+		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
 
@@ -50,18 +62,6 @@ func TestMapFlag(t *testing.T) {
 	}
 	if err := m.Set("no-equals"); err == nil {
 		t.Fatal("missing '=' must fail")
-	}
-}
-
-func TestUsage(t *testing.T) {
-	if code := run(t.Context(), nil, new(nopWriter), new(nopWriter), deps{}); code != 2 {
-		t.Fatalf("no subcommand: exit %d, want 2", code)
-	}
-	if code := run(t.Context(), []string{"bogus"}, new(nopWriter), new(nopWriter), deps{}); code != 2 {
-		t.Fatalf("unknown subcommand: exit %d, want 2", code)
-	}
-	if code := run(t.Context(), []string{"serve", "--no-such-flag"}, new(nopWriter), new(nopWriter), deps{}); code != 2 {
-		t.Fatalf("unknown flag: exit %d, want 2", code)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/spf13/pflag"
 )
 
 func TestParseRateLimit(t *testing.T) {
@@ -22,7 +23,7 @@ func TestParseRateLimit(t *testing.T) {
 
 func policyFrom(t *testing.T, args ...string) (hooks.Policy, error) {
 	t.Helper()
-	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
 	get := registerPolicyFlags(fs)
 	if err := fs.Parse(args); err != nil {
 		t.Fatal(err)
@@ -72,7 +73,7 @@ func TestPolicyFlagErrors(t *testing.T) {
 			t.Errorf("%v: err = %v, want it to mention %q", args, err, want)
 		}
 	}
-	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
 	fs.SetOutput(new(nopWriter))
 	registerPolicyFlags(fs)
 	if err := fs.Parse([]string{"--hook-rate-limit-default=fast"}); err == nil {

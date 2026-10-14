@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,21 +11,9 @@ import (
 	"os/signal"
 	"syscall"
 
+	"charm.land/fang/v2"
 	"tailscale.com/ipn/ipnstate"
 )
-
-const usage = `tsrelay delivers callbacks from your tailnet to apps on your machine.
-
-Usage:
-  tsrelay http <port|url> [flags] [-- cmd args...]     forward a hook to a local app
-  tsrelay attach <id|path>... --forward-to <port|url>  serve existing hooks
-  tsrelay hooks ls|create|update|rm                    manage your hooks
-  tsrelay url [<port|url>]                             print the URL tsrelay http would use
-  tsrelay serve [flags]                                run the relay (as its own tailnet node)
-  tsrelay version                                      print the relay version
-
-Run "tsrelay <command> --help" for the flags of a command.
-`
 
 // deps holds what tests replace; zero values mean the real implementations.
 type deps struct {
@@ -39,29 +28,25 @@ func main() {
 	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr, deps{}))
 }
 
+// run executes tsrelay with args and returns its exit status.
 func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) int {
-	if len(args) == 0 {
-		fmt.Fprint(stderr, usage)
-		return 2
-	}
-	switch args[0] {
-	case "serve":
-		return serve(ctx, args[1:], stderr)
-	case "http":
-		return httpCmd(ctx, args[1:], stdout, stderr, d)
-	case "attach":
-		return attachCmd(ctx, args[1:], stdout, stderr, d)
-	case "hooks":
-		return hooksCmd(ctx, args[1:], stdout, stderr, d)
-	case "url":
-		return urlCmd(ctx, args[1:], stdout, stderr, d)
-	case "version":
-		return versionCmd(stdout)
-	case "help", "-h", "--help":
-		fmt.Fprint(stdout, usage)
-		return 0
-	default:
-		fmt.Fprintf(stderr, "tsrelay: unknown command %q\n\n%s", args[0], usage)
-		return 2
-	}
+	c := &cli{d: d, stdout: stdout, stderr: stderr}
+	root := newRoot(c)
+	root.SetArgs(args)
+	return exitStatus(fang.Execute(ctx, root,
+		fang.WithVersion(version),
+		fang.WithoutManpage(),
+		fang.WithErrorHandler(func(w io.Writer, _ fang.Styles, err error) {
+			var ec exitCodeError
+			if errors.As(err, &ec) {
+				return // already reported
+			}
+			// fang.DefaultErrorHandler styles its output unconditionally
+			// (it can only detect a non-terminal stream when w is an
+			// *os.File), which mangles flag names via its title-casing
+			// transform. Print plainly until Task 3 brings proper
+			// terminal-aware error formatting.
+			fmt.Fprintln(w, err.Error())
+		}),
+	))
 }

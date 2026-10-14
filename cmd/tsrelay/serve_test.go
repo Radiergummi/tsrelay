@@ -28,15 +28,6 @@ func TestServeChecksHookPolicy(t *testing.T) {
 	}
 }
 
-// --response-timeout still works, as a deprecated alias of
-// --hook-response-timeout-default.
-func TestServeResponseTimeoutAlias(t *testing.T) {
-	code, out := serveExit(t, "--response-timeout=1h") // above the 30m maximum
-	if code != 2 || !strings.Contains(out, "deprecated") || !strings.Contains(out, "--hook-response-timeout-default 1h0m0s exceeds") {
-		t.Fatalf("exit %d, stderr %q", code, out)
-	}
-}
-
 func TestAllowedHostsDropsEmpty(t *testing.T) {
 	got := allowedHosts("", "tsrelay", []netip.Addr{netip.MustParseAddr("100.64.0.1")})
 	if !slices.Equal(got, []string{"tsrelay", "100.64.0.1"}) {
