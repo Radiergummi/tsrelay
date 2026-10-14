@@ -49,11 +49,11 @@ func newHooksListCmd(c *cli) *cobra.Command {
 		if hs == nil {
 			hs = []api.Hook{}
 		}
-		out, _ := c.streams()
+		out, errStream := c.streams()
 		if c.json {
 			return writeJSON(out, hs)
 		}
-		writeHookList(out, hs)
+		writeHookList(out, errStream, hs)
 		return nil
 	}
 	return cmd
