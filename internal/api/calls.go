@@ -37,7 +37,8 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request, id authz.Identit
 }
 
 // getCall returns one call with its attempts. Admins who do not own the
-// hook get its metadata only (DESIGN.md §9.2).
+// hook get its metadata only (DESIGN.md §9.2), and only owners learn
+// whether it can be replayed.
 func (a *API) getCall(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 	h, ok := a.visibleHook(r, id)
 	if !ok {
@@ -49,10 +50,30 @@ func (a *API) getCall(w http.ResponseWriter, r *http.Request, id authz.Identity)
 		problem.New(http.StatusNotFound, problem.NotFound, "call not found").Write(w)
 		return
 	}
-	if !Owns(id, h) {
-		c = c.Metadata()
+	out := CallJSON{Call: c}
+	if Owns(id, h) {
+		out.Replay = &Replay{Allowed: true}
+		if p := ReplayRefusal(c); p != nil {
+			out.Replay = &Replay{Reason: p.Detail}
+		}
+	} else {
+		out.Call = c.Metadata()
 	}
-	writeJSON(w, http.StatusOK, c)
+	writeJSON(w, http.StatusOK, out)
+}
+
+// CallJSON is a call as GET /api/v1/hooks/{id}/calls/{callID} shows it.
+// Replay is set for the hook's owner only: nobody else may replay a call.
+type CallJSON struct {
+	inspect.Call
+	Replay *Replay `json:"replay,omitempty"`
+}
+
+// Replay says whether the owner can replay a call, and if not, why
+// (ReplayRefusal's detail).
+type Replay struct {
+	Allowed bool   `json:"allowed"`
+	Reason  string `json:"reason"`
 }
 
 // TestRequest is the body of POST /api/v1/hooks/{id}/test.

@@ -35,6 +35,7 @@ type API struct {
 	Events     *events.Hub    // receives hook changes; the event stream reads it
 	Audit      *audit.Logger
 	BaseURL    string // e.g. "https://tsrelay.example.ts.net", no trailing slash
+	CapName    string // the capability carrying relay grants; GET /me names it for the no-access page
 	Tunnel     tunnel.Options
 	Tracer     trace.Tracer // nil: no spans
 	Meter      metric.Meter // nil: no API latency histogram
@@ -48,13 +49,22 @@ type API struct {
 }
 
 type Me struct {
-	Login  string                  `json:"login,omitempty"`
-	Node   string                  `json:"node"`
-	Tags   []string                `json:"tags,omitempty"`
-	Slug   string                  `json:"slug,omitempty"`
-	Roles  map[authz.Role][]string `json:"roles"`
-	Limits Limits                  `json:"limits"`
-	Hooks  int                     `json:"hooks"`
+	Login   string                  `json:"login,omitempty"`
+	Node    string                  `json:"node"`
+	Tags    []string                `json:"tags,omitempty"`
+	Slug    string                  `json:"slug,omitempty"`
+	Roles   map[authz.Role][]string `json:"roles"`
+	Limits  Limits                  `json:"limits"`
+	Hooks   int                     `json:"hooks"`
+	CapName string                  `json:"capName"`
+	Policy  Policy                  `json:"policy"`
+}
+
+// Policy is the relay-wide setting defaults and maxima (DESIGN.md §8), which
+// the UI shows next to each setting.
+type Policy struct {
+	Defaults hooks.Effective `json:"defaults"`
+	Max      hooks.Maxima    `json:"max"`
 }
 
 type Limits struct {
@@ -64,18 +74,19 @@ type Limits struct {
 }
 
 type Hook struct {
-	ID          string          `json:"id"`
-	URL         string          `json:"url"`
-	Owner       string          `json:"owner"`
-	Path        string          `json:"path"`
-	Channel     string          `json:"channel"`
-	Description string          `json:"description,omitempty"`
-	Ephemeral   bool            `json:"ephemeral"`
-	ExpiresAt   *time.Time      `json:"expiresAt,omitempty"`
-	Settings    hooks.Settings  `json:"settings"`
-	Effective   hooks.Effective `json:"effective"`
-	CreatedAt   time.Time       `json:"createdAt"`
-	Tunnel      *TunnelInfo     `json:"tunnel,omitempty"`
+	ID          string           `json:"id"`
+	URL         string           `json:"url"`
+	Owner       string           `json:"owner"`
+	Path        string           `json:"path"`
+	Channel     string           `json:"channel"`
+	Description string           `json:"description,omitempty"`
+	Ephemeral   bool             `json:"ephemeral"`
+	ExpiresAt   *time.Time       `json:"expiresAt,omitempty"`
+	Settings    hooks.Settings   `json:"settings"`
+	Effective   hooks.Effective  `json:"effective"`
+	CreatedAt   time.Time        `json:"createdAt"`
+	Tunnel      *TunnelInfo      `json:"tunnel,omitempty"`
+	LastCall    *inspect.Summary `json:"lastCall,omitempty"` // the newest call, metadata only
 }
 
 type TunnelInfo struct {
@@ -142,6 +153,8 @@ func (a *API) MeOf(id authz.Identity) Me {
 		me.Slug, _ = a.Hooks.Slug(id.Login)
 		me.Hooks = len(a.Hooks.List(id.UserID))
 	}
+	p := a.Hooks.Policy()
+	me.CapName, me.Policy = a.CapName, Policy{Defaults: p.Defaults, Max: p.Max}
 	return me
 }
 
@@ -312,6 +325,9 @@ func (a *API) HookJSON(h hooks.Hook) Hook {
 	}
 	if t, ok := a.Tunnels.Lookup(string(h.ID)); ok {
 		out.Tunnel = &TunnelInfo{ID: t.ID, Node: t.Owner.NodeName, Target: t.Target}
+	}
+	if last, ok := a.Inspect.Latest(h.ID); ok {
+		out.LastCall = &last
 	}
 	return out
 }

@@ -25,7 +25,7 @@ const DefaultEphemeralGrace = 10 * time.Minute
 type Config struct {
 	BaseURL        string   // public URL of the relay on the tailnet, no trailing slash
 	AllowedHosts   []string // Host header values the relay answers to
-	CapName        string   // the capability carrying relay grants; the UI's no-access page names it
+	CapName        string   // the capability carrying relay grants; GET /me names it
 	EphemeralGrace time.Duration
 	HoldQueue      int // calls per hook that may wait for a tunnel; 0 means relay.DefaultHoldQueue
 	Tunnel         tunnel.Options
@@ -72,7 +72,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect}
 
 	mux := http.NewServeMux()
-	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName)}
+	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, CapName: cfg.CapName, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName)}
 	if s.tel.Tracing {
 		s.relay.Tracer = s.tel.Tracer.Tracer(telemetry.ScopeName)
 		if !cfg.NoTracePropagation {
