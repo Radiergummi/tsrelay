@@ -3,6 +3,7 @@ package client
 import (
 	"crypto/tls"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -30,6 +31,11 @@ type Options struct {
 func NewForwarder(target *url.URL, opts Options) http.Handler {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.DisableCompression = true
+	// Keep a connection for every call in flight. With the default of 2,
+	// each further concurrent call opens a new connection and closes it
+	// afterwards, which soon runs out of local ports. The relay's
+	// --tunnel-concurrency already bounds how many calls are in flight.
+	tr.MaxIdleConns, tr.MaxIdleConnsPerHost = 0, math.MaxInt
 	if opts.Insecure && target.Scheme == "https" {
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
