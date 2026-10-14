@@ -1,1 +1,118 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource-variable/inter";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Refined Swiss: warm greys, one violet accent for selection, the active
+ * tab and primary actions, hairlines only where they separate, and a small
+ * radius. Status colours appear only on status numerals.
+ */
+:root {
+  --radius: 0.375rem;
+  --background: oklch(0.99 0.002 75);
+  --foreground: oklch(0.22 0.006 60);
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+  --muted: oklch(0.965 0.004 75);
+  --muted-foreground: oklch(0.5 0.01 60);
+  --secondary: oklch(0.955 0.004 75);
+  --secondary-foreground: var(--foreground);
+  --accent: oklch(0.955 0.012 290);
+  --accent-foreground: oklch(0.35 0.12 290);
+  --border: oklch(0.915 0.005 75);
+  --input: oklch(0.88 0.006 75);
+  --ring: oklch(0.56 0.2 290);
+  --primary: oklch(0.52 0.2 290);
+  --primary-foreground: oklch(0.99 0 0);
+  --destructive: oklch(0.56 0.2 27);
+  --status-2xx: oklch(0.52 0.13 150);
+  --status-3xx: oklch(0.52 0.11 240);
+  --status-4xx: oklch(0.6 0.14 65);
+  --status-5xx: oklch(0.56 0.2 27);
+  --status-pending: oklch(0.55 0.01 60);
+}
+
+.dark {
+  --background: oklch(0.17 0.004 60);
+  --foreground: oklch(0.93 0.004 75);
+  --card: oklch(0.2 0.004 60);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.21 0.005 60);
+  --popover-foreground: var(--foreground);
+  --muted: oklch(0.22 0.005 60);
+  --muted-foreground: oklch(0.66 0.008 70);
+  --secondary: oklch(0.24 0.005 60);
+  --secondary-foreground: var(--foreground);
+  --accent: oklch(0.27 0.05 290);
+  --accent-foreground: oklch(0.86 0.08 290);
+  --border: oklch(0.29 0.005 60);
+  --input: oklch(0.34 0.006 60);
+  --ring: oklch(0.7 0.16 290);
+  --primary: oklch(0.68 0.17 290);
+  --primary-foreground: oklch(0.16 0.01 290);
+  --destructive: oklch(0.66 0.19 25);
+  --status-2xx: oklch(0.74 0.14 150);
+  --status-3xx: oklch(0.74 0.11 240);
+  --status-4xx: oklch(0.8 0.13 75);
+  --status-5xx: oklch(0.7 0.18 27);
+  --status-pending: oklch(0.66 0.008 70);
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --color-status-2xx: var(--status-2xx);
+  --color-status-3xx: var(--status-3xx);
+  --color-status-4xx: var(--status-4xx);
+  --color-status-5xx: var(--status-5xx);
+  --color-status-pending: var(--status-pending);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background font-sans text-sm text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  code,
+  kbd,
+  pre,
+  samp {
+    @apply font-mono;
+  }
+}
