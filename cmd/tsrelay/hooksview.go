@@ -30,9 +30,11 @@ func hookExpiry(h api.Hook) string {
 	return h.ExpiresAt.Local().Format(time.DateTime)
 }
 
-// writeHookList prints hooks as a table when s is fancy, else as
-// tab-separated lines with a header, for cut and awk.
-func writeHookList(s stream, hs []api.Hook) {
+// writeHookList prints hooks as a table on out when out is fancy, else as
+// tab-separated lines with a header, for cut and awk. A fancy, empty list
+// prints its "no hooks yet" hint to errStream instead of an empty table,
+// since stdout carries only the URL/data output of hooks commands.
+func writeHookList(out, errStream stream, hs []api.Hook) {
 	header := []string{"ID", "PATH", "CHANNEL", "KIND", "TUNNEL", "EXPIRES", "URL"}
 	rows := make([][]string, len(hs))
 	for i, h := range hs {
@@ -40,17 +42,17 @@ func writeHookList(s stream, hs []api.Hook) {
 		if h.Tunnel != nil {
 			tun = h.Tunnel.Node
 		}
-		rows[i] = []string{h.ID, h.Path, h.Channel, hookKind(h), tun, hookExpiry(h), s.link(h.URL, h.URL)}
+		rows[i] = []string{h.ID, h.Path, h.Channel, hookKind(h), tun, hookExpiry(h), out.link(h.URL, h.URL)}
 	}
-	if !s.fancy {
-		fmt.Fprintln(s.w, strings.Join(header, "\t"))
+	if !out.fancy {
+		fmt.Fprintln(out.w, strings.Join(header, "\t"))
 		for _, r := range rows {
-			fmt.Fprintln(s.w, strings.Join(r, "\t"))
+			fmt.Fprintln(out.w, strings.Join(r, "\t"))
 		}
 		return
 	}
 	if len(hs) == 0 {
-		fmt.Fprintln(s.w, s.style(styleDim, "no hooks yet; tsrelay http <port> creates one"))
+		fmt.Fprintln(errStream.w, errStream.style(styleDim, "no hooks yet; tsrelay http <port> creates one"))
 		return
 	}
 	cell := lipgloss.NewStyle().Padding(0, 1)
@@ -65,7 +67,7 @@ func writeHookList(s stream, hs []api.Hook) {
 			}
 			return cell
 		})
-	fmt.Fprintln(s.w, t.String())
+	fmt.Fprintln(out.w, t.String())
 }
 
 // writeHookShow prints one hook and its effective settings as a
