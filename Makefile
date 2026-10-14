@@ -9,10 +9,14 @@ build: ui
 	go build -o tsrelay ./cmd/tsrelay
 
 # Vite on :5173 in front of the dev harness (internal/server/uidev_test.go)
-# on :8099. Interrupt to stop both.
+# on :8099. The harness is compiled to a binary and exec'd directly, not
+# left running inside a `go test` wrapper: that wrapper's PID is what $$!
+# would otherwise hold, and killing only the wrapper can orphan its child
+# holding the ports. Interrupt to stop both.
 dev:
-	TSRELAY_UI_DEV=1 go test ./internal/server -run '^TestUIDev$$' -count=1 -timeout 0 & \
-	trap 'kill $$!' EXIT; cd web && pnpm dev
+	dir=$$(mktemp -d) && go test -c -o $$dir/uidev.test ./internal/server || exit 1; \
+	(cd internal/server && TSRELAY_UI_DEV=1 exec $$dir/uidev.test -test.run '^TestUIDev$$' -test.count=1 -test.timeout=0) & \
+	trap 'kill $$! 2>/dev/null; rm -rf "$$dir"' EXIT; cd web && pnpm dev
 
 check:
 	go vet ./...
