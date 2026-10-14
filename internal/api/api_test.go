@@ -116,6 +116,9 @@ func TestMeNamesCapAndPolicy(t *testing.T) {
 	if d.HoldTimeout != hooks.Duration(30*time.Second) || d.AttachPolicy != hooks.AttachTakeover || m.HoldTimeout != hooks.Duration(5*time.Minute) {
 		t.Errorf("policy = %+v", me.Policy)
 	}
+	if me.Policy.CallsPerHook != inspect.DefaultCallsPerHook {
+		t.Errorf("policy.callsPerHook = %d, want %d", me.Policy.CallsPerHook, inspect.DefaultCallsPerHook)
+	}
 }
 
 // Every hook response carries the hook's newest call as a summary, which

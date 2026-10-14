@@ -61,10 +61,12 @@ type Me struct {
 }
 
 // Policy is the relay-wide setting defaults and maxima (DESIGN.md §8), which
-// the UI shows next to each setting.
+// the UI shows next to each setting, and how many calls the relay keeps per
+// hook (DESIGN.md §9.2), so the UI's cached list never grows past it.
 type Policy struct {
-	Defaults hooks.Effective `json:"defaults"`
-	Max      hooks.Maxima    `json:"max"`
+	Defaults     hooks.Effective `json:"defaults"`
+	Max          hooks.Maxima    `json:"max"`
+	CallsPerHook int             `json:"callsPerHook"`
 }
 
 type Limits struct {
@@ -154,7 +156,7 @@ func (a *API) MeOf(id authz.Identity) Me {
 		me.Hooks = len(a.Hooks.List(id.UserID))
 	}
 	p := a.Hooks.Policy()
-	me.CapName, me.Policy = a.CapName, Policy{Defaults: p.Defaults, Max: p.Max}
+	me.CapName, me.Policy = a.CapName, Policy{Defaults: p.Defaults, Max: p.Max, CallsPerHook: a.Inspect.CallsPerHook()}
 	return me
 }
 

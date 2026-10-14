@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { paths } from "@/api/client";
 import { keys } from "@/api/queries";
-import { hookEvent, summary, type Hook, type Summary } from "@/api/schemas";
+import { hookEvent, summary, type Hook, type Me, type Summary } from "@/api/schemas";
 import { backoffDelay } from "./backoff";
 
 export type LiveStatus = "off" | "connecting" | "live" | "reconnecting";
@@ -16,13 +16,28 @@ export interface LiveStreamOptions {
 const newer = (s: Summary, last: Summary | undefined) =>
   !last || last.id === s.id || Date.parse(s.receivedAt) >= Date.parse(last.receivedAt);
 
-/** applyCallEvent folds a call summary into the cached lists, the hook's lastCall, and refreshes the call if it's open. */
+/**
+ * applyCallEvent folds a call summary into the cached lists, the hook's
+ * lastCall, and refreshes the call if it's open. The list keeps no more
+ * calls than the relay does (/me's policy.callsPerHook). A list being
+ * fetched is refetched instead, since the answer in flight may predate the
+ * event and would overwrite it.
+ */
 export function applyCallEvent(qc: QueryClient, s: Summary): void {
-  qc.setQueryData<Summary[]>(keys.calls(s.hookId), (list) => {
-    if (!list) return list;
-    const rest = list.filter((c) => c.id !== s.id);
-    return [s, ...rest].sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt));
-  });
+  const key = keys.calls(s.hookId);
+  if (qc.getQueryState(key)?.fetchStatus === "fetching") {
+    void qc.invalidateQueries({ queryKey: key });
+  } else {
+    const cap = qc.getQueryData<Me>(keys.me)?.policy.callsPerHook;
+    qc.setQueryData<Summary[]>(key, (list) => {
+      if (!list) return list;
+      const rest = list.filter((c) => c.id !== s.id);
+      const sorted = [s, ...rest].sort(
+        (a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt),
+      );
+      return cap === undefined ? sorted : sorted.slice(0, cap);
+    });
+  }
   const withLast = (h: Hook): Hook =>
     h.id === s.hookId && newer(s, h.lastCall) ? { ...h, lastCall: s } : h;
   qc.setQueriesData<Hook[]>({ queryKey: ["hooks"] }, (list) => list?.map(withLast));
