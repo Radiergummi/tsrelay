@@ -111,7 +111,10 @@ func TestUIDev(t *testing.T) {
 			c.Method, c.Path = "POST", "/"+h.Path
 		}
 		if c.Outcome == "" {
-			c.Outcome, c.Status = inspect.OutcomeOK, 200
+			c.Outcome = inspect.OutcomeOK
+		}
+		if c.Status == 0 && c.Outcome == inspect.OutcomeOK {
+			c.Status = 200
 		}
 		if c.Duration == 0 && c.Outcome != inspect.OutcomePending {
 			c.Duration = hooks.Duration(42 * time.Millisecond)
