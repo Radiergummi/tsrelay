@@ -56,6 +56,7 @@ func NewForwarder(target *url.URL, opts Options) http.Handler {
 		},
 		Transport:     tr,
 		FlushInterval: -1,
+		BufferPool:    tunnel.Buffers,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			if opts.OnUpstreamError != nil {
 				opts.OnUpstreamError(fmt.Errorf("could not reach %s: %w", target.Redacted(), err))
