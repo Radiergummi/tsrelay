@@ -44,7 +44,8 @@ function Loaded({ hookId, callId }: { hookId: string; callId: string | undefined
   const owner = owns(me, hook);
   const calls = useCalls(hookId);
   const [params, setParams] = useSearchParams();
-  const filters = readFilters(params);
+  const query = params.toString();
+  const filters = useMemo(() => readFilters(new URLSearchParams(query)), [query]);
   const visible = useMemo(
     () => (calls.data ?? []).filter((c) => matches(c, filters)),
     [calls.data, filters],
