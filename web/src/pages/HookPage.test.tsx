@@ -37,6 +37,19 @@ test("shows the hook, its settings, and its calls newest first", async () => {
   );
 });
 
+test("another user's hook path and description are shown with control characters revealed", async () => {
+  server.use(
+    http.get("/api/v1/hooks/:id", () =>
+      HttpResponse.json({ ...fixtures.theirs, path: "a\u202eb", description: "c\u2066d" }),
+    ),
+  );
+  open(fixtures.theirs.id, `/hooks/${fixtures.theirs.id}`, fixtures.meAdmin);
+  expect(await screen.findByRole("heading", { name: "a⟨U+202E⟩b" })).toBeInTheDocument();
+  expect(
+    screen.getByText((_, el) => el?.tagName === "P" && el.textContent === "c⟨U+2066⟩d"),
+  ).toBeInTheDocument();
+});
+
 test("filters by status, method, path and sender, kept in the URL", async () => {
   const { router } = open(fixtures.busy.id);
   await screen.findAllByRole("link", { name: /\/busy\/item/ });

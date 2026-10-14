@@ -14,6 +14,7 @@ import {
 import { DeleteHookDialog } from "@/features/hooks/DeleteHookDialog";
 import { LastCall } from "@/features/hooks/LastCall";
 import { TunnelText } from "@/features/hooks/TunnelText";
+import { Reveal } from "@/features/inspector/Reveal";
 import { useAllEvents } from "@/lib/live";
 import { useViewer } from "@/lib/useViewer";
 import { isAdmin } from "@/lib/viewer";
@@ -65,7 +66,7 @@ export function AdminPage() {
                     to={`/hooks/${encodeURIComponent(h.id)}`}
                     className="font-medium hover:underline"
                   >
-                    {h.path}
+                    <Reveal text={h.path} />
                   </Link>
                 </TableCell>
                 <TableCell>{h.channel}</TableCell>

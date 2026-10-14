@@ -39,6 +39,22 @@ test("lists every hook as metadata, subscribes to every hook's events, and delet
   expect(await screen.findByText("Deleted theirs")).toBeInTheDocument();
 });
 
+test("another user's hook path is shown with its control characters revealed", async () => {
+  server.use(
+    http.get("/api/v1/hooks", () =>
+      HttpResponse.json([{ ...fixtures.theirs, path: "pay\u202egnp.exe" }]),
+    ),
+  );
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  renderWithProviders(
+    <LiveProvider client={client} user>
+      <AdminPage />
+    </LiveProvider>,
+    { route: "/admin", path: "/admin", context: fixtures.me, client },
+  );
+  expect(await screen.findByRole("link", { name: "pay⟨U+202E⟩gnp.exe" })).toBeInTheDocument();
+});
+
 test("a non-admin is refused", async () => {
   renderWithProviders(<AdminPage />, {
     route: "/admin",
