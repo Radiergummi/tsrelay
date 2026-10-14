@@ -10,7 +10,15 @@ for (const call of ["c_hostile_html", "c_hostile_json", "c_hostile_form"]) {
     await expect(inspector.getByRole("heading", { level: 2 })).toBeVisible();
     for (const view of ["Raw", "Tree"]) {
       const toggle = inspector.getByRole("button", { name: view, exact: true });
-      if (await toggle.count()) await toggle.click();
+      if (await toggle.count()) {
+        await toggle.click();
+        if (view === "Tree") {
+          // The tree view is lazy-loaded; wait for it to have actually
+          // mounted, so the absence checks below aren't vacuously true
+          // because nothing has rendered yet.
+          await expect(inspector.getByText('"<img src=x onerror=alert(7)>"')).toBeVisible();
+        }
+      }
       await expect(
         inspector.locator("script, img, iframe, object, embed, form, style"),
       ).toHaveCount(0);

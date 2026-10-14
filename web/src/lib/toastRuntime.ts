@@ -23,8 +23,12 @@ export const toastManager: typeof manager = {
   ...manager,
   add(options) {
     if (!subscribed) {
-      pending.push(options);
-      return options.id ?? "";
+      // Generate the id now and carry it on the queued options, so it
+      // matches what callers get back (for a later close()/update() by id)
+      // once this toast is actually added on subscribe.
+      const id = options.id || crypto.randomUUID();
+      pending.push({ ...options, id });
+      return id;
     }
     return manager.add(options);
   },

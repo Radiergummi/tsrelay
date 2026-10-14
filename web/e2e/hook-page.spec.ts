@@ -24,11 +24,7 @@ test("filters and keyboard navigation", async ({ page, request }) => {
   expect(fives).toBeGreaterThan(0);
   expect(fives).toBeLessThan(100);
   await page.keyboard.press("/");
-  // Each keystroke writes the path filter to the URL via setSearchParams,
-  // which (per react-router's own docs) does not build on a prior call
-  // still in flight within the same tick; a human-paced delay keeps
-  // synthetic typing from outrunning that round trip.
-  await page.keyboard.type("item/9", { delay: 60 });
+  await page.keyboard.type("item/9");
   await expect(page).toHaveURL(/path=item%2F9/);
   await page.locator("body").click({ position: { x: 1, y: 1 } });
   await page.keyboard.press("j");

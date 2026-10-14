@@ -48,6 +48,20 @@ test("filters by status, method, path and sender, kept in the URL", async () => 
   await waitFor(() => expect(router.state.location.search).toContain("path=item%2F4"));
 });
 
+test("typing a long path fast doesn't lose keystrokes", async () => {
+  // RouterProvider applies a navigation inside startTransition; a path
+  // input controlled straight from the URL can briefly revert to the
+  // pre-keystroke value while that's still committing, dropping fast
+  // keystrokes. `delay: null` types with no gap between keys at all, the
+  // most adversarial timing userEvent can produce.
+  const { router } = open(fixtures.busy.id);
+  await screen.findAllByRole("link", { name: /\/busy\/item/ });
+  const input = screen.getByRole("searchbox", { name: "Filter by path" });
+  await userEvent.type(input, "busy/item/42extra", { delay: null });
+  expect(input).toHaveValue("busy/item/42extra");
+  await waitFor(() => expect(router.state.location.search).toContain("path=busy%2Fitem%2F42extra"));
+});
+
 test("j, k, Enter and Esc move through the calls; / focuses the filter; typing there is not a shortcut", async () => {
   const { router } = open(fixtures.busy.id);
   await screen.findAllByRole("link", { name: /\/busy\/item/ });
