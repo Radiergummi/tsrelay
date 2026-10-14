@@ -45,15 +45,28 @@ export function Layout() {
 // the layout's own eager bundle blows the 120 KiB budget for one loading
 // flash. This renders the exact same markup without it; PageState's
 // TableSkeleton is untouched for the lazy-loaded pages that use it.
+//
+// Kept in sync with <Skeleton className="h-8 w-full" /> (ui/skeleton.tsx)
+// by Layout.classes.test.tsx, which renders a real Skeleton and compares.
+export const loadingRowClassName = "h-8 w-full animate-pulse rounded-md bg-muted";
+
 function LoadingSkeleton() {
   return (
     <div className="space-y-2" aria-busy="true" aria-label="Loading">
       {Array.from({ length: 5 }, (_, i) => (
-        <div key={i} className="h-8 w-full animate-pulse rounded-md bg-muted" />
+        <div key={i} className={loadingRowClassName} />
       ))}
     </div>
   );
 }
+
+// These are the classes buttonVariants({variant: "default", size: "default"})
+// (ui/button.tsx) produces, minus the `[&_svg]...` icon-child selectors,
+// which don't apply to this icon-less button. Kept in sync by
+// Layout.classes.test.tsx, which calls the real buttonVariants() and checks
+// every one of its (non-icon) classes is present here.
+export const reloadButtonClassName =
+  "group/button inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-transparent bg-primary bg-clip-padding px-2.5 text-sm font-medium whitespace-nowrap text-primary-foreground transition-all outline-none select-none hover:bg-primary/90 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40";
 
 function NotIdentified({ error }: { error: unknown }) {
   const unidentified = error instanceof ApiError && error.status === 403;
@@ -72,13 +85,12 @@ function NotIdentified({ error }: { error: unknown }) {
       {/*
         Not the shared <Button/>: it goes through cn()/tailwind-merge via
         buttonVariants(), and nothing else in the initial bundle needs that
-        library once the theme toggle is lazy too. These are the exact
-        classes buttonVariants({variant:"default", size:"default"}) produces.
+        library once the theme toggle is lazy too.
       */}
       <button
         type="button"
         onClick={() => window.location.reload()}
-        className="group/button inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-transparent bg-primary bg-clip-padding px-2.5 text-sm font-medium whitespace-nowrap text-primary-foreground transition-all outline-none select-none hover:bg-primary/90 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
+        className={reloadButtonClassName}
       >
         Reload
       </button>
