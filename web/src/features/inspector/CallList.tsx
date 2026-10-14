@@ -21,9 +21,12 @@ export function CallList({
   search: string;
 }) {
   const selectedRef = useRef<HTMLAnchorElement>(null);
-  // selected decides which element the ref attaches to, not something read in the callback.
+  // selected decides which element the ref attaches to, not something read
+  // in the callback. scrollIntoView() can return a Promise (new browsers
+  // resolve it once scrolling settles); void it, since an effect's return
+  // value must be a cleanup function or undefined, never that promise.
   // oxlint-disable-next-line react/exhaustive-effect-dependencies
-  useEffect(() => selectedRef.current?.scrollIntoView({ block: "nearest" }), [selected]);
+  useEffect(() => void selectedRef.current?.scrollIntoView({ block: "nearest" }), [selected]);
   if (calls.length === 0)
     return <p className="py-8 text-center text-muted-foreground">No calls match.</p>;
   return (
