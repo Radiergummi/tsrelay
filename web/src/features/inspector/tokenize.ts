@@ -56,7 +56,8 @@ function json(text: string): Token[] {
 }
 
 const tagRE = /(<!--[\s\S]*?(?:-->|$))|(<\/?[A-Za-z][^\s/>]*)|([^<]+|<)/gy;
-const attrRE = /(\s+)|([^\s=/>"']+)|(=)|("[^"]*"?|'[^']*'?|[^\s>"']+)|(\/?>)/gy;
+/** The closing alternative (\/?>) comes before the value alternative so "/>" matches as one token, not a stray "/" value followed by ">". */
+const attrRE = /(\s+)|([^\s=/>"']+)|(=)|(\/?>)|("[^"]*"?|'[^']*'?|[^\s>"']+)/gy;
 
 function markup(text: string): Token[] {
   const out: Token[] = [];
@@ -71,7 +72,7 @@ function markup(text: string): Token[] {
       let closed = false;
       let expectValue = false;
       for (let a = attrRE.exec(text); a; a = attrRE.exec(text)) {
-        const [at, ws, name, eq, , close] = a;
+        const [at, ws, name, eq, close] = a;
         end = attrRE.lastIndex;
         if (close !== undefined) {
           out.push({ kind: "tag", text: at });

@@ -30,6 +30,22 @@ test("JSON shows as a tree with exact numbers, with a raw toggle", async () => {
   expect(screen.getByText(textMatching(/"amount":12345678901234567890/))).toBeInTheDocument();
 });
 
+test("a large valid JSON body is shown raw, not as a tree", () => {
+  const big = JSON.stringify(Array(200_000).fill(0));
+  render(
+    <BodyViewer
+      capture={{ body: btoa(big), size: big.length, captured: true }}
+      contentType="application/json"
+      metadataOnly={false}
+      label="b"
+    />,
+  );
+  expect(screen.getByText(/0,0,0/)).toBeInTheDocument();
+  expect(screen.getByText(/too large to show as a tree, so shown raw/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Tree" })).not.toBeInTheDocument();
+  expect(document.querySelectorAll("details")).toHaveLength(0);
+});
+
 test("a truncated body says how much was kept", () => {
   render(
     <BodyViewer

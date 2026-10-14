@@ -40,3 +40,8 @@ test("markup tags, attributes and values", () => {
   expect(t.find((x) => x.kind === "attr")?.text).toBe("href");
   expect(t.find((x) => x.kind === "value")?.text).toBe(`"x"`);
 });
+
+test("a self-closing tag's slash and bracket are one token", () => {
+  const t = tokenize("<br/>", "markup");
+  expect(t.filter((x) => x.kind === "tag").map((x) => x.text)).toEqual(["<br", "/>"]);
+});
