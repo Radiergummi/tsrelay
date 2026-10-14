@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,14 +25,21 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/server"
 	"github.com/Radiergummi/tsrelay/internal/telemetry"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"github.com/spf13/cobra"
 	_ "tailscale.com/feature/oauthkey" // lets TS_CLIENT_SECRET mint auth keys
 	"tailscale.com/tailcfg/peercap"
 	"tailscale.com/tsnet"
 )
 
-func serve(ctx context.Context, args []string, stderr io.Writer) int {
-	fs := flag.NewFlagSet("tsrelay serve", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+func newServeCmd(c *cli) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Run the relay as its own tailnet node",
+		Long: "Run the relay as its own tailnet node. Every flag can also be set as " +
+			"TSRELAY_<FLAG>, e.g. TSRELAY_STATE_DIR for --state-dir.",
+		Args: usageArgs(cobra.NoArgs),
+	}
+	fs := cmd.Flags()
 	hostname := fs.String("hostname", "tsrelay", "tailnet machine name of the relay")
 	stateDir := fs.String("state-dir", defaultStateDir(), "directory for tailnet state and hooks")
 	useTLS := fs.Bool("tls", true, "serve HTTPS on 443 with a tailnet certificate; false serves plain HTTP on 80")
@@ -48,7 +54,6 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	maxTTL := fs.Duration("max-hook-ttl-default", 0, "longest hook lifetime unless a grant allows more (0: unlimited)")
 	grace := fs.Duration("ephemeral-grace", server.DefaultEphemeralGrace, "how long an ephemeral hook survives without a tunnel")
 	policyFlags := registerPolicyFlags(fs)
-	legacyResponseTimeout := fs.Duration("response-timeout", 0, "deprecated: use --hook-response-timeout-default")
 	concurrency := fs.Int("tunnel-concurrency", tunnel.DefaultConcurrency, "concurrent calls per tunnel")
 	revalidate := fs.Duration("revalidate-interval", time.Minute, "how often attached tunnels are re-authorized")
 	opsListen := fs.String("ops-listen", "", "host address for /healthz, /readyz and /metrics, e.g. :9090; never on the tailnet (empty: off)")
@@ -64,76 +69,58 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	logFormat := fs.String("log-format", "json", `"json" or "text"`)
 	logLevel := fs.String("log-level", "info", "debug, info, warn or error")
 	verbose := fs.Bool("verbose-tailscale", false, "include tsnet's own logs")
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-	if err := applyEnv(fs, "TSRELAY_"); err != nil {
-		fmt.Fprintln(stderr, "tsrelay serve:", err)
-		return 2
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "tsrelay serve: unexpected argument %q\n", fs.Arg(0))
-		return 2
-	}
-	if *slugMode != string(hooks.SlugLocalPart) && *slugMode != string(hooks.SlugLogin) {
-		fmt.Fprintf(stderr, "tsrelay serve: --user-slug must be %q or %q\n", hooks.SlugLocalPart, hooks.SlugLogin)
-		return 2
-	}
-	if *revalidate <= 0 {
-		fmt.Fprintln(stderr, "tsrelay serve: --revalidate-interval must be positive")
-		return 2
-	}
-	if *holdQueue < 1 {
-		fmt.Fprintln(stderr, "tsrelay serve: --hold-queue must be at least 1; use --hook-hold-timeout-default=0s to disable holding")
-		return 2
-	}
-	if *captureLimit < 1 || *captureCalls < 1 {
-		fmt.Fprintln(stderr, "tsrelay serve: --capture-limit and --capture-calls must be at least 1; use --capture-bodies=false to keep no bodies")
-		return 2
-	}
-	for login, slug := range overrides {
-		if !hooks.ValidSlug(slug) {
-			fmt.Fprintf(stderr, "tsrelay serve: --user-slug-override %s=%s: a slug may only contain a-z, 0-9, '.', '_' and '-'\n", login, slug)
-			return 2
-		}
-	}
-	logger, err := newLogger(stderr, *logFormat, *logLevel)
-	if err != nil {
-		fmt.Fprintln(stderr, "tsrelay serve:", err)
-		return 2
-	}
-	if wasSet(fs, "response-timeout") {
-		logger.Warn("--response-timeout is deprecated; use --hook-response-timeout-default")
-		if !wasSet(fs, "hook-response-timeout-default") {
-			_ = fs.Set("hook-response-timeout-default", legacyResponseTimeout.String())
-		}
-	}
-	policy, err := policyFlags()
-	if err != nil {
-		fmt.Fprintln(stderr, "tsrelay serve:", err)
-		return 2
-	}
 
-	err = runRelay(ctx, logger, relayConfig{
-		hostname: *hostname, stateDir: *stateDir, tls: *useTLS, tags: tags.Values, verbose: *verbose,
-		cap:    peercap.Cap(*capName),
-		slugs:  hooks.SlugConfig{Mode: hooks.SlugMode(*slugMode), Overrides: overrides},
-		limits: authz.Limits{MaxHooks: *maxHooks, MaxTunnels: *maxTunnels, MaxHookTTL: *maxTTL},
-		policy: policy,
-		server: server.Config{
-			EphemeralGrace: *grace, HoldQueue: *holdQueue, Tunnel: tunnel.Options{Concurrency: *concurrency},
-			Inspect: inspect.Config{CallsPerHook: *captureCalls, CaptureLimit: *captureLimit, NoBodies: !*captureBodies, Redact: redact.Values},
-			CapName: *capName, NoTracePropagation: !*propagate,
-		},
-		revalidate: *revalidate,
-		opsListen:  *opsListen,
-		otel:       *otlp, pprof: *opsPprof,
-	})
-	if err != nil {
-		logger.Error("relay stopped", "error", err)
-		return 1
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		ctx := cmd.Context()
+		stderr := c.stderr
+		if *slugMode != string(hooks.SlugLocalPart) && *slugMode != string(hooks.SlugLogin) {
+			return usagef("--user-slug must be %q or %q", hooks.SlugLocalPart, hooks.SlugLogin)
+		}
+		if *revalidate <= 0 {
+			return usagef("--revalidate-interval must be positive")
+		}
+		if *holdQueue < 1 {
+			return usagef("--hold-queue must be at least 1; use --hook-hold-timeout-default=0s to disable holding")
+		}
+		if *captureLimit < 1 || *captureCalls < 1 {
+			return usagef("--capture-limit and --capture-calls must be at least 1; use --capture-bodies=false to keep no bodies")
+		}
+		for login, slug := range overrides {
+			if !hooks.ValidSlug(slug) {
+				return usagef("--user-slug-override %s=%s: a slug may only contain a-z, 0-9, '.', '_' and '-'", login, slug)
+			}
+		}
+		logger, err := newLogger(stderr, *logFormat, *logLevel)
+		if err != nil {
+			return &usageError{err.Error()}
+		}
+		policy, err := policyFlags()
+		if err != nil {
+			return &usageError{err.Error()}
+		}
+
+		err = runRelay(ctx, logger, relayConfig{
+			hostname: *hostname, stateDir: *stateDir, tls: *useTLS, tags: tags.Values, verbose: *verbose,
+			cap:    peercap.Cap(*capName),
+			slugs:  hooks.SlugConfig{Mode: hooks.SlugMode(*slugMode), Overrides: overrides},
+			limits: authz.Limits{MaxHooks: *maxHooks, MaxTunnels: *maxTunnels, MaxHookTTL: *maxTTL},
+			policy: policy,
+			server: server.Config{
+				EphemeralGrace: *grace, HoldQueue: *holdQueue, Tunnel: tunnel.Options{Concurrency: *concurrency},
+				Inspect: inspect.Config{CallsPerHook: *captureCalls, CaptureLimit: *captureLimit, NoBodies: !*captureBodies, Redact: redact.Values},
+				CapName: *capName, NoTracePropagation: !*propagate,
+			},
+			revalidate: *revalidate,
+			opsListen:  *opsListen,
+			otel:       *otlp, pprof: *opsPprof,
+		})
+		if err != nil {
+			logger.Error("relay stopped", "error", err)
+			return exitCodeError(1)
+		}
+		return nil
 	}
-	return 0
+	return cmd
 }
 
 type relayConfig struct {

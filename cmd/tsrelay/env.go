@@ -6,6 +6,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+
+	"github.com/spf13/pflag"
 )
 
 // applyEnv sets every flag not given on the command line from the
@@ -34,6 +36,31 @@ func applyEnv(fs *flag.FlagSet, prefix string) error {
 	return nil
 }
 
+// envDefaults sets every flag of fs not given on the command line from
+// TSRELAY_<NAME>, with dashes turned into underscores (e.g.
+// --ephemeral-grace ← TSRELAY_EPHEMERAL_GRACE). Variables that match no
+// flag are ignored.
+func envDefaults(fs *pflag.FlagSet) error {
+	var errs []string
+	fs.VisitAll(func(f *pflag.Flag) {
+		if f.Changed {
+			return
+		}
+		name := "TSRELAY_" + strings.ToUpper(strings.ReplaceAll(f.Name, "-", "_"))
+		v, ok := os.LookupEnv(name)
+		if !ok {
+			return
+		}
+		if err := fs.Set(f.Name, v); err != nil {
+			errs = append(errs, fmt.Sprintf("%s=%q: %v", name, v, err))
+		}
+	})
+	if len(errs) > 0 {
+		return usagef("invalid environment: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
 // listFlag collects comma-separated values. The first explicit value
 // replaces the default in Values; repeating the flag appends.
 type listFlag struct {
@@ -42,6 +69,7 @@ type listFlag struct {
 }
 
 func (l *listFlag) String() string { return strings.Join(l.Values, ",") }
+func (l *listFlag) Type() string   { return "strings" }
 
 func (l *listFlag) Set(v string) error {
 	if !l.set {
@@ -57,6 +85,8 @@ func (l *listFlag) Set(v string) error {
 
 // mapFlag collects key=value pairs; repeating the flag adds pairs.
 type mapFlag map[string]string
+
+func (m mapFlag) Type() string { return "key=value" }
 
 func (m mapFlag) String() string {
 	parts := make([]string, 0, len(m))

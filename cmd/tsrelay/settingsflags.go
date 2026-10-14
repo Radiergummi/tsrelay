@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/spf13/pflag"
 )
 
 // parseRateLimit parses "perSecond/burst", e.g. "100/200" or "0.5/1".
@@ -48,6 +49,8 @@ func (f *rateLimitFlag) Set(s string) error {
 	return nil
 }
 
+func (f *rateLimitFlag) Type() string { return "perSecond/burst" }
+
 // wasSet reports whether the flag name was given on the command line or
 // applied from the environment by applyEnv.
 func wasSet(fs *flag.FlagSet, name string) bool {
@@ -75,7 +78,7 @@ func checkDurations(ds []durationFlag) error {
 // --hook-<setting>-max flags (DESIGN.md §12) on fs. The returned function
 // builds the policy after parsing and checks that the defaults lie within
 // the maxima.
-func registerPolicyFlags(fs *flag.FlagSet) func() (hooks.Policy, error) {
+func registerPolicyFlags(fs *pflag.FlagSet) func() (hooks.Policy, error) {
 	d, m := hooks.DefaultPolicy.Defaults, hooks.DefaultPolicy.Max
 	holdDef := fs.Duration("hook-hold-timeout-default", d.HoldTimeout.Std(), "how long a call waits for a tunnel to attach (0 disables holding)")
 	holdMax := fs.Duration("hook-hold-timeout-max", m.HoldTimeout.Std(), "largest hold timeout a hook may set (0: no maximum)")
@@ -136,7 +139,7 @@ func registerPolicyFlags(fs *flag.FlagSet) func() (hooks.Policy, error) {
 
 // checkDefaultsWithinMaxima reports a default above its maximum by flag
 // name; p.Check would only name the hook setting.
-func checkDefaultsWithinMaxima(fs *flag.FlagSet, p hooks.Policy) error {
+func checkDefaultsWithinMaxima(fs *pflag.FlagSet, p hooks.Policy) error {
 	d, m := p.Defaults, p.Max
 	overDur := func(def, max hooks.Duration) bool { return max > 0 && def > max }
 	body := strconv.FormatInt(d.MaxBodyBytes, 10)
@@ -160,7 +163,7 @@ func checkDefaultsWithinMaxima(fs *flag.FlagSet, p hooks.Policy) error {
 			continue
 		}
 		hint := "set the default too"
-		if wasSet(fs, "hook-"+c.setting+"-default") {
+		if fs.Changed("hook-" + c.setting + "-default") {
 			hint = "lower the default or raise the maximum"
 		}
 		return fmt.Errorf("--hook-%s-default %s exceeds --hook-%s-max %s; %s", c.setting, c.def, c.setting, c.max, hint)
