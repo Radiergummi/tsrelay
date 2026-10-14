@@ -35,6 +35,7 @@ export function TestRequestDialog({
   const [headers, setHeaders] = useState("");
   const [body, setBody] = useState("");
   const [errors, setErrors] = useState<FieldError[]>([]);
+  const [formError, setFormError] = useState("");
   const test = useTestRequest(hook.id);
   const err = (f: string) => errors.find((e) => e.field === f)?.message;
   const headerErr =
@@ -42,19 +43,34 @@ export function TestRequestDialog({
       .filter((e) => e.field.startsWith("headers."))
       .map((e) => `${e.field.slice(8)} ${e.message}`)
       .join("; ") || undefined;
+  // method, path and headers.* each have their own field below; any other
+  // field (e.g. body, which has no error slot) surfaces at the form level.
+  const shown = (field: string) =>
+    field === "method" || field === "path" || field.startsWith("headers.");
 
   const send = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError("");
     test.mutate(
       { method, path, headers: parseHeaders(headers), body },
       {
         onSuccess: (c) => {
           setErrors([]);
+          setFormError("");
           onOpenChange(false);
           toast.success(`Sent: ${outcomeLabel(c)}`);
           onSent(c.id);
         },
-        onError: (x) => setErrors(x instanceof ApiError ? x.fieldErrors : []),
+        onError: (x) => {
+          if (x instanceof ApiError && x.status === 422) {
+            setErrors(x.fieldErrors);
+            const rest = x.fieldErrors.filter((fe) => !shown(fe.field));
+            setFormError(rest.length || !x.fieldErrors.length ? x.message : "");
+          } else {
+            // A non-422 failure already shows as a toast (the query client's MutationCache).
+            setErrors([]);
+          }
+        },
       },
     );
   };
@@ -70,6 +86,11 @@ export function TestRequestDialog({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={send} className="space-y-3" noValidate>
+          {formError && (
+            <p role="alert" className="text-destructive">
+              {formError}
+            </p>
+          )}
           <div className="grid grid-cols-[7rem_1fr] gap-3">
             <Field label="Method" error={err("method")}>
               <Input value={method} onChange={(e) => setMethod(e.target.value.toUpperCase())} />
