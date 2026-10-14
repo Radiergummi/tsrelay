@@ -483,24 +483,35 @@ With `--trace-propagation` (the default), a sender's call joins the sender's tra
 ## 15. CLI
 
 ```
-tsrelay serve [flags]                      run the relay
-tsrelay http <port|url> [--name P] [--channel C] [--persistent] [-- cmd args...]
-tsrelay attach <hook>... [--forward-to <port|url>]
-tsrelay hooks ls | create | update | rm
-tsrelay url [<port|url>]                   print the URL tsrelay http would use
+tsrelay http <port|url> [flags] [-- cmd args...]   forward a new or remembered hook to a local app
+tsrelay attach <hook>... -t/--to <port|url>       serve existing hooks
+tsrelay hooks list (alias ls)                     list your hooks
+tsrelay hooks show <hook>                         one hook in detail
+tsrelay hooks create [<path>] [flags]
+tsrelay hooks update <hook> [flags]
+tsrelay hooks delete <hook>... (alias rm)
+tsrelay url [<port|url>]                          print the URL `http` would use
+tsrelay serve [flags]                             run the relay
+tsrelay completion bash|zsh|fish|powershell       cobra's generated completion
+tsrelay --version                                 fang; there is no `version` subcommand
 ```
 
-- **`tsrelay http 8080`** creates or reclaims an ephemeral hook, attaches a tunnel, prints the URL, and then prints one line per call:
-  ```
-  POST /done → 200  12ms  tag:prod-worker  https://tsrelay.…/inspect/c_7f3a
-  ```
-  The link is `<relay>/inspect/<callID>`. The CLI reads the call ID from the `Tsrelay-Call-Id` header of the request it forwards. With `--json`, call events carry `callId` and `inspect`.
+`<hook>` is a hook ID or path, resolved as today (`resolveHooks`).
+
+- **`tsrelay http 8080`** creates or reclaims an ephemeral hook, attaches a tunnel, prints the URL, and then prints one line per call. On a terminal, a call line has the time, method, path, status, duration and sender in aligned columns, and ends in the call ID as an OSC 8 hyperlink to `<relay>/inspect/<callID>`. Plain output prints the full link. With `--json`, call events carry `callId` and `inspect`.
+- **Flags** are GNU style, with shorthands where they read naturally: `-n`, `-c`, `-p`, `-k` on `http`; `-t`, `-k` on `attach`; `-j` everywhere. `serve` has none.
+- **The environment:** every flag `--foo-bar` can be set as `TSRELAY_FOO_BAR`, and the command line wins.
 - **Targets:** a bare port means `http://localhost:<port>`. A full URL is also accepted, including a path prefix and `https://` (with `--insecure` for self-signed local certificates).
 - **Stable URLs:** the CLI remembers the hook path it used for each working directory and target, in `$XDG_STATE_HOME/tsrelay/hooks.json`, and asks for the same path next time. The URL put into `.env` therefore keeps working across restarts, including after the ephemeral grace period has passed.
 - **`-- cmd args...`** starts the local application with `TSRELAY_URL` set in its environment, and stops it when the tunnel command exits.
 - **Finding the relay:** `--relay`, then `TSRELAY_RELAY`, then a default built from `https://tsrelay.` plus the tailnet's MagicDNS suffix, read from the local Tailscale API.
-- **Output:** `--json` switches to one JSON object per event. Logs go to stderr and the URL goes to stdout, so `$(tsrelay url)` works.
-- **Disconnects:** the CLI says so plainly ("tunnel lost, reconnecting… calls are being held for 30s") and reports when it has reattached.
+- **Output:**
+  - Hook URLs go to stdout and everything else to stderr, so `$(tsrelay url)` works.
+  - Each stream is styled only when it's a terminal with colors on (`NO_COLOR` and `--no-color` turn colors off).
+  - `--json` prints JSON on stdout: indented on a terminal, compact otherwise. Errors go to stderr as JSON.
+- **Errors:** relay refusals show their title, detail and, for common codes, a hint.
+- **Exit codes:** 2 for usage errors (including bad `TSRELAY_*` values), 1 for failures, and the child's own code when the command after `--` exits.
+- **Disconnects:** the CLI says so plainly ("tunnel lost, reconnecting… calls are held for 30s") and reports when it has reattached ("reconnected").
 
 ## 16. Testing
 

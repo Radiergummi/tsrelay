@@ -48,8 +48,8 @@ Forwarding https://tsrelay.example.ts.net/~moritz/amber-otter-lamp → http://lo
 Configure that URL as the callback URL in the app that calls you. Paths below it are passed on: `…/amber-otter-lamp/payments/done` reaches your app as `/payments/done`. Running `tsrelay http 8080` again in the same directory prints the same URL, so you can keep it in your `.env`.
 
 Useful flags:
-- `--name payments/v1` picks the path yourself.
-- `--persistent` keeps the hook after the command exits. While no tunnel is attached, callers get `503` with `Retry-After`.
+- `-n`/`--name payments/v1` picks the path yourself.
+- `-p`/`--persistent` keeps the hook after the command exits. While no tunnel is attached, callers get `503` with `Retry-After`.
 - `--relay host` points at a relay that isn't at `tsrelay.<your tailnet>`.
 
 ## Channels
@@ -85,22 +85,24 @@ tsrelay hooks create payments/v1 --rate-limit 10/20 --host-header rewrite
 tsrelay hooks update payments/v1 --hold-timeout 0s
 ```
 
-`tsrelay http` always uses the relay defaults; use `tsrelay hooks create` plus `tsrelay attach` for a hook with custom settings, such as `--capture=false` to stop keeping bodies for just that hook.
+`tsrelay http` takes the same settings flags; they apply when it creates the hook, not to a hook it reuses.
 
 ## Managing hooks
 
 ```bash
-tsrelay hooks ls [--json]                            # your hooks
-tsrelay hooks create [<path>] [flags]                # create a persistent hook
-tsrelay hooks update <id|path> [flags]               # change one (only the given flags)
-tsrelay hooks rm <id|path>...                         # delete one or more
-tsrelay url [<port|url>]                              # print the URL tsrelay http would use, without contacting the relay
-tsrelay attach <id|path>... --forward-to <port|url>   # serve existing hooks from one local target
+tsrelay hooks list                                 # your hooks (alias: ls)
+tsrelay hooks show <hook>                          # one hook and its effective settings
+tsrelay hooks create [<path>] [flags]              # create a persistent hook
+tsrelay hooks update <hook> [flags]                # change one (only the given flags)
+tsrelay hooks delete <hook>...                     # delete one or more (alias: rm)
+tsrelay url [<port|url>]                           # the URL tsrelay http would use, without contacting the relay
+tsrelay attach <hook>... -t <port|url>             # serve existing hooks from one local target
 ```
 
-`tsrelay http` and `tsrelay attach` both accept:
-- `--insecure` to skip TLS certificate verification when the target is `https://` (self-signed local certificates).
-- `--json` to print one JSON event per line on stdout (`url`, `connected`, `disconnected`, `call`, `stopped`) instead of text; useful for scripting.
+`<hook>` is a hook's ID or path.
+
+- `-k`/`--insecure` (on `http` and `attach`) skips TLS certificate verification for an `https://` target.
+- `-j`/`--json` (on every command) prints JSON on stdout instead of text. `http` and `attach` print one event per line (`url`, `connected`, `disconnected`, `call`, `stopped`), and the other commands print one value. On a terminal the JSON is indented; piped, it's compact. Errors go to stderr as `{"error": …, "problem": {…}}`.
 
 If a served hook's path is changed (`tsrelay hooks update` or the API), both print its new URL on stdout, and `tsrelay http` remembers it.
 
@@ -109,6 +111,14 @@ If a served hook's path is changed (`tsrelay hooks update` or the API), both pri
 tsrelay http 8080 -- npm run dev
 ```
 The command keeps the `TSRELAY_URL` it was started with, even if the hook's path changes while it runs.
+
+## Shell completion and output
+
+`tsrelay completion bash|zsh|fish|powershell` prints a completion script; for example `tsrelay completion fish > ~/.config/fish/completions/tsrelay.fish`.
+
+Every flag can also be set in the environment as `TSRELAY_<FLAG>`, with dashes as underscores (`--relay` ← `TSRELAY_RELAY`, `--hold-timeout` ← `TSRELAY_HOLD_TIMEOUT`); the command line wins.
+
+On a terminal, output is colored, call lines are aligned, and each call ends with its ID as a clickable link to the inspector. Output that isn't a terminal is plain text, as is output with `NO_COLOR` set or `--no-color` given. If your terminal doesn't support hyperlinks, `--no-hyperlinks` (or `TSRELAY_NO_HYPERLINKS=1`) prints the full inspector URL instead.
 
 ## What your app receives
 
@@ -225,7 +235,7 @@ TSRELAY_LOAD=1 go test ./internal/server -run TestLoad -count=1 -v      # add -c
 
 The UI script's unit tests run with `node --test` as part of `go test ./internal/ui` when `node` is installed, and are skipped otherwise.
 
-`.github/workflows/ci.yml` runs the same four commands on every push and pull request. `.github/workflows/release.yml` builds binaries and a container image for tags matching `v*`; `tsrelay version` reports the version baked in at build time (`dev` for a local build).
+`.github/workflows/ci.yml` runs the same four commands on every push and pull request. `.github/workflows/release.yml` builds binaries and a container image for tags matching `v*`; `tsrelay --version` reports the version baked in at build time (`dev` for a local build).
 
 The design is in [docs/DESIGN.md](docs/DESIGN.md).
 
