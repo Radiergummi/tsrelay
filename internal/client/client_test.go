@@ -241,6 +241,17 @@ func TestAPIClientDecodesProblems(t *testing.T) {
 	}
 }
 
+// Minor 8: a network failure, not a relay response, must be wrapped into a
+// friendly message naming the relay's base URL, instead of a raw dial error.
+func TestAPIClientUnreachable(t *testing.T) {
+	c := &API{BaseURL: "http://127.0.0.1:1", HTTP: http.DefaultClient}
+	_, err := c.ListHooks(context.Background())
+	var ue *UnreachableError
+	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "could not reach the relay at http://127.0.0.1:1") {
+		t.Fatalf("err = %v, want an *UnreachableError naming the relay", err)
+	}
+}
+
 func TestRelayURL(t *testing.T) {
 	status := func(context.Context) (*ipnstate.Status, error) {
 		return &ipnstate.Status{CurrentTailnet: &ipnstate.TailnetStatus{MagicDNSSuffix: "example.ts.net"}}, nil
