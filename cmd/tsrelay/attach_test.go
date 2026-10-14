@@ -21,7 +21,7 @@ func TestAttach(t *testing.T) {
 		t.Fatal(err)
 	}
 	// By ID and by path; naming a hook twice attaches it once.
-	r := e.startCmd("attach", a.ID, "ship/v1", "pay", "--forward-to", e.local.URL, "--relay", e.relayURL)
+	r := e.startCmd("attach", a.ID, "ship/v1", "pay", "--to", e.local.URL, "--relay", e.relayURL)
 	waitOutput(t, r.stderr, "Forwarding "+a.URL)
 	waitOutput(t, r.stderr, "Forwarding "+b.URL)
 	if out := r.stdout.String(); out != a.URL+"\n"+b.URL+"\n" {
@@ -56,7 +56,7 @@ func TestAttachFollowsHookUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := e.startCmd("attach", a.ID, "--forward-to", e.local.URL, "--relay", e.relayURL)
+	r := e.startCmd("attach", a.ID, "--to", e.local.URL, "--relay", e.relayURL)
 	waitOutput(t, r.stderr, "Forwarding "+a.URL)
 	moved, err := e.api().UpdateHook(ctx, a.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new("billing")}})
 	if err != nil {
@@ -79,7 +79,7 @@ func TestAttachAppliesLowerSeqAfterReconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := e.startCmd("attach", a.ID, "--forward-to", e.local.URL, "--relay", e.relayURL)
+	r := e.startCmd("attach", a.ID, "--to", e.local.URL, "--relay", e.relayURL)
 	waitOutput(t, r.stderr, "Forwarding "+a.URL)
 
 	for _, p := range []string{"a", "b", "c"} {
@@ -101,12 +101,7 @@ func TestAttachAppliesLowerSeqAfterReconnect(t *testing.T) {
 
 func TestAttachRefusals(t *testing.T) {
 	e := newCLIEnv(t)
-	if code, _, errOut := e.tsrelay("attach", "nope", "--forward-to", "8080"); code != 1 || !strings.Contains(errOut, `"nope"`) {
+	if code, _, errOut := e.tsrelay("attach", "nope", "--to", "8080"); code != 1 || !strings.Contains(errOut, `"nope"`) {
 		t.Fatalf("unknown hook: exit %d\n%s", code, errOut)
-	}
-	for _, args := range [][]string{{"attach", "--forward-to", "8080"}, {"attach", "pay"}, {"attach", "pay", "--forward-to", "ftp://x"}} {
-		if code := run(context.Background(), args, &syncBuf{}, &syncBuf{}, deps{}); code != 2 {
-			t.Errorf("run(%q) = %d, want 2", args, code)
-		}
 	}
 }

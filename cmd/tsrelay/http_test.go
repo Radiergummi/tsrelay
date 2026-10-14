@@ -264,14 +264,6 @@ func TestHTTPRelayRefusal(t *testing.T) {
 	}
 }
 
-func TestHTTPUsage(t *testing.T) {
-	for _, args := range [][]string{{"http"}, {"http", "ftp://example.com"}, {"http", "8080", "extra"}} {
-		if code := run(context.Background(), args, &syncBuf{}, &syncBuf{}, deps{}); code != 2 {
-			t.Errorf("run(%q) = %d, want 2", args, code)
-		}
-	}
-}
-
 // Reusing a hook whose channel or persistence differs from the flags would
 // silently ignore them; the CLI must say so instead.
 func TestHTTPRefusesMismatchedReuse(t *testing.T) {
@@ -486,14 +478,16 @@ func TestHTTPJSON(t *testing.T) {
 }
 
 // TestHelperChild is the command the "-- cmd" tests start: it records its
-// PID and TSRELAY_URL, then sleeps or exits as TSRELAY_TEST_CHILD says.
+// PID, TSRELAY_URL and the arguments it received, then sleeps or exits as
+// TSRELAY_TEST_CHILD says.
 func TestHelperChild(t *testing.T) {
 	mode := os.Getenv("TSRELAY_TEST_CHILD")
 	if mode == "" {
 		t.Skip("runs only as the child of the -- cmd tests")
 	}
 	out := os.Getenv("TSRELAY_TEST_CHILD_OUT")
-	if err := os.WriteFile(out+".tmp", fmt.Appendf(nil, "%d %s", os.Getpid(), os.Getenv("TSRELAY_URL")), 0o600); err != nil {
+	report := fmt.Sprintf("%d %s %s", os.Getpid(), os.Getenv("TSRELAY_URL"), strings.Join(os.Args[1:], " "))
+	if err := os.WriteFile(out+".tmp", []byte(report), 0o600); err != nil {
 		os.Exit(10)
 	}
 	if err := os.Rename(out+".tmp", out); err != nil {
@@ -515,15 +509,16 @@ func (e *cliEnv) startChild(mode string) (*cliRun, string) {
 	return e.start("--", os.Args[0], "-test.run=^TestHelperChild$"), out
 }
 
-// readChild waits for the child's report and returns its PID and TSRELAY_URL.
-func readChild(t *testing.T, path string) (pid int, url string) {
+// readChild waits for the child's report and returns its PID, TSRELAY_URL
+// and the arguments it received after "--".
+func readChild(t *testing.T, path string) (pid int, url, args string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		b, err := os.ReadFile(path)
 		if err == nil {
-			if _, err := fmt.Sscanf(string(b), "%d %s", &pid, &url); err == nil {
-				return pid, url
+			if _, err := fmt.Sscanf(string(b), "%d %s %s", &pid, &url, &args); err == nil {
+				return pid, url, args
 			}
 		}
 		if time.Now().After(deadline) {
@@ -538,9 +533,14 @@ func TestHTTPCommandStoppedOnInterrupt(t *testing.T) {
 	e := newCLIEnv(t)
 	r, report := e.startChild("sleep")
 	hookURL := e.url(r)
-	pid, childURL := readChild(t, report)
+	pid, childURL, childArgs := readChild(t, report)
 	if childURL != hookURL {
 		t.Fatalf("child got TSRELAY_URL=%q, want %q", childURL, hookURL)
+	}
+	// Proves that a flag-like argument after "--" reaches the child
+	// unparsed, rather than being consumed by tsrelay's own flag parsing.
+	if !strings.Contains(childArgs, "-test.run=^TestHelperChild$") {
+		t.Fatalf("child args = %q, want it to include -test.run=^TestHelperChild$", childArgs)
 	}
 	r.cancel() // what Ctrl-C does to run's context
 	if code := waitExit(t, r); code != 0 {

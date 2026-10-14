@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"strings"
 	"testing"
 
@@ -99,7 +98,7 @@ func TestPolicyFlagDefaultAboveMax(t *testing.T) {
 }
 
 func TestHookSettingFlags(t *testing.T) {
-	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
 	get := registerHookSettingFlags(fs)
 	if err := fs.Parse([]string{"--hold-timeout=0s", "--rate-limit=5/10", "--host-header=rewrite", "--max-body-bytes=0"}); err != nil {
 		t.Fatal(err)
@@ -118,13 +117,13 @@ func TestHookSettingFlags(t *testing.T) {
 		t.Errorf("flags that were not given must stay nil: %+v", s)
 	}
 
-	fs = flag.NewFlagSet("t", flag.ContinueOnError)
+	fs = pflag.NewFlagSet("t", pflag.ContinueOnError)
 	get = registerHookSettingFlags(fs)
 	fs.Parse([]string{"--idle-timeout=-1s"})
 	if _, err := get(); err == nil {
 		t.Error("a negative duration must fail")
 	}
-	fs = flag.NewFlagSet("t", flag.ContinueOnError)
+	fs = pflag.NewFlagSet("t", pflag.ContinueOnError)
 	get = registerHookSettingFlags(fs)
 	fs.Parse(nil)
 	if s, err := get(); err != nil || s != (hooks.Settings{}) {
@@ -133,7 +132,7 @@ func TestHookSettingFlags(t *testing.T) {
 }
 
 func TestCaptureFlags(t *testing.T) {
-	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
 	get := registerHookSettingFlags(fs)
 	fs.Parse([]string{"--capture=false"})
 	if s, err := get(); err != nil || s.Capture == nil || *s.Capture {

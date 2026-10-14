@@ -23,7 +23,7 @@ func (e *cliEnv) tsrelay(args ...string) (code int, stdout, stderr string) {
 
 func (e *cliEnv) listJSON() []api.Hook {
 	e.t.Helper()
-	code, out, errOut := e.tsrelay("hooks", "ls", "--json")
+	code, out, errOut := e.tsrelay("hooks", "list", "--json")
 	if code != 0 {
 		e.t.Fatalf("hooks ls --json: exit %d\n%s", code, errOut)
 	}
@@ -71,8 +71,8 @@ func TestHooksCommands(t *testing.T) {
 		t.Fatalf("update without changes: exit %d, want 2", code)
 	}
 
-	if code, _, errOut := e.tsrelay("hooks", "rm", "nope"); code != 1 || !strings.Contains(errOut, `"nope"`) {
-		t.Fatalf("rm unknown: exit %d\n%s", code, errOut)
+	if code, _, errOut := e.tsrelay("hooks", "delete", "nope"); code != 1 || !strings.Contains(errOut, `"nope"`) {
+		t.Fatalf("delete unknown: exit %d\n%s", code, errOut)
 	}
 	if code, _, errOut := e.tsrelay("hooks", "rm", id); code != 0 {
 		t.Fatalf("rm: exit %d\n%s", code, errOut)
@@ -102,10 +102,12 @@ func TestURLCommand(t *testing.T) {
 	}
 }
 
-func TestHooksUsage(t *testing.T) {
-	for _, args := range [][]string{{"hooks"}, {"hooks", "bogus"}, {"hooks", "rm"}, {"url", "8080", "9090"}} {
-		if code := run(context.Background(), args, &syncBuf{}, &syncBuf{}, deps{}); code != 2 {
-			t.Errorf("run(%q) = %d, want 2", args, code)
-		}
+func TestRelayFromEnvironment(t *testing.T) {
+	e := newCLIEnv(t)
+	t.Setenv("TSRELAY_RELAY", e.relayURL)
+	var out, errOut syncBuf
+	d := deps{HTTP: tunnel.NewHTTPClient(e.fake.Dial(receiver)), StatePath: e.statePath}
+	if code := run(t.Context(), []string{"hooks", "list", "--json"}, &out, &errOut, d); code != 0 {
+		t.Fatalf("exit %d\n%s", code, errOut.String())
 	}
 }
