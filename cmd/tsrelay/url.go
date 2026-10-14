@@ -51,6 +51,10 @@ func newURLCmd(c *cli) *cobra.Command {
 		if hookURL == "" {
 			return errors.New("no hook is known for this directory and target yet; run tsrelay http first")
 		}
+		if c.json {
+			out, _ := c.streams()
+			return writeJSON(out, map[string]string{"url": hookURL})
+		}
 		fmt.Fprintln(c.stdout, hookURL)
 		return nil
 	}

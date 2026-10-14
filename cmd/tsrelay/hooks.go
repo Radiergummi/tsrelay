@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/api"
@@ -27,7 +25,7 @@ func newHooksCmd(c *cli) *cobra.Command {
 			return exitCodeError(2)
 		},
 	}
-	cmd.AddCommand(newHooksListCmd(c), newHooksCreateCmd(c), newHooksUpdateCmd(c), newHooksDeleteCmd(c))
+	cmd.AddCommand(newHooksListCmd(c), newHooksShowCmd(c), newHooksCreateCmd(c), newHooksUpdateCmd(c), newHooksDeleteCmd(c))
 	return cmd
 }
 
@@ -48,31 +46,42 @@ func newHooksListCmd(c *cli) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if hs == nil {
+			hs = []api.Hook{}
+		}
+		out, _ := c.streams()
 		if c.json {
-			enc := json.NewEncoder(c.stdout)
-			enc.SetIndent("", "  ")
-			enc.Encode(hs)
-			return nil
+			return writeJSON(out, hs)
 		}
-		tw := tabwriter.NewWriter(c.stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tPATH\tCHANNEL\tKIND\tTUNNEL\tEXPIRES\tURL")
-		for _, h := range hs {
-			kind, tun, exp := "persistent", "-", "-"
-			if h.Ephemeral {
-				kind = "ephemeral"
-			}
-			if h.Tunnel != nil {
-				tun = h.Tunnel.Node
-			}
-			if h.ExpiresAt != nil {
-				exp = h.ExpiresAt.Local().Format(time.DateTime)
-			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", h.ID, h.Path, h.Channel, kind, tun, exp, h.URL)
-		}
-		tw.Flush()
+		writeHookList(out, hs)
 		return nil
 	}
 	return cmd
+}
+
+func newHooksShowCmd(c *cli) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <hook>",
+		Short: "Show one hook and its effective settings",
+		Args:  usageArgs(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, refs []string) error {
+			ctx := cmd.Context()
+			relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
+			if err != nil {
+				return err
+			}
+			found, err := resolveHooks(ctx, relayAPI, refs)
+			if err != nil {
+				return err
+			}
+			out, _ := c.streams()
+			if c.json {
+				return writeJSON(out, found[0])
+			}
+			writeHookShow(out, found[0])
+			return nil
+		},
+	}
 }
 
 func newHooksCreateCmd(c *cli) *cobra.Command {
@@ -112,7 +121,11 @@ func newHooksCreateCmd(c *cli) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(c.stdout, h.URL)
+		out, _ := c.streams()
+		if c.json {
+			return writeJSON(out, h)
+		}
+		fmt.Fprintln(out.w, out.style(styleBold, h.URL))
 		return nil
 	}
 	return cmd
@@ -133,6 +146,9 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 	settings := registerHookSettingFlags(fs)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
+		if *expiresIn < 0 {
+			return usagef("--expires-in must not be negative")
+		}
 		s, err := settings()
 		if err != nil {
 			return &usageError{err.Error()}
@@ -181,7 +197,11 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(c.stdout, h.URL)
+		out, _ := c.streams()
+		if c.json {
+			return writeJSON(out, h)
+		}
+		fmt.Fprintln(out.w, out.style(styleBold, h.URL))
 		return nil
 	}
 	return cmd
@@ -204,11 +224,19 @@ func newHooksDeleteCmd(c *cli) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		out, errStream := c.streams()
+		ids := make([]string, 0, len(found))
 		for _, h := range found {
 			if err := relayAPI.DeleteHook(ctx, h.ID); err != nil {
 				return err
 			}
-			fmt.Fprintf(c.stderr, "Deleted %s\n", h.URL)
+			ids = append(ids, h.ID)
+			if !c.json {
+				fmt.Fprintf(errStream.w, "deleted %s\n", h.URL)
+			}
+		}
+		if c.json {
+			return writeJSON(out, map[string][]string{"deleted": ids})
 		}
 		return nil
 	}

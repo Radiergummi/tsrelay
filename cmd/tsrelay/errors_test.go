@@ -69,6 +69,7 @@ func TestClientUsageErrors(t *testing.T) {
 		{"hooks", "bogus"},
 		{"hooks", "update"},       // no hook
 		{"hooks", "update", "cb"}, // nothing to change
+		{"hooks", "update", "cb", "--expires-in", "-1h"},
 		{"hooks", "delete"},
 		{"hooks", "list", "extra"},
 		{"hooks", "create", "a", "b"},
