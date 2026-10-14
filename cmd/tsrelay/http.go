@@ -47,7 +47,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 	channel := fs.StringP("channel", "c", "", `hook channel (default: "default")`)
 	persistent := fs.BoolP("persistent", "p", false, "keep the hook after tsrelay exits")
 	insecure := fs.BoolP("insecure", "k", false, "skip TLS certificate verification for an https:// target")
-	settings := registerHookSettingFlags(fs, false, "the relay's")
+	settings := registerHookSettingFlags(fs, false)
 	cmd.Long += " Settings flags apply only when the hook is created."
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()

@@ -113,11 +113,7 @@ func (o *output) url(h api.Hook, recreated bool) {
 	default:
 		o.line(o.out, o.out.style(styleBold, h.URL))
 		if h.Path != "" {
-			kind := "persistent"
-			if h.Ephemeral {
-				kind = "ephemeral"
-			}
-			o.line(o.err, o.err.style(styleDim, fmt.Sprintf("hook %s  %s  channel %s", h.ID, kind, h.Channel)))
+			o.line(o.err, o.err.style(styleDim, fmt.Sprintf("hook %s  %s  channel %s", h.ID, hookKind(h), h.Channel)))
 		}
 	}
 }

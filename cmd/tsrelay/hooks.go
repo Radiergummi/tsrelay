@@ -19,11 +19,7 @@ func newHooksCmd(c *cli) *cobra.Command {
 		Use:   "hooks",
 		Short: "Manage your hooks",
 		Args:  usageArgs(cobra.NoArgs),
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			cmd.SetOut(c.stderr)
-			_ = cmd.Help()
-			return exitCodeError(2)
-		},
+		RunE:  c.helpAndFail,
 	}
 	cmd.AddCommand(newHooksListCmd(c), newHooksShowCmd(c), newHooksCreateCmd(c), newHooksUpdateCmd(c), newHooksDeleteCmd(c))
 	return cmd
@@ -74,7 +70,7 @@ func newHooksShowCmd(c *cli) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			out, _ := c.streams()
+			out := c.stdoutStream()
 			if c.json {
 				return writeJSON(out, found[0])
 			}
@@ -95,7 +91,7 @@ func newHooksCreateCmd(c *cli) *cobra.Command {
 	description := fs.String("description", "", "free text, at most 280 characters")
 	ephemeral := fs.Bool("ephemeral", false, "delete the hook once it had no tunnel for the relay's grace period")
 	expiresIn := fs.Duration("expires-in", 0, "delete the hook after this long (0: never)")
-	settings := registerHookSettingFlags(fs, false, "the relay's")
+	settings := registerHookSettingFlags(fs, false)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if *expiresIn < 0 {
@@ -121,12 +117,7 @@ func newHooksCreateCmd(c *cli) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		out, _ := c.streams()
-		if c.json {
-			return writeJSON(out, h)
-		}
-		fmt.Fprintln(out.w, out.style(styleBold, h.URL))
-		return nil
+		return c.printHook(h)
 	}
 	return cmd
 }
@@ -143,7 +134,7 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 	description := fs.String("description", "", "replace the description")
 	ephemeral := fs.Bool("ephemeral", false, "make the hook ephemeral, or persistent with --ephemeral=false")
 	expiresIn := fs.Duration("expires-in", 0, "expire this long from now (0: never)")
-	settings := registerHookSettingFlags(fs, true, "the hook's current value")
+	settings := registerHookSettingFlags(fs, true)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if *expiresIn < 0 {
@@ -161,12 +152,10 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 		// not each flag's Changed field) never finds anything. Visiting
 		// cmd.Flags() and excluding what InheritedFlags() knows about
 		// achieves the same "local, changed" set correctly.
-		cmd.Flags().Visit(func(f *pflag.Flag) {
+		// A stray TSRELAY_* value is not a change the caller asked for.
+		visitTyped(cmd.Flags(), func(f *pflag.Flag) {
 			if cmd.InheritedFlags().Lookup(f.Name) != nil {
 				return
-			}
-			if envSet(f) {
-				return // a stray TSRELAY_* value is not a change the caller asked for
 			}
 			changes++
 			switch f.Name {
@@ -200,12 +189,7 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		out, _ := c.streams()
-		if c.json {
-			return writeJSON(out, h)
-		}
-		fmt.Fprintln(out.w, out.style(styleBold, h.URL))
-		return nil
+		return c.printHook(h)
 	}
 	return cmd
 }
@@ -282,4 +266,14 @@ func settingsPatch(s hooks.Settings) hooks.SettingsPatch {
 		RateLimit:       optPtr(s.RateLimit),
 		Capture:         optPtr(s.Capture),
 	}
+}
+
+// printHook reports a created or updated hook: as JSON, or as its URL.
+func (c *cli) printHook(h api.Hook) error {
+	out := c.stdoutStream()
+	if c.json {
+		return writeJSON(out, h)
+	}
+	fmt.Fprintln(out.w, out.style(styleBold, h.URL))
+	return nil
 }
