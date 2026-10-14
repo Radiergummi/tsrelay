@@ -73,6 +73,18 @@ test("j, k, Enter and Esc move through the calls; / focuses the filter; typing t
   expect(await screen.findByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
 });
 
+test("shortcuts don't fire while a modal dialog is open", async () => {
+  const { router } = open(fixtures.busy.id);
+  await screen.findAllByRole("link", { name: /\/busy\/item/ });
+  await userEvent.keyboard("?");
+  expect(await screen.findByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+  await userEvent.keyboard("t");
+  expect(screen.queryByRole("dialog", { name: "Send test request" })).not.toBeInTheDocument();
+  const before = router.state.location.pathname;
+  await userEvent.keyboard("j");
+  expect(router.state.location.pathname).toBe(before);
+});
+
 test("a pending call that completes refreshes the open inspector", async () => {
   open(fixtures.hook.id, `/hooks/${fixtures.hook.id}/calls/c_pending`);
   await screen.findByRole("heading", { level: 2, name: /POST/ });
@@ -139,4 +151,29 @@ test("t opens the test request dialog, which sends and selects the new call", as
     headers: { "X-Test": ["yes"] },
     body: "hello",
   });
+});
+
+test("a 422 whose errors don't map to a shown field shows a form-level message in the test dialog", async () => {
+  server.use(
+    http.post("/api/v1/hooks/:id/test", () =>
+      HttpResponse.json(
+        {
+          status: 422,
+          code: "validation",
+          title: "Validation failed",
+          detail: "the body is too large for this hook",
+          errors: [{ field: "body", message: "too large" }],
+        },
+        { status: 422 },
+      ),
+    ),
+  );
+  open(fixtures.hook.id);
+  await screen.findByRole("heading", { name: "payments/done" });
+  await userEvent.keyboard("t");
+  const dialog = await screen.findByRole("dialog", { name: "Send test request" });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Send" }));
+  expect(
+    await within(dialog).findByText("the body is too large for this hook"),
+  ).toBeInTheDocument();
 });
