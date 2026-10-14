@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>tsrelay</title>
+    <!-- Sets the dark class before the first paint; a file, because the CSP allows no inline script. -->
+    <script src="/theme.js"></script>
+  </head>
+  <body>
+    <noscript
+      >The tsrelay web UI needs JavaScript. The CLI (<code>tsrelay hooks</code>) and the JSON API
+      under <code>/api/v1</code> work without it.</noscript
+    >
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
