@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { fixtures } from "@/test/fixtures";
@@ -29,41 +29,58 @@ function inert(container: HTMLElement) {
   }
 }
 
-const bodies: [string, string, string][] = [
-  ["html", "text/html", fixtures.hostileHtml.requestBody.body!],
-  ["json", "application/json", fixtures.hostileJson.requestBody.body!],
-  ["form", "application/x-www-form-urlencoded", fixtures.hostileForm.requestBody.body!],
+/** settled waits for BodyViewer's lazily loaded views (JsonTree, HexView) to finish mounting, so inert() inspects their real output instead of the Suspense skeleton. */
+async function settled(container: HTMLElement) {
+  await waitFor(() => {
+    expect(container.querySelector('[data-slot="skeleton"]')).not.toBeInTheDocument();
+  });
+}
+
+/** Each case names the toggle buttons to click, in order, to visit every view the capture offers — not a wildcard search, so a renamed or missing toggle fails the test instead of being silently skipped. */
+const bodies: [string, string, string, string[]][] = [
+  ["html", "text/html", fixtures.hostileHtml.requestBody.body!, []],
+  ["json", "application/json", fixtures.hostileJson.requestBody.body!, ["Raw"]],
+  ["form", "application/x-www-form-urlencoded", fixtures.hostileForm.requestBody.body!, []],
   [
     "json with markup",
     "application/json",
     enc(
       `{"<script>alert(1)</script>": "javascript:alert(2)", "x": "<img src=x onerror=alert(3)>"}`,
     ),
+    ["Raw"],
   ],
-  ["text", "text/plain", enc("<script>alert(4)</script>\u202egnp.exe")],
+  ["text", "text/plain", enc("<script>alert(4)</script>\u202egnp.exe"), []],
+  [
+    "text with a NUL",
+    "text/plain",
+    enc("<script>alert(5)</script>\u0000\u202egnp.exe"),
+    ["Show as text"],
+  ],
 ];
 
 test.each(bodies)(
   "%s bodies render as literal text in every view",
-  async (_, contentType, body) => {
+  async (_, contentType, body, toggles) => {
     const capture = { body, size: atob(body).length, captured: true };
-    const { container, findAllByRole } = render(
+    const { container, getByRole, queryAllByRole } = render(
       <BodyViewer capture={capture} contentType={contentType} metadataOnly={false} label="body" />,
     );
+    await settled(container);
     inert(container);
-    for (const toggle of await findAllByRole("button", {
-      name: /^(Raw|Tree|Show as text|Hex)$/,
-    }).catch(() => [])) {
-      await userEvent.click(toggle);
+    // A single-view capture offers no toggle at all: check that explicitly instead of letting an empty `toggles` list skip the check.
+    const unexpectedToggles =
+      toggles.length === 0
+        ? queryAllByRole("button", { name: /^(Raw|Tree|Show as text|Hex)$/ })
+        : [];
+    expect(unexpectedToggles).toHaveLength(0);
+    for (const name of toggles) {
+      await userEvent.click(getByRole("button", { name }));
+      await settled(container);
       inert(container);
     }
     const text = container.textContent ?? "";
     expect(text).not.toContain("\u202e");
-    // form values are split on "=" and "&", so only html/json/text bodies keep the script tag literal.
-    if (contentType !== "application/x-www-form-urlencoded") {
-      // eslint-disable-next-line vitest/no-conditional-expect -- intentional: see comment above.
-      expect(text).toMatch(/<script>alert\(\d\)<\/script>|<img src=x onerror=alert\(\d\)>/);
-    }
+    expect(text).toMatch(/<script>alert\(\d\)<\/script>|<img src=x onerror=alert\(\d\)>/);
   },
 );
 
@@ -77,6 +94,19 @@ test("bidi controls are shown, not obeyed", () => {
     />,
   );
   expect(container.textContent).toContain("abc⟨U+202E⟩def");
+});
+
+test("adjacent control characters merge into one revealed run", async () => {
+  const { container, getByRole } = render(
+    <BodyViewer
+      capture={cap("<script>alert(5)</script>\u0000\u202egnp.exe")}
+      contentType="text/plain"
+      metadataOnly={false}
+      label="b"
+    />,
+  );
+  await userEvent.click(getByRole("button", { name: "Show as text" }));
+  expect(container.textContent).toContain("⟨U+0000⟩⟨U+202E⟩");
 });
 
 test("a very long single line stays plain text and renders", () => {

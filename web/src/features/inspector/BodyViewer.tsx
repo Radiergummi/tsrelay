@@ -5,7 +5,7 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatSize } from "@/lib/format";
 import { bodyKind, decodeBody } from "./bytes";
-import { Highlighted } from "./Highlighted";
+import { highlightLimit, Highlighted } from "./Highlighted";
 import { parseJSON } from "./jsonParse";
 
 const JsonTree = lazy(async () => ({ default: (await import("./JsonTree")).JsonTree }));
@@ -39,7 +39,14 @@ export function BodyViewer({
         relay.
       </Note>
     );
-  return <Captured capture={capture} contentType={contentType} label={label} />;
+  return (
+    <Captured
+      key={`${capture.body ?? ""}:${capture.size}`}
+      capture={capture}
+      contentType={contentType}
+      label={label}
+    />
+  );
 }
 
 function Captured({
@@ -53,9 +60,16 @@ function Captured({
 }) {
   const body = useMemo(() => decodeBody(capture), [capture]);
   const kind = bodyKind(contentType);
+  // A huge valid JSON document would still mean hundreds of thousands of tree
+  // nodes; above highlightLimit (where Highlighted also gives up on tokens)
+  // it's shown raw instead of rendering a tree that would freeze the tab.
+  const tooLargeForTree = body.text !== null && body.text.length > highlightLimit;
   const tree = useMemo(
-    () => (kind === "json" && body.text !== null && !body.hasNul ? parseJSON(body.text) : null),
-    [kind, body],
+    () =>
+      kind === "json" && body.text !== null && !body.hasNul && !tooLargeForTree
+        ? parseJSON(body.text)
+        : null,
+    [kind, body, tooLargeForTree],
   );
   const views: View[] = body.binary
     ? body.text !== null
@@ -82,7 +96,9 @@ function Captured({
           <span>
             {capture.truncated
               ? "cut at the capture limit, so shown raw"
-              : "not valid JSON, so shown raw"}
+              : tooLargeForTree
+                ? "too large to show as a tree, so shown raw"
+                : "not valid JSON, so shown raw"}
           </span>
         )}
         <span className="ml-auto flex items-center gap-1">
