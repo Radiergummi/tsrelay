@@ -47,6 +47,9 @@ func New(cfg Config) *Inspector {
 	return &Inspector{cfg: cfg, redact: NewRedactor(cfg.Redact), byHook: map[hooks.ID][]*Call{}, byID: map[string]*Call{}}
 }
 
+// CallsPerHook is how many calls the inspector keeps per hook.
+func (in *Inspector) CallsPerHook() int { return in.cfg.CallsPerHook }
+
 // Redact returns h without the redacted headers and those left out to keep
 // the set within the capture limit, and the sorted names of every header it
 // left out, for either reason.

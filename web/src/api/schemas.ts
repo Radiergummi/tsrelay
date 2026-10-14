@@ -127,7 +127,7 @@ export const me = z.object({
   }),
   hooks: z.number(),
   capName: z.string(),
-  policy: z.object({ defaults: effective, max: maxima }),
+  policy: z.object({ defaults: effective, max: maxima, callsPerHook: z.number() }),
 });
 
 export const fieldError = z.object({ field: z.string(), message: z.string() });
