@@ -108,7 +108,10 @@ func TestUIDev(t *testing.T) {
 			c.Sender = inspect.Sender{Node: "worker", Tags: []string{"tag:prod-worker"}, IP: "100.64.0.9"}
 		}
 		if c.Method == "" {
-			c.Method, c.Path = "POST", "/"+h.Path
+			c.Method = "POST"
+		}
+		if c.Path == "" {
+			c.Path = "/" + h.Path
 		}
 		if c.Outcome == "" {
 			c.Outcome = inspect.OutcomeOK
