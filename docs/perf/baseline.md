@@ -163,19 +163,22 @@ added               11.766458ms 17.583959ms 19.77325ms
 
 ## Findings
 
-Each finding below is a candidate change for the maintainer to decide on. None of them is implemented here.
+Each finding below was a candidate change for the maintainer to decide on. Findings 1 and 2 have since been implemented, and finding 3 was measured; each says what came of it. The benchmark and load numbers above are still those from before the changes.
 
 1. **The CLI forwarder runs out of local ports under concurrent calls.** `client.NewForwarder` (`internal/client/forward.go`) clones `http.DefaultTransport`, which keeps at most 2 idle connections per host.
    - **What happens:** with more than two calls in flight, the forwarder opens a new connection to the local app for every extra call and closes it afterwards. Within seconds at 16 concurrent calls, the machine runs out of ephemeral ports. Every failure in the run above is a 502 `upstream_unreachable`, whose underlying error is `connect: can't assign requested address`.
    - **Experiment:** with `MaxIdleConnsPerHost = 64` (and `MaxIdleConns = 100`) set temporarily and then reverted, the same run went from about 3,500 calls/s with 3,255 to 5,418 failures and a p99 of 26 to 37 ms, to 21,324 calls/s with 0 failures and a p99 of 2.0 ms.
    - **Proposal:** raise the forwarder transport's idle limits, or tie them to `--tunnel-concurrency`.
+   - **Done:** the forwarder now keeps an idle connection for every call in flight, since the relay's `--tunnel-concurrency` already bounds them; `TestForwarderReusesConnections` covers it. The concurrency-16 plain run now completes with no failures: 22,154 calls/s, p50 633 µs, p99 1.67 ms (relay row).
 2. **Every response copy allocates a fresh 32 KiB buffer.** Neither reverse proxy sets `BufferPool`: not the relay's (`internal/relay/handler.go`) and not the CLI forwarder's (`internal/client/forward.go`).
    - **Cost:** `ReverseProxy.copyBuffer` accounts for 49% of all bytes allocated in the concurrency-2 profile. That is about 64 KiB of the roughly 105 KiB an empty call allocates (`BenchmarkCall/empty`, compared with 5.5 KiB for the direct call).
    - **Proposal:** a shared `sync.Pool` of 32 KiB buffers as `BufferPool` for both proxies. Re-measure `B/op` and GC time.
+   - **Done:** both proxies share `tunnel.Buffers`. `BenchmarkCall` allocates 59 to 67% fewer bytes for empty and 1 KiB calls (empty: 101 KiB → 34 KiB) and about 21% fewer for 1 MiB calls. Time per call shows no significant change when the two builds are run interleaved.
 3. **Throughput when streaming is about a quarter of the direct path.**
    - **Measured:** a 1 MiB streamed response takes 912 µs through the relay against 237 µs direct (`BenchmarkCall/stream1MiB`). Under load at concurrency 16 it reaches 987 calls/s against 4,141 calls/s direct, adding about 12 ms at p50.
    - **Where the time goes:** the CPU profile is dominated by system calls and scheduler wakeups. On the tunnel, HTTP/2 writes each frame with its own flush (`http2.(*ClientConn).writeHeaders` → `bufio.(*Writer).Flush` → `tunnel.(*watchedConn).Write`).
    - **Proposal:** investigate the frame size and write batching, and the HTTP/2 flow-control windows of the tunnel transport and server. Measure before changing anything; this finding is less certain than 1 and 2.
+   - **Measured:** most of the gap is the number of hops, not the tunnel. A call through the relay passes two reverse proxies (the relay's and the CLI forwarder's), and two plain `httputil.ReverseProxy` hops over loopback, with no relay or tunnel, already take 680 µs (1 MiB body) and 717 µs (streamed) against 270 µs and 278 µs direct. Through the relay it is 815 µs and 1,099 µs, so the tunnel's HTTP/2 hop and the relay's own logic add about 20% (body) and 50% (streamed) on top of the hops themselves. Raising the HTTP/2 maximum frame size to 1 MiB on both tunnel ends made no measurable difference. No change was made; the remaining streaming overhead lies in the standard library's HTTP/2 framing and is not worth a custom transport for now.
 4. **The relay adds about 130 µs at p50 per small call** (concurrency 2: 169 µs through the relay against 40 µs direct; 401 against 81 allocations per call, process-wide). Of the relay's own code, only `relay.(*Handler).ServeHTTP` shows up in the CPU profile, at under 1%; the rest is in `net/http`, HTTP/2 and system calls. Findings 1 to 3 are where the gains are, not the relay's own logic.
 5. **Tracing overhead.**
    - **Allocations:** tracing adds about 35 allocations and 3 to 6 KiB per call (`BenchmarkCall/tracing=true` against `tracing=false`).
