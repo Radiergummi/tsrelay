@@ -2,6 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
+import { makeQueryClient } from "@/api/queryClient";
 import { fixtures } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";
 import { server } from "@/test/server";
@@ -79,6 +80,68 @@ test("creating saves, toasts and goes to the new hook", async () => {
   await waitFor(() => expect(router.state.location.pathname).toBe(`/hooks/${fixtures.idle.id}`));
   expect(saved).toEqual({ path: "idle", ephemeral: false, settings: { holdTimeout: "45s" } });
   expect(await screen.findByText("Created idle")).toBeInTheDocument();
+});
+
+// The app's query client toasts failed writes other than 422s; the form
+// doesn't repeat them.
+test("a failed save other than a 422 is reported once, by the toast", async () => {
+  server.use(
+    http.post("/api/v1/hooks", ({ request }) =>
+      new URL(request.url).searchParams.get("dryRun") === "true"
+        ? HttpResponse.json(fixtures.idle)
+        : HttpResponse.json(
+            {
+              status: 500,
+              code: "internal",
+              title: "Internal Server Error",
+              detail: "the disk is full",
+            },
+            { status: 500, headers: { "Content-Type": "application/problem+json" } },
+          ),
+    ),
+  );
+  renderWithProviders(<HookFormPage />, {
+    route: "/hooks/new",
+    path: "/hooks/new",
+    context: fixtures.me,
+    client: makeQueryClient(),
+  });
+  await userEvent.type(await screen.findByLabelText("Path"), "idle");
+  await userEvent.click(screen.getByRole("button", { name: "Create hook" }));
+  expect(await screen.findByText("That didn't work")).toBeInTheDocument();
+  expect(screen.getAllByText(/the disk is full/)).toHaveLength(1);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+// A dry run is no mutation, so nothing else reports its failure.
+test("a dry run that can't reach the relay says so in the form", async () => {
+  server.use(http.post("/api/v1/hooks", () => HttpResponse.error()));
+  renderWithProviders(<HookFormPage />, {
+    route: "/hooks/new",
+    path: "/hooks/new",
+    context: fixtures.me,
+    client: makeQueryClient(),
+  });
+  await userEvent.type(await screen.findByLabelText("Path"), "idle");
+  expect(await screen.findByRole("alert")).toHaveTextContent(/The relay is not reachable/);
+});
+
+test("a form-level error goes away once the next change fails local validation", async () => {
+  server.use(
+    http.post("/api/v1/hooks", () => invalid("settings.unknown", "the relay refused this")),
+  );
+  renderWithProviders(<HookFormPage />, {
+    route: "/hooks/new",
+    path: "/hooks/new",
+    context: fixtures.me,
+  });
+  await userEvent.type(await screen.findByLabelText("Path"), "idle");
+  expect(await screen.findByRole("alert")).toHaveTextContent(/the relay refused this/);
+  await userEvent.type(screen.getByLabelText("Hold timeout"), "soon");
+  await waitFor(() =>
+    expect(screen.getByLabelText("Hold timeout")).toHaveAccessibleDescription(/must be a duration/),
+  );
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
 test("editing prefills the hook and resets cleared fields to the default", async () => {

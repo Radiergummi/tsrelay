@@ -41,6 +41,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
     const { body, errors: local } = build();
     if (local.length) {
       setErrors(local);
+      setFormError("");
       return;
     }
     const ctrl = new AbortController();
@@ -75,6 +76,11 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
     }
   }
 
+  // A failed save other than a 422 is already toasted (makeQueryClient).
+  function applySaveError(err: unknown) {
+    if (err instanceof ApiError && err.status === 422) apply(err);
+  }
+
   const set = (name: string) => (value: string) => {
     dirty.current = true;
     setValues((v) => ({ ...v, [name]: value }));
@@ -93,8 +99,8 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
       toast.success(editing ? "Saved" : `Created ${h.path}`);
       navigate(`/hooks/${encodeURIComponent(h.id)}`);
     };
-    if (editing) update.mutate(body, { onSuccess, onError: apply });
-    else create.mutate(body, { onSuccess, onError: apply });
+    if (editing) update.mutate(body, { onSuccess, onError: applySaveError });
+    else create.mutate(body, { onSuccess, onError: applySaveError });
   }
 
   const pending = create.isPending || update.isPending;
