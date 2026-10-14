@@ -279,6 +279,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			tracer: h.Tracer, prop: h.Propagator,
 		},
 		FlushInterval: -1,
+		BufferPool:    tunnel.Buffers,
 		ErrorHandler:  proxyError,
 	}
 	proxy.ServeHTTP(&idleWriter{ResponseWriter: rec, idle: idle}, r)
