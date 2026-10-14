@@ -16,7 +16,7 @@ build: ui
 dev:
 	dir=$$(mktemp -d) && go test -c -o $$dir/uidev.test ./internal/server || exit 1; \
 	(cd internal/server && TSRELAY_UI_DEV=1 exec $$dir/uidev.test -test.run '^TestUIDev$$' -test.count=1 -test.timeout=0) & \
-	trap 'kill $$! 2>/dev/null; rm -rf "$$dir"' EXIT; cd web && pnpm dev
+	trap 'kill $$! 2>/dev/null; rm -rf "$$dir"' INT TERM EXIT; cd web && pnpm dev
 
 check:
 	go vet ./...
