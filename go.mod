@@ -2,6 +2,8 @@ module github.com/Radiergummi/tsrelay
 
 go 1.27.1
 
+ignore ./web/node_modules
+
 require (
 	charm.land/fang/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6

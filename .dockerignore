@@ -8,3 +8,5 @@ dist
 *.test
 coverage.out
 tmp
+web/node_modules
+web/dist

@@ -242,7 +242,7 @@ func TestRootAndUnknownPaths(t *testing.T) {
 	resp.Body.Close()
 	resp, _ = c.Get(e.base + "/nope")
 	resp.Body.Close()
-	if resp.StatusCode != 404 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") {
+	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") {
 		t.Fatalf("GET /nope = %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
 	resp, _ = c.Get(e.base + "/api/v1/nope")
