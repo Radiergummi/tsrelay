@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -13,6 +14,20 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
+
+// UnreachableError means the relay's base URL could not even be reached: a
+// network failure from the HTTP client itself, not a response the relay
+// sent (that would be a *problem.Problem instead).
+type UnreachableError struct {
+	Base string
+	Err  error
+}
+
+func (e *UnreachableError) Error() string {
+	return fmt.Sprintf("could not reach the relay at %s: %s", e.Base, e.Err)
+}
+
+func (e *UnreachableError) Unwrap() error { return e.Err }
 
 // API is a client for the relay's /api/v1. Errors from the relay are
 // returned as *problem.Problem.
@@ -82,7 +97,7 @@ func (c *API) do(ctx context.Context, method, path string, in, out any) error {
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return err
+		return &UnreachableError{Base: c.BaseURL, Err: err}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
