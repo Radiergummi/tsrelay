@@ -1,9 +1,11 @@
-import type { Ref } from "react";
+import { useEffect, useRef, useState, type Ref } from "react";
 import type { Summary } from "@/api/schemas";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
 import { countByStatus, methodsOf, sendersOf, statusFilters, type Filters } from "./filters";
+
+const pathWriteDelay = 300;
 
 export function FilterBar({
   calls,
@@ -17,6 +19,34 @@ export function FilterBar({
   searchRef: Ref<HTMLInputElement>;
 }) {
   const counts = countByStatus(calls);
+  // The path text is local state, not controlled straight from the URL:
+  // RouterProvider applies a navigation inside startTransition, so a
+  // URL-controlled input's value can briefly revert to the pre-keystroke
+  // value while that transition is still committing, dropping fast
+  // keystrokes. `synced` is the last value we either read from or wrote to
+  // the URL, so an external change (back/forward, a filter reset
+  // elsewhere) re-seeds this state without fighting our own write below.
+  const [path, setPath] = useState(filters.path);
+  const synced = useRef(filters.path);
+  useEffect(() => {
+    if (filters.path !== synced.current) {
+      synced.current = filters.path;
+      setPath(filters.path);
+    }
+  }, [filters.path]);
+  const latest = useRef({ filters, onChange });
+  // updates every render so the debounced write below always uses the
+  // latest filters/onChange, without resubscribing the timeout effect.
+  // oxlint-disable-next-line react/refs
+  latest.current = { filters, onChange };
+  useEffect(() => {
+    if (path === synced.current) return;
+    const t = setTimeout(() => {
+      synced.current = path;
+      latest.current.onChange({ ...latest.current.filters, path });
+    }, pathWriteDelay);
+    return () => clearTimeout(t);
+  }, [path]);
   return (
     <div className="space-y-2 pb-3">
       <fieldset
@@ -44,8 +74,8 @@ export function FilterBar({
           type="search"
           aria-label="Filter by path"
           placeholder="Path contains…  /"
-          value={filters.path}
-          onChange={(e) => onChange({ ...filters, path: e.target.value })}
+          value={path}
+          onChange={(e) => setPath(e.target.value)}
           className="h-7"
         />
         <NativeSelect

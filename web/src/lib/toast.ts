@@ -15,8 +15,8 @@ async function show(opts: ToastOptions): Promise<void> {
 /**
  * toast lets code outside React (mutation callbacks) show toasts, without
  * statically pulling in the Base UI toast runtime. A toast shown before the
- * <Toaster/> has mounted (and subscribed to the shared toastManager) is
- * dropped — not a concern today, since App.tsx mounts it immediately.
+ * <Toaster/> has mounted and subscribed is queued by toastManager (see
+ * toastRuntime.ts) and replayed to it once it does.
  */
 export const toast = {
   success(title: string) {
