@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -43,11 +42,11 @@ func newHooksListCmd(c *cli) *cobra.Command {
 		ctx := cmd.Context()
 		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
 		if err != nil {
-			return errors.New(errText(err))
+			return err
 		}
 		hs, err := relayAPI.ListHooks(ctx)
 		if err != nil {
-			return errors.New(errText(err))
+			return err
 		}
 		if c.json {
 			enc := json.NewEncoder(c.stdout)
@@ -107,11 +106,11 @@ func newHooksCreateCmd(c *cli) *cobra.Command {
 		}
 		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
 		if err != nil {
-			return errors.New(errText(err))
+			return err
 		}
 		h, err := relayAPI.CreateHook(ctx, req)
 		if err != nil {
-			return errors.New(errText(err))
+			return err
 		}
 		fmt.Fprintln(c.stdout, h.URL)
 		return nil
@@ -172,15 +171,15 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 		}
 		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
 		if err != nil {
-			return errors.New(errText(err))
+			return err
 		}
 		found, err := resolveHooks(ctx, relayAPI, args)
 		if err != nil {
-			return errors.New(errText(err))
+			return err
 		}
 		h, err := relayAPI.UpdateHook(ctx, found[0].ID, req)
 		if err != nil {
-			return errors.New(errText(err))
+			return err
 		}
 		fmt.Fprintln(c.stdout, h.URL)
 		return nil
@@ -199,15 +198,15 @@ func newHooksDeleteCmd(c *cli) *cobra.Command {
 		ctx := cmd.Context()
 		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
 		if err != nil {
-			return errors.New(errText(err))
+			return err
 		}
 		found, err := resolveHooks(ctx, relayAPI, refs)
 		if err != nil {
-			return errors.New(errText(err))
+			return err
 		}
 		for _, h := range found {
 			if err := relayAPI.DeleteHook(ctx, h.ID); err != nil {
-				return errors.New(errText(err))
+				return err
 			}
 			fmt.Fprintf(c.stderr, "Deleted %s\n", h.URL)
 		}

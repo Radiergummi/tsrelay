@@ -23,11 +23,11 @@ func newURLCmd(c *cli) *cobra.Command {
 		ctx := cmd.Context()
 		base, err := relayBase(ctx, c.relay, c.d)
 		if err != nil {
-			return errors.New(errText(err))
+			return err
 		}
 		state, err := openState(c.d)
 		if err != nil {
-			return errors.New(errText(err))
+			return err
 		}
 		cwd, _ := os.Getwd()
 		var target *url.URL

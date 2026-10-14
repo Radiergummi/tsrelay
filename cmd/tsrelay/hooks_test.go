@@ -10,6 +10,7 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
@@ -99,6 +100,37 @@ func TestURLCommand(t *testing.T) {
 	}
 	if after := len(e.listJSON()); after != before {
 		t.Fatalf("tsrelay url changed the hooks: %d → %d", before, after)
+	}
+}
+
+func TestJSONErrors(t *testing.T) {
+	e := newCLIEnv(t)
+	for _, args := range [][]string{
+		{"hooks", "delete", "nope", "--json"},                   // unknown hook (a CLI error)
+		{"hooks", "create", "--channel", "Not Valid", "--json"}, // a relay refusal (problem)
+	} {
+		code, out, errOut := e.tsrelay(args...)
+		if code != 1 || out != "" {
+			t.Errorf("%q: exit %d, stdout %q; want 1 and nothing on stdout", args, code, out)
+		}
+		var je struct {
+			Error   string           `json:"error"`
+			Problem *problem.Problem `json:"problem"`
+		}
+		if err := json.Unmarshal([]byte(errOut), &je); err != nil || je.Error == "" {
+			t.Errorf("%q: stderr is not a JSON error: %v\n%s", args, err, errOut)
+		}
+		if args[1] == "create" && (je.Problem == nil || je.Problem.Status != 422) {
+			t.Errorf("%q: want the relay's problem in the JSON error, got %+v", args, je.Problem)
+		}
+	}
+}
+
+func TestJSONErrorUnreachableRelay(t *testing.T) {
+	var out, errOut syncBuf
+	code := run(t.Context(), []string{"hooks", "list", "--json", "--relay", "http://127.0.0.1:1"}, &out, &errOut, deps{})
+	if code != 1 || out.String() != "" || !json.Valid([]byte(errOut.String())) {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, out.String(), errOut.String())
 	}
 }
 
