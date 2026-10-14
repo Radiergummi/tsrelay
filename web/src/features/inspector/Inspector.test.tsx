@@ -1,6 +1,8 @@
+import { QueryClient } from "@tanstack/react-query";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
+import { useState } from "react";
 import { expect, test, vi } from "vitest";
 import { fixtures } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";
@@ -47,6 +49,32 @@ test("replaying selects the new call", async () => {
   await userEvent.click(await screen.findByRole("button", { name: "Replay" }));
   await waitFor(() => expect(onSelect).toHaveBeenCalledWith("c_replay"));
   expect(await screen.findByText(/Replayed: 201 Created/)).toBeInTheDocument();
+});
+
+// The POST answer seeds the new call's cache entry, so it has to say whether
+// the new call can be replayed; nothing refetches it while it is fresh (the
+// app's staleTime), and the GET for it would 404 here.
+test("after replaying, the new call can be replayed and copied at once", async () => {
+  server.use(
+    http.post("/api/v1/hooks/:id/calls/:callId/replay", () =>
+      HttpResponse.json({ ...fixtures.callReplay, id: "c_new" }, { status: 201 }),
+    ),
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: 10_000 }, mutations: { retry: false } },
+  });
+  function Selecting() {
+    const [callId, setCallId] = useState("c_json");
+    return <Inspector hook={fixtures.hook} me={fixtures.me} callId={callId} onSelect={setCallId} />;
+  }
+  renderWithProviders(<Selecting />, { client });
+  await userEvent.click(await screen.findByRole("button", { name: "Replay" }));
+  expect(
+    await screen.findByRole("heading", { name: /POST \/payments\/done\?order=42/ }),
+  ).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByText("c_json")).toBeInTheDocument()); // "replay of c_json"
+  expect(screen.getByRole("button", { name: "Replay" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: /Copy as curl/ })).toBeEnabled();
 });
 
 // user-event's setup() installs a clipboard stub, which readText reads back.
