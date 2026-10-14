@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
-import { afterAll, afterEach, beforeAll } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 
 afterEach(() => cleanup());
 
@@ -14,6 +14,12 @@ if (typeof window !== "undefined") {
   beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
   afterEach(() => server.resetHandlers());
   afterAll(() => server.close());
+
+  const { FakeEventSource } = await import("./eventSource");
+  (globalThis as { EventSource: unknown }).EventSource = FakeEventSource;
+  beforeEach(() => {
+    FakeEventSource.instances = [];
+  });
 
   // jsdom has no matchMedia; tests that need a dark preference override it.
   Object.defineProperty(window, "matchMedia", {
