@@ -40,8 +40,10 @@ Use an OAuth client secret with the `tag:tsrelay` tag. Auth keys (`TS_AUTHKEY`) 
 
 ```bash
 $ tsrelay http 8080
+tsrelay  forwarding to http://localhost:8080
 https://tsrelay.example.ts.net/~moritz/amber-otter-lamp
-Forwarding https://tsrelay.example.ts.net/~moritz/amber-otter-lamp → http://localhost:8080
+hook h_3k2  ephemeral  channel default
+connected
 14:02:11 POST /payments/done → 200  12ms  tag:prod-worker  https://tsrelay.example.ts.net/inspect/c_7f3a
 ```
 
