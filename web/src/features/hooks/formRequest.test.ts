@@ -1,0 +1,51 @@
+import { expect, test } from "vitest";
+import { fixtures } from "@/test/fixtures";
+import { fieldValue, formRequest, initialValues, parseHeaders } from "./formRequest";
+
+test("field values by type", () => {
+  expect(fieldValue("  ", "duration")).toEqual({ value: undefined });
+  expect(fieldValue("1h30m", "duration")).toEqual({ value: "1h30m" });
+  expect(fieldValue("5 minutes", "duration").error).toMatch(/duration like 30s/);
+  expect(fieldValue("1024", "int")).toEqual({ value: 1024 });
+  expect(fieldValue("1e3", "int").error).toMatch(/whole number/);
+  expect(fieldValue("10/20", "ratelimit")).toEqual({ value: { perSecond: 10, burst: 20 } });
+  expect(fieldValue("0.5 / 1", "ratelimit")).toEqual({ value: { perSecond: 0.5, burst: 1 } });
+  expect(fieldValue("fast", "ratelimit").error).toMatch(/per second \/ burst/);
+  expect(fieldValue("false", "bool")).toEqual({ value: false });
+});
+
+test("creating leaves empty fields out; editing resets them with null", () => {
+  const fields: [string, string, "text" | "duration"][] = [
+    ["path", "cb", "text"],
+    ["description", "", "text"],
+    ["settings.holdTimeout", "45s", "duration"],
+    ["settings.idleTimeout", "", "duration"],
+  ];
+  expect(formRequest(fields, false)).toEqual({
+    body: { path: "cb", settings: { holdTimeout: "45s" } },
+    errors: [],
+  });
+  expect(formRequest(fields, true).body).toEqual({
+    path: "cb",
+    description: null,
+    settings: { holdTimeout: "45s", idleTimeout: null },
+  });
+  expect(formRequest([["settings.holdTimeout", "soon", "duration"]], false).errors).toEqual([
+    { field: "settings.holdTimeout", message: "must be a duration like 30s, 2m or 1h30m" },
+  ]);
+});
+
+test("initial values come from the hook, with relay defaults left empty", () => {
+  const v = initialValues(fixtures.hook);
+  expect(v["path"]).toBe("payments/done");
+  expect(v["settings.holdTimeout"]).toBe("");
+  expect(initialValues(undefined)["ephemeral"]).toBe("false");
+});
+
+test("headers are Name: value lines", () => {
+  expect(parseHeaders("X-A: 1\n\nX-A: 2\nX-Empty\n  X-B :  v : w ")).toEqual({
+    "X-A": ["1", "2"],
+    "X-Empty": [""],
+    "X-B": ["v : w"],
+  });
+});
