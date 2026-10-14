@@ -1,6 +1,7 @@
-# Dependabot keeps the Go modules, the pinned actions and the container base
-# images current. Minor and patch updates of each ecosystem arrive as one
-# pull request a week; major updates come one at a time.
+# Dependabot keeps the Go modules, the web UI's packages, the pinned actions
+# and the container base images current. Minor and patch updates of each
+# ecosystem arrive as one pull request a week; major updates come one at a
+# time.
 version: 2
 updates:
   - package-ecosystem: gomod
@@ -25,4 +26,12 @@ updates:
       interval: weekly
     groups:
       images:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    groups:
+      web:
         update-types: [minor, patch]

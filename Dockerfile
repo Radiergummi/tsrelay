@@ -1,9 +1,18 @@
 # syntax=docker/dockerfile:1
+FROM --platform=$BUILDPLATFORM node:24-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS web
+WORKDIR /src/web
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile
+COPY web/ ./
+RUN pnpm build
+
 FROM --platform=$BUILDPLATFORM golang:1.27-bookworm AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+COPY --from=web /src/web/dist ./web/dist
 ARG VERSION=dev
 ARG TARGETOS TARGETARCH
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /tsrelay ./cmd/tsrelay
