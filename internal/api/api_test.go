@@ -607,8 +607,12 @@ func TestTunnelTarget(t *testing.T) {
 	} {
 		var h Hook
 		e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{}, &h)
-		if _, _, err := e.openTunnelQ(moritz, "target="+target, h.ID); err != nil {
+		controls, _, err := e.openTunnelQ(moritz, "target="+target, h.ID)
+		if err != nil {
 			t.Fatal(err)
+		}
+		if c := next(t, controls); c.Type != tunnel.ControlAttached {
+			t.Fatalf("first control = %+v, want attached", c)
 		}
 		var got Hook
 		e.call(moritz, "GET", "/api/v1/hooks/"+h.ID, nil, &got)
