@@ -182,10 +182,14 @@ func TestReplayRules(t *testing.T) {
 	if code := replay(moritz, "c_nope"); code != 404 {
 		t.Errorf("replay of an unknown call = %d, want 404", code)
 	}
-	var c inspect.Call
+	var c CallJSON
 	if resp := e.call(moritz, "POST", "/api/v1/hooks/"+h.ID+"/calls/c_full/replay", nil, &c); resp.StatusCode != 201 ||
 		c.Kind != inspect.KindReplay || c.ReplayOf != "c_full" || c.Outcome != inspect.OutcomeOK || c.Path != "/done" || c.Query != "token=s3cr3t" {
 		t.Fatalf("replay = %d %+v", resp.StatusCode, c)
+	}
+	// The caller owns the hook, so the new call says whether it can be replayed.
+	if c.Replay == nil || !c.Replay.Allowed {
+		t.Errorf("replay response replay = %+v, want allowed", c.Replay)
 	}
 }
 
@@ -194,7 +198,7 @@ func TestTestRequest(t *testing.T) {
 	var h Hook
 	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
 	e.serve(h.ID)
-	var c inspect.Call
+	var c CallJSON
 	resp := e.call(moritz, "POST", "/api/v1/hooks/"+h.ID+"/test", TestRequest{
 		Method: "PUT", Path: "/ping?x=1", Headers: http.Header{"X-A": {"1"}}, Body: "{}",
 	}, &c)
@@ -202,8 +206,11 @@ func TestTestRequest(t *testing.T) {
 		c.Outcome != inspect.OutcomeOK || string(c.Attempts[0].ResponseBody.Body) != "pong" || c.Sender.Login != "moritz@example.com" {
 		t.Fatalf("test request = %d %+v", resp.StatusCode, c)
 	}
+	if c.Replay == nil || !c.Replay.Allowed {
+		t.Errorf("test response replay = %+v, want allowed", c.Replay)
+	}
 	// Defaults: POST to "/".
-	c = inspect.Call{}
+	c = CallJSON{}
 	if resp := e.call(moritz, "POST", "/api/v1/hooks/"+h.ID+"/test", TestRequest{}, &c); resp.StatusCode != 201 || c.Method != "POST" || c.Path != "/" {
 		t.Fatalf("default test request = %d %+v", resp.StatusCode, c)
 	}

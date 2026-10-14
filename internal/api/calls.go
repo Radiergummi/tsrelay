@@ -52,17 +52,15 @@ func (a *API) getCall(w http.ResponseWriter, r *http.Request, id authz.Identity)
 	}
 	out := CallJSON{Call: c}
 	if Owns(id, h) {
-		out.Replay = &Replay{Allowed: true}
-		if p := ReplayRefusal(c); p != nil {
-			out.Replay = &Replay{Reason: p.Detail}
-		}
+		out.Replay = replayOf(c)
 	} else {
 		out.Call = c.Metadata()
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-// CallJSON is a call as GET /api/v1/hooks/{id}/calls/{callID} shows it.
+// CallJSON is a call as GET /api/v1/hooks/{id}/calls/{callID} shows it, and
+// as the replay and test endpoints answer with it.
 // Replay is set for the hook's owner only: nobody else may replay a call.
 type CallJSON struct {
 	inspect.Call
@@ -74,6 +72,14 @@ type CallJSON struct {
 type Replay struct {
 	Allowed bool   `json:"allowed"`
 	Reason  string `json:"reason"`
+}
+
+// replayOf tells the owner whether c can be replayed.
+func replayOf(c inspect.Call) *Replay {
+	if p := ReplayRefusal(c); p != nil {
+		return &Replay{Reason: p.Detail}
+	}
+	return &Replay{Allowed: true}
 }
 
 // TestRequest is the body of POST /api/v1/hooks/{id}/test.
@@ -188,6 +194,8 @@ func (a *API) testCall(w http.ResponseWriter, r *http.Request, id authz.Identity
 }
 
 // inject delivers a replay or test call and answers with the finished call.
+// Both paths go through ownedHook, so the caller owns the hook and learns
+// whether the new call can be replayed, as getCall would tell them.
 func (a *API) inject(w http.ResponseWriter, r *http.Request, in relay.Injection) {
 	c, err := a.Relay.Inject(r.Context(), in)
 	switch {
@@ -197,6 +205,6 @@ func (a *API) inject(w http.ResponseWriter, r *http.Request, in relay.Injection)
 		a.Audit.Slog().Error("delivering a replay or test request failed", "error", err)
 		problem.New(http.StatusInternalServerError, problem.Internal, "could not deliver the call").Write(w)
 	default:
-		writeJSON(w, http.StatusCreated, c)
+		writeJSON(w, http.StatusCreated, CallJSON{Call: c, Replay: replayOf(c)})
 	}
 }
