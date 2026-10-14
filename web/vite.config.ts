@@ -15,6 +15,7 @@ export default defineConfig({
     target: "es2022",
   },
   server: {
+    host: "127.0.0.1",
     port: 5173,
     strictPort: true,
     // The dev harness (make dev) answers the API and the CLI's inspect
