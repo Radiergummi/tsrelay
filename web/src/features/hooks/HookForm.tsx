@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ApiError } from "@/api/client";
+import { ApiError, fieldMessage, formMessage } from "@/api/client";
 import { dryRunHook, useCreateHook, useUpdateHook } from "@/api/mutations";
 import type { FieldError, Hook, Me } from "@/api/schemas";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -68,9 +68,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   function apply(err: unknown) {
     if (err instanceof ApiError && err.status === 422) {
       setErrors(err.fieldErrors);
-      const known = new Set(Object.keys(fieldTypes));
-      const rest = err.fieldErrors.filter((e) => !known.has(e.field));
-      setFormError(rest.length || !err.fieldErrors.length ? err.message : "");
+      setFormError(formMessage(err, (f) => Object.hasOwn(fieldTypes, f)));
     } else {
       setFormError(err instanceof Error ? err.message : String(err));
     }
@@ -85,7 +83,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
     dirty.current = true;
     setValues((v) => ({ ...v, [name]: value }));
   };
-  const err = (name: string) => errors.find((e) => e.field === name)?.message;
+  const err = (name: string) => fieldMessage(errors, name);
   const text = (name: string) => ({
     value: values[name] ?? "",
     onChange: (e: { target: { value: string } }) => set(name)(e.target.value),

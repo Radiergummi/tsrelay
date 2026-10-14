@@ -4,6 +4,8 @@ import * as s from "./schemas";
 
 export const keys = {
   me: ["me"] as const,
+  /** allHooks prefixes both hook lists, the viewer's and ?all=true. */
+  allHooks: ["hooks"] as const,
   hooks: (all: boolean) => ["hooks", all ? "all" : "mine"] as const,
   hook: (id: string) => ["hook", id] as const,
   calls: (id: string) => ["calls", id] as const,

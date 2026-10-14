@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { LastCall } from "@/features/hooks/LastCall";
 import { TunnelText } from "@/features/hooks/TunnelText";
+import { Reveal } from "@/features/inspector/Reveal";
 import { absoluteTime } from "@/lib/format";
 import { useViewer } from "@/lib/useViewer";
 
@@ -79,7 +80,9 @@ function HooksTable({ hooks }: { hooks: Hook[] }) {
                   {h.path}
                 </Link>
                 {h.description && (
-                  <div className="max-w-64 truncate text-muted-foreground">{h.description}</div>
+                  <div className="max-w-64 truncate text-muted-foreground">
+                    <Reveal text={h.description} />
+                  </div>
                 )}
               </TableCell>
               <TableCell>{h.channel}</TableCell>

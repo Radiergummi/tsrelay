@@ -40,7 +40,7 @@ export function applyCallEvent(qc: QueryClient, s: Summary): void {
   }
   const withLast = (h: Hook): Hook =>
     h.id === s.hookId && newer(s, h.lastCall) ? { ...h, lastCall: s } : h;
-  qc.setQueriesData<Hook[]>({ queryKey: ["hooks"] }, (list) => list?.map(withLast));
+  qc.setQueriesData<Hook[]>({ queryKey: keys.allHooks }, (list) => list?.map(withLast));
   qc.setQueryData<Hook>(keys.hook(s.hookId), (h) => (h ? withLast(h) : h));
   void qc.invalidateQueries({ queryKey: keys.call(s.hookId, s.id) });
 }
@@ -48,7 +48,7 @@ export function applyCallEvent(qc: QueryClient, s: Summary): void {
 /** applyHookEvent refetches a hook that changed (or was deleted), the lists and /me's hook count. */
 export function applyHookEvent(qc: QueryClient, id: string): void {
   void qc.invalidateQueries({ queryKey: keys.hook(id) });
-  void qc.invalidateQueries({ queryKey: ["hooks"] });
+  void qc.invalidateQueries({ queryKey: keys.allHooks });
   void qc.invalidateQueries({ queryKey: keys.me });
 }
 

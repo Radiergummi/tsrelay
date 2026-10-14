@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import type { Summary } from "@/api/schemas";
 import { StatusText } from "@/components/StatusText";
 import { TimeAgo } from "@/components/TimeAgo";
-import { formatDuration, parseDuration } from "@/lib/duration";
+import { formatGoDuration } from "@/lib/duration";
 import { senderLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Reveal } from "./Reveal";
@@ -60,7 +60,7 @@ export function CallList({
                 {senderLabel(c.sender)}
               </span>
               <span className="text-xs text-muted-foreground">
-                {c.outcome !== "pending" && `${formatDuration(parseDuration(c.duration) ?? 0)} · `}
+                {c.outcome !== "pending" && `${formatGoDuration(c.duration)} · `}
                 <TimeAgo iso={c.receivedAt} />
               </span>
             </Link>

@@ -64,11 +64,8 @@ var drops = map[tunnel.ControlType]struct{ reason, text string }{
 }
 
 func newOutput(c *cli) *output {
-	return &output{
-		json: c.json, stdout: c.stdout, stderr: c.stderr, now: time.Now,
-		out: newStream(c.stdout, c.noColor, c.noLinks),
-		err: newStream(c.stderr, c.noColor, c.noLinks),
-	}
+	out, err := c.streams()
+	return &output{json: c.json, stdout: c.stdout, stderr: c.stderr, now: time.Now, out: out, err: err}
 }
 
 func (o *output) emit(e jsonEvent) {

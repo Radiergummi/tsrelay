@@ -9,7 +9,7 @@ export function useCreateHook() {
     mutationFn: (body: s.HookRequest) => request(s.hook, "POST", paths.hooks(), body),
     onSuccess: (h) => {
       qc.setQueryData(keys.hook(h.id), h);
-      void qc.invalidateQueries({ queryKey: ["hooks"] });
+      void qc.invalidateQueries({ queryKey: keys.allHooks });
       void qc.invalidateQueries({ queryKey: keys.me });
     },
   });
@@ -21,7 +21,7 @@ export function useUpdateHook(id: string) {
     mutationFn: (body: s.HookRequest) => request(s.hook, "PATCH", paths.hook(id), body),
     onSuccess: (h) => {
       qc.setQueryData(keys.hook(h.id), h);
-      void qc.invalidateQueries({ queryKey: ["hooks"] });
+      void qc.invalidateQueries({ queryKey: keys.allHooks });
     },
   });
 }
@@ -33,7 +33,7 @@ export function useDeleteHook() {
     onSuccess: (_, id) => {
       qc.removeQueries({ queryKey: keys.hook(id) });
       qc.removeQueries({ queryKey: keys.calls(id) });
-      void qc.invalidateQueries({ queryKey: ["hooks"] });
+      void qc.invalidateQueries({ queryKey: keys.allHooks });
       void qc.invalidateQueries({ queryKey: keys.me });
     },
   });

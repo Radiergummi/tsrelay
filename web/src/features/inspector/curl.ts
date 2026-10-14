@@ -78,7 +78,7 @@ export function curlCommand(
  * which only nodes with the sender role may call.
  */
 export function curlTargets(
-  hook: Hook,
+  hook: Pick<Hook, "url" | "tunnel">,
   call: Call,
   body: DecodedBody,
 ): { label: string; command: string }[] {
