@@ -23,8 +23,19 @@ test("lists the viewer's hooks with tunnel, last call and URL", async () => {
   expect(screen.getByRole("link", { name: "New hook" })).toHaveAttribute("href", "/hooks/new");
 });
 
-test("explains how to get a first hook", async () => {
+test("explains how to install the CLI and get a first hook", async () => {
   server.use(http.get("/api/v1/hooks", () => HttpResponse.json([])));
   renderPage();
-  expect(await screen.findByText(/tsrelay http 8080/)).toBeInTheDocument();
+  expect(
+    await screen.findByText(`curl -fsSL ${window.location.origin}/install.sh | sh`),
+  ).toBeInTheDocument();
+  expect(screen.getByText(/tsrelay http 8080/)).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Other ways to install" })).toHaveAttribute(
+    "href",
+    "/cli",
+  );
+  expect(screen.getByRole("link", { name: "create one here" })).toHaveAttribute(
+    "href",
+    "/hooks/new",
+  );
 });

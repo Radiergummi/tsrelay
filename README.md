@@ -38,6 +38,15 @@ Use an OAuth client secret with the `tag:tsrelay` tag. Auth keys (`TS_AUTHKEY`) 
 
 ### 3. Forward a hook to your app
 
+Install the CLI from your relay: open its web UI and choose **Get the CLI**, or run
+
+```bash
+curl -fsSL https://tsrelay.<your tailnet>/install.sh | sh        # macOS, Linux
+irm https://tsrelay.<your tailnet>/install.ps1 | iex             # Windows (PowerShell)
+```
+
+You get the version your relay runs. When the two drift apart, the CLI warns and prints the command to update.
+
 ```bash
 $ tsrelay http 8080
 tsrelay  forwarding to http://localhost:8080
