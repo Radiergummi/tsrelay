@@ -11,7 +11,7 @@ afterEach(() => cleanup());
 // never prints Node's experimental-localStorage warning for it.
 if (typeof window !== "undefined") {
   const { server } = await import("./server");
-  beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+  beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
   afterEach(() => server.resetHandlers());
   afterAll(() => server.close());
 
