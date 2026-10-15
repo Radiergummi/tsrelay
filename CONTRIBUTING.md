@@ -12,7 +12,7 @@ tsrelay is meant to work for any tailnet. Don't hard-code names, tags, domains, 
 
 ## Development
 
-You need Go (the version in `go.mod`) and, for the web UI, Node (the version in `web/.nvmrc`) with pnpm (`corepack enable` picks up the version in `web/package.json`).
+You need Go (the version in `go.mod`) and, for the web UI, Node (the version in `web/.nvmrc`) with pnpm (any recent pnpm switches itself to the version in `web/package.json`).
 
 Before you send a pull request, run the same checks CI runs:
 

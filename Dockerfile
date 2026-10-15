@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
-FROM --platform=$BUILDPLATFORM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS web
+FROM --platform=$BUILDPLATFORM node:26-bookworm-slim@sha256:298992629d69bbd5b2b03ad57094d8e4fcb3a8eeb7c4e25d29de656519568913 AS web
 WORKDIR /src/web
-ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
-RUN corepack enable && pnpm install --frozen-lockfile
+# Node 26 has no corepack; install the pnpm version package.json pins.
+RUN npm install -g "pnpm@$(node -p 'require("./package.json").packageManager.split("@")[1]')" && pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm build
 

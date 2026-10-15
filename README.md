@@ -223,7 +223,7 @@ make e2e       # the end-to-end tests (Playwright, Chromium)
 go test -race -tags tailnet ./internal/server      # real tsnet nodes against an in-process control server
 ```
 
-The web UI needs Node (the version in `web/.nvmrc`) and pnpm (`corepack enable` picks up the version in `web/package.json`). A plain `go build` works without them; its binary serves a placeholder page instead of the UI.
+The web UI needs Node (the version in `web/.nvmrc`) and pnpm (any recent pnpm switches itself to the version in `web/package.json`). A plain `go build` works without them; its binary serves a placeholder page instead of the UI.
 
 Performance:
 
