@@ -2,6 +2,7 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"net/http"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
+	"github.com/Radiergummi/tsrelay/internal/install"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/telemetry"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
@@ -27,6 +29,7 @@ type Config struct {
 	BaseURL        string   // public URL of the relay on the tailnet, no trailing slash
 	AllowedHosts   []string // Host header values the relay answers to
 	CapName        string   // the capability carrying relay grants; GET /me names it
+	Version        string   // the relay's version, sent as api.VersionHeader; "" means "dev"
 	EphemeralGrace time.Duration
 	HoldQueue      int // calls per hook that may wait for a tunnel; 0 means relay.DefaultHoldQueue
 	Tunnel         tunnel.Options
@@ -83,6 +86,9 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	}
 	a.Register(mux)
 	ui.New(a, web.Dist).Register(mux)
+	version := cmp.Or(cfg.Version, "dev")
+	(&install.Handler{Version: version, BaseURL: cfg.BaseURL}).Register(mux)
+	versioned := withVersion(version, mux)
 
 	// Callbacks bypass the mux, whose path cleaning would rewrite paths
 	// such as "/~m/cb//x" that must reach the local app unchanged.
@@ -91,10 +97,19 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 			s.relay.ServeHTTP(w, r)
 			return
 		}
-		mux.ServeHTTP(w, r)
+		versioned.ServeHTTP(w, r)
 	})
 	s.handler = api.Guard(cfg.AllowedHosts, root)
 	return s
+}
+
+// withVersion names the relay's version on every response next writes.
+// Callbacks never pass through it.
+func withVersion(version string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(api.VersionHeader, version)
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) Handler() http.Handler { return s.handler }

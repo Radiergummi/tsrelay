@@ -48,6 +48,11 @@ type API struct {
 	updateSeq uint64
 }
 
+// VersionHeader names the relay's version ("v0.3.0", or "dev") on every
+// response but a callback's. The CLI compares it with its own, and the UI
+// shows it next to the CLI's download.
+const VersionHeader = "Tsrelay-Version"
+
 type Me struct {
 	Login   string                  `json:"login,omitempty"`
 	Node    string                  `json:"node"`
