@@ -1,0 +1,41 @@
+# Installs the tsrelay CLI ({{.Version}}) to %LOCALAPPDATA%\Programs\tsrelay. Run it with:
+#   irm {{.RelayURL}}/install.ps1 | iex
+& {
+	$ErrorActionPreference = 'Stop'
+	$base = '{{.AssetBase}}'
+	$arch = switch ($env:PROCESSOR_ARCHITECTURE) {
+		'AMD64' { 'amd64' }
+		'ARM64' { 'arm64' }
+		default { throw "tsrelay install: no build for $env:PROCESSOR_ARCHITECTURE; see {{.RelayURL}}/cli" }
+	}
+	$name = "tsrelay_windows_$arch"
+	$dir = Join-Path $env:LOCALAPPDATA 'Programs\tsrelay'
+	$exe = Join-Path $dir 'tsrelay.exe'
+	$tmp = Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName())
+	try {
+		Write-Host "Downloading $name.exe ({{.Version}})..."
+		Invoke-WebRequest -UseBasicParsing -Uri "$base/$name.exe" -OutFile "$tmp.exe"
+		Invoke-WebRequest -UseBasicParsing -Uri "$base/$name.sha256" -OutFile "$tmp.sha256"
+		$want = ((Get-Content -Raw "$tmp.sha256") -split '\s+')[0]
+		if ((Get-FileHash -Algorithm SHA256 "$tmp.exe").Hash -ne $want) {
+			throw "tsrelay install: checksum mismatch for $name.exe; nothing was installed"
+		}
+		New-Item -ItemType Directory -Force -Path $dir | Out-Null
+		Move-Item -Force "$tmp.exe" $exe
+	} finally {
+		Remove-Item -ErrorAction SilentlyContinue "$tmp.exe", "$tmp.sha256"
+	}
+	& $exe --version
+	Write-Host "Installed to $exe"
+	$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+	if (($userPath -split ';') -notcontains $dir) {
+		[Environment]::SetEnvironmentVariable('Path', "$dir;$userPath", 'User')
+		$env:Path = "$dir;$env:Path"
+		Write-Host "Added $dir to your PATH; new terminals will find tsrelay."
+	}
+{{- if .RelayHint}}
+	Write-Host ''
+	Write-Host "This relay is not at the CLI's default address. To point the CLI at it, run:"
+	Write-Host "  [Environment]::SetEnvironmentVariable('TSRELAY_RELAY', '{{.RelayHint}}', 'User')"
+{{- end}}
+}
