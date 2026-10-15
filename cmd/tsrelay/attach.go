@@ -34,7 +34,7 @@ func newAttachCmd(c *cli) *cobra.Command {
 		}
 		out := newOutput(c)
 
-		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
+		relayAPI, err := c.newRelayAPI(ctx)
 		if err != nil {
 			return exitWith(out.fail(err))
 		}
