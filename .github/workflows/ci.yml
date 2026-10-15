@@ -77,6 +77,22 @@ jobs:
       - name: tailnet integration test
         run: go test -race -tags tailnet ./internal/server
 
+  # Builds the release image for both platforms without pushing it, so a
+  # broken Dockerfile fails here rather than on a tag.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   e2e:
     needs: web
     runs-on: ubuntu-latest
