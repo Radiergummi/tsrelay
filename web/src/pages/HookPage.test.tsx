@@ -35,6 +35,10 @@ test("shows the hook, its settings, and its calls newest first", async () => {
     "href",
     `/hooks/${fixtures.hook.id}/edit`,
   );
+  expect(screen.getByRole("link", { name: "default" })).toHaveAttribute(
+    "href",
+    "/channels/default",
+  );
 });
 
 test("another user's hook path and description are shown with control characters revealed", async () => {
@@ -132,6 +136,10 @@ test("an admin watching another user's hook gets every hook's events, and no own
   expect(screen.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Send test request" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: fixtures.theirs.channel })).toHaveAttribute(
+    "href",
+    `/channels/${fixtures.theirs.channel}?all=true`,
+  );
 });
 
 test("a hook deleted while open says so", async () => {

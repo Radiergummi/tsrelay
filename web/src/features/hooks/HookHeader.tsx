@@ -3,6 +3,7 @@ import { useRotatePublicUrl } from "@/api/mutations";
 import type { Hook, Me } from "@/api/schemas";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
+import { ChannelChip } from "@/features/channels/ChannelChip";
 import { Reveal } from "@/features/inspector/Reveal";
 import { toast } from "@/lib/toast";
 import { DeleteHookDialog } from "./DeleteHookDialog";
@@ -34,7 +35,8 @@ export function HookHeader({
               Public
             </span>
           )}{" "}
-          · channel {hook.channel} · <TunnelText tunnel={hook.tunnel} />
+          · channel <ChannelChip name={hook.channel} all={!owner} /> ·{" "}
+          <TunnelText tunnel={hook.tunnel} />
           {!owner && ` · owned by ${hook.owner}`}
         </p>
         {hook.public && !me.funnel && (

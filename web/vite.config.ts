@@ -23,7 +23,7 @@ export default defineConfig({
     // page load (Accept: text/html) gets Vite's index.html instead. Vite
     // matches the URL with its query, as in /hooks?all=true.
     proxy: {
-      "^/(hooks(/[^?]*)?|openapi(\\.[^?]*)?)?(\\?.*)?$": {
+      "^/((hooks|channels)(/[^?]*)?|openapi(\\.[^?]*)?)?(\\?.*)?$": {
         target: "http://127.0.0.1:8099",
         bypass: (req) => (req.headers.accept?.includes("text/html") ? "/index.html" : undefined),
       },
