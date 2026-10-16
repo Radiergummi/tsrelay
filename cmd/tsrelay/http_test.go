@@ -93,14 +93,20 @@ func (e *cliEnv) restartRelay() { e.restartRelayAt("") }
 // restartRelayAt is restartRelay with the new instance reporting version
 // ("" is dev).
 func (e *cliEnv) restartRelayAt(version string) {
+	e.restartRelayWith(server.Config{Version: version})
+}
+
+// restartRelayWith is restartRelay with the new instance configured by cfg,
+// whose BaseURL and AllowedHosts it fills in.
+func (e *cliEnv) restartRelayWith(cfg server.Config) {
 	// Held for the whole swap: otherwise a reconnect raced between Close
 	// and the new instance replacing e.handler could attach to the old,
 	// already-closing instance's registry, where it would be stranded.
 	e.handlerMu.Lock()
 	defer e.handlerMu.Unlock()
 	e.srv.Close() // drops the old tunnel so the CLI reconnects
-	srv := server.New(server.Config{BaseURL: e.relayURL, AllowedHosts: []string{"127.0.0.1"}, Version: version},
-		e.id, e.mgr, audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))))
+	cfg.BaseURL, cfg.AllowedHosts = e.relayURL, []string{"127.0.0.1"}
+	srv := server.New(cfg, e.id, e.mgr, audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))))
 	e.srv, e.handler = srv, srv.Handler()
 }
 

@@ -50,7 +50,7 @@ func newStream(w io.Writer, noColor, noLinks bool) stream {
 // all). Unlike colorprofile.Detect's color profile, this must not go fancy
 // just because CLICOLOR_FORCE or FORCE_COLOR is set on a pipe: --json's
 // choice between indented and one-object-per-line output depends on it.
-func isTerminal(w io.Writer) bool {
+func isTerminal(w any) bool {
 	if os.Getenv("TERM") == "dumb" {
 		return false
 	}

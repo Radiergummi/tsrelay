@@ -47,7 +47,7 @@ func TestVersionMismatchWarnsOnStderr(t *testing.T) {
 			e.restartRelayAt(tc.relay)
 			setVersion(t, tc.cli)
 			code, out, errOut := e.tsrelay("hooks", "ls")
-			want := fmt.Sprintf("warning: tsrelay %s is %s the relay (%s); update with: %s\n", tc.cli, tc.rel, tc.relay, updateCommand(e.relayURL))
+			want := fmt.Sprintf("warning: tsrelay %s is %s the relay (%s); update with: tsrelay update --relay %s\n", tc.cli, tc.rel, tc.relay, e.relayURL)
 			if code != 0 || strings.Contains(out, "warning") || !strings.Contains(errOut, want) {
 				t.Fatalf("exit %d\nstdout %q\nstderr %q\nwant %q on stderr", code, out, errOut, want)
 			}

@@ -61,7 +61,7 @@ func newRoot(c *cli) *cobra.Command {
 	pf.BoolVar(&c.noColor, "no-color", false, "print plain text, as NO_COLOR does")
 	pf.BoolVar(&c.noLinks, "no-hyperlinks", false, "print full inspector URLs instead of clickable call IDs")
 	root.AddCommand(newHTTPCmd(c), newAttachCmd(c), newHooksCmd(c), newURLCmd(c), newServeCmd(c),
-		newPsCmd(c), newStopCmd(c), newLogsCmd(c))
+		newPsCmd(c), newStopCmd(c), newLogsCmd(c), newUpdateCmd(c))
 	return root
 }
 

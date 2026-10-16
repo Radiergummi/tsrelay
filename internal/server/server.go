@@ -17,6 +17,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/install"
 	"github.com/Radiergummi/tsrelay/internal/negotiate"
 	"github.com/Radiergummi/tsrelay/internal/relay"
+	"github.com/Radiergummi/tsrelay/internal/release"
 	"github.com/Radiergummi/tsrelay/internal/telemetry"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"github.com/Radiergummi/tsrelay/internal/ui"
@@ -36,6 +37,7 @@ type Config struct {
 	Tunnel         tunnel.Options
 	Inspect        inspect.Config
 	Telemetry      *telemetry.Telemetry // nil: Prometheus metrics only, no tracing
+	Releases       *release.Checker     // the latest release, named to admins in GET /; nil: none (--update-check=false)
 
 	NoTracePropagation bool // don't join senders' traces or pass the relay's to apps (--trace-propagation=false)
 }
@@ -78,7 +80,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 
 	version := cmp.Or(cfg.Version, "dev")
 	mux := http.NewServeMux()
-	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, CapName: cfg.CapName, Version: version, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName)}
+	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, CapName: cfg.CapName, Version: version, Releases: cfg.Releases, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName)}
 	if s.tel.Tracing {
 		s.relay.Tracer = s.tel.Tracer.Tracer(telemetry.ScopeName)
 		if !cfg.NoTracePropagation {

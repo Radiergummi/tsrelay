@@ -299,8 +299,8 @@ func (c *cli) newRelayAPI(ctx context.Context) (*client.API, error) {
 	checked := *hc
 	checked.Transport = &versionCheck{next: next, seen: func(relay string) {
 		c.versionWarned.Do(func() {
-			c.version.Store(&versionSeen{base: base, relay: relay})
-			c.warnVersion(base, relay)
+			c.version.Store(&versionSeen{relay: relay})
+			c.warnVersion(relay)
 		})
 	}}
 	c.base = base

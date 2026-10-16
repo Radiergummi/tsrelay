@@ -73,7 +73,7 @@ var problemExplanations = map[string]explanation{
 }
 
 // versionSeen is a relay version that differs from this CLI's.
-type versionSeen struct{ base, relay string }
+type versionSeen struct{ relay string }
 
 // explain turns what a command returned into an explained error.
 func (c *cli) explain(err error) *cliError {
@@ -92,7 +92,7 @@ func (c *cli) explain(err error) *cliError {
 	}
 	if v := c.version.Load(); v != nil {
 		ce.Reason = strings.TrimSpace(ce.Reason + fmt.Sprintf(" This tsrelay (%s) differs from the relay (%s), which may be why.", version, v.relay))
-		if update := updateCommand(v.base); !slices.Contains(ce.Fixes, update) {
+		if update := c.updateCommand(); !slices.Contains(ce.Fixes, update) {
 			ce.Fixes = append(ce.Fixes, update)
 		}
 	}
@@ -115,7 +115,7 @@ func (c *cli) explainProblem(p *problem.Problem) *cliError {
 	e := &cliError{Title: x.title, Reason: x.reason, Code: p.Code, err: p}
 	for _, f := range x.fixes {
 		if f == updateFix && c.base != "" {
-			f = updateCommand(c.base)
+			f = c.updateCommand()
 		}
 		if c.hook != "" {
 			f = strings.ReplaceAll(f, "<hook>", c.hook)

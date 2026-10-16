@@ -22,6 +22,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/relay"
+	"github.com/Radiergummi/tsrelay/internal/release"
 	"github.com/Radiergummi/tsrelay/internal/server"
 	"github.com/Radiergummi/tsrelay/internal/telemetry"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
@@ -69,6 +70,7 @@ func newServeCmd(c *cli) *cobra.Command {
 	logFormat := fs.String("log-format", "json", `the log line format: "json" or "text"`)
 	logLevel := fs.String("log-level", "info", "debug, info, warn or error")
 	verbose := fs.Bool("verbose-tailscale", false, "include tsnet's own logs")
+	updateCheck := fs.Bool("update-check", true, "check GitHub for a newer tsrelay release every 6 hours, and tell admins about it")
 	cmd.RegisterFlagCompletionFunc("user-slug", enum(string(hooks.SlugLocalPart), string(hooks.SlugLogin)))
 	cmd.RegisterFlagCompletionFunc("log-format", enum("json", "text"))
 	cmd.RegisterFlagCompletionFunc("log-level", enum("debug", "info", "warn", "error"))
@@ -128,6 +130,7 @@ func newServeCmd(c *cli) *cobra.Command {
 			revalidate: *revalidate,
 			opsListen:  *opsListen,
 			otel:       *otlp, pprof: *opsPprof,
+			updateCheck: *updateCheck,
 		})
 		if err != nil {
 			logger.Error("relay stopped", "error", err)
@@ -150,6 +153,7 @@ type relayConfig struct {
 	revalidate         time.Duration
 	opsListen          string // host address of the ops listener; empty: off
 	otel, pprof        bool   // --otel, --ops-pprof
+	updateCheck        bool   // --update-check
 }
 
 func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
@@ -224,6 +228,9 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 	}
 	defer tel.Shutdown(context.Background()) // bounded by telemetry.ShutdownTimeout
 	cfg.server.Telemetry = tel
+	if cfg.server.Releases = releaseChecker(cfg.updateCheck, logger); cfg.server.Releases != nil {
+		go cfg.server.Releases.Run(ctx)
+	}
 	srv := server.New(cfg.server,
 		&identify.Tailscale{Client: lc, Cap: cfg.cap, Defaults: cfg.limits, Logger: logger},
 		mgr, al)
@@ -253,6 +260,15 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 		return err
 	}
 	return nil
+}
+
+// releaseChecker checks GitHub for newer releases, unless --update-check
+// is false or this is a dev build, which has no version to compare.
+func releaseChecker(enabled bool, logger *slog.Logger) *release.Checker {
+	if !enabled || version == "dev" {
+		return nil
+	}
+	return &release.Checker{Logger: logger}
 }
 
 // allowedHosts lists the Host header values the relay answers to. Empty

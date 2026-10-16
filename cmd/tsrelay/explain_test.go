@@ -260,7 +260,7 @@ func TestRelayErrorSites(t *testing.T) {
 		setVersion(t, "v0.1.0")
 		errorCase{args: []string{"hooks", "create", "--channel", "Not Valid"}, status: 1, title: "The relay rejected the values",
 			reason: "Something sent is not valid. The relay says: …",
-			fixes:  []string{"Correct what the relay named, then retry", updateCommand(e.relayURL)}, code: problem.Invalid,
+			fixes:  []string{"Correct what the relay named, then retry", "tsrelay update --relay " + e.relayURL}, code: problem.Invalid,
 		}.check(t, d, "--relay", e.relayURL)
 		var stderr syncBuf
 		run(t.Context(), []string{"hooks", "create", "--channel", "Not Valid", "--relay", e.relayURL}, new(nopWriter), &stderr, d)
@@ -381,7 +381,7 @@ func TestExplainProblem(t *testing.T) {
 	if got := c.explain(&problem.Problem{Code: problem.RateLimited}); !slices.Contains(got.Fixes, "tsrelay hooks update pay --rate-limit 100/200") {
 		t.Errorf("fixes should name the hook given: %q", got.Fixes)
 	}
-	if got := c.explain(&problem.Problem{Code: problem.BadRequest}); !slices.Equal(got.Fixes, []string{updateCommand("https://relay")}) {
+	if got := c.explain(&problem.Problem{Code: problem.BadRequest}); !slices.Equal(got.Fixes, []string{"tsrelay update"}) {
 		t.Errorf("fixes should install the relay's version: %q", got.Fixes)
 	}
 }

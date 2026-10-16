@@ -345,7 +345,7 @@ Negotiated responses carry `Vary: Accept`. A representation a resource doesn't h
 
 | Method & path | JSON | Events |
 |---|---|---|
-| `GET /` | The entry document: identity, effective grant (roles, channel patterns, limits), current usage, user slug, the relay's capability name (`capName`) and version, the relay-wide setting defaults and maxima, how many calls it keeps per hook (`policy`, with `callsPerHook`), and `links` to `/hooks`, `/tunnel` and `/openapi.json`. Browsers asking for HTML are redirected to `/hooks`. | |
+| `GET /` | The entry document: identity, effective grant (roles, channel patterns, limits), current usage, user slug, the relay's capability name (`capName`) and version, the relay-wide setting defaults and maxima, how many calls it keeps per hook (`policy`, with `callsPerHook`), and `links` to `/hooks`, `/tunnel` and `/openapi.json`. For admins, `latestVersion` and `releaseURL` name a tsrelay release newer than the relay's own: the relay asks GitHub's latest-release API on startup and every 6 hours and keeps the answer in memory. A failed check is logged once and keeps the last answer; nothing waits for it. A dev build and `--update-check=false` never ask. Browsers asking for HTML are redirected to `/hooks`. | |
 | `GET /hooks` | The caller's hooks (admins: `?all=true`). Every hook object, here and elsewhere, carries `lastCall`: its newest call's summary. | The caller's hooks and their calls (admins: `?all=true`) |
 | `POST /hooks` | Create. `?dryRun=true` validates without saving and answers `200` with the would-be hook. | |
 | `GET/PATCH/DELETE /hooks/{id}` | Read, update or delete. `PATCH` also accepts `?dryRun=true`, which validates without saving and answers `200` with the would-be hook. | This hook and its calls |
@@ -507,6 +507,7 @@ tsrelay url [<port|url>]                          print the URL `http` would use
 tsrelay ps                                        list background tunnels
 tsrelay logs <id|hook> [-f]                       print or follow a background tunnel's log
 tsrelay stop <id|hook>... | --all                 stop background tunnels
+tsrelay update [--check] [-y/--yes]               replace this CLI with the relay's version
 tsrelay serve [flags]                             run the relay
 tsrelay completion bash|zsh|fish|powershell       cobra's generated completion
 tsrelay --version                                 fang; there is no `version` subcommand
@@ -527,6 +528,10 @@ tsrelay --version                                 fang; there is no `version` su
   - **`stop`** asks a tunnel to detach, waits up to 10 s, then kills it and says so. On Unix the request is SIGTERM. A detached Windows process has no console, so no console control event reaches it; instead each tunnel waits on the named event `Local\tsrelay-stop-<id>`, which `stop` sets.
   - **`logs`** prints the log; `-f` keeps polling it until interrupted.
   - **Limits:** a pid reused by another process counts as a running tunnel. `http --background -- cmd` is refused, as a command in the background would make stopping and logging ambiguous. Surviving a reboot and restarting on failure are left to service managers.
+- **Updating:** the CLI should run the relay's version; the `Tsrelay-Version` header on every response tells it when it doesn't, and it warns once per run with the fix `tsrelay update`.
+  - **`update`** reads the relay's version from the entry document and downloads `/download/{os}/{arch}`, which redirects to that release's asset. The checksum is the asset's URL plus `.sha256`, as for `install.sh`. The download goes to a temporary file next to the executable (symlinks resolved), and only once it matches is it renamed over the executable. Windows can't replace a running executable but can rename it, so the old one moves aside to `<exe>.old`, which the next run deletes. Sigstore attestations are left to `gh attestation verify`.
+  - **Refusals:** an unwritable directory (a package manager's, say) is refused before downloading, with `sudo <exe> update` and the install script as fixes. A `dev` build, or a dev relay, has no release to match.
+  - **Offering it:** after a command that saw another version, on a terminal (stdin and stderr) without `--json`, the CLI asks "Relay is vX, you have vY. Update now? [Y/n]". Admins are told when the entry document names a newer release. Each happens at most once a day, by timestamps in `notices.json` next to `hooks.json`; never during completion, in a background tunnel, or after an interrupt; and nothing is updated without a yes.
 - **Finding the relay:** `--relay`, then `TSRELAY_RELAY`, then a default built from `https://tsrelay.` plus the tailnet's MagicDNS suffix, read from the local Tailscale API.
 - **Output:**
   - Hook URLs go to stdout and everything else to stderr, so `$(tsrelay url)` works.

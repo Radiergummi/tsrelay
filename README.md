@@ -39,7 +39,7 @@ curl -fsSL https://tsrelay.<your tailnet>/install.sh | sh        # macOS, Linux
 irm https://tsrelay.<your tailnet>/install.ps1 | iex             # Windows (PowerShell)
 ```
 
-You get the version your relay runs. When the two drift apart, the CLI warns and prints the command to update.
+You get the version your relay runs. When the two drift apart, the CLI warns and suggests [`tsrelay update`](#updating-the-cli).
 
 Then forward a hook to your local app:
 
@@ -55,6 +55,21 @@ connected
 Configure that URL as the callback URL in the app that calls you. Paths below it are passed on: `…/amber-otter-lamp/payments/done` reaches your app as `/payments/done`.
 
 If the CLI says you have no access, your operator needs to grant you the `receiver` role; the web UI shows them the exact grant.
+
+## Updating the CLI
+
+The CLI should run the same version as your relay. `tsrelay update` downloads the relay's version for your platform through the relay's `/download` link, checks it against the release's SHA-256 checksum, and replaces the running executable in place:
+
+```bash
+tsrelay update           # asks first; --yes doesn't
+tsrelay update --check   # only says whether the versions differ
+```
+
+If the executable's directory isn't writable, for example because a package manager installed it there, `update` changes nothing and prints the commands to use instead. A build from source (`tsrelay --version` says `dev`) doesn't update itself.
+
+When the CLI notices that the relay runs another version, it asks `Relay is v0.3.0, you have v0.2.2. Update now? [Y/n]` once the command is done, unless you interrupted it. It asks at most once a day, and only on a terminal: never with `--json`, in a pipe, during completion, or in a background tunnel. Relay admins are also told, at most once a day, when a newer tsrelay release is out than the relay runs.
+
+`update` doesn't check the release's Sigstore attestations. To verify those, download the binary and run `gh attestation verify` as in [Verifying a download](#verifying-a-download).
 
 ## Hooks
 
@@ -324,6 +339,7 @@ Every flag can also be set as an environment variable: `--ephemeral-grace` becom
 | `--ops-pprof` | `false` | Serve Go's profiler under `/debug/pprof/` on the ops listener |
 | `--otel` | `false` | Export traces and metrics over OTLP/HTTP; see [Tracing](#tracing) |
 | `--trace-propagation` | `true` | With `--otel`: continue a sender's `traceparent` and pass the relay's own to the app, so one trace spans sender, relay and app; `false` forwards trace headers untouched |
+| `--update-check` | `true` | Ask GitHub for the latest tsrelay release on startup and every 6 hours, and tell admins when it's newer than the relay; `false` for air-gapped relays |
 
 The audit log is JSON on stderr. It never contains bodies, query strings, or header values.
 

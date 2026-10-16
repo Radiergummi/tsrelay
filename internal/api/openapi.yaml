@@ -364,6 +364,8 @@ components:
         hooks: { type: integer, description: "Hooks the caller owns" }
         capName: { type: string }
         version: { type: string }
+        latestVersion: { type: string, description: "Admins only: a tsrelay release newer than `version`, unless the relay runs with --update-check=false" }
+        releaseURL: { type: string, format: uri, description: "Admins only: the release notes of `latestVersion`" }
         policy:
           type: object
           required: [defaults, max, callsPerHook]

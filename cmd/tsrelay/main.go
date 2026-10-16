@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"charm.land/fang/v2"
@@ -16,9 +17,11 @@ import (
 
 // deps holds what tests replace; zero values mean the real implementations.
 type deps struct {
-	HTTP      *http.Client
-	Status    func(context.Context) (*ipnstate.Status, error)
-	StatePath string
+	HTTP       *http.Client
+	Status     func(context.Context) (*ipnstate.Status, error)
+	StatePath  string
+	Stdin      io.Reader // what questions are answered on
+	Executable string    // what tsrelay update replaces
 }
 
 func main() {
@@ -41,11 +44,18 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 			fmt.Fprintln(stderr, "tsrelay stop can only kill this tunnel:", err)
 		}
 	}
+	if runtime.GOOS == "windows" {
+		if exe, err := executablePath(d); err == nil {
+			removeOldExecutable(exe)
+		}
+	}
 	root := newRoot(c)
 	root.SetArgs(args)
-	return exitStatus(fang.Execute(ctx, root,
+	err := fang.Execute(ctx, root,
 		fang.WithVersion(version),
 		fang.WithoutManpage(),
 		fang.WithErrorHandler(c.handleError),
-	))
+	)
+	c.offer(ctx)
+	return exitStatus(err)
 }
