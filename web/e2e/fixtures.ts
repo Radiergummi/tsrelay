@@ -52,13 +52,13 @@ export function api(request: APIRequestContext, user: keyof typeof users = "dev"
   const base = users[user];
   return {
     async hookId(path: string): Promise<string> {
-      const list = (await (await request.get(`${base}/api/v1/hooks?all=true`)).json()) as {
+      const list = (await (await request.get(`${base}/hooks?all=true`)).json()) as {
         id: string;
         path: string;
       }[];
       const mine = list.length
         ? list
-        : ((await (await request.get(`${base}/api/v1/hooks`)).json()) as {
+        : ((await (await request.get(`${base}/hooks`)).json()) as {
             id: string;
             path: string;
           }[]);
@@ -67,15 +67,15 @@ export function api(request: APIRequestContext, user: keyof typeof users = "dev"
       return h.id;
     },
     async createHook(path: string): Promise<string> {
-      const r = await request.post(`${base}/api/v1/hooks`, { data: { path } });
+      const r = await request.post(`${base}/hooks`, { data: { path } });
       expect(r.status()).toBe(201);
       return ((await r.json()) as { id: string }).id;
     },
     async deleteHook(id: string): Promise<void> {
-      await request.delete(`${base}/api/v1/hooks/${id}`);
+      await request.delete(`${base}/hooks/${id}`);
     },
     async sendTest(hookId: string, path: string): Promise<string> {
-      const r = await request.post(`${base}/api/v1/hooks/${hookId}/test`, {
+      const r = await request.post(`${base}/hooks/${hookId}/test`, {
         data: {
           method: "POST",
           path,

@@ -51,7 +51,7 @@ TSRELAY_LOAD=1 go test ./internal/server -run TestLoad -count=1 -v      # add -c
 - For changes on the request path (relay, tunnel, inspector), compare benchmarks against `docs/perf/baseline.txt` with benchstat (see [Performance](#performance)) and include the result.
 - Keep each pull request to one change, and match the style of the code around it.
 - Write commit messages as a plain imperative sentence that says what the change does, for example "Refuse replays of pending calls". No prefixes like `feat:`.
-- tsrelay's direct dependencies are Tailscale, a few `golang.org/x` modules, OpenTelemetry (with the Prometheus client its exporter needs), and for the CLI cobra, fang and lipgloss (with the Charm modules they bring); anything else needs a good reason. The web UI is a React and Tailwind app under `web/`, whose dependencies are listed in `web/package.json`; new ones need a good reason too, and anything that injects inline scripts or styles is ruled out by the UI's CSP.
+- tsrelay's direct dependencies are Tailscale, a few `golang.org/x` modules, OpenTelemetry (with the Prometheus client its exporter needs), `go.yaml.in/yaml` (to serve the OpenAPI document as JSON), and for the CLI cobra, fang and lipgloss (with the Charm modules they bring); anything else needs a good reason. The web UI is a React and Tailwind app under `web/`, whose dependencies are listed in `web/package.json`; new ones need a good reason too, and anything that injects inline scripts or styles is ruled out by the UI's CSP.
 - GitHub Actions are pinned to a full commit SHA, with the version in a comment. Only actions owned by GitHub and the Docker actions already in use are allowed to run.
 
 ## Releases

@@ -6,7 +6,7 @@ import { renderWithProviders } from "@/test/render";
 import { server } from "@/test/server";
 import { HooksPage } from "./HooksPage";
 
-// The layout normally provides /me as the outlet context; context does that here.
+// The layout normally provides the entry document as the outlet context; context does that here.
 function renderPage() {
   return renderWithProviders(<HooksPage />, { route: "/", path: "/", context: fixtures.me });
 }
@@ -24,7 +24,7 @@ test("lists the viewer's hooks with tunnel, last call and URL", async () => {
 });
 
 test("explains how to install the CLI and get a first hook", async () => {
-  server.use(http.get("/api/v1/hooks", () => HttpResponse.json([])));
+  server.use(http.get("/hooks", () => HttpResponse.json([])));
   renderPage();
   expect(
     await screen.findByText(`curl -fsSL ${window.location.origin}/install.sh | sh`),

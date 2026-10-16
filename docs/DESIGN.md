@@ -52,8 +52,8 @@ A hook is **ephemeral** or **persistent**.
  │ tsrelay serve  (tsnet node "tsrelay")     │◀─────────│  dials out, attaches  │
  │                                           │ (HTTP/2, │                       │
  │  /~{user}/{hook}/…  callback endpoint     │ reversed)│  forwards to          │
- │  /api/v1/…          JSON API + tunnel     │          │  http://localhost:8080│
- │  /                  web UI                │          └──────────────────────┘
+ │  /hooks/…, /tunnel  API (JSON, events)    │          │  http://localhost:8080│
+ │                     and web UI (HTML)     │          └──────────────────────┘
  │                                           │
  │  authz (WhoIs + CapMap) · hook store ·    │
  │  tunnel registry · inspector · audit log  │
@@ -94,7 +94,7 @@ https://tsrelay.<tailnet>.ts.net/~{user}/{hook-path}/{remainder...}
 - **`{hook-path}`** is the hook's path. It has 1–8 segments, each matching `[A-Za-z0-9._-]+`, and is at most 128 characters in total. By default it is three random words such as `amber-otter-lamp`, drawn from an embedded wordlist (the EFF short list, attributed in `NOTICE`). Users may choose any valid path.
 - **`{remainder}`** is forwarded to the local target. The prefix `/~{user}/{hook-path}` is stripped, and the original prefix is sent as `X-Forwarded-Prefix`.
 - **Routing** uses the longest matching hook path within the user's namespace. **Nested hooks are rejected:** a user cannot own both `foo` and `foo/bar`, so routing is never ambiguous.
-- **Reserved paths:** every path that does not start with `/~` belongs to the relay (the UI at `/`, the API at `/api/v1/`, `/static/`). Hooks therefore never collide with relay endpoints.
+- **Reserved paths:** every path that does not start with `/~` belongs to the relay (its resources and UI, §10). Hooks therefore never collide with relay endpoints.
 - **The query string** is forwarded unchanged. It is never written to the audit log (§13).
 
 ## 5. Authorization
@@ -193,7 +193,7 @@ Because a hook can only deliver through a live tunnel from its owner, revoking a
 Authority in the UI and API comes from the network identity, much like a cookie. The relay therefore defends against cross-site attacks and DNS rebinding:
 
 - **Host check:** every request's `Host` must be one of the relay's MagicDNS names or tailnet IPs. Anything else gets `421`.
-- **API writes** require `Content-Type: application/json`. If the `Sec-Fetch-Site` header is present it must be `same-origin` or `none`.
+- **Writes** (any method but `GET`, `HEAD` and `OPTIONS`, on any path but a callback's, tailnet `/~` or public `/+`) require `Content-Type: application/json` when they have a body. If the `Sec-Fetch-Site` header is present it must be `same-origin` or `none`.
 - **No CORS headers**, ever.
 - **The UI sends a strict CSP:** `default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, with no inline script or style, plus `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`. Captured headers and bodies are always rendered as text, never as HTML.
 
@@ -201,7 +201,7 @@ Authority in the UI and API comes from the network identity, much like a cookie.
 
 ### 6.1 Handshake
 
-1. The client sends `GET /api/v1/tunnel?hook={id}&hook={id}…` with `Connection: Upgrade` and `Upgrade: tsrelay-tunnel/1`, using HTTP/1.1. Over TLS, the client offers only the `http/1.1` ALPN value so the connection can be taken over.
+1. The client sends `GET /tunnel?hook={id}&hook={id}…` with `Connection: Upgrade` and `Upgrade: tsrelay-tunnel/1`, using HTTP/1.1. Over TLS, the client offers only the `http/1.1` ALPN value so the connection can be taken over.
 2. The relay authorizes the request (§5.5). On failure it answers with an ordinary problem response (§7.4).
 3. On success the relay answers `101 Switching Protocols` and takes over the connection.
 4. **The roles reverse:** the relay becomes the HTTP/2 *client* (`http2.Transport.NewClientConn`), and the CLI becomes the HTTP/2 *server* (`http2.Server.ServeConn`).
@@ -336,22 +336,32 @@ Every call has an attempts list from the start, even though v1 only ever creates
 
 ## 10. Web UI and API
 
-### 10.1 JSON API (`/api/v1`)
+### 10.1 Resources
 
-| Method & path | Purpose |
-|---|---|
-| `GET /me` | Identity, effective grant (roles, channel patterns, limits), current usage, user slug, the relay's capability name (`capName`), the relay-wide setting defaults and maxima, and how many calls it keeps per hook (`policy`, with `callsPerHook`) |
-| `GET /hooks` | The caller's hooks (admins: `?all=true`). Every hook object, here and elsewhere, carries `lastCall`: its newest call's summary. |
-| `POST /hooks` | Create. `?dryRun=true` validates without saving and answers `200` with the would-be hook. |
-| `GET/PATCH/DELETE /hooks/{id}` | Read, update or delete. `PATCH` also accepts `?dryRun=true`, which validates without saving and answers `200` with the would-be hook. |
-| `GET /hooks/{id}/calls` | Call summaries, newest first |
-| `GET /hooks/{id}/calls/{callID}` | Full call with attempts and captures. For the hook's owner only, `replay: {allowed, reason}` says whether it can be replayed and why not. |
-| `POST /hooks/{id}/calls/{callID}/replay` | Replay. Answers `201` with the new call as `GET` shows it to its owner, `replay` included. |
-| `POST /hooks/{id}/test` | Send a test request. Answers like a replay. |
-| `GET /events` | Server-sent events: `call` (a call summary, on arrival and on completion) and `hook` (`{"id"}` of a hook that changed, or whose tunnel did). Admins may add `?all=true`. A stream that falls 64 events behind is closed; clients reconnect and refetch. |
-| `GET /tunnel` | Tunnel upgrade (§6) |
+The UI and the API share one URL space: each resource has a single URL, and the client picks its representation (package `negotiate`).
 
-- **Hook IDs** are short, opaque and random. Hook paths contain slashes, so they can't serve as IDs.
+1. A `.json` or `.html` extension on the last path segment wins, and is stripped before routing. The app routes only bare URLs, so a `.html` URL is redirected to the bare one.
+2. Otherwise the `Accept` header decides (RFC 9110, with q-values and wildcards). `application/vnd.tsrelay.v1+json` is a versioned alias of JSON. An event stream is only chosen when `text/event-stream` is named; a wildcard never picks it.
+3. Without either, the answer is JSON.
+
+Negotiated responses carry `Vary: Accept`. A representation a resource doesn't have gets `406` (`not_acceptable`). Writes are not negotiated; they answer in JSON. HTML is the web UI (§10.2), which then reads the same URL as JSON.
+
+| Method & path | JSON | Events |
+|---|---|---|
+| `GET /` | The entry document: identity, effective grant (roles, channel patterns, limits), current usage, user slug, the relay's capability name (`capName`) and version, the relay-wide setting defaults and maxima, how many calls it keeps per hook (`policy`, with `callsPerHook`), and `links` to `/hooks`, `/tunnel` and `/openapi.json`. Browsers asking for HTML are redirected to `/hooks`. | |
+| `GET /hooks` | The caller's hooks (admins: `?all=true`). Every hook object, here and elsewhere, carries `lastCall`: its newest call's summary. | The caller's hooks and their calls (admins: `?all=true`) |
+| `POST /hooks` | Create. `?dryRun=true` validates without saving and answers `200` with the would-be hook. | |
+| `GET/PATCH/DELETE /hooks/{id}` | Read, update or delete. `PATCH` also accepts `?dryRun=true`, which validates without saving and answers `200` with the would-be hook. | This hook and its calls |
+| `GET /hooks/{id}/calls` | Call summaries, newest first | This hook's calls |
+| `GET /hooks/{id}/calls/{callID}` | Full call with attempts and captures. For the hook's owner only, `replay: {allowed, reason}` says whether it can be replayed and why not. | |
+| `POST /hooks/{id}/calls/{callID}/replay` | Replay. Answers `201` with the new call as `GET` shows it to its owner, `replay` included. | |
+| `POST /hooks/{id}/test` | Send a test request. Answers like a replay. | |
+| `GET /tunnel` | Tunnel upgrade only (§6) | |
+| `GET /openapi.json`, `/openapi.yaml` | This API as an OpenAPI 3.1 document, written by hand (`internal/api/openapi.yaml`); a test fails when it and the registered routes disagree. | |
+
+Events are server-sent: `call` (a call summary, on arrival and on completion) and `hook` (`{"id"}` of a hook that was created, changed, deleted or expired, or whose tunnel attached or detached). A stream that falls 64 events behind is closed; clients reconnect and refetch.
+
+- **Hook IDs** are short, opaque and random, with a prefix (`h_`), so they never collide with the UI's `/hooks/new`. Hook paths contain slashes, so they can't serve as IDs.
 - **Validation errors** are `422` problem responses with a per-field `errors` list. A field error that comes from a grant names the limiting rule, for example "channel `billing` is not matched by your receiver patterns `prod`, `staging.*`".
 
 The CLI uses this same API.
@@ -361,20 +371,20 @@ The CLI uses this same API.
 The UI is a React single-page app in `web/`, built with Vite and styled with Tailwind, and embedded in the binary from `web/dist` (`make ui`). A binary built without it (a plain `go build`) serves a placeholder page that says how to build it. Screens:
 
 - **Hooks:** your hooks, with path, channel, kind, tunnel (attached node and local target), last call, expiry and URL.
-- **Create / edit hook:** the settings in §8. Every change is checked with a dry run, and the relay's errors appear under their fields. Each setting shows the relay default and maximum from `/me`; the channel picker is fed by the receiver patterns.
+- **Create / edit hook:** the settings in §8. Every change is checked with a dry run, and the relay's errors appear under their fields. Each setting shows the relay default and maximum from the entry document; the channel picker is fed by the receiver patterns.
 - **Hook:** a split pane. The call list (live, newest first, filtered in the browser by status class, method, path and sender, with the filters in the URL) is on the left, and the inspector is on the right: the request and the response (headers with redacted ones marked, bodies as a JSON tree, highlighted text or hex), the attempts, a diff of a replay against its original, and replay and copy-as-curl. Below about 900px the panes stack. Keyboard: `j`/`k`, `Enter`/`Esc`, `/`, `r`, `c`, `t`, `?`.
 - **No access:** what the caller is missing, with an example grant.
 - **Admin:** all hooks and tunnels (metadata only), with delete.
 
 Data flow: the app reads and writes only through the JSON API (§10.1), so `Guard` protects it like any other client, and the server decides visibility: owners get a call's query, headers and bodies; admins get metadata only. The UI hides owner-only controls when the viewer isn't the owner, but the API enforces it.
 
-Live updates: one `EventSource` per tab on `/api/v1/events` (with `?all=true` on the admin page and on another user's hook), closed while the tab is hidden. `call` events update the cached call list (trimmed to `policy.callsPerHook`, as the relay keeps no more) and the hook's last call and refresh an open call; `hook` events refetch the hook, the lists and `/me` (its hook count). After a reconnect (with backoff) the app refetches what it shows, because events may have been missed.
+Live updates: one `EventSource` per tab on the event stream of `/hooks` (with `?all=true` on the admin page and on another user's hook), so a tab holds a single connection whatever page it shows, closed while the tab is hidden. `call` events update the cached call list (trimmed to `policy.callsPerHook`, as the relay keeps no more) and the hook's last call and refresh an open call; `hook` events refetch the hook, the lists and the entry document (its hook count). After a reconnect (with backoff) the app refetches what it shows, because events may have been missed.
 
 Theme: light, dark or the system's, stored in the browser and applied before the first paint by `/theme.js`.
 
 CSP (§5.7): every UI response carries `default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`. There is no inline script or style; the theme script is a file, and Base UI is told not to render `<style>` elements. Captured data is only ever rendered as text: the highlighting comes from the app's own tokenizer, invisible and bidi control characters are shown as `⟨U+XXXX⟩`, and only the hook's URL and the relay's own routes are links. CI fails on any HTML sink in the app's source and on any CSP violation in the end-to-end tests.
 
-Routes: `/`, `/hooks/new`, `/hooks/{id}`, `/hooks/{id}/edit`, `/hooks/{id}/calls/{callID}`, `/admin`, and `/inspect/{callID}`, which redirects to the call on the server (the CLI links here) or shows that the call has expired. Every other path that isn't a built file gets the app (for browsers) or a 404 problem. An admin without the receiver role starts on `/admin`.
+Routes: `/hooks`, `/hooks/new`, `/hooks/{id}`, `/hooks/{id}/edit`, `/hooks/{id}/calls`, `/hooks/{id}/calls/{callID}`, `/admin`, `/cli`, and `/inspect/{callID}`, which redirects to the call on the server (the CLI links here) or shows that the call has expired. The relay serves the resources among them as HTML by giving browsers the app, and redirects `/` to `/hooks`. Every other path that isn't a built file gets the app when asked for HTML, and a 404 problem otherwise. An admin without the receiver role starts on `/admin`.
 
 ## 11. Storage
 
@@ -469,7 +479,7 @@ With `--otel`, the relay records OpenTelemetry spans and exports them, and its m
 - `tsrelay.forward` (client): sending the call down the tunnel until the app's response headers.
 - `tsrelay.tunnel.attach` (server): authorization, upgrade, handshake and registration, with `tsrelay.tunnel.result` (`attached` or `refused`), the actor and the hook IDs.
 - `tsrelay.tunnel.detach`: a short span in its own trace, linked to the attach, with `tsrelay.tunnel.reason` (`disconnected`, `orphaned`, `revoked`, `shutdown`) and the tunnel's lifetime.
-- API requests (server): one span per request, named after the route pattern (`PATCH /api/v1/hooks/{id}`), with the actor's login. Replays and test requests are children of their API request's span. The event stream and tunnel attaches get no request span.
+- API requests (server): one span per request, named after the route pattern (`PATCH /hooks/{id}`), with the actor's login. Replays and test requests are children of their API request's span. The event stream and tunnel attaches get no request span.
 
 With `--trace-propagation` (the default), a sender's call joins the sender's trace, and `traceparent`/`tracestate` sent to the app are replaced by `tsrelay.forward`'s. With `false`, or without `--otel`, they pass through untouched. With tracing off no span code runs at all.
 
@@ -568,7 +578,7 @@ A hook can be made reachable from the internet through Tailscale Funnel, opt-in 
 
 **Configuration:** `--funnel` (default `false`) opens the public listener; `--funnel-port` (default `443`, or `8443`/`10000`, the only ports Funnel supports) and `--funnel-max-body-bytes` (default 25 MiB, GitHub's webhook maximum) bound it. `--funnel` requires `--tls`. Startup fails with a clear message if the policy denies the node the `funnel` node attribute for this port, or if Funnel is requested without HTTPS enabled. Whether a user may mark their own hooks public is a policy decision: a `"public": true` field on a receiver grant value (§5.2), merged by OR and meaningless without `"roles": ["receiver"]` (§5.3).
 
-**URL and token:** `https://<relay MagicDNS name>[:port]/+{token}/{remainder...}`, the port omitted at 443; `{remainder}` and the query string are forwarded exactly as for tailnet hooks (§4), and `/+` mirrors `/~`. Each public hook carries a `PublicToken`: 16 bytes of `crypto/rand`, base64url, 22 characters. It is generated when `public` goes false→true, cleared on true→false, and replaced on an explicit rotate (`POST /api/v1/hooks/{id}/rotate-public-url`, or `tsrelay hooks rotate-url`). The owner can always see it; it never appears in audit records, spans or metric labels.
+**URL and token:** `https://<relay MagicDNS name>[:port]/+{token}/{remainder...}`, the port omitted at 443; `{remainder}` and the query string are forwarded exactly as for tailnet hooks (§4), and `/+` mirrors `/~`. Each public hook carries a `PublicToken`: 16 bytes of `crypto/rand`, base64url, 22 characters. It is generated when `public` goes false→true, cleared on true→false, and replaced on an explicit rotate (`POST /hooks/{id}/rotate-public-url`, or `tsrelay hooks rotate-url`). The owner can always see it; it never appears in audit records, spans or metric labels.
 
 **Listener:** `cmd/tsrelay/funnel.go` is the only non-test file allowed to call `ListenFunnel`/`FunnelOnly` (enforced by `TestFunnelConfined`). It opens a Funnel-only listener served by its own `http.Server`, sharing no router with the tailnet side. Its `ConnContext` (`funnelConnContext`) only records the source address of a genuine `*ipn.FunnelConn`, when the connection is one; it does not reject anything itself. The handler wrapper `withFunnelSource` is what fails closed: it aborts any request whose context lacks that recorded address, with `http.ErrAbortHandler` — which `FunnelOnly` should make unreachable, but the abort is the actual enforcement, not `ConnContext`. Shutting the listener down cleanly clears the node's `AllowFunnel` serve-config entry, but tsnet persists that entry otherwise: a crash, or a restart without `--funnel`, can leave the node still showing Funnel allowed even though nothing is listening. The relay is still safe (no listener means no traffic reaches it), but `--funnel=false` is not by itself proof that Tailscale has stopped advertising the node as Funnel-capable.
 
@@ -576,4 +586,4 @@ A hook can be made reachable from the internet through Tailscale Funnel, opt-in 
 
 **Revocation:** the tunnel revalidator (§5.5) also refreshes whether each tunnel's owner still holds the `public` grant, so losing it stops public delivery within one `--revalidate-interval`, the same as any other revocation. Gaining it takes effect sooner: when the owner makes a hook public, or updates one that is, the relay identifies the node of the hook's tunnel again and lets it receive public calls if that node now holds the grant. The caller's grants never decide this, since the caller may be on another node. The hook's `public` flag and token are left alone, so restoring the grant brings the same URL back.
 
-**API and CLI:** hook JSON gains `public` (visible to anyone who can see the hook) and `publicUrl` (owner only, and only while the hook is public — admins see `public` but never the URL). `GET /api/v1/me` gains `public` (the caller's own grant) and `funnel` (a bool: whether this relay serves Funnel at all). `tsrelay http`, `hooks create` and `hooks update` take `--public`; `tsrelay hooks rotate-url <hook>` issues a new token. Granting `public` without the policy field is a `422` field error on `public`, the same shape as any other disallowed setting, not a `403`.
+**API and CLI:** hook JSON gains `public` (visible to anyone who can see the hook) and `publicUrl` (owner only, and only while the hook is public — admins see `public` but never the URL). `GET /` gains `public` (the caller's own grant) and `funnel` (a bool: whether this relay serves Funnel at all). `tsrelay http`, `hooks create` and `hooks update` take `--public`; `tsrelay hooks rotate-url <hook>` issues a new token. Granting `public` without the policy field is a `422` field error on `public`, the same shape as any other disallowed setting, not a `403`.

@@ -19,7 +19,7 @@ const newer = (s: Summary, last: Summary | undefined) =>
 /**
  * applyCallEvent folds a call summary into the cached lists, the hook's
  * lastCall, and refreshes the call if it's open. The list keeps no more
- * calls than the relay does (/me's policy.callsPerHook). A list being
+ * calls than the relay does (the entry document's policy.callsPerHook). A list being
  * fetched is refetched instead, since the answer in flight may predate the
  * event and would overwrite it.
  */
@@ -45,7 +45,7 @@ export function applyCallEvent(qc: QueryClient, s: Summary): void {
   void qc.invalidateQueries({ queryKey: keys.call(s.hookId, s.id) });
 }
 
-/** applyHookEvent refetches a hook that changed (or was deleted), the lists and /me's hook count. */
+/** applyHookEvent refetches a hook that changed (or was deleted), the lists and the entry document's hook count. */
 export function applyHookEvent(qc: QueryClient, id: string): void {
   void qc.invalidateQueries({ queryKey: keys.hook(id) });
   void qc.invalidateQueries({ queryKey: keys.allHooks });
@@ -53,9 +53,10 @@ export function applyHookEvent(qc: QueryClient, id: string): void {
 }
 
 /**
- * LiveStream keeps one EventSource per tab on /api/v1/events (DESIGN.md
- * §10.1): for the viewer's own hooks, or ?all=true while a page (admin, or
- * another user's hook) holds acquireAll. It closes while the tab is
+ * LiveStream keeps one EventSource per tab on /hooks, the hook list's
+ * event stream (DESIGN.md §10.1): for the viewer's own hooks, or ?all=true
+ * while a page (admin, or another user's hook) holds acquireAll. One
+ * stream serves every page, so a tab never holds more than one connection. It closes while the tab is
  * hidden, and after a reopen or a reconnect it refetches the active
  * queries, since events may have been missed. Errors (including the
  * server closing a lagging stream) reconnect with backoff. start and stop
@@ -129,8 +130,8 @@ export class LiveStream {
 
   private wanted(): string | null {
     if (!this.started || this.doc.hidden) return null;
-    if (this.allHolders > 0) return paths.events(true);
-    return this.user ? paths.events(false) : null;
+    if (this.allHolders > 0) return paths.hooks(true);
+    return this.user ? paths.hooks(false) : null;
   }
 
   private sync(): void {

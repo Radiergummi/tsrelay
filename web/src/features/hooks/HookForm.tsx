@@ -302,7 +302,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
           {editing ? "Save changes" : "Create hook"}
         </Button>
         <Link
-          to={editing ? `/hooks/${encodeURIComponent(hook.id)}` : "/"}
+          to={editing ? `/hooks/${encodeURIComponent(hook.id)}` : "/hooks"}
           className={buttonVariants({ variant: "ghost" })}
         >
           Cancel

@@ -67,15 +67,15 @@ test("users get one stream, switched to ?all=true while a page asks for it", () 
   stream.setUser(false);
   expect(open()).toHaveLength(0);
   const release = stream.acquireAll();
-  expect(open().map((s) => s.url)).toEqual(["/api/v1/events?all=true"]);
+  expect(open().map((s) => s.url)).toEqual(["/hooks?all=true"]);
   release();
   expect(open()).toHaveLength(0);
   stream.setUser(true);
-  expect(open().map((s) => s.url)).toEqual(["/api/v1/events"]);
+  expect(open().map((s) => s.url)).toEqual(["/hooks"]);
   const r2 = stream.acquireAll();
-  expect(open().map((s) => s.url)).toEqual(["/api/v1/events?all=true"]);
+  expect(open().map((s) => s.url)).toEqual(["/hooks?all=true"]);
   r2();
-  expect(open().map((s) => s.url)).toEqual(["/api/v1/events"]);
+  expect(open().map((s) => s.url)).toEqual(["/hooks"]);
 });
 
 test("closed while hidden; reopening invalidates the active queries", () => {
@@ -183,7 +183,7 @@ test("a call event while the list is being fetched refetches it rather than patc
   expect(qc.getQueryData<Summary[]>(keys.calls(h.id))!.map((c) => c.id)).toEqual([base.id]);
 });
 
-test("a hook event invalidates the hook, the lists and /me", () => {
+test("a hook event invalidates the hook, the lists and the entry document", () => {
   stream.setUser(true);
   const spy = vi.spyOn(qc, "invalidateQueries");
   latest().emit("hook", { id: "h_1" });

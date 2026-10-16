@@ -201,7 +201,7 @@ func TestPublicReplayHeaders(t *testing.T) {
 	e := newPublicEnv(t)
 	seen := make(chan http.Header, 1)
 	e.attachPublic(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { seen <- r.Header.Clone() }))
-	from := httptest.NewRequest("POST", "http://relay.test/api/v1/hooks/x/calls/c/replay", nil)
+	from := httptest.NewRequest("POST", "http://relay.test/hooks/x/calls/c/replay", nil)
 	c, err := e.h.Inject(context.Background(), Injection{
 		Hook: e.hook, Kind: inspect.KindReplay, ReplayOf: "c_orig", Public: true,
 		Method: "POST", Path: "/stripe", Header: http.Header{"Traceparent": {"00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"}},

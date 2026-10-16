@@ -20,13 +20,15 @@ var uiOther = identify.User("desk", "other@example.com", 2, `{"roles":["receiver
 
 const testCap = "mazetti.me/cap/relay"
 
-// page GETs path as id without following redirects, and returns the
-// response with its body read into a string.
+// page GETs path as id the way a browser does, without following
+// redirects, and returns the response with its body read into a string.
 func (e *env) page(id authz.Identity, path string) (*http.Response, string) {
 	e.t.Helper()
 	c := e.fake.Client(id)
 	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := c.Get(e.base + path)
+	req, _ := http.NewRequest("GET", e.base+path, nil)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	resp, err := c.Do(req)
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -54,7 +56,8 @@ func TestUIRoutes(t *testing.T) {
 			t.Errorf("%s as %s = %d %s, want the app with 404", tc.path, tc.id.Login, resp.StatusCode, resp.Header.Get("Content-Type"))
 		}
 	}
-	for _, path := range []string{"/", "/hooks/" + h.ID, "/hooks/" + h.ID + "/calls/c_1", "/admin", "/inspect/c_gone", "/no/such/page"} {
+	for _, path := range []string{"/hooks", "/hooks/new", "/hooks/" + h.ID, "/hooks/" + h.ID + "/edit", "/hooks/" + h.ID + "/calls",
+		"/hooks/" + h.ID + "/calls/c_1", "/admin", "/inspect/c_gone", "/no/such/page"} {
 		resp, _ := e.page(receiver, path)
 		hd := resp.Header
 		if !strings.HasPrefix(hd.Get("Content-Type"), "text/html") || hd.Get("Content-Security-Policy") != ui.CSP ||
@@ -62,8 +65,17 @@ func TestUIRoutes(t *testing.T) {
 			t.Errorf("%s = %d %v", path, resp.StatusCode, hd)
 		}
 	}
-	if resp, _ := e.page(receiver, "/api/v1/nope"); resp.StatusCode != 404 || resp.Header.Get("Content-Type") != "application/problem+json" {
-		t.Errorf("unknown API path = %d %s, want a JSON problem", resp.StatusCode, resp.Header.Get("Content-Type"))
+	// The app routes only bare URLs, so a .html extension is redirected away.
+	for path, want := range map[string]string{"/hooks.html?all=true": "/hooks?all=true", "/admin.html": "/admin"} {
+		if resp, _ := e.page(receiver, path); resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != want {
+			t.Errorf("%s = %d → %q, want a redirect to %s", path, resp.StatusCode, resp.Header.Get("Location"), want)
+		}
+	}
+	if resp, _ := e.page(receiver, "/nope.json"); resp.StatusCode != 404 || resp.Header.Get("Content-Type") != "application/problem+json" {
+		t.Errorf("unknown path as JSON = %d %s, want a JSON problem", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	if resp, _ := e.page(receiver, "/"); resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/hooks" {
+		t.Errorf("/ for a browser = %d → %q, want a redirect to /hooks", resp.StatusCode, resp.Header.Get("Location"))
 	}
 }
 
@@ -107,7 +119,7 @@ func full(s string) inspect.Capture {
 // responses stay exactly what the receiver's app returned.
 func TestRelayVersionHeader(t *testing.T) {
 	e := newEnv(t, Config{CapName: testCap, Version: "v0.3.0"})
-	for _, path := range []string{"/api/v1/me", "/api/v1/nope", "/", "/cli", "/install.sh", "/download/linux/amd64"} {
+	for _, path := range []string{"/", "/hooks", "/nope", "/cli", "/install.sh", "/download/linux/amd64"} {
 		if resp, _ := e.page(receiver, path); resp.Header.Get(api.VersionHeader) != "v0.3.0" {
 			t.Errorf("%s: %s = %q", path, api.VersionHeader, resp.Header.Get(api.VersionHeader))
 		}
@@ -121,7 +133,7 @@ func TestRelayVersionHeader(t *testing.T) {
 
 func TestRelayVersionDefaultsToDev(t *testing.T) {
 	e := newEnv(t, Config{CapName: testCap})
-	if resp, _ := e.page(receiver, "/api/v1/me"); resp.Header.Get(api.VersionHeader) != "dev" {
+	if resp, _ := e.page(receiver, "/"); resp.Header.Get(api.VersionHeader) != "dev" {
 		t.Errorf("%s = %q, want dev", api.VersionHeader, resp.Header.Get(api.VersionHeader))
 	}
 }

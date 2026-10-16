@@ -171,7 +171,7 @@ func TestHeldCallsReleasedOnDelete(t *testing.T) {
 	if err := e.mgr.Delete(context.Background(), e.hook.ID); err != nil {
 		t.Fatal(err)
 	}
-	e.reg.Release(string(e.hook.ID)) // what DELETE /api/v1/hooks/{id} and the reaper do
+	e.reg.Release(string(e.hook.ID)) // what DELETE /hooks/{id} and the reaper do
 	res := <-got
 	if res.status != 404 || res.code != problem.HookNotFound || res.took > 5*time.Second {
 		t.Fatalf("held call after delete = %+v", res)

@@ -39,7 +39,7 @@ test("shows the hook, its settings, and its calls newest first", async () => {
 
 test("another user's hook path and description are shown with control characters revealed", async () => {
   server.use(
-    http.get("/api/v1/hooks/:id", () =>
+    http.get("/hooks/:id", () =>
       HttpResponse.json({ ...fixtures.theirs, path: "a\u202eb", description: "c\u2066d" }),
     ),
   );
@@ -117,7 +117,7 @@ test("a pending call that completes refreshes the open inspector", async () => {
   await screen.findByRole("heading", { level: 2, name: /POST/ });
   expect(screen.queryByText("200 OK")).not.toBeInTheDocument();
   const done = { ...fixtures.callPending, outcome: "ok", status: 200, duration: "12ms" };
-  server.use(http.get("/api/v1/hooks/:id/calls/c_pending", () => HttpResponse.json(done)));
+  server.use(http.get("/hooks/:id/calls/c_pending", () => HttpResponse.json(done)));
   act(() => {
     FakeEventSource.latest()!.open();
     FakeEventSource.latest()!.emit("call", { ...done, attempts: undefined });
@@ -128,7 +128,7 @@ test("a pending call that completes refreshes the open inspector", async () => {
 test("an admin watching another user's hook gets every hook's events, and no owner controls", async () => {
   open(fixtures.theirs.id, `/hooks/${fixtures.theirs.id}`, fixtures.meAdmin);
   expect(await screen.findByRole("heading", { name: "theirs" })).toBeInTheDocument();
-  await waitFor(() => expect(FakeEventSource.latest()?.url).toBe("/api/v1/events?all=true"));
+  await waitFor(() => expect(FakeEventSource.latest()?.url).toBe("/hooks?all=true"));
   expect(screen.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Send test request" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
@@ -138,7 +138,7 @@ test("a hook deleted while open says so", async () => {
   open(fixtures.idle.id);
   await screen.findByRole("heading", { name: "idle" });
   server.use(
-    http.get("/api/v1/hooks/:id", () =>
+    http.get("/hooks/:id", () =>
       HttpResponse.json(
         { status: 404, code: "not_found", detail: "hook not found" },
         { status: 404 },
@@ -154,7 +154,7 @@ test("a hook deleted while open says so", async () => {
 test("t opens the test request dialog, which shuts on send and toasts the outcome", async () => {
   let sent: unknown;
   server.use(
-    http.post("/api/v1/hooks/:id/test", async ({ request }) => {
+    http.post("/hooks/:id/test", async ({ request }) => {
       sent = await request.json();
       return HttpResponse.json(
         { ...fixtures.callJson, id: "c_test", kind: "test" },
@@ -186,7 +186,7 @@ test("t opens the test request dialog, which shuts on send and toasts the outcom
 
 test("a 422 whose errors don't map to a shown field shows a form-level message in the test dialog", async () => {
   server.use(
-    http.post("/api/v1/hooks/:id/test", () =>
+    http.post("/hooks/:id/test", () =>
       HttpResponse.json(
         {
           status: 422,
@@ -219,12 +219,12 @@ test("a public hook shows its public URL to the owner, who can rotate it", async
   };
   let rotated = false;
   server.use(
-    http.get(`/api/v1/hooks/${fixtures.hook.id}`, () =>
+    http.get(`/hooks/${fixtures.hook.id}`, () =>
       HttpResponse.json(
         rotated ? { ...publicHook, publicUrl: "https://tsrelay.example.ts.net/+new" } : publicHook,
       ),
     ),
-    http.post(`/api/v1/hooks/${fixtures.hook.id}/rotate-public-url`, () => {
+    http.post(`/hooks/${fixtures.hook.id}/rotate-public-url`, () => {
       rotated = true;
       return HttpResponse.json({ ...publicHook, publicUrl: "https://tsrelay.example.ts.net/+new" });
     }),
@@ -238,7 +238,7 @@ test("a public hook shows its public URL to the owner, who can rotate it", async
 
 test("a public hook explains that it's unreachable while this relay runs without Funnel", async () => {
   server.use(
-    http.get(`/api/v1/hooks/${fixtures.hook.id}`, () =>
+    http.get(`/hooks/${fixtures.hook.id}`, () =>
       HttpResponse.json({ ...fixtures.hook, public: true }),
     ),
   );
