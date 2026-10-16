@@ -40,7 +40,7 @@ func newRoot(c *cli) *cobra.Command {
 	pf.BoolVarP(&c.json, "json", "j", false, "print JSON on stdout (indented on a terminal)")
 	pf.BoolVar(&c.noColor, "no-color", false, "print plain text, as NO_COLOR does")
 	pf.BoolVar(&c.noLinks, "no-hyperlinks", false, "print full inspector URLs instead of clickable call IDs")
-	root.AddCommand(newHTTPCmd(c), newAttachCmd(c), newHooksCmd(c), newURLCmd(c), newServeCmd(c))
+	root.AddCommand(newHTTPCmd(c), newAttachCmd(c), newHooksCmd(c), newURLCmd(c), newServeCmd(c), newLicensesCmd(c))
 	return root
 }
 
