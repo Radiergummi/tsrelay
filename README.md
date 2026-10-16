@@ -23,7 +23,7 @@ A web interface lets users manage their hooks and view the request log, which al
 **Contents**
 
 - [Using tsrelay](#using-tsrelay): for developers whose tailnet already runs a relay
-  - [Get started](#get-started) · [Hooks](#hooks) · [Public hooks](#public-hooks) · [Channels](#channels) · [Managing hooks](#managing-hooks) · [Hook settings](#hook-settings) · [What your app receives](#what-your-app-receives) · [Web UI](#web-ui) · [Inspecting calls](#inspecting-calls) · [Errors](#errors) · [Completion and output](#completion-and-output)
+  - [Get started](#get-started) · [Hooks](#hooks) · [Public hooks](#public-hooks) · [Channels](#channels) · [Managing hooks](#managing-hooks) · [Hook settings](#hook-settings) · [What your app receives](#what-your-app-receives) · [Web UI](#web-ui) · [Inspecting calls](#inspecting-calls) · [The API](#the-api) · [Errors](#errors) · [Completion and output](#completion-and-output)
 - [Running a relay](#running-a-relay): for operators
   - [Tailnet policy and roles](#tailnet-policy-and-roles) · [Making someone an admin](#making-someone-an-admin) · [Run the relay](#run-the-relay) · [Serving public hooks](#serving-public-hooks) · [Configuration](#configuration) · [Hook defaults and limits](#hook-defaults-and-limits) · [Deployment](#deployment) · [Metrics](#metrics) · [Tracing](#tracing) · [Profiling](#profiling) · [Verifying a download](#verifying-a-download)
 - [Contributing](#contributing)
@@ -150,7 +150,7 @@ Bodies arrive exactly as sent, byte for byte, so signatures from Stripe, GitHub,
 
 Open the relay's URL (`https://tsrelay.<your tailnet>/`) in a browser on your tailnet. You see your hooks with their tunnels and latest calls, and can create, edit and delete hooks. Each hook's page shows its calls as they arrive, and lets you send it a test request. A call's page shows the request and the response side by side, and lets you replay the call or copy it as a curl command (aimed at your local target or at the hook URL). Each call line `tsrelay http` prints ends with a link to that call.
 
-Each hook's page has the call list on the left and the selected call on the right; the list updates live, and you can filter it by status, method, path and sender. Keyboard shortcuts: `j`/`k` move through the calls, `Enter`/`Esc` select and deselect, `/` focuses the filter, `r` replays, `c` copies as curl, `t` sends a test request, and `?` lists them. The UI needs JavaScript; the CLI and the JSON API don't.
+Each hook's page has the call list on the left and the selected call on the right; the list updates live, and you can filter it by status, method, path and sender. Keyboard shortcuts: `j`/`k` move through the calls, `Enter`/`Esc` select and deselect, `/` focuses the filter, `r` replays, `c` copies as curl, `t` sends a test request, and `?` lists them. The UI needs JavaScript; the CLI and the [API](#the-api) don't.
 
 ## Inspecting calls
 
@@ -158,13 +158,24 @@ The relay keeps the most recent calls of each hook in memory (100 unless your op
 
 | | |
 |---|---|
-| `GET /api/v1/hooks/{id}/calls` | Call summaries, newest first |
-| `GET /api/v1/hooks/{id}/calls/{callID}` | One call with its captured headers and bodies |
-| `POST /api/v1/hooks/{id}/calls/{callID}/replay` | Send the call again; its body and query string must have been captured in full |
-| `POST /api/v1/hooks/{id}/test` | Send `{"method","path","headers","body"}` through the relay to your app |
-| `GET /api/v1/events` | Server-sent events for your calls and hooks |
+| `GET /hooks/{id}/calls` | Call summaries, newest first; with `Accept: text/event-stream`, each call as it arrives and completes |
+| `GET /hooks/{id}/calls/{callID}` | One call with its captured headers and bodies |
+| `POST /hooks/{id}/calls/{callID}/replay` | Send the call again; its body and query string must have been captured in full |
+| `POST /hooks/{id}/test` | Send `{"method","path","headers","body"}` through the relay to your app |
 
 Replays and test requests go through the whole relay to your app. The answer is recorded in the inspector and returned by the API, never sent to the original sender. Every response a sender gets carries `Tsrelay-Call-Id`, which names the call here.
+
+## The API
+
+The web UI's hook pages are also API resources at the same URLs: ask for JSON and you get the data the page shows. A `.json` or `.html` extension picks the representation; otherwise the `Accept` header does, and JSON is the default. So the URL in your browser's address bar is the one to script against:
+
+```bash
+curl https://tsrelay.<your tailnet>/hooks                               # your hooks, as JSON
+curl https://tsrelay.<your tailnet>/hooks/h_3k2/calls.json              # the same as the hook page's call list
+curl -H 'Accept: text/event-stream' https://tsrelay.<your tailnet>/hooks  # live changes to your hooks
+```
+
+`/` is the entry document (who you are, your limits, and links to the rest), and `/hooks/{id}` streams changes to one hook. The relay identifies you by your tailnet identity, so there are no tokens. The full description is an OpenAPI document at `/openapi.json` (or `/openapi.yaml`).
 
 ## Errors
 

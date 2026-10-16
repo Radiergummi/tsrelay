@@ -2,15 +2,15 @@ package ui
 
 import (
 	"bytes"
-	"cmp"
 	"io"
 	"mime"
 	"net/http"
 	"path"
-	"strconv"
 	"strings"
 	"time"
 
+	// Imported by another name: negotiate is the Accept-Encoding pick here.
+	representation "github.com/Radiergummi/tsrelay/internal/negotiate"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
@@ -23,8 +23,9 @@ var placeholder = []byte(`<!doctype html>
 `)
 
 // serve answers a path no other route matched: a built file if one
-// exists, and otherwise index.html, so the app can route it. Hidden files
-// (.gitkeep, Vite's .vite/) are never served.
+// exists, and otherwise index.html for a client asking for HTML, so the
+// app can route it. Hidden files (.gitkeep, Vite's .vite/) are never
+// served.
 func (u *UI) serve(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		notFound(w)
@@ -41,8 +42,18 @@ func (u *UI) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if !acceptsHTML(r) {
+	if t, _ := representation.Pick(w, r, representation.JSON, representation.HTML); t != representation.HTML {
 		notFound(w)
+		return
+	}
+	u.app(w, r)
+}
+
+// app sends the app for a request asking for HTML. A .html extension is
+// redirected away first, since the app routes only the bare URL.
+func (u *UI) app(w http.ResponseWriter, r *http.Request) {
+	if representation.Stripped(r) {
+		http.Redirect(w, r, r.URL.RequestURI(), http.StatusFound)
 		return
 	}
 	u.writeIndex(w, r, http.StatusOK)
@@ -55,28 +66,6 @@ func notFound(w http.ResponseWriter) {
 func hidden(name string) bool {
 	for seg := range strings.SplitSeq(name, "/") {
 		if strings.HasPrefix(seg, ".") {
-			return true
-		}
-	}
-	return false
-}
-
-// acceptsHTML reports whether r accepts text/html: it has no Accept
-// header, or one naming text/html, text/* or */* with a q-value above 0.
-func acceptsHTML(r *http.Request) bool {
-	accept := strings.Join(r.Header.Values("Accept"), ",")
-	if strings.TrimSpace(accept) == "" {
-		return true
-	}
-	for part := range strings.SplitSeq(accept, ",") {
-		mt, params, err := mime.ParseMediaType(strings.TrimSpace(part))
-		if err != nil {
-			continue
-		}
-		if q, err := strconv.ParseFloat(cmp.Or(params["q"], "1"), 64); err != nil || q <= 0 {
-			continue
-		}
-		if mt == "text/html" || mt == "text/*" || mt == "*/*" {
 			return true
 		}
 	}

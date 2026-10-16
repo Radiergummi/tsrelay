@@ -70,7 +70,7 @@ func TestCallsEndToEnd(t *testing.T) {
 	var list []inspect.Summary
 	e.waitFor(func() bool {
 		list = nil
-		return e.getJSON("/api/v1/hooks/"+h.ID+"/calls", &list) == 200 && len(list) == 1 && list[0].Outcome == inspect.OutcomeOK
+		return e.getJSON("/hooks/"+h.ID+"/calls", &list) == 200 && len(list) == 1 && list[0].Outcome == inspect.OutcomeOK
 	})
 	if list[0].ID != resp.Header.Get("Tsrelay-Call-Id") || list[0].Status != 202 || list[0].Path != "/done" {
 		t.Fatalf("summary = %+v", list[0])
@@ -98,10 +98,10 @@ func TestReplayEndToEnd(t *testing.T) {
 	callID := resp.Header.Get("Tsrelay-Call-Id")
 	e.waitFor(func() bool {
 		var c inspect.Call
-		return e.getJSON("/api/v1/hooks/"+h.ID+"/calls/"+callID, &c) == 200 && c.Outcome == inspect.OutcomeOK
+		return e.getJSON("/hooks/"+h.ID+"/calls/"+callID, &c) == 200 && c.Outcome == inspect.OutcomeOK
 	})
 	var replay inspect.Call
-	if code := e.postJSON("/api/v1/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, &replay); code != 201 {
+	if code := e.postJSON("/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, &replay); code != 201 {
 		t.Fatalf("replay = %d", code)
 	}
 	if second := <-got; second.auth != "" || second.body != `{"n":1}` {
@@ -114,12 +114,13 @@ func TestReplayEndToEnd(t *testing.T) {
 
 type sseEvent struct{ typ, data string }
 
-// sse opens the event stream as id. The subscription is live when it
+// sse opens path's event stream as id. The subscription is live when it
 // returns: the relay subscribes before it sends the response headers.
-func (e *env) sse(id authz.Identity, query string) <-chan sseEvent {
+func (e *env) sse(id authz.Identity, path string) <-chan sseEvent {
 	e.t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	req, _ := http.NewRequestWithContext(ctx, "GET", e.base+"/api/v1/events"+query, nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", e.base+path, nil)
+	req.Header.Set("Accept", "text/event-stream")
 	resp, err := e.fake.Client(id).Do(req)
 	if err != nil {
 		e.t.Fatal(err)
@@ -173,26 +174,32 @@ func TestEventStream(t *testing.T) {
 	e := newEnv(t, Config{})
 	operator := identify.User("ops-box", "ops@example.com", 3, `{"roles":["admin"]}`)
 	stranger := identify.User("desk", "other@example.com", 2, `{"roles":["receiver"]}`)
-	mine, all, theirs := e.sse(receiver, ""), e.sse(operator, "?all=true"), e.sse(stranger, "")
+	mine, all, theirs := e.sse(receiver, "/hooks"), e.sse(operator, "/hooks?all=true"), e.sse(stranger, "/hooks")
 
 	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	hookStream, adminHookStream := e.sse(receiver, "/hooks/"+h.ID), e.sse(operator, "/hooks/"+h.ID)
+	callStream := e.sse(receiver, "/hooks/"+h.ID+"/calls")
 	isHook := func(ev sseEvent) bool { return ev.typ == "hook" && strings.Contains(ev.data, h.ID) }
 	until(t, mine, isHook) // created
 	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusAccepted) }))
 	defer local.Close()
 	defer e.cli(h.ID, local.URL)()
-	until(t, mine, isHook) // tunnel attached
+	until(t, mine, isHook)       // tunnel attached
+	until(t, hookStream, isHook) // the hook's own stream has it too
 
 	resp := e.send(h, "/done?token=s3cr3t", []byte(`{"secret":true}`), http.Header{"X-Custom": {"secret-header"}})
 	io.ReadAll(resp.Body)
 	finished := func(ev sseEvent) bool { return ev.typ == "call" && strings.Contains(ev.data, `"outcome":"ok"`) }
-	for name, stream := range map[string]<-chan sseEvent{"owner": mine, "admin": all} {
+	for name, stream := range map[string]<-chan sseEvent{"owner": mine, "admin": all, "hook": hookStream, "admin's hook": adminHookStream, "calls": callStream} {
 		for _, ev := range until(t, stream, finished) {
 			if strings.Contains(ev.data, "s3cr3t") || strings.Contains(ev.data, "secret-header") || strings.Contains(ev.data, "secret") {
 				t.Errorf("%s's stream carried owner-only data: %s", name, ev.data)
+			}
+			if name == "calls" && ev.typ != "call" {
+				t.Errorf("the calls stream carried a %s event", ev.typ)
 			}
 		}
 	}
@@ -202,8 +209,21 @@ func TestEventStream(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	if resp, err := e.fake.Client(sender).Get(e.base + "/api/v1/events"); err != nil || resp.StatusCode != 403 {
-		t.Fatalf("tagged node's stream = %v, %v; want 403", resp, err)
+	stream := func(id authz.Identity, path string) int {
+		req, _ := http.NewRequest("GET", e.base+path, nil)
+		req.Header.Set("Accept", "text/event-stream")
+		resp, err := e.fake.Client(id).Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if code := stream(sender, "/hooks"); code != 403 {
+		t.Errorf("tagged node's stream = %d, want 403", code)
+	}
+	if code := stream(stranger, "/hooks/"+h.ID); code != 404 {
+		t.Errorf("another user's hook stream = %d, want 404", code)
 	}
 }
 
@@ -211,7 +231,7 @@ func TestEventStream(t *testing.T) {
 // wait for them.
 func TestEventStreamEndsOnClose(t *testing.T) {
 	e := newEnv(t, Config{})
-	stream := e.sse(receiver, "")
+	stream := e.sse(receiver, "/hooks")
 	e.srv.Close()
 	select {
 	case _, ok := <-stream:

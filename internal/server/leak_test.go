@@ -41,11 +41,11 @@ func TestTelemetryLeaksNothing(t *testing.T) {
 	// Replayed.
 	e.waitFor(func() bool {
 		var c inspect.Call
-		return e.getJSON("/api/v1/hooks/"+h.ID+"/calls/"+callID, &c) == 200 && c.Outcome == inspect.OutcomeOK
+		return e.getJSON("/hooks/"+h.ID+"/calls/"+callID, &c) == 200 && c.Outcome == inspect.OutcomeOK
 	})
-	e.postJSON("/api/v1/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, nil)
+	e.postJSON("/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, nil)
 	// A test request through the API.
-	e.postJSON("/api/v1/hooks/"+h.ID+"/test", map[string]any{
+	e.postJSON("/hooks/"+h.ID+"/test", map[string]any{
 		"method": "POST", "path": "/t?q=SECRETQUERY",
 		"headers": map[string][]string{"X-Test": {"SECRETTESTHEADER"}},
 		"body":    "SECRETTESTBODY",

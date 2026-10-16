@@ -6,7 +6,7 @@ import { hook } from "./schemas";
 
 test("a problem response becomes an ApiError with its field errors", async () => {
   server.use(
-    http.post("/api/v1/hooks", () =>
+    http.post("/hooks", () =>
       HttpResponse.json(
         {
           type: "https://tsrelay.mazetti.me/errors/invalid",
@@ -31,7 +31,7 @@ test("a problem response becomes an ApiError with its field errors", async () =>
 });
 
 test("a non-JSON error keeps its text", async () => {
-  server.use(http.get("/api/v1/me", () => new HttpResponse("bad gateway\n", { status: 502 })));
+  server.use(http.get("/", () => new HttpResponse("bad gateway\n", { status: 502 })));
   const err = await request(hook, "GET", paths.me).catch((e) => e);
   expect(err).toBeInstanceOf(ApiError);
   expect(err.status).toBe(502);
@@ -39,7 +39,7 @@ test("a non-JSON error keeps its text", async () => {
 });
 
 test("an unreachable relay is an ApiError with status 0", async () => {
-  server.use(http.get("/api/v1/me", () => HttpResponse.error()));
+  server.use(http.get("/", () => HttpResponse.error()));
   const err = await request(hook, "GET", paths.me).catch((e) => e);
   expect(err).toBeInstanceOf(ApiError);
   expect(err.status).toBe(0);
@@ -47,7 +47,7 @@ test("an unreachable relay is an ApiError with status 0", async () => {
 });
 
 test("requestVoid accepts 204, and paths escape IDs", async () => {
-  server.use(http.delete("/api/v1/hooks/:id", () => new HttpResponse(null, { status: 204 })));
+  server.use(http.delete("/hooks/:id", () => new HttpResponse(null, { status: 204 })));
   await expect(requestVoid("DELETE", paths.hook("h_1"))).resolves.toBeUndefined();
-  expect(paths.call("a/b", "c?d")).toBe("/api/v1/hooks/a%2Fb/calls/c%3Fd");
+  expect(paths.call("a/b", "c?d")).toBe("/hooks/a%2Fb/calls/c%3Fd");
 });

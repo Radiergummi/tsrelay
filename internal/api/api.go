@@ -1,4 +1,6 @@
-// Package api serves the relay's JSON API under /api/v1 (DESIGN.md §10.1).
+// Package api serves the relay's resources (DESIGN.md §10.1). Each URL
+// answers in JSON, as the web UI (HTML), or as an event stream, whichever
+// the client asks for (package negotiate).
 package api
 
 import (
@@ -8,6 +10,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +24,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
+	"github.com/Radiergummi/tsrelay/internal/negotiate"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
@@ -37,9 +41,10 @@ type API struct {
 	Audit         *audit.Logger
 	BaseURL       string // e.g. "https://tsrelay.example.ts.net", no trailing slash
 	PublicBaseURL string // the relay's URL on the internet, through Funnel; empty: Funnel is off
-	CapName       string // the capability carrying relay grants; GET /me names it for the no-access page
-	Version       string // the relay's version ("v0.3.0", or "dev"); GET /me names it next to the CLI's download
+	CapName       string // the capability carrying relay grants; GET / names it for the no-access page
+	Version       string // the relay's version ("v0.3.0", or "dev"); GET / names it next to the CLI's download
 	Tunnel        tunnel.Options
+	HTML          http.Handler // the web UI, for resources asked for as HTML; nil: JSON and streams only
 	Tracer        trace.Tracer // nil: no spans
 	Meter         metric.Meter // nil: no API latency histogram
 
@@ -49,12 +54,16 @@ type API struct {
 
 	notifyMu  sync.Mutex // orders updateSeq with the URL read for it
 	updateSeq uint64
+
+	routes []string // the patterns Register mounted
 }
 
 // VersionHeader names the relay's version ("v0.3.0", or "dev") on every
 // response but a callback's. The CLI compares it with its own.
 const VersionHeader = "Tsrelay-Version"
 
+// Me is the entry document, GET /: who the caller is, what the relay
+// allows them, and where its resources are.
 type Me struct {
 	Login   string                  `json:"login,omitempty"`
 	Node    string                  `json:"node"`
@@ -68,7 +77,11 @@ type Me struct {
 	Policy  Policy                  `json:"policy"`
 	Public  bool                    `json:"public"` // the caller may make hooks public
 	Funnel  bool                    `json:"funnel"` // the relay serves public hooks
+	Links   map[string]string       `json:"links"`
 }
+
+// links point from the entry document to the relay's resources.
+var links = map[string]string{"hooks": "/hooks", "tunnel": "/tunnel", "openapi": "/openapi.json"}
 
 // Policy is the relay-wide setting defaults and maxima (DESIGN.md §8), which
 // the UI shows next to each setting, and how many calls the relay keeps per
@@ -111,27 +124,87 @@ type TunnelInfo struct {
 
 func (a *API) Register(mux *http.ServeMux) {
 	latency := a.latencyHistogram()
-	route := func(pattern string, f func(http.ResponseWriter, *http.Request, authz.Identity)) {
-		mux.Handle(pattern, a.observed(latency, pattern, a.authed(f)))
+	handle := func(pattern string, h http.Handler) {
+		a.routes = append(a.routes, pattern)
+		mux.Handle(pattern, h)
 	}
-	route("GET /api/v1/me", a.me)
-	route("GET /api/v1/hooks", a.listHooks)
-	route("POST /api/v1/hooks", a.createHook)
-	route("GET /api/v1/hooks/{id}", a.getHook)
-	route("PATCH /api/v1/hooks/{id}", a.updateHook)
-	route("POST /api/v1/hooks/{id}/rotate-public-url", a.rotatePublicURL)
-	route("DELETE /api/v1/hooks/{id}", a.deleteHook)
-	route("GET /api/v1/hooks/{id}/calls", a.listCalls)
-	route("GET /api/v1/hooks/{id}/calls/{callID}", a.getCall)
-	route("POST /api/v1/hooks/{id}/calls/{callID}/replay", a.replayCall)
-	route("POST /api/v1/hooks/{id}/test", a.testCall)
+	route := func(pattern string, f func(http.ResponseWriter, *http.Request, authz.Identity)) {
+		handle(pattern, a.observed(latency, pattern, a.authed(f)))
+	}
+	// A resource also answers as the web UI and, with stream, as events.
+	resource := func(pattern string, f, stream func(http.ResponseWriter, *http.Request, authz.Identity)) {
+		handle(pattern, a.negotiated(a.observed(latency, pattern, a.authed(f)), stream))
+	}
+	handle("GET /{$}", a.entry(a.observed(latency, "GET /", a.authed(a.me))))
+	resource("GET /hooks", a.listHooks, a.hooksStream)
+	route("POST /hooks", a.createHook)
+	resource("GET /hooks/{id}", a.getHook, a.hookStream)
+	route("PATCH /hooks/{id}", a.updateHook)
+	route("POST /hooks/{id}/rotate-public-url", a.rotatePublicURL)
+	route("DELETE /hooks/{id}", a.deleteHook)
+	resource("GET /hooks/{id}/calls", a.listCalls, a.callsStream)
+	resource("GET /hooks/{id}/calls/{callID}", a.getCall, nil)
+	route("POST /hooks/{id}/calls/{callID}/replay", a.replayCall)
+	route("POST /hooks/{id}/test", a.testCall)
 	// Long-lived: not observed (the tunnel traces its own attach and detach).
-	mux.Handle("GET /api/v1/events", a.authed(a.eventStream))
-	mux.Handle("GET /api/v1/tunnel", a.authed(a.tunnel))
-	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
-		problem.New(http.StatusNotFound, problem.NotFound, "not found").Write(w)
+	handle("GET /tunnel", a.authed(a.tunnel))
+	handle("GET /openapi", http.HandlerFunc(serveOpenAPI))
+	handle("GET /openapi.yaml", http.HandlerFunc(serveOpenAPIYAML))
+}
+
+// negotiated serves a resource as JSON from h, as events from stream (if
+// it has one), or as the web UI.
+func (a *API) negotiated(h http.Handler, stream func(http.ResponseWriter, *http.Request, authz.Identity)) http.Handler {
+	offers := []negotiate.Type{negotiate.JSON}
+	if a.HTML != nil {
+		offers = append(offers, negotiate.HTML)
+	}
+	var events http.Handler
+	if stream != nil {
+		offers = append(offers, negotiate.EventStream)
+		events = a.authed(stream)
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch t, ok := negotiate.Pick(w, r, offers...); {
+		case !ok:
+			notAcceptable(w, offers)
+		case t == negotiate.HTML:
+			a.HTML.ServeHTTP(w, r)
+		case t == negotiate.EventStream:
+			events.ServeHTTP(w, r)
+		default:
+			h.ServeHTTP(w, r)
+		}
 	})
 }
+
+// entry serves the entry document as JSON from h, and sends browsers on to
+// the hook list.
+func (a *API) entry(h http.Handler) http.Handler {
+	offers := []negotiate.Type{negotiate.JSON, negotiate.HTML}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch t, ok := negotiate.Pick(w, r, offers...); {
+		case !ok:
+			notAcceptable(w, offers)
+		case t == negotiate.HTML:
+			http.Redirect(w, r, "/hooks", http.StatusFound)
+		default:
+			h.ServeHTTP(w, r)
+		}
+	})
+}
+
+func notAcceptable(w http.ResponseWriter, offers []negotiate.Type) {
+	types := make([]string, len(offers))
+	for i, t := range offers {
+		types[i] = t.String()
+	}
+	problem.New(http.StatusNotAcceptable, problem.NotAcceptable, "this resource is available as "+strings.Join(types, ", ")).Write(w)
+}
+
+// Routes are the patterns Register mounted, for checking them against the
+// OpenAPI document.
+func (a *API) Routes() []string { return a.routes }
 
 func (a *API) authed(f func(http.ResponseWriter, *http.Request, authz.Identity)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -155,7 +228,7 @@ func (a *API) lockAttaches(user tailcfg.UserID) (unlock func()) {
 	return mu.Unlock
 }
 
-// MeOf describes id as GET /api/v1/me does.
+// MeOf describes id as GET / does.
 func (a *API) MeOf(id authz.Identity) Me {
 	me := Me{
 		Login: id.Login, Node: id.NodeName, Tags: id.Tags, Roles: id.Grants.Patterns,
@@ -172,6 +245,7 @@ func (a *API) MeOf(id authz.Identity) Me {
 	me.CapName, me.Version, me.Policy = a.CapName, a.Version, Policy{Defaults: p.Defaults, Max: p.Max, CallsPerHook: a.Inspect.CallsPerHook()}
 	me.Public = id.Grants.Public
 	me.Funnel = a.PublicBaseURL != ""
+	me.Links = links
 	return me
 }
 
@@ -230,7 +304,7 @@ func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 	}
 	a.Audit.Log(r.Context(), audit.HookCreate, audit.Actor(id), audit.Hook(h), slog.Bool("ephemeral", h.Ephemeral))
 	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
-	w.Header().Set("Location", "/api/v1/hooks/"+string(h.ID))
+	w.Header().Set("Location", "/hooks/"+string(h.ID))
 	writeJSON(w, http.StatusCreated, a.HookJSON(h, id))
 }
 

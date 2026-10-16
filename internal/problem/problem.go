@@ -36,6 +36,7 @@ const (
 	Conflict             = "conflict"
 	MisdirectedRequest   = "misdirected_request"
 	UnsupportedMediaType = "unsupported_media_type"
+	NotAcceptable        = "not_acceptable"
 	Internal             = "internal"
 )
 

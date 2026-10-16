@@ -1,7 +1,8 @@
 // Package ui serves the relay's web UI (DESIGN.md §10.2): a single-page
-// app built from web/ and embedded in the binary. Every app route gets
-// index.html; the app reads and writes through the JSON API, so the UI
-// has no endpoints of its own except the redirect for the CLI's links.
+// app built from web/ and embedded in the binary. Every app route asked
+// for as HTML gets index.html, including the API's resources; the app
+// reads and writes them as JSON, so the UI has no endpoints of its own
+// except the redirect for the CLI's links.
 package ui
 
 import (
@@ -31,6 +32,11 @@ func New(a *api.API, dist fs.FS) *UI {
 		u.index, u.etag = b, `"`+etagOf(b)+`"`
 	}
 	return u
+}
+
+// Index serves the app, for the API's resources asked for as HTML.
+func (u *UI) Index() http.Handler {
+	return secure(http.HandlerFunc(u.app))
 }
 
 // Register mounts the redirect for the CLI's inspect links and, as the

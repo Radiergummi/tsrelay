@@ -26,14 +26,14 @@ func TestPublicHookJSON(t *testing.T) {
 	e := newEnv(t)
 	e.api.PublicBaseURL = publicBase
 	var h Hook
-	if resp := e.call(publicMoritz, "POST", "/api/v1/hooks", map[string]any{"path": "cb", "public": true}, &h); resp.StatusCode != 201 {
+	if resp := e.call(publicMoritz, "POST", "/hooks", map[string]any{"path": "cb", "public": true}, &h); resp.StatusCode != 201 {
 		t.Fatalf("create: %d", resp.StatusCode)
 	}
 	if !h.Public || !strings.HasPrefix(h.PublicURL, publicBase+"/+") || len(h.PublicURL) != len(publicBase)+2+22 {
 		t.Fatalf("hook = %+v", h)
 	}
 	var seen Hook
-	e.call(publicAdmin, "GET", "/api/v1/hooks/"+h.ID, nil, &seen)
+	e.call(publicAdmin, "GET", "/hooks/"+h.ID, nil, &seen)
 	if !seen.Public || seen.PublicURL != "" {
 		t.Fatalf("admin sees %+v; want public without the URL", seen)
 	}
@@ -42,7 +42,7 @@ func TestPublicHookJSON(t *testing.T) {
 func TestPublicURLNeedsFunnel(t *testing.T) {
 	e := newEnv(t) // PublicBaseURL empty: the relay runs without --funnel
 	var h Hook
-	e.call(publicMoritz, "POST", "/api/v1/hooks", map[string]any{"path": "cb", "public": true}, &h)
+	e.call(publicMoritz, "POST", "/hooks", map[string]any{"path": "cb", "public": true}, &h)
 	if !h.Public || h.PublicURL != "" {
 		t.Fatalf("hook = %+v; want public, without a URL", h)
 	}
@@ -51,7 +51,7 @@ func TestPublicURLNeedsFunnel(t *testing.T) {
 func TestPublicNeedsGrant(t *testing.T) {
 	e := newEnv(t)
 	var p problem.Problem
-	resp := e.call(moritz, "POST", "/api/v1/hooks", map[string]any{"path": "cb", "public": true}, &p)
+	resp := e.call(moritz, "POST", "/hooks", map[string]any{"path": "cb", "public": true}, &p)
 	// p.Errors is `any` (problem.Problem carries arbitrary error detail), so
 	// decode it into the concrete shape hooks.ValidationError serializes as.
 	var errs hooks.ValidationError
@@ -66,17 +66,17 @@ func TestRotatePublicURL(t *testing.T) {
 	e := newEnv(t)
 	e.api.PublicBaseURL = publicBase
 	var h, r Hook
-	e.call(publicMoritz, "POST", "/api/v1/hooks", map[string]any{"path": "cb", "public": true}, &h)
-	if resp := e.call(publicMoritz, "POST", "/api/v1/hooks/"+h.ID+"/rotate-public-url", nil, &r); resp.StatusCode != 200 || r.PublicURL == h.PublicURL || r.PublicURL == "" {
+	e.call(publicMoritz, "POST", "/hooks", map[string]any{"path": "cb", "public": true}, &h)
+	if resp := e.call(publicMoritz, "POST", "/hooks/"+h.ID+"/rotate-public-url", nil, &r); resp.StatusCode != 200 || r.PublicURL == h.PublicURL || r.PublicURL == "" {
 		t.Fatalf("rotate: %d %+v", resp.StatusCode, r)
 	}
 	var plain Hook
-	e.call(publicMoritz, "POST", "/api/v1/hooks", map[string]any{"path": "plain"}, &plain)
+	e.call(publicMoritz, "POST", "/hooks", map[string]any{"path": "plain"}, &plain)
 	var p problem.Problem
-	if resp := e.call(publicMoritz, "POST", "/api/v1/hooks/"+plain.ID+"/rotate-public-url", nil, &p); resp.StatusCode != 409 || p.Code != problem.Conflict {
+	if resp := e.call(publicMoritz, "POST", "/hooks/"+plain.ID+"/rotate-public-url", nil, &p); resp.StatusCode != 409 || p.Code != problem.Conflict {
 		t.Fatalf("rotate private: %d %+v", resp.StatusCode, p)
 	}
-	if resp := e.call(other, "POST", "/api/v1/hooks/"+h.ID+"/rotate-public-url", nil, nil); resp.StatusCode != 404 {
+	if resp := e.call(other, "POST", "/hooks/"+h.ID+"/rotate-public-url", nil, nil); resp.StatusCode != 404 {
 		t.Fatalf("rotate another's hook: %d", resp.StatusCode)
 	}
 }
@@ -84,12 +84,12 @@ func TestRotatePublicURL(t *testing.T) {
 func TestMePublicAndFunnel(t *testing.T) {
 	e := newEnv(t)
 	var me Me
-	e.call(publicMoritz, "GET", "/api/v1/me", nil, &me)
+	e.call(publicMoritz, "GET", "/", nil, &me)
 	if !me.Public || me.Funnel {
 		t.Fatalf("me = %+v; want public grant, funnel off", me)
 	}
 	e.api.PublicBaseURL = publicBase
-	e.call(moritz, "GET", "/api/v1/me", nil, &me)
+	e.call(moritz, "GET", "/", nil, &me)
 	if me.Public || !me.Funnel {
 		t.Fatalf("me = %+v; want no public grant, funnel on", me)
 	}
@@ -99,7 +99,7 @@ func TestTunnelGetsPublicURL(t *testing.T) {
 	e := newEnv(t)
 	e.api.PublicBaseURL = publicBase
 	var h Hook
-	e.call(publicMoritz, "POST", "/api/v1/hooks", map[string]any{"path": "cb", "public": true}, &h)
+	e.call(publicMoritz, "POST", "/hooks", map[string]any{"path": "cb", "public": true}, &h)
 	controls, _, err := e.openTunnel(publicMoritz, h.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +108,7 @@ func TestTunnelGetsPublicURL(t *testing.T) {
 		t.Fatalf("attached = %+v", c)
 	}
 	var r Hook
-	e.call(publicMoritz, "POST", "/api/v1/hooks/"+h.ID+"/rotate-public-url", nil, &r)
+	e.call(publicMoritz, "POST", "/hooks/"+h.ID+"/rotate-public-url", nil, &r)
 	if c := next(t, controls); c.Type != tunnel.ControlHookUpdated || c.Hooks[0].PublicURL != r.PublicURL {
 		t.Fatalf("after rotation = %+v", c)
 	}
@@ -119,7 +119,7 @@ func TestTunnelGetsPublicURL(t *testing.T) {
 func TestPublicRefreshesTunnelGrant(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
 
 	// The tunnel's connection, identified as moritz before the grant.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -140,7 +140,7 @@ func TestPublicRefreshesTunnelGrant(t *testing.T) {
 	}
 
 	e.fake.Update(publicMoritz) // an admin adds "public": true
-	if resp := e.call(publicMoritz, "PATCH", "/api/v1/hooks/"+h.ID, map[string]any{"public": true}, nil); resp.StatusCode != 200 {
+	if resp := e.call(publicMoritz, "PATCH", "/hooks/"+h.ID, map[string]any{"public": true}, nil); resp.StatusCode != 200 {
 		t.Fatalf("update: %d", resp.StatusCode)
 	}
 	if !tun.Public() {

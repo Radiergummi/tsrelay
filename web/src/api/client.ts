@@ -41,18 +41,20 @@ export function formMessage(err: ApiError, shown: (field: string) => boolean): s
 
 const id = encodeURIComponent;
 
-/** paths are the API's URLs. IDs come from the API and are escaped anyway. */
+/**
+ * paths are the resources' URLs, the same as the app's own routes: the
+ * relay answers JSON when asked for it (send sets Accept), and events when
+ * an EventSource asks. IDs come from the API and are escaped anyway.
+ */
 export const paths = {
-  me: "/api/v1/me",
-  hooks: (all = false) => (all ? "/api/v1/hooks?all=true" : "/api/v1/hooks"),
-  hook: (hookId: string) => `/api/v1/hooks/${id(hookId)}`,
-  rotatePublicUrl: (hookId: string) => `/api/v1/hooks/${id(hookId)}/rotate-public-url`,
-  calls: (hookId: string) => `/api/v1/hooks/${id(hookId)}/calls`,
-  call: (hookId: string, callId: string) => `/api/v1/hooks/${id(hookId)}/calls/${id(callId)}`,
-  replay: (hookId: string, callId: string) =>
-    `/api/v1/hooks/${id(hookId)}/calls/${id(callId)}/replay`,
-  test: (hookId: string) => `/api/v1/hooks/${id(hookId)}/test`,
-  events: (all: boolean) => (all ? "/api/v1/events?all=true" : "/api/v1/events"),
+  me: "/",
+  hooks: (all = false) => (all ? "/hooks?all=true" : "/hooks"),
+  hook: (hookId: string) => `/hooks/${id(hookId)}`,
+  rotatePublicUrl: (hookId: string) => `/hooks/${id(hookId)}/rotate-public-url`,
+  calls: (hookId: string) => `/hooks/${id(hookId)}/calls`,
+  call: (hookId: string, callId: string) => `/hooks/${id(hookId)}/calls/${id(callId)}`,
+  replay: (hookId: string, callId: string) => `/hooks/${id(hookId)}/calls/${id(callId)}/replay`,
+  test: (hookId: string) => `/hooks/${id(hookId)}/test`,
 };
 
 async function send(

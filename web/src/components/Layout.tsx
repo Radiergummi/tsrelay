@@ -9,8 +9,9 @@ import { Header } from "./Header";
 import { LiveBar } from "./LiveBar";
 
 /**
- * Layout loads /me before any page: who the viewer is decides the header,
- * whether there is anything to show (no access otherwise), and where an
+ * Layout loads the entry document (GET /) before any page: who the viewer
+ * is decides the header, whether there is anything to show (no access
+ * otherwise), and where an
  * admin without the receiver role starts.
  */
 export function Layout() {
@@ -27,7 +28,7 @@ export function Layout() {
   if (me.isError) return <NotIdentified error={me.error} />;
   const viewer = me.data;
   const allowed = isReceiver(viewer) || isAdmin(viewer);
-  if (allowed && !isReceiver(viewer) && location.pathname === "/")
+  if (allowed && !isReceiver(viewer) && location.pathname === "/hooks")
     return <Navigate to="/admin" replace />;
   return (
     <LiveProvider client={client} user={isUser(viewer)}>

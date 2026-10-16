@@ -240,15 +240,20 @@ func TestRootAndUnknownPaths(t *testing.T) {
 		t.Fatalf("GET / = %v %v", resp, err)
 	}
 	resp.Body.Close()
-	resp, _ = c.Get(e.base + "/nope")
+	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("GET / = %s, want the entry document", ct)
+	}
+	req, _ := http.NewRequest("GET", e.base+"/nope", nil)
+	req.Header.Set("Accept", "text/html")
+	resp, _ = c.Do(req)
 	resp.Body.Close()
 	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") {
-		t.Fatalf("GET /nope = %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+		t.Fatalf("GET /nope as HTML = %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
-	resp, _ = c.Get(e.base + "/api/v1/nope")
+	resp, _ = c.Get(e.base + "/nope")
 	resp.Body.Close()
 	if resp.StatusCode != 404 || resp.Header.Get(problem.HeaderError) != problem.NotFound {
-		t.Fatalf("GET /api/v1/nope = %d", resp.StatusCode)
+		t.Fatalf("GET /nope = %d, want a JSON 404", resp.StatusCode)
 	}
 }
 

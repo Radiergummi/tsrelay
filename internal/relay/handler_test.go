@@ -81,7 +81,7 @@ func newEnvWith(t *testing.T, cfg inspect.Config) *env {
 
 func newEnv(t *testing.T) *env { return newEnvWith(t, inspect.Config{}) }
 
-// patch updates the hook's settings the way PATCH /api/v1/hooks/{id} does.
+// patch updates the hook's settings the way PATCH /hooks/{id} does.
 func (e *env) patch(p hooks.SettingsPatch) {
 	e.t.Helper()
 	if _, _, err := e.mgr.Update(context.Background(), receiver, e.hook.ID, hooks.UpdateRequest{Settings: p}); err != nil {

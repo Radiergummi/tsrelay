@@ -51,15 +51,12 @@ func TestIndexForAppRoutes(t *testing.T) {
 			t.Errorf("%s headers = %v", path, resp.Header)
 		}
 	}
-	resp, _ := serve(built, "GET", "/hooks")
-	if resp.StatusCode != 200 {
-		t.Errorf("no Accept header = %d, want the index", resp.StatusCode)
-	}
+	resp, _ := serve(built, "GET", "/hooks", "Accept", "text/html")
 	etag := resp.Header.Get("ETag")
-	if resp, _ := serve(built, "GET", "/hooks", "If-None-Match", etag); resp.StatusCode != http.StatusNotModified {
+	if resp, _ := serve(built, "GET", "/hooks", "Accept", "text/html", "If-None-Match", etag); resp.StatusCode != http.StatusNotModified {
 		t.Errorf("revalidation = %d, want 304", resp.StatusCode)
 	}
-	if resp, body := serve(built, "HEAD", "/hooks"); resp.StatusCode != 200 || body != "" {
+	if resp, body := serve(built, "HEAD", "/hooks", "Accept", "text/html"); resp.StatusCode != 200 || body != "" {
 		t.Errorf("HEAD = %d %q", resp.StatusCode, body)
 	}
 }
@@ -68,6 +65,7 @@ func TestUnknownPathsWithoutHTML(t *testing.T) {
 	for _, tc := range []struct{ method, path, accept string }{
 		{"GET", "/no/such/thing", "application/json"},
 		{"GET", "/no/such/thing", "text/html;q=0"},
+		{"GET", "/no/such/thing", ""}, // no Accept header means JSON
 		{"POST", "/", "text/html"},
 		{"DELETE", "/hooks/h_1", "text/html"},
 	} {
@@ -109,7 +107,7 @@ func TestAssets(t *testing.T) {
 func TestPlaceholderWithoutBuild(t *testing.T) {
 	bare := fstest.MapFS{".gitkeep": {}}
 	for _, path := range []string{"/", "/hooks/h_1", "/admin"} {
-		resp, body := serve(bare, "GET", path)
+		resp, body := serve(bare, "GET", path, "Accept", "text/html")
 		if resp.StatusCode != 200 || !strings.Contains(body, "The web UI is not built into this binary") || resp.Header.Get("Content-Security-Policy") != CSP {
 			t.Errorf("%s = %d %q %v", path, resp.StatusCode, body, resp.Header)
 		}

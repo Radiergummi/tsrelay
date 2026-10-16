@@ -18,7 +18,7 @@ export default defineConfig({
     command: "go test ./internal/server -run '^TestUIDev$' -count=1 -timeout 0",
     cwd: "..",
     env: { TSRELAY_UI_DEV: "1" },
-    url: "http://127.0.0.1:8099/api/v1/me",
+    url: "http://127.0.0.1:8099/",
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
   },

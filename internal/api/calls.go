@@ -59,7 +59,7 @@ func (a *API) getCall(w http.ResponseWriter, r *http.Request, id authz.Identity)
 	writeJSON(w, http.StatusOK, out)
 }
 
-// CallJSON is a call as GET /api/v1/hooks/{id}/calls/{callID} shows it, and
+// CallJSON is a call as GET /hooks/{id}/calls/{callID} shows it, and
 // as the replay and test endpoints answer with it.
 // Replay is set for the hook's owner only: nobody else may replay a call.
 type CallJSON struct {
@@ -82,7 +82,7 @@ func replayOf(c inspect.Call) *Replay {
 	return &Replay{Allowed: true}
 }
 
-// TestRequest is the body of POST /api/v1/hooks/{id}/test.
+// TestRequest is the body of POST /hooks/{id}/test.
 type TestRequest struct {
 	Method  string      `json:"method"` // default POST
 	Path    string      `json:"path"`   // below the hook's URL, query allowed; default "/"

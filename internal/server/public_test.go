@@ -44,7 +44,7 @@ func TestPublicHandlerOffByDefault(t *testing.T) {
 func TestPublicHandlerSurface(t *testing.T) {
 	e := newEnv(t, Config{PublicBaseURL: "https://tsrelay.example.ts.net"})
 	ps := publicServer(t, e)
-	for _, p := range []string{"/", "/api/v1/me", "/api/v1/hooks", "/api/v1/tunnel", "/static/x.js",
+	for _, p := range []string{"/", "/hooks", "/tunnel", "/static/x.js",
 		"/~moritz/cb", "/healthz", "/readyz", "/metrics", "/install.sh", "/hooks/new"} {
 		resp := publicGet(t, ps, "tsrelay.example.ts.net", p)
 		b, _ := io.ReadAll(resp.Body)

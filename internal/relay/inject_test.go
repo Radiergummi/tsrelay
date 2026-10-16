@@ -26,7 +26,7 @@ func TestInject(t *testing.T) {
 		w.WriteHeader(http.StatusAccepted)
 		io.WriteString(w, "accepted")
 	}), tunnel.Options{})
-	from := httptest.NewRequest("POST", "http://relay.test/api/v1/hooks/x/test", nil) // RemoteAddr 192.0.2.1:1234
+	from := httptest.NewRequest("POST", "http://relay.test/hooks/x/test", nil) // RemoteAddr 192.0.2.1:1234
 
 	// receiver has no sender role: a test request needs none.
 	c, err := e.h.Inject(context.Background(), Injection{
