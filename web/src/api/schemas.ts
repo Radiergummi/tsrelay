@@ -128,8 +128,29 @@ export const me = z.object({
   hooks: z.number(),
   capName: z.string(),
   version: z.string(),
+  commit: z.optional(z.string()),
   policy: z.object({ defaults: effective, max: maxima, callsPerHook: z.number() }),
 });
+
+export const licenseEntry = z.object({
+  id: z.optional(z.string()), // an SPDX identifier or expression
+  name: z.optional(z.string()),
+  url: z.optional(z.string()),
+});
+
+export const licenseComponent = z.object({
+  name: z.string(),
+  version: z.optional(z.string()),
+  description: z.optional(z.string()),
+  ecosystem: z.string(), // "go" | "npm" | "other"
+  licenses: z.array(licenseEntry),
+  homepage: z.optional(z.string()),
+  repository: z.optional(z.string()),
+  textId: z.optional(z.string()),
+  noticeId: z.optional(z.string()),
+});
+
+export const licenses = z.object({ components: z.array(licenseComponent) });
 
 export const fieldError = z.object({ field: z.string(), message: z.string() });
 
@@ -154,6 +175,8 @@ export type Settings = z.infer<typeof settings>;
 export type Maxima = z.infer<typeof maxima>;
 export type Hook = z.infer<typeof hook>;
 export type Me = z.infer<typeof me>;
+export type LicenseEntry = z.infer<typeof licenseEntry>;
+export type LicenseComponent = z.infer<typeof licenseComponent>;
 export type FieldError = z.infer<typeof fieldError>;
 
 /** HookRequest is the body of POST and PATCH /hooks (hooks.CreateRequest and UpdateRequest). */
