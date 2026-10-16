@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -51,12 +51,18 @@ test("hints show the relay's defaults and maxima, and channels come from the gra
     context: fixtures.me,
   });
   await userEvent.click(await screen.findByRole("button", { name: /Delivery/ }));
-  expect(await screen.findByLabelText("Hold timeout")).toHaveAttribute("placeholder", "30s");
-  expect(screen.getByText(/At most 5m0s\./)).toBeInTheDocument();
-  const options = [...document.querySelectorAll("#channels option")].map((o) =>
-    o.getAttribute("value"),
+  const hold = screen.getByRole("radiogroup", { name: "Hold timeout" });
+  expect(within(hold).getByRole("radio", { checked: true })).toHaveTextContent("30 sdefault");
+  expect(screen.getByText(/At most 5 min; longer presets are hidden\./)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("combobox", { name: "Channel" }));
+  const listbox = await screen.findByRole("listbox");
+  await waitFor(() =>
+    expect(
+      within(listbox)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["default", "prod"]),
   );
-  expect(options).toEqual(["default", "prod"]);
   expect(screen.getByText(/You own \d+ of 10 hooks/)).toBeInTheDocument();
 });
 
@@ -77,14 +83,14 @@ test("creating saves, toasts and goes to the new hook", async () => {
   });
   await userEvent.type(await screen.findByLabelText("Path"), "idle");
   await userEvent.click(screen.getByRole("button", { name: /Delivery/ }));
-  await userEvent.type(await screen.findByLabelText("Hold timeout"), "45s");
+  await userEvent.click(screen.getByRole("radio", { name: "2 min" }));
   await userEvent.click(screen.getByRole("button", { name: "Create hook" }));
   await waitFor(() => expect(router.state.location.pathname).toBe(`/hooks/${fixtures.idle.id}`));
   expect(saved).toEqual({
     path: "idle",
     ephemeral: false,
     public: false,
-    settings: { holdTimeout: "45s" },
+    settings: { holdTimeout: "2m" },
   });
   expect(await screen.findByText("Created idle")).toBeInTheDocument();
 });
@@ -169,9 +175,13 @@ test("a form-level error goes away once the next change fails local validation",
   });
   await userEvent.type(await screen.findByLabelText("Path"), "idle");
   expect(await screen.findByRole("alert")).toHaveTextContent(/the relay refused this/);
-  await userEvent.type(screen.getByLabelText("Hold timeout"), "soon");
+  await userEvent.click(screen.getByRole("button", { name: /Delivery/ }));
+  await userEvent.click(screen.getAllByRole("radio", { name: "custom…" })[0]!);
+  await userEvent.type(screen.getByLabelText("Hold timeout, custom"), "soon");
   await waitFor(() =>
-    expect(screen.getByLabelText("Hold timeout")).toHaveAccessibleDescription(/must be a duration/),
+    expect(screen.getByLabelText("Hold timeout, custom")).toHaveAccessibleDescription(
+      /must be a duration/,
+    ),
   );
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
@@ -198,30 +208,32 @@ test("editing prefills the hook and resets cleared fields to the default", async
   await waitFor(() => expect(patch).toMatchObject({ path: "payments/done", description: null }));
 });
 
-test("the public toggle is disabled without the grant or without Funnel", async () => {
+test("the internet choice is disabled without the grant or without Funnel", async () => {
   renderWithProviders(<HookFormPage />, {
     route: "/hooks/new",
     path: "/hooks/new",
     context: { ...fixtures.me, public: false, funnel: true },
   });
-  // Base UI's Switch is a <span role="switch">, which jest-dom's
+  // Base UI's Radio is a <span role="radio">, which jest-dom's
   // toBeDisabled/toBeEnabled don't recognize (they only check native form
   // tags), so this asserts the same thing through aria-disabled instead.
-  expect(
-    await screen.findByRole("switch", { name: /Reachable from the internet/ }),
-  ).toHaveAttribute("aria-disabled", "true");
+  expect(await screen.findByRole("radio", { name: "Tailnet and internet" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   expect(screen.getByText(/"public": true/)).toBeInTheDocument();
 });
 
-test("the public toggle is enabled with the grant and Funnel", async () => {
+test("the internet choice is enabled with the grant and Funnel", async () => {
   renderWithProviders(<HookFormPage />, {
     route: "/hooks/new",
     path: "/hooks/new",
     context: { ...fixtures.me, public: true, funnel: true },
   });
-  expect(
-    await screen.findByRole("switch", { name: /Reachable from the internet/ }),
-  ).not.toHaveAttribute("aria-disabled", "true");
+  expect(await screen.findByRole("radio", { name: "Tailnet and internet" })).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
 });
 
 test("only the owner may edit", async () => {
