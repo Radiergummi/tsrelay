@@ -33,6 +33,14 @@ To work on the web UI, `make dev` serves it with hot reload on http://127.0.0.1:
 - tsrelay's direct dependencies are Tailscale, a few `golang.org/x` modules, OpenTelemetry (with the Prometheus client its exporter needs), and for the CLI cobra, fang and lipgloss (with the Charm modules they bring); anything else needs a good reason. The web UI is a React and Tailwind app under `web/`, whose dependencies are listed in `web/package.json`; new ones need a good reason too, and anything that injects inline scripts or styles is ruled out by the UI's CSP.
 - GitHub Actions are pinned to a full commit SHA, with the version in a comment. Only actions owned by GitHub and the Docker actions already in use are allowed to run.
 
+## Releases
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`. The macOS binaries are signed with a Developer ID Application certificate and notarized with [rcodesign](https://github.com/indygreg/apple-platform-rs/tree/main/apple-codesign). Their secrets live in a GitHub environment named `release`, limited to `v*` tags, so only the signing job can read them:
+
+- `MACOS_P12`: the certificate and its private key, exported from Keychain Access as a .p12, base64-encoded (`base64 -i cert.p12 | pbcopy`).
+- `MACOS_P12_PASSWORD`: the password the .p12 was exported with.
+- `ASC_API_KEY_JSON`: an App Store Connect API key with the Developer role, encoded with `rcodesign encode-app-store-connect-api-key <issuer-id> <key-id> AuthKey_<key-id>.p8`.
+
 ## License
 
 By contributing, you agree that your contributions are licensed under the [Apache License 2.0](LICENSE).
