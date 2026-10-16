@@ -170,12 +170,15 @@ func installCommand(base string) string {
 // /download/{os}/{arch} to the release asset; the checksum is next to it,
 // at the asset's URL plus ".sha256", as install.sh expects.
 func download(ctx context.Context, hc *http.Client, base string, f *os.File) error {
-	resp, err := fetch(ctx, hc, base+"/download/"+runtime.GOOS+"/"+runtime.GOARCH)
+	asset, err := assetURL(ctx, hc, base+"/download/"+runtime.GOOS+"/"+runtime.GOARCH)
+	if err != nil {
+		return err
+	}
+	resp, err := fetch(ctx, hc, asset)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	asset := resp.Request.URL.String()
 	h := sha256.New()
 	if _, err := io.Copy(io.MultiWriter(f, h), resp.Body); err != nil {
 		return downloadFailed(asset, err)
@@ -198,6 +201,28 @@ func download(ctx context.Context, hc *http.Client, base string, f *os.File) err
 	return nil
 }
 
+// assetURL is where the relay's download link redirects. GitHub redirects
+// that URL on to a signed one, which has no checksum next to it, so only
+// the relay's redirect is followed here.
+func assetURL(ctx context.Context, hc *http.Client, url string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	noFollow := *hc
+	noFollow.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := noFollow.Do(req)
+	if err != nil {
+		return "", downloadFailed(url, err)
+	}
+	resp.Body.Close()
+	loc, err := resp.Location()
+	if err != nil {
+		return "", downloadFailed(url, fmt.Errorf("it answered %s", resp.Status))
+	}
+	return loc.String(), nil
+}
+
 func fetch(ctx context.Context, hc *http.Client, url string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -217,7 +242,7 @@ func fetch(ctx context.Context, hc *http.Client, url string) (*http.Response, er
 func downloadFailed(url string, err error) *cliError {
 	return &cliError{Title: "Can't download the relay's tsrelay", Code: "download_failed", err: err,
 		Reason: fmt.Sprintf("Fetching %s failed: %s Nothing was replaced.", url, sentence(err.Error())),
-		Fixes:  []string{"Retry", "Check that the relay can reach github.com"}}
+		Fixes:  []string{"Retry", "Check that this machine can reach github.com"}}
 }
 
 // replaceExecutable renames tmp to exe. Windows can't replace a running

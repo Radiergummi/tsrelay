@@ -30,6 +30,8 @@ var newBinary = []byte("#!/bin/sh\necho the relay's tsrelay\n")
 
 // assetServer serves release assets as GitHub does: the binary for this
 // platform below /download/<version>/, with its checksum file next to it.
+// Like GitHub, it redirects the binary on to a signed URL that has no
+// checksum file next to it.
 type assetServer struct {
 	*httptest.Server
 	sum  string // what the .sha256 file says
@@ -45,6 +47,9 @@ func newAssetServer(t *testing.T, version string) *assetServer {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /download/"+version+"/"+name, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/assets/"+name+"?sig=signed", http.StatusFound)
+	})
+	mux.HandleFunc("GET /assets/"+name, func(w http.ResponseWriter, r *http.Request) {
 		a.hits.Add(1)
 		w.Write(newBinary)
 	})
