@@ -201,6 +201,7 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 	dnsName := strings.TrimSuffix(st.Self.DNSName, ".")
 	al := audit.New(logger)
 	cfg.server.BaseURL = scheme + "://" + cmp.Or(dnsName, cfg.hostname)
+	cfg.server.Version = version
 	cfg.server.AllowedHosts = allowedHosts(dnsName, cfg.hostname, st.TailscaleIPs)
 	tel, err := telemetry.Setup(ctx, telemetry.Config{OTLP: cfg.otel, Version: version, Hostname: cfg.hostname, Logger: logger})
 	if err != nil {

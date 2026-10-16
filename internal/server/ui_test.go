@@ -102,3 +102,26 @@ func (e *env) seed(h api.Hook, c inspect.Call) {
 func full(s string) inspect.Capture {
 	return inspect.Capture{Body: []byte(s), Size: int64(len(s)), Captured: true}
 }
+
+// The relay names its version on everything but callbacks, whose
+// responses stay exactly what the receiver's app returned.
+func TestRelayVersionHeader(t *testing.T) {
+	e := newEnv(t, Config{CapName: testCap, Version: "v0.3.0"})
+	for _, path := range []string{"/api/v1/me", "/api/v1/nope", "/", "/cli", "/install.sh", "/download/linux/amd64"} {
+		if resp, _ := e.page(receiver, path); resp.Header.Get(api.VersionHeader) != "v0.3.0" {
+			t.Errorf("%s: %s = %q", path, api.VersionHeader, resp.Header.Get(api.VersionHeader))
+		}
+	}
+	resp := e.send(api.Hook{URL: e.base + "/~nobody/none"}, "", nil, nil)
+	resp.Body.Close()
+	if v := resp.Header.Get(api.VersionHeader); v != "" {
+		t.Errorf("a callback response carries %s: %q", api.VersionHeader, v)
+	}
+}
+
+func TestRelayVersionDefaultsToDev(t *testing.T) {
+	e := newEnv(t, Config{CapName: testCap})
+	if resp, _ := e.page(receiver, "/api/v1/me"); resp.Header.Get(api.VersionHeader) != "dev" {
+		t.Errorf("%s = %q, want dev", api.VersionHeader, resp.Header.Get(api.VersionHeader))
+	}
+}

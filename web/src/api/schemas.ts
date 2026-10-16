@@ -127,6 +127,7 @@ export const me = z.object({
   }),
   hooks: z.number(),
   capName: z.string(),
+  version: z.string(),
   policy: z.object({ defaults: effective, max: maxima, callsPerHook: z.number() }),
 });
 

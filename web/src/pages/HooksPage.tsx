@@ -12,10 +12,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { InstallCommand } from "@/features/cli/InstallCommand";
 import { LastCall } from "@/features/hooks/LastCall";
 import { TunnelText } from "@/features/hooks/TunnelText";
 import { Reveal } from "@/features/inspector/Reveal";
 import { absoluteTime } from "@/lib/format";
+import { detectPlatform } from "@/lib/install";
 import { useViewer } from "@/lib/useViewer";
 
 export function HooksPage() {
@@ -40,12 +42,21 @@ export function HooksPage() {
         <PageError error={hooks.error} />
       ) : hooks.data.length === 0 ? (
         <EmptyState title="You have no hooks yet">
-          Run <code>tsrelay http 8080</code> on your machine to get a hook whose calls reach port
-          8080, or{" "}
-          <Link to="/hooks/new" className="text-primary hover:underline">
-            create one here
-          </Link>
-          .
+          <div className="mx-auto max-w-xl space-y-3">
+            <p>Install the CLI:</p>
+            <InstallCommand platform={detectPlatform()} />
+            <p>
+              Then run <code>tsrelay http 8080</code> on your machine to get a hook whose calls
+              reach port 8080, or{" "}
+              <Link to="/hooks/new" className="text-primary hover:underline">
+                create one here
+              </Link>
+              .{" "}
+              <Link to="/cli" className="text-primary hover:underline">
+                Other ways to install
+              </Link>
+            </p>
+          </div>
         </EmptyState>
       ) : (
         <HooksTable hooks={hooks.data} />

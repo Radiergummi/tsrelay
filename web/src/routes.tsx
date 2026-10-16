@@ -27,6 +27,10 @@ export const routes: RouteObject[] = [
         children: [{ path: "calls/:callId" }],
       },
       {
+        path: "cli",
+        lazy: async () => ({ Component: (await import("@/pages/CliPage")).CliPage }),
+      },
+      {
         path: "admin",
         lazy: async () => ({ Component: (await import("@/pages/AdminPage")).AdminPage }),
       },

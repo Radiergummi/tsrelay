@@ -28,6 +28,11 @@ export function Header({ me }: { me: Me }) {
               Hooks
             </NavLink>
           )}
+          {isReceiver(me) && (
+            <NavLink to="/cli" className={({ isActive }) => navClass(isActive)}>
+              Get the CLI
+            </NavLink>
+          )}
           {isAdmin(me) && (
             <NavLink to="/admin" className={({ isActive }) => navClass(isActive)}>
               Admin

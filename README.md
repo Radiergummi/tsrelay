@@ -38,6 +38,15 @@ Use an OAuth client secret with the `tag:tsrelay` tag. Auth keys (`TS_AUTHKEY`) 
 
 ### 3. Forward a hook to your app
 
+Install the CLI from your relay: open its web UI and choose **Get the CLI**, or run
+
+```bash
+curl -fsSL https://tsrelay.<your tailnet>/install.sh | sh        # macOS, Linux
+irm https://tsrelay.<your tailnet>/install.ps1 | iex             # Windows (PowerShell)
+```
+
+You get the version your relay runs. When the two drift apart, the CLI warns and prints the command to update.
+
 ```bash
 $ tsrelay http 8080
 tsrelay  forwarding to http://localhost:8080
@@ -211,6 +220,17 @@ The automated tests cover everything except real certificates. Before a release:
 3. From a node with the sender grant, run `curl -i <url>/`. Expect `200` and a line in the CLI.
 4. From a node without grants, run `curl -i <url>/`. Expect `403 sender_forbidden`.
 5. Run the relay with `--tls=false` and repeat steps 2–3 with an `http://` relay URL.
+
+## Verifying a download
+
+Each release binary comes with a SHA-256 checksum, a signed build provenance attestation, and a signed CycloneDX SBOM listing the modules it was built from. The macOS binaries are also signed with a Developer ID and notarized. With the GitHub CLI:
+
+```bash
+gh attestation verify tsrelay_linux_amd64 -R Radiergummi/tsrelay                              # provenance
+gh attestation verify tsrelay_linux_amd64 -R Radiergummi/tsrelay --predicate-type https://cyclonedx.org/bom
+```
+
+Without access to GitHub's API, verify against the bundles attached to the release: add `--bundle tsrelay.provenance.sigstore.json` or `--bundle tsrelay_linux_amd64.sbom.sigstore.json`. The SBOM itself is `tsrelay_linux_amd64.cdx.json`.
 
 ## Development
 

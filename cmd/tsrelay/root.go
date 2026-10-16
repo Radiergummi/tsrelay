@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"sync"
 
 	"github.com/spf13/cobra"
 )
@@ -11,10 +12,11 @@ import (
 type cli struct {
 	d              deps
 	stdout, stderr io.Writer
-	relay          string // --relay
-	json           bool   // -j/--json
-	noColor        bool   // --no-color
-	noLinks        bool   // --no-hyperlinks
+	relay          string    // --relay
+	json           bool      // -j/--json
+	noColor        bool      // --no-color
+	noLinks        bool      // --no-hyperlinks
+	versionWarned  sync.Once // warnVersion runs at most once per run
 }
 
 func newRoot(c *cli) *cobra.Command {

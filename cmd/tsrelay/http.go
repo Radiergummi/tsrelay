@@ -65,7 +65,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 		}
 		out := newOutput(c)
 
-		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
+		relayAPI, err := c.newRelayAPI(ctx)
 		if err != nil {
 			return exitWith(out.fail(err))
 		}
@@ -230,17 +230,26 @@ func relayBase(ctx context.Context, relayFlag string, d deps) (string, error) {
 	return client.RelayURL(ctx, relayFlag, status)
 }
 
-// newRelayAPI returns a client for the relay's API; see relayBase.
-func newRelayAPI(ctx context.Context, relayFlag string, d deps) (*client.API, error) {
-	base, err := relayBase(ctx, relayFlag, d)
+// newRelayAPI returns a client for the relay's API; see relayBase. It
+// warns once when the relay reports a version other than this CLI's.
+func (c *cli) newRelayAPI(ctx context.Context) (*client.API, error) {
+	base, err := relayBase(ctx, c.relay, c.d)
 	if err != nil {
 		return nil, err
 	}
-	hc := d.HTTP
+	hc := c.d.HTTP
 	if hc == nil {
 		hc = tunnel.NewHTTPClient(nil)
 	}
-	return &client.API{BaseURL: base, HTTP: hc}, nil
+	next := hc.Transport
+	if next == nil {
+		next = http.DefaultTransport
+	}
+	checked := *hc
+	checked.Transport = &versionCheck{next: next, seen: func(relay string) {
+		c.versionWarned.Do(func() { c.warnVersion(base, relay) })
+	}}
+	return &client.API{BaseURL: base, HTTP: &checked}, nil
 }
 
 // ensureHook reuses the caller's hook at the wanted path or creates one. An

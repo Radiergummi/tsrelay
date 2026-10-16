@@ -34,7 +34,7 @@ func newHooksListCmd(c *cli) *cobra.Command {
 	}
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		ctx := cmd.Context()
-		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
+		relayAPI, err := c.newRelayAPI(ctx)
 		if err != nil {
 			return err
 		}
@@ -62,7 +62,7 @@ func newHooksShowCmd(c *cli) *cobra.Command {
 		Args:  usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, refs []string) error {
 			ctx := cmd.Context()
-			relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
+			relayAPI, err := c.newRelayAPI(ctx)
 			if err != nil {
 				return err
 			}
@@ -109,7 +109,7 @@ func newHooksCreateCmd(c *cli) *cobra.Command {
 			at := time.Now().Add(*expiresIn)
 			req.ExpiresAt = &at
 		}
-		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
+		relayAPI, err := c.newRelayAPI(ctx)
 		if err != nil {
 			return err
 		}
@@ -177,7 +177,7 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 		if changes == 0 {
 			return usagef("nothing to change; give at least one flag (see tsrelay hooks update --help)")
 		}
-		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
+		relayAPI, err := c.newRelayAPI(ctx)
 		if err != nil {
 			return err
 		}
@@ -203,7 +203,7 @@ func newHooksDeleteCmd(c *cli) *cobra.Command {
 	}
 	cmd.RunE = func(cmd *cobra.Command, refs []string) error {
 		ctx := cmd.Context()
-		relayAPI, err := newRelayAPI(ctx, c.relay, c.d)
+		relayAPI, err := c.newRelayAPI(ctx)
 		if err != nil {
 			return err
 		}

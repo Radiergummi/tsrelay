@@ -86,14 +86,18 @@ func newCLIEnv(t *testing.T) *cliEnv {
 // store, as a process restart would: the new instance's hook-updated
 // sequence counter starts over at 0, which can be lower than one the CLI
 // already saw from the instance before it.
-func (e *cliEnv) restartRelay() {
+func (e *cliEnv) restartRelay() { e.restartRelayAt("") }
+
+// restartRelayAt is restartRelay with the new instance reporting version
+// ("" is dev).
+func (e *cliEnv) restartRelayAt(version string) {
 	// Held for the whole swap: otherwise a reconnect raced between Close
 	// and the new instance replacing e.handler could attach to the old,
 	// already-closing instance's registry, where it would be stranded.
 	e.handlerMu.Lock()
 	defer e.handlerMu.Unlock()
 	e.srv.Close() // drops the old tunnel so the CLI reconnects
-	srv := server.New(server.Config{BaseURL: e.relayURL, AllowedHosts: []string{"127.0.0.1"}},
+	srv := server.New(server.Config{BaseURL: e.relayURL, AllowedHosts: []string{"127.0.0.1"}, Version: version},
 		e.fake, e.mgr, audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))))
 	e.srv, e.handler = srv, srv.Handler()
 }

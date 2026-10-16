@@ -55,6 +55,7 @@ func newEnv(t *testing.T) *env {
 		Audit: al, Relay: rh,
 		BaseURL: "https://tsrelay.example.ts.net",
 		CapName: "example.com/cap/relay",
+		Version: "v0.3.0",
 	}
 	mux := http.NewServeMux()
 	a.Register(mux)
@@ -109,8 +110,8 @@ func TestMeNamesCapAndPolicy(t *testing.T) {
 	if resp := e.call(moritz, "GET", "/api/v1/me", nil, &me); resp.StatusCode != 200 {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
-	if me.CapName != "example.com/cap/relay" {
-		t.Errorf("capName = %q", me.CapName)
+	if me.CapName != "example.com/cap/relay" || me.Version != "v0.3.0" {
+		t.Errorf("capName = %q, version = %q", me.CapName, me.Version)
 	}
 	d, m := me.Policy.Defaults, me.Policy.Max
 	if d.HoldTimeout != hooks.Duration(30*time.Second) || d.AttachPolicy != hooks.AttachTakeover || m.HoldTimeout != hooks.Duration(5*time.Minute) {
