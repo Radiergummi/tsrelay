@@ -242,11 +242,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		case "queue_full":
 			rec.Header().Set("Retry-After", holdRetryAfter(eff.HoldTimeout.Std()))
-			problem.New(http.StatusServiceUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook, and too many calls are waiting for one").Write(rec)
+			problem.New(problem.StatusTunnelUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook, and too many calls are waiting for one").Write(rec)
 			return
 		case "timeout":
 			rec.Header().Set("Retry-After", holdRetryAfter(eff.HoldTimeout.Std()))
-			problem.New(http.StatusServiceUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook").Write(rec)
+			problem.New(problem.StatusTunnelUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook").Write(rec)
 			return
 		}
 	}
@@ -265,11 +265,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		},
 		// The relay's call ID replaces any the local app set. A Tsrelay-Error
 		// the app set is dropped, so its own answers are never taken for the
-		// relay's; the one code the CLI forwarder writes, when the app is
+		// relay's; the one problem the CLI forwarder writes, when the app is
 		// unreachable, is kept.
 		ModifyResponse: func(resp *http.Response) error {
 			resp.Header.Del(HeaderCallID)
-			if resp.Header.Get(problem.HeaderError) != problem.UpstreamUnreachable {
+			if resp.StatusCode != problem.StatusUpstreamUnreachable || resp.Header.Get(problem.HeaderError) != problem.UpstreamUnreachable {
 				resp.Header.Del(problem.HeaderError)
 			}
 			return nil
@@ -388,16 +388,16 @@ func proxyError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, tunnel.ErrOverloaded):
 		w.Header().Set("Retry-After", "1")
-		problem.New(http.StatusServiceUnavailable, problem.TunnelOverloaded, "the tunnel is at its concurrency limit").Write(w)
+		problem.New(problem.StatusTunnelOverloaded, problem.TunnelOverloaded, "the tunnel is at its concurrency limit").Write(w)
 	case errors.Is(err, errResponseTimeout):
-		problem.New(http.StatusGatewayTimeout, problem.UpstreamTimeout, "the local application did not respond in time").Write(w)
+		problem.New(problem.StatusUpstreamTimeout, problem.UpstreamTimeout, "the local application did not respond in time").Write(w)
 	case context.Cause(r.Context()) == errIdleTimeout:
-		problem.New(http.StatusGatewayTimeout, problem.UpstreamTimeout, "the request body stalled for longer than the hook's idle timeout").Write(w)
+		problem.New(http.StatusRequestTimeout, problem.BodyStalled, "the request body stalled for longer than the hook's idle timeout").Write(w)
 	case context.Cause(r.Context()) == errBodyTooLarge:
 		problem.New(http.StatusRequestEntityTooLarge, problem.BodyTooLarge, "the request body is larger than this hook's limit").Write(w)
 	case r.Context().Err() != nil:
 		// The sender went away; nobody is left to answer.
 	default:
-		problem.New(http.StatusBadGateway, problem.TunnelLost, "the tunnel was lost while delivering the call").Write(w)
+		problem.New(problem.StatusTunnelLost, problem.TunnelLost, "the tunnel was lost while delivering the call").Write(w)
 	}
 }

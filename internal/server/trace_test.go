@@ -287,8 +287,8 @@ func TestHoldTimeoutSpan(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp := e.send(h, "", nil, nil)
-	if resp.StatusCode != 503 {
-		t.Fatalf("status = %d, want 503", resp.StatusCode)
+	if resp.StatusCode != 561 {
+		t.Fatalf("status = %d, want 561", resp.StatusCode)
 	}
 	hold := e.spanNamed(rec, "tsrelay.hold")
 	if got, _ := attr(hold, "tsrelay.hold.result"); got != "timeout" {

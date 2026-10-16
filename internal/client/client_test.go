@@ -149,7 +149,7 @@ func TestForwarderUnreachable(t *testing.T) {
 	rec := httptest.NewRecorder()
 	fwd := NewForwarder(target, Options{OnUpstreamError: func(err error) { logged = err }})
 	fwd.ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
-	if rec.Code != 502 || rec.Header().Get(problem.HeaderError) != problem.UpstreamUnreachable {
+	if rec.Code != 564 || rec.Header().Get(problem.HeaderError) != problem.UpstreamUnreachable {
 		t.Fatalf("got %d %q", rec.Code, rec.Header().Get(problem.HeaderError))
 	}
 	body := rec.Body.String()
@@ -195,7 +195,7 @@ func TestForwarderInsecure(t *testing.T) {
 	local.StartTLS()
 	defer local.Close()
 	target, _ := url.Parse(local.URL)
-	for insecure, want := range map[bool]int{false: http.StatusBadGateway, true: http.StatusTeapot} {
+	for insecure, want := range map[bool]int{false: problem.StatusUpstreamUnreachable, true: http.StatusTeapot} {
 		rec := httptest.NewRecorder()
 		NewForwarder(target, Options{Insecure: insecure}).ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
 		if rec.Code != want {

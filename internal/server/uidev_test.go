@@ -22,6 +22,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
@@ -155,7 +156,7 @@ func TestUIDev(t *testing.T) {
 		c := inspect.Call{ReceivedAt: now.Add(-time.Duration(100-i) * time.Second), Method: methods[i%len(methods)],
 			Path: fmt.Sprintf("/busy/item/%d", i), Status: st, RequestBody: full(fmt.Sprintf(`{"n":%d}`, i))}
 		if st >= 500 && i%2 == 0 {
-			c.Outcome = "upstream_unreachable"
+			c.Outcome, c.Status = problem.UpstreamUnreachable, problem.StatusUpstreamUnreachable
 		}
 		if i%7 == 0 {
 			c.Sender = inspect.Sender{Node: "billing", Tags: []string{"tag:billing"}}

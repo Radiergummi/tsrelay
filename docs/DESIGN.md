@@ -40,7 +40,7 @@ tsrelay is a reverse relay. The relay is its own tailnet node. Developer machine
 A hook is **ephemeral** or **persistent**.
 
 - **Ephemeral hooks** are deleted once no tunnel has been attached for a grace period (10 min by default). This is the default for `tsrelay http`.
-- **Persistent hooks** stay until they are deleted or reach an optional expiry. If a call arrives while no tunnel is attached, the relay holds it for the reconnect window (§7.3) and then answers `503` with `Retry-After`.
+- **Persistent hooks** stay until they are deleted or reach an optional expiry. If a call arrives while no tunnel is attached, the relay holds it for the reconnect window (§7.3) and then answers `561` with `Retry-After`.
 
 ## 3. Architecture
 
@@ -223,7 +223,7 @@ The protocol version lives in the `Upgrade` token. An incompatible change gets a
 
 ### 6.4 Concurrency
 
-The relay keeps its own per-tunnel semaphore, 32 by default. Acquiring it never blocks, so a call that would exceed the limit gets `503 tunnel_overloaded` immediately instead of queuing inside the HTTP/2 transport. The CLI advertises a matching `SETTINGS_MAX_CONCURRENT_STREAMS`.
+The relay keeps its own per-tunnel semaphore, 32 by default. Acquiring it never blocks, so a call that would exceed the limit gets `562 tunnel_overloaded` immediately instead of queuing inside the HTTP/2 transport. The CLI advertises a matching `SETTINGS_MAX_CONCURRENT_STREAMS`.
 
 ## 7. Request handling
 
@@ -253,25 +253,28 @@ Delivery is **synchronous pass-through.** The sender receives the local applicat
 
 ### 7.3 Hold for reconnect
 
-If a call arrives while no tunnel is attached to its hook, the relay waits up to `holdTimeout` (30 s by default) for one to attach before it forwards anything. Nothing has been read from the request body at that point, so streamed bodies are safe to hold. Held calls count against `--hold-queue` per hook (100 by default); beyond that, or once `holdTimeout` elapses, the call fails with `503 tunnel_unavailable` and `Retry-After: max(5s, holdTimeout)`, rounded up to whole seconds. A hook deleted, or expiring, while calls are held for it releases them at once with `404 hook_not_found`, rather than waiting out `holdTimeout`.
+If a call arrives while no tunnel is attached to its hook, the relay waits up to `holdTimeout` (30 s by default) for one to attach before it forwards anything. Nothing has been read from the request body at that point, so streamed bodies are safe to hold. Held calls count against `--hold-queue` per hook (100 by default); beyond that, or once `holdTimeout` elapses, the call fails with `561 tunnel_unavailable` and `Retry-After: max(5s, holdTimeout)`, rounded up to whole seconds. A hook deleted, or expiring, while calls are held for it releases them at once with `404 hook_not_found`, rather than waiting out `holdTimeout`.
 
-A call already **in flight** when its tunnel drops cannot be retried, because its body has been partly consumed. It fails with `502 tunnel_lost`. Buffered replay is on the backlog (§17).
+A call already **in flight** when its tunnel drops cannot be retried, because its body has been partly consumed. It fails with `563 tunnel_lost`. Buffered replay is on the backlog (§17).
 
 ### 7.4 Relay-originated errors
 
-Errors produced by the relay itself use `application/problem+json` (RFC 9457) and carry a `Tsrelay-Error` header. That lets senders and developers tell them apart from responses produced by the local application, which pass through untouched, including the application's own 503s.
+Errors produced by the relay itself use `application/problem+json` (RFC 9457) and carry a `Tsrelay-Error` header. That lets senders and developers tell them apart from responses produced by the local application, which pass through untouched, including the application's own 502s, 503s and 504s.
+
+Tunnel and transport failures use statuses of their own, 561 to 565, which no common vendor uses informally (Cloudflare's are 520 to 530). A sender can thus tell them from the local application's 502, 503 and 504 by the status alone, and generic clients treat them as 500 (RFC 9110 §15), so a sender that retries on 5xx keeps doing so. Errors senders already know how to act on keep their standard statuses, such as 429 with `Retry-After`. The reason phrases below appear in the problem's `title`; Go's HTTP/1.1 server writes `status code 561` as the reason phrase on the wire, and HTTP/2 carries none.
 
 | `Tsrelay-Error` | Status | When |
 |---|---|---|
 | `sender_forbidden` | 403 | Caller has no `sender` role at all |
 | `hook_not_found` | 404 | No such hook, or the sender's channels don't match it. The two cases are deliberately indistinguishable to the sender; the owner sees channel-denied calls in the inspector. |
+| `body_stalled` | 408 | The sender's request body was idle for `idleTimeout` before the local application answered |
 | `body_too_large` | 413 | Over `maxBodyBytes` (unlimited by default) |
 | `rate_limited` | 429 + `Retry-After` | Hook rate limit exceeded. `Retry-After` is the limiter's wait, rounded up to whole seconds, at least 1. |
-| `tunnel_unavailable` | 503 + `Retry-After` | No tunnel attached within `holdTimeout`, or the hold queue is full. `Retry-After` is `max(5s, holdTimeout)`, rounded up to whole seconds. |
-| `tunnel_overloaded` | 503 + `Retry-After: 1` | Per-tunnel concurrency limit reached |
-| `upstream_unreachable` | 502 | The CLI could not connect to the local target. The CLI reports this as a 502 with its own `Tsrelay-Error`, which the relay passes through. |
-| `tunnel_lost` | 502 | Tunnel dropped mid-call |
-| `upstream_timeout` | 504 | No response headers within `responseTimeout`, or the body was idle for `idleTimeout` |
+| `tunnel_unavailable` | 561 Tunnel Unavailable + `Retry-After` | No tunnel attached within `holdTimeout`, or the hold queue is full. `Retry-After` is `max(5s, holdTimeout)`, rounded up to whole seconds. |
+| `tunnel_overloaded` | 562 Tunnel Overloaded + `Retry-After: 1` | Per-tunnel concurrency limit reached |
+| `tunnel_lost` | 563 Tunnel Lost | Tunnel dropped mid-call |
+| `upstream_unreachable` | 564 Upstream Unreachable | The CLI could not connect to the local target. The CLI reports this as a 564 with its own `Tsrelay-Error`, which the relay passes through; any other `Tsrelay-Error` from the tunnel is dropped. |
+| `upstream_timeout` | 565 Upstream Timeout | No response headers within `responseTimeout`. A response body idle for `idleTimeout` is cut off and recorded with this outcome, after its status was sent. |
 
 A call whose sender went away before it completed is recorded with the outcome `sender_canceled` (audit `error`, `tsrelay_calls_total{outcome}`). Nobody receives it, so it is not a `Tsrelay-Error` code.
 

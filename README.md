@@ -62,7 +62,7 @@ A hook is a URL on the relay that delivers to whichever of your devices has a tu
 
 Useful flags:
 - `-n`/`--name payments/v1` picks the path yourself.
-- `-p`/`--persistent` keeps the hook after the command exits. Without it, the hook is *ephemeral*: the relay deletes it once no tunnel has been attached for a while. While no tunnel is attached to a persistent hook, callers get `503` with `Retry-After`.
+- `-p`/`--persistent` keeps the hook after the command exits. Without it, the hook is *ephemeral*: the relay deletes it once no tunnel has been attached for a while. While no tunnel is attached to a persistent hook, callers get `561` with `Retry-After`.
 - `--relay host` points at a relay that isn't at `tsrelay.<your tailnet>`.
 
 `tsrelay http` also accepts `-- cmd args...` to start a local process with `TSRELAY_URL` set in its environment, and stop it (SIGTERM, then a kill after 5 s) when the tunnel ends:
@@ -152,19 +152,20 @@ Replays and test requests go through the whole relay to your app. The answer is 
 
 ## Errors
 
-Errors produced by the relay itself are `application/problem+json` responses and carry a `Tsrelay-Error` header. Responses from your app are never marked, including its own 5xx. Senders see these:
+Errors produced by the relay itself are `application/problem+json` responses and carry a `Tsrelay-Error` header. Responses from your app are never marked, including its own 5xx. Tunnel and transport failures have statuses of their own, 561 to 565, so they can't be mistaken for your app's 502, 503 or 504; clients that don't know them treat them as 500. Senders see these:
 
 | `Tsrelay-Error` | Status | Meaning |
 |---|---|---|
 | `sender_forbidden` | 403 | The caller has no sender grant |
 | `hook_not_found` | 404 | No such hook, not in the caller's channels, or it was deleted/expired while a call was held for it |
+| `body_stalled` | 408 | The sender's request body stalled past `idleTimeout` |
 | `body_too_large` | 413 | Over the hook's `maxBodyBytes` |
 | `rate_limited` | 429 | Over the hook's `rateLimit`; `Retry-After` is the limiter's wait, rounded up to whole seconds |
-| `tunnel_unavailable` | 503 | No tunnel attached within `holdTimeout`, or too many calls are already waiting; `Retry-After` is `holdTimeout`, but never less than 5 s |
-| `tunnel_overloaded` | 503 | Too many concurrent calls on the tunnel; `Retry-After: 1` |
-| `upstream_unreachable` | 502 | The tunnel is up but your app is not listening |
-| `tunnel_lost` | 502 | The tunnel dropped mid-call |
-| `upstream_timeout` | 504 | Your app did not answer within the hook's `responseTimeout`, or a response stalled past `idleTimeout` |
+| `tunnel_unavailable` | 561 | No tunnel attached within `holdTimeout`, or too many calls are already waiting; `Retry-After` is `holdTimeout`, but never less than 5 s |
+| `tunnel_overloaded` | 562 | Too many concurrent calls on the tunnel; `Retry-After: 1` |
+| `tunnel_lost` | 563 | The tunnel dropped mid-call |
+| `upstream_unreachable` | 564 | The tunnel is up but your app is not listening |
+| `upstream_timeout` | 565 | Your app did not answer within the hook's `responseTimeout` |
 
 ## Completion and output
 

@@ -61,7 +61,7 @@ func NewForwarder(target *url.URL, opts Options) http.Handler {
 			if opts.OnUpstreamError != nil {
 				opts.OnUpstreamError(fmt.Errorf("could not reach %s: %w", target.Redacted(), err))
 			}
-			problem.New(http.StatusBadGateway, problem.UpstreamUnreachable, "the local application is not reachable").Write(w)
+			problem.New(problem.StatusUpstreamUnreachable, problem.UpstreamUnreachable, "the local application is not reachable").Write(w)
 		},
 	}
 }

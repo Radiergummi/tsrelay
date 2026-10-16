@@ -194,7 +194,7 @@ func TestLocalAppDown(t *testing.T) {
 	hook, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{})
 	defer e.cli(hook.ID, target)()
 	resp := e.send(hook, "", nil, nil)
-	if resp.StatusCode != 502 || resp.Header.Get(problem.HeaderError) != problem.UpstreamUnreachable {
+	if resp.StatusCode != 564 || resp.Header.Get(problem.HeaderError) != problem.UpstreamUnreachable {
 		t.Fatalf("got %d %q", resp.StatusCode, resp.Header.Get(problem.HeaderError))
 	}
 }

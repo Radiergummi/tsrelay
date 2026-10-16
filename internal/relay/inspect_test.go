@@ -152,9 +152,9 @@ func TestRecordsRefusedCalls(t *testing.T) {
 	// No tunnel: delivery started and failed, so there is one attempt. The
 	// body was never read, so it cannot be replayed.
 	resp := e.do(sender, "POST", "/~moritz/cb", strings.NewReader("{}"), nil)
-	wantProblem(t, resp, 503, problem.TunnelUnavailable)
+	wantProblem(t, resp, 561, problem.TunnelUnavailable)
 	c := e.finished(resp)
-	if c.Outcome != problem.TunnelUnavailable || c.Status != 503 || len(c.Attempts) != 1 ||
+	if c.Outcome != problem.TunnelUnavailable || c.Status != 561 || len(c.Attempts) != 1 ||
 		c.Attempts[0].Error != problem.TunnelUnavailable || c.Attempts[0].TunnelID != "" || c.RequestBody.Complete() {
 		t.Fatalf("held call = %+v", c)
 	}

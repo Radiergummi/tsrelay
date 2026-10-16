@@ -29,11 +29,14 @@ test("status classes and labels", () => {
   expect(statusClass({ outcome: "ok", status: 204 })).toBe("2xx");
   expect(statusClass({ outcome: "ok", status: 302 })).toBe("3xx");
   expect(statusClass({ outcome: "pending" })).toBe("pending");
-  expect(statusClass({ outcome: "upstream_unreachable", status: 502 })).toBe("5xx");
+  expect(statusClass({ outcome: "upstream_unreachable", status: 564 })).toBe("5xx");
   expect(statusClass({ outcome: "tunnel_lost" })).toBe("failed");
   expect(outcomeLabel({ outcome: "ok", status: 200 })).toBe("200 OK");
   expect(outcomeLabel({ outcome: "hook_not_found", status: 404 })).toBe("404 hook_not_found");
   expect(outcomeLabel({ outcome: "pending" })).toBe("pending");
+  expect(outcomeLabel({ outcome: "tunnel_lost", status: 563 })).toBe("563 Tunnel lost");
+  expect(outcomeLabel({ outcome: "ok", status: 564 })).toBe("564 Upstream unreachable"); // an attempt
+  expect(outcomeLabel({ outcome: "ok", status: 502 })).toBe("502 Bad Gateway");
   expect(reasonPhrase(418)).toBe("I'm a teapot");
   expect(reasonPhrase(299)).toBe("");
   expect(senderLabel({ node: "worker", tags: ["tag:prod-worker"] })).toBe("tag:prod-worker");
