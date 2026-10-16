@@ -52,7 +52,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
       if (!out.includes(c.name) && allowingPattern(patterns, c.name)) out.push(c.name);
     return out;
   }, [patterns, inUse]);
-  const channel = values["channel"] || "default";
+  const channel = values["channel"]?.trim() || "default";
   const pattern = allowingPattern(patterns, channel);
 
   // The hook's URL is base followed by its path. A new hook has no URL

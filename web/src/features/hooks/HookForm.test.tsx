@@ -160,6 +160,9 @@ test("the channel says which pattern allows it, and flags one no pattern allows"
     expect(channel).toHaveAccessibleDescription(/none of your receive patterns allows it/),
   );
   await userEvent.clear(channel);
+  await userEvent.type(channel, " prod ");
+  await waitFor(() => expect(channel).toHaveAccessibleDescription(/allowed by prod/));
+  await userEvent.clear(channel);
   await userEvent.type(channel, "Team X");
   await waitFor(() => expect(channel).toHaveAccessibleDescription(/dot-separated segments/));
   expect(channel).toHaveAttribute("aria-invalid", "true");
