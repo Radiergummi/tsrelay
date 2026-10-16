@@ -26,6 +26,7 @@ type injection struct {
 	kind     inspect.Kind
 	replayOf string
 	sender   authz.Identity
+	public   bool
 	callID   string
 }
 
@@ -35,6 +36,7 @@ type Injection struct {
 	Kind     inspect.Kind   // inspect.KindReplay or inspect.KindTest
 	ReplayOf string         // for a replay: the replayed call's ID
 	Sender   authz.Identity // whom the Tsrelay-Sender-* headers name
+	Public   bool           // for a replay: the replayed call came from the internet, and the app is told so
 	Method   string
 	Path     string // escaped, below the hook's route; "" means "/"
 	Query    string
@@ -64,7 +66,7 @@ func (h *Handler) Inject(ctx context.Context, in Injection) (inspect.Call, error
 		return inspect.Call{}, err
 	}
 	u.RawQuery = in.Query
-	inj := &injection{hook: in.Hook.ID, kind: in.Kind, replayOf: in.ReplayOf, sender: in.Sender}
+	inj := &injection{hook: in.Hook.ID, kind: in.Kind, replayOf: in.ReplayOf, sender: in.Sender, public: in.Public}
 	req, err := http.NewRequestWithContext(context.WithValue(ctx, injectKey{}, inj), in.Method, u.String(), bytes.NewReader(in.Body))
 	if err != nil {
 		return inspect.Call{}, err

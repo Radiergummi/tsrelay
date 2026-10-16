@@ -19,13 +19,14 @@ export const sender = z.object({
   tags: z.optional(z.array(z.string())),
   login: z.optional(z.string()),
   ip: z.optional(z.string()),
+  public: z.optional(z.boolean()),
 });
 
 export const summary = z.object({
   id: z.string(),
   hookId: z.string(),
   receivedAt: z.string(),
-  kind: z.string(), // "sender" | "replay" | "test"
+  kind: z.string(), // "sender" | "replay" | "test" | "public"
   replayOf: z.optional(z.string()),
   sender,
   method: z.string(),
@@ -103,6 +104,8 @@ export const hook = z.object({
   channel: z.string(),
   description: z.optional(z.string()),
   ephemeral: z.boolean(),
+  public: z.optional(z.boolean()),
+  publicUrl: z.optional(z.string()),
   expiresAt: z.optional(z.string()),
   settings,
   effective,
@@ -129,6 +132,8 @@ export const me = z.object({
   capName: z.string(),
   version: z.string(),
   policy: z.object({ defaults: effective, max: maxima, callsPerHook: z.number() }),
+  public: z.optional(z.boolean()),
+  funnel: z.optional(z.boolean()),
 });
 
 export const fieldError = z.object({ field: z.string(), message: z.string() });

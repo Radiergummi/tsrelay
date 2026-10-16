@@ -29,6 +29,7 @@ func TestGuard(t *testing.T) {
 		{"cross-site replay", "POST", "tsrelay", "/hooks/h_1/calls/c_1/replay", "", "cross-site", "", 403},
 		{"cross-site write anywhere", "POST", "tsrelay", "/whatever", "application/json", "same-site", "{}", 403},
 		{"callbacks accept any type", "POST", "tsrelay", "/~m/x", "text/plain", "cross-site", "x", 299},
+		{"public callbacks accept any type", "POST", "tsrelay", "/+token/x", "application/x-www-form-urlencoded", "cross-site", "a=b", 299},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

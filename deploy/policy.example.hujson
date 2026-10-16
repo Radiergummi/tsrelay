@@ -1,4 +1,9 @@
 {
+  // Only for `tsrelay serve --funnel`: lets the relay serve public hooks on
+  // the internet. Leave it out to keep the relay tailnet-only.
+  "nodeAttrs": [
+    {"target": ["tag:tsrelay"], "attr": ["funnel"]},
+  ],
   "tagOwners": {
     "tag:tsrelay": ["autogroup:admin"],
   },
@@ -9,7 +14,9 @@
       "dst": ["tag:tsrelay"],
       "ip": ["tcp:443"],
       "app": {
-        "mazetti.me/cap/relay": [{"roles": ["receiver"]}],
+        // public lets these users make hooks reachable from the internet
+        // (only with --funnel); drop it to keep hooks tailnet-only.
+        "mazetti.me/cap/relay": [{"roles": ["receiver"], "public": true}],
       },
     },
     // Who may send callbacks to a hook.

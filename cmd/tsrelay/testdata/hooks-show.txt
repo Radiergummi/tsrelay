@@ -1,5 +1,6 @@
   id                h_1
   url               https://r/~m/payments
+  public url        -
   path              payments
   channel           default
   kind              ephemeral

@@ -38,6 +38,7 @@ type jsonEvent struct {
 	Time       time.Time `json:"time"`
 	Hook       string    `json:"hook,omitempty"`
 	URL        string    `json:"url,omitempty"`
+	PublicURL  string    `json:"publicUrl,omitempty"`
 	Recreated  bool      `json:"recreated,omitempty"`
 	Target     string    `json:"target,omitempty"`
 	Restored   bool      `json:"restored,omitempty"`
@@ -105,14 +106,37 @@ func (o *output) headline(target string) {
 func (o *output) url(h api.Hook, recreated bool) {
 	switch {
 	case o.json:
-		o.emit(jsonEvent{Event: "url", Hook: h.ID, URL: h.URL, Recreated: recreated})
+		o.emit(jsonEvent{Event: "url", Hook: h.ID, URL: h.URL, PublicURL: h.PublicURL, Recreated: recreated})
 	case recreated:
 		o.status(styleWarn, "the hook was removed while disconnected; recreated at the same URL")
+		if h.PublicURL != "" {
+			o.status(styleWarn, "its public URL changed: "+h.PublicURL)
+		}
 	default:
 		o.line(o.out, o.out.style(styleBold, h.URL))
+		o.publicURL(h)
 		if h.Path != "" {
 			o.line(o.err, o.err.style(styleDim, fmt.Sprintf("hook %s  %s  channel %s", h.ID, hookKind(h), h.Channel)))
 		}
+	}
+}
+
+// noFunnel explains why a public hook has no public URL.
+const noFunnel = "the hook is public, but this relay does not serve hooks on the internet (it runs without --funnel)"
+
+// publicURLText labels a hook's public URL for s.
+func publicURLText(s stream, publicURL string) string {
+	return s.style(styleWarn, "public (internet): ") + s.style(styleBold, publicURL)
+}
+
+// publicURL reports where h is reachable from the internet, on stderr, so
+// stdout keeps carrying only the tailnet URL.
+func (o *output) publicURL(h api.Hook) {
+	switch {
+	case h.PublicURL != "":
+		o.line(o.err, publicURLText(o.err, h.PublicURL))
+	case h.Public:
+		o.status(styleWarn, noFunnel)
 	}
 }
 

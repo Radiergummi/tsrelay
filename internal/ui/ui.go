@@ -36,7 +36,7 @@ func New(a *api.API, dist fs.FS) *UI {
 
 // Index serves the app, for the API's resources asked for as HTML.
 func (u *UI) Index() http.Handler {
-	return secure(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { u.writeIndex(w, r, http.StatusOK) }))
+	return secure(http.HandlerFunc(u.app))
 }
 
 // Register mounts the redirect for the CLI's inspect links and, as the

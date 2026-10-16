@@ -55,13 +55,14 @@ func newAttachCmd(c *cli) *cobra.Command {
 			}
 		}
 		ids := make([]string, len(list))
-		urlOf := make(map[string]string, len(list)) // guarded by mu once the tunnel runs
-		seqs := updateSeqs{}                        // guarded by mu
+		infoOf := make(map[string]tunnel.HookInfo, len(list)) // guarded by mu once the tunnel runs
+		seqs := updateSeqs{}                                  // guarded by mu
 		var mu sync.Mutex
 		hold := list[0].Effective.HoldTimeout.Std()
 		out.headline(target.String())
 		for i, h := range list {
-			ids[i], urlOf[h.ID] = h.ID, h.URL
+			ids[i] = h.ID
+			infoOf[h.ID] = tunnel.HookInfo{ID: h.ID, URL: h.URL, Public: h.Public, PublicURL: h.PublicURL}
 			hold = min(hold, h.Effective.HoldTimeout.Std())
 			out.url(h, false)
 		}
@@ -80,13 +81,13 @@ func newAttachCmd(c *cli) *cobra.Command {
 				seqs.observe(ctl)
 				if ctl.Type == tunnel.ControlHookUpdated {
 					for _, h := range ctl.Hooks {
-						if u, ok := urlOf[h.ID]; ok && seqs.fresh(h.ID, ctl.Seq) && u != h.URL {
-							urlOf[h.ID] = h.URL
-							out.url(api.Hook{ID: h.ID, URL: h.URL}, false)
+						if cur, ok := infoOf[h.ID]; ok && seqs.fresh(h.ID, ctl.Seq) && cur != h {
+							infoOf[h.ID] = h
+							out.url(api.Hook{ID: h.ID, URL: h.URL, Public: h.Public, PublicURL: h.PublicURL}, false)
 						}
 					}
 				}
-				out.dropped(ctl, func(id string) string { return urlOf[id] })
+				out.dropped(ctl, func(id string) string { return infoOf[id].URL })
 			},
 		}
 		return exitWith(out.finish(tc.Run(ctx)))
