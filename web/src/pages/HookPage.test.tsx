@@ -235,3 +235,14 @@ test("a public hook shows its public URL to the owner, who can rotate it", async
   await userEvent.click(screen.getByRole("button", { name: "Rotate public URL" }));
   expect(await screen.findByText("https://tsrelay.example.ts.net/+new")).toBeInTheDocument();
 });
+
+test("a public hook explains that it's unreachable while this relay runs without Funnel", async () => {
+  server.use(
+    http.get(`/api/v1/hooks/${fixtures.hook.id}`, () =>
+      HttpResponse.json({ ...fixtures.hook, public: true }),
+    ),
+  );
+  open(fixtures.hook.id); // fixtures.me has no funnel field, i.e. Funnel is off
+  expect(await screen.findByText("Public")).toBeInTheDocument();
+  expect(screen.getByText(/does not serve hooks on the internet/i)).toBeInTheDocument();
+});

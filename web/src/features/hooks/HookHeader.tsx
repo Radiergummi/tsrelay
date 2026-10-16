@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router";
 import { useRotatePublicUrl } from "@/api/mutations";
-import type { Hook } from "@/api/schemas";
+import type { Hook, Me } from "@/api/schemas";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Reveal } from "@/features/inspector/Reveal";
@@ -10,10 +10,12 @@ import { TunnelText } from "./TunnelText";
 
 export function HookHeader({
   hook,
+  me,
   owner,
   onTest,
 }: {
   hook: Hook;
+  me: Me;
   owner: boolean;
   onTest: () => void;
 }) {
@@ -35,6 +37,12 @@ export function HookHeader({
           · channel {hook.channel} · <TunnelText tunnel={hook.tunnel} />
           {!owner && ` · owned by ${hook.owner}`}
         </p>
+        {hook.public && !me.funnel && (
+          <p className="text-xs text-muted-foreground">
+            This relay does not serve hooks on the internet; the hook is public but unreachable
+            until Funnel is on.
+          </p>
+        )}
         {hook.description && (
           <p>
             <Reveal text={hook.description} />
