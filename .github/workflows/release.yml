@@ -60,6 +60,18 @@ jobs:
         with:
           go-version: '1.27.1'
 
+      # Fills in the Details tab of the .exe's properties. Windows wants a
+      # numeric version there, so v0.3.0-rc.1 becomes 0.3.0.0, with the full
+      # string next to it.
+      - name: Embed the Windows version resource
+        if: matrix.goos == 'windows'
+        working-directory: cmd/tsrelay
+        run: |
+          go run github.com/tc-hib/go-winres@v0.3.3 simply --arch "${{ matrix.goarch }}" --manifest cli \
+            --product-name tsrelay --file-description tsrelay --original-filename tsrelay.exe \
+            --product-version "${GITHUB_REF_NAME#v}" --file-version "${GITHUB_REF_NAME#v}" \
+            --copyright "Copyright Moritz Mazetti"
+
       - name: Build
         id: build
         env:
@@ -142,20 +154,75 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/cert.pass" "$RUNNER_TEMP/asc-key.json"
 
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      - id: provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/tsrelay_*
 
       # The install scripts fetch tsrelay_<os>_<arch>.sha256, without .exe.
+      # The provenance bundle goes along, so the binaries verify without
+      # GitHub's attestation API (gh attestation verify --bundle).
       - name: Write the checksums
         working-directory: dist
-        run: for f in tsrelay_*; do sha256sum "$f" > "${f%.exe}.sha256"; done
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          for f in tsrelay_*; do sha256sum "$f" > "${f%.exe}.sha256"; done
+          cp "$BUNDLE" tsrelay.provenance.sigstore.json
 
       - name: Upload to the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: gh release upload "${GITHUB_REF_NAME}" dist/*
+
+  # Attests an SBOM for each published binary: the modules it was built
+  # from, read from the build info Go embeds in it. It reads the signed
+  # macOS binaries back from the draft release, and builds cyclonedx-gomod,
+  # so it runs apart from the job holding the signing secrets.
+  sboms:
+    needs: [publish-binaries]
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+    runs-on: ubuntu-latest
+    env:
+      NAME: tsrelay_${{ matrix.goos }}_${{ matrix.goarch }}
+      BIN: tsrelay_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.1'
+
+      # cyclonedx-gomod reads the build info with go version -m, which only
+      # takes executable files.
+      - name: Write the SBOM
+        run: |
+          gh release download "${GITHUB_REF_NAME}" --pattern "$BIN" --dir dist
+          chmod +x "dist/$BIN"
+          go run github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.12.0 bin \
+            -json -version "${GITHUB_REF_NAME}" -output "dist/$NAME.cdx.json" "dist/$BIN"
+
+      - id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/${{ env.BIN }}
+          sbom-path: dist/${{ env.NAME }}.cdx.json
+
+      - name: Upload to the draft release
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE" "dist/$NAME.sbom.sigstore.json"
+          gh release upload "${GITHUB_REF_NAME}" "dist/$NAME.cdx.json" "dist/$NAME.sbom.sigstore.json"
 
   # The image is attested, so it builds without a cache: a tag run resolves
   # caches against the default branch, which would make a cache one input to
@@ -225,9 +292,9 @@ jobs:
           push-to-registry: true
 
   # Publishing makes the release, its assets and its tag immutable, so it
-  # waits for the binaries and the image.
+  # waits for the binaries, their SBOMs and the image.
   publish-release:
-    needs: [publish-binaries, docker]
+    needs: [publish-binaries, sboms, docker]
     permissions:
       contents: write
     runs-on: ubuntu-latest
