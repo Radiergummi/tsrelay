@@ -253,6 +253,7 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 			Handler:           withFunnelSource(srv.PublicHandler(), logger),
 			ConnContext:       funnelConnContext,
 			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       60 * time.Second,
 			ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 		}
 	}
