@@ -22,12 +22,33 @@ make e2e                                           # the web UI's end-to-end tes
 go test -race -tags tailnet ./internal/server      # real tsnet nodes against an in-process control server
 ```
 
+Other useful targets:
+
+```bash
+make ui        # build the web UI into web/dist, which the binary embeds
+make build     # make ui, then build ./tsrelay
+```
+
+A plain `go build` works without Node and pnpm; its binary serves a placeholder page instead of the UI.
+
 To work on the web UI, `make dev` serves it with hot reload on http://127.0.0.1:5173 against a dev relay with sample data. That relay also listens directly on 127.0.0.1:8098 (admin only), :8097 (no grant) and :8096 (another user), so you can open those to see the other identities' views.
+
+## Performance
+
+```bash
+go test -run='^$' -bench=. -count=6 -p 1 ./internal/server ./internal/tunnel/... ./internal/inspect > new.txt
+go run golang.org/x/perf/cmd/benchstat@v0.0.0-20261009192801-be2c69fb417e docs/perf/baseline.txt new.txt
+TSRELAY_LOAD=1 go test ./internal/server -run TestLoad -count=1 -v      # add -cpuprofile cpu.out to profile
+```
+
+`TestLoad` drives the relay in-process (knobs: `TSRELAY_LOAD_CONCURRENCY`, `_DURATION`, `_BODY`, `_MODE=plain|streaming`) and reports throughput and the latency the relay adds over calling the app directly.
+
+`.github/workflows/ci.yml` runs the checks, the UI build with its bundle budget, and the end-to-end tests on every push and pull request.
 
 ## Pull requests
 
 - Add or update tests for what you change. Bug fixes come with a test that fails without the fix.
-- For changes on the request path (relay, tunnel, inspector), compare benchmarks against `docs/perf/baseline.txt` with benchstat (see the README's Development section) and include the result.
+- For changes on the request path (relay, tunnel, inspector), compare benchmarks against `docs/perf/baseline.txt` with benchstat (see [Performance](#performance)) and include the result.
 - Keep each pull request to one change, and match the style of the code around it.
 - Write commit messages as a plain imperative sentence that says what the change does, for example "Refuse replays of pending calls". No prefixes like `feat:`.
 - tsrelay's direct dependencies are Tailscale, a few `golang.org/x` modules, OpenTelemetry (with the Prometheus client its exporter needs), and for the CLI cobra, fang and lipgloss (with the Charm modules they bring); anything else needs a good reason. The web UI is a React and Tailwind app under `web/`, whose dependencies are listed in `web/package.json`; new ones need a good reason too, and anything that injects inline scripts or styles is ruled out by the UI's CSP.
@@ -40,6 +61,18 @@ Pushing a `v*` tag runs `.github/workflows/release.yml`. The macOS binaries are 
 - `MACOS_P12`: the certificate and its private key, exported from Keychain Access as a .p12, base64-encoded (`base64 -i cert.p12 | pbcopy`).
 - `MACOS_P12_PASSWORD`: the password the .p12 was exported with.
 - `ASC_API_KEY_JSON`: an App Store Connect API key with the Developer role, encoded with `rcodesign encode-app-store-connect-api-key <issuer-id> <key-id> AuthKey_<key-id>.p8`.
+
+`tsrelay --version` reports the version baked in at build time (`dev` for a local build).
+
+### Manual smoke test (TLS)
+
+The automated tests cover everything except real certificates. Before a release:
+
+1. On a tailnet with HTTPS enabled, run `tsrelay serve` with an OAuth client secret. Expect `relay ready` with an `https://` URL.
+2. On a laptop with the receiver grant, run `tsrelay http 8080` against `python3 -m http.server 8080`. Expect the URL on stdout.
+3. From a node with the sender grant, run `curl -i <url>/`. Expect `200` and a line in the CLI.
+4. From a node without grants, run `curl -i <url>/`. Expect `403 sender_forbidden`.
+5. Run the relay with `--tls=false` and repeat steps 2–3 with an `http://` relay URL.
 
 ## License
 
