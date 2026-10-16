@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -51,12 +51,18 @@ test("hints show the relay's defaults and maxima, and channels come from the gra
     context: fixtures.me,
   });
   await userEvent.click(await screen.findByRole("button", { name: /Delivery/ }));
-  expect(await screen.findByLabelText("Hold timeout")).toHaveAttribute("placeholder", "30s");
-  expect(screen.getByText(/At most 5m0s\./)).toBeInTheDocument();
-  const options = [...document.querySelectorAll("#channels option")].map((o) =>
-    o.getAttribute("value"),
+  const hold = screen.getByRole("radiogroup", { name: "Hold timeout" });
+  expect(within(hold).getByRole("radio", { checked: true })).toHaveTextContent("30 sdefault");
+  expect(screen.getByText(/At most 5 min; longer presets are hidden\./)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("combobox", { name: "Channel" }));
+  const listbox = await screen.findByRole("listbox");
+  await waitFor(() =>
+    expect(
+      within(listbox)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["default", "prod"]),
   );
-  expect(options).toEqual(["default", "prod"]);
   expect(screen.getByText(/You own \d+ of 10 hooks/)).toBeInTheDocument();
 });
 
@@ -77,10 +83,10 @@ test("creating saves, toasts and goes to the new hook", async () => {
   });
   await userEvent.type(await screen.findByLabelText("Path"), "idle");
   await userEvent.click(screen.getByRole("button", { name: /Delivery/ }));
-  await userEvent.type(await screen.findByLabelText("Hold timeout"), "45s");
+  await userEvent.click(screen.getByRole("radio", { name: "2 min" }));
   await userEvent.click(screen.getByRole("button", { name: "Create hook" }));
   await waitFor(() => expect(router.state.location.pathname).toBe(`/hooks/${fixtures.idle.id}`));
-  expect(saved).toEqual({ path: "idle", ephemeral: false, settings: { holdTimeout: "45s" } });
+  expect(saved).toEqual({ path: "idle", ephemeral: false, settings: { holdTimeout: "2m" } });
   expect(await screen.findByText("Created idle")).toBeInTheDocument();
 });
 
@@ -164,9 +170,13 @@ test("a form-level error goes away once the next change fails local validation",
   });
   await userEvent.type(await screen.findByLabelText("Path"), "idle");
   expect(await screen.findByRole("alert")).toHaveTextContent(/the relay refused this/);
-  await userEvent.type(screen.getByLabelText("Hold timeout"), "soon");
+  await userEvent.click(screen.getByRole("button", { name: /Delivery/ }));
+  await userEvent.click(screen.getAllByRole("radio", { name: "custom…" })[0]!);
+  await userEvent.type(screen.getByLabelText("Hold timeout, custom"), "soon");
   await waitFor(() =>
-    expect(screen.getByLabelText("Hold timeout")).toHaveAccessibleDescription(/must be a duration/),
+    expect(screen.getByLabelText("Hold timeout, custom")).toHaveAccessibleDescription(
+      /must be a duration/,
+    ),
   );
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });

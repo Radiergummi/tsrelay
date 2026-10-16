@@ -3,50 +3,85 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ApiError, fieldMessage, formMessage } from "@/api/client";
 import { dryRunHook, useCreateHook, useUpdateHook } from "@/api/mutations";
-import type { FieldError, Hook, Me } from "@/api/schemas";
+import { useChannels } from "@/api/queries";
+import type { Effective, FieldError, Hook, Me } from "@/api/schemas";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
-import { Switch } from "@/components/ui/switch";
+import { Segment, SegmentedControl } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { channelChoices } from "@/lib/channels";
-import { formatSize } from "@/lib/format";
+import { allowingPattern, channelChoices, validChannel } from "@/lib/channels";
 import { toast } from "@/lib/toast";
+import { DeliveryFields } from "./DeliveryFields";
+import { ExpiryField } from "./ExpiryField";
 import { Field } from "./Field";
-import { fieldTypes, formRequest, initialValues } from "./formRequest";
+import { effectiveSettings, fieldTypes, formRequest, initialValues } from "./formRequest";
+import { HookPreview } from "./HookPreview";
 
 const dryRunDelay = 400;
 
-/** HookForm creates a hook, or edits hook. Every change is validated by a dry run. */
+/**
+ * HookForm creates a hook, or edits hook. Every change is validated by a
+ * dry run, whose result the preview beside the form shows.
+ */
 export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   const editing = hook !== undefined;
   const [values, setValues] = useState(() => initialValues(hook));
   const [errors, setErrors] = useState<FieldError[]>([]);
   const [formError, setFormError] = useState("");
+  // The last dry run that passed, keyed by the body it validated.
+  const [dry, setDry] = useState<{ key: string; hook: Hook }>();
   // Delivery starts shut unless the hook overrides a default, and opens
   // (and stays open) when one of its fields has an error.
-  const [delivery, setDelivery] = useState(() =>
-    Object.entries(values).some(([k, v]) => k.startsWith("settings.") && v !== ""),
-  );
+  const overrides = Object.entries(values).filter(
+    ([k, v]) => k.startsWith("settings.") && v !== "",
+  ).length;
+  const [delivery, setDelivery] = useState(overrides > 0);
   if (!delivery && errors.some((e) => e.field.startsWith("settings."))) setDelivery(true);
   const dirty = useRef(false);
   const navigate = useNavigate();
   const create = useCreateHook();
   const update = useUpdateHook(hook?.id ?? "");
-  const { defaults, max } = me.policy;
-  const patterns = me.roles["receiver"] ?? [];
-  const channels = useMemo(() => channelChoices(patterns), [patterns]);
+  const inUse = useChannels(false).data?.channels;
+  const { defaults } = me.policy;
+  const patterns = useMemo(() => me.roles["receiver"] ?? [], [me]);
+  const channels = useMemo(() => {
+    const out = channelChoices(patterns);
+    for (const c of inUse ?? [])
+      if (!out.includes(c.name) && allowingPattern(patterns, c.name)) out.push(c.name);
+    return out;
+  }, [patterns, inUse]);
+  const channel = values["channel"] || "default";
+  const pattern = allowingPattern(patterns, channel);
 
-  const build = () =>
-    formRequest(
+  // The hook's URL is base followed by its path. A new hook has no URL
+  // yet, and the entry document has no base URL, so it is this origin's.
+  const base = hook
+    ? hook.url.slice(0, hook.url.length - hook.path.length)
+    : `${window.location.origin}/~${me.slug ?? ""}/`;
+  const tilde = base.indexOf("/~") + 1;
+
+  const build = () => {
+    const r = formRequest(
       Object.entries(fieldTypes).map(([n, t]) => [n, values[n] ?? "", t]),
       editing,
     );
+    if (!validChannel(channel))
+      r.errors.push({
+        field: "channel",
+        message: "must be dot-separated segments of a-z, 0-9 and -, at most 64 characters",
+      });
+    else if (!pattern)
+      r.errors.push({ field: "channel", message: "none of your receive patterns allows it" });
+    return r;
+  };
+  const { body } = build();
+  const key = JSON.stringify(body);
 
   useEffect(() => {
     if (!dirty.current) return;
-    const { body, errors: local } = build();
+    const { errors: local } = build();
     if (local.length) {
       setErrors(local);
       setFormError("");
@@ -55,7 +90,8 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
     const ctrl = new AbortController();
     const t = setTimeout(() => {
       dryRunHook(body, hook?.id, ctrl.signal).then(
-        () => {
+        (h) => {
+          setDry({ key, hook: h });
           setErrors([]);
           setFormError("");
         },
@@ -69,7 +105,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
       clearTimeout(t);
       ctrl.abort();
     };
-    // build reads values, and is a new function every render.
+    // build reads values, and body and key follow from them.
     // oxlint-disable-next-line react/exhaustive-deps
   }, [values]);
 
@@ -99,7 +135,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const { body, errors: local } = build();
+    const { errors: local } = build();
     if (local.length) return setErrors(local);
     const onSuccess = (h: Hook) => {
       toast.success(editing ? "Saved" : `Created ${h.path}`);
@@ -109,164 +145,161 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
     else create.mutate(body, { onSuccess, onError: applySaveError });
   }
 
+  // The preview shows the dry run's hook while it matches the form, and
+  // what the form would give otherwise: before the first dry run, and
+  // while the next one is pending or failed.
+  const current = dry?.key === key ? dry.hook : undefined;
+  const effective: Effective = current?.effective ?? effectiveSettings(values, defaults);
+  const path = values["path"]?.trim() ?? "";
+  const ephemeral = values["ephemeral"] === "true";
   const pending = create.isPending || update.isPending;
+  const group = "space-y-4";
+  const legend = "mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase";
   return (
-    <form onSubmit={submit} className="max-w-2xl space-y-5" noValidate>
-      {!editing && (
-        <p className="text-muted-foreground">
-          You own {me.hooks} of {me.limits.maxHooks} hooks.
-        </p>
-      )}
-      {formError && (
-        <p role="alert" className="text-destructive">
-          {formError}
-        </p>
-      )}
-      <Field
-        label="Path"
-        error={err("path")}
-        hint={
-          <>
-            The URL is <code>~{me.slug}/</code> followed by this path: up to 8 segments of letters,
-            digits, <code>.</code>, <code>_</code> and <code>-</code>.
-          </>
-        }
-      >
-        <Input
-          {...text("path")}
-          placeholder={editing ? undefined : "three random words"}
-          autoComplete="off"
-        />
-      </Field>
-      <Field
-        label="Channel"
-        error={err("channel")}
-        hint={`Senders allowed this channel may call the hook. Your receiver patterns: ${patterns.join(", ") || "none"}.`}
-      >
-        <Input {...text("channel")} list="channels" placeholder="default" autoComplete="off" />
-      </Field>
-      <datalist id="channels">
-        {channels.map((c) => (
-          <option key={c} value={c}>
-            {c}
-          </option>
-        ))}
-      </datalist>
-      <Field label="Description" error={err("description")}>
-        <Textarea {...text("description")} rows={2} maxLength={280} />
-      </Field>
-      <div className="space-y-1">
-        <label className="flex items-center gap-2" htmlFor="ephemeral">
-          <Switch
-            id="ephemeral"
-            checked={values["ephemeral"] === "true"}
-            onCheckedChange={(on: boolean) => set("ephemeral")(String(on))}
-          />
-          Ephemeral: delete the hook once no tunnel has been attached for a while
-        </label>
-        {err("ephemeral") && <p className="text-xs text-destructive">{err("ephemeral")}</p>}
-      </div>
-      <Field
-        label="Expires at"
-        error={err("expiresAt")}
-        hint={
-          me.limits.maxHookTTL
-            ? `RFC 3339, in UTC. Your grants require persistent hooks to expire within ${me.limits.maxHookTTL}.`
-            : "RFC 3339, in UTC. Optional."
-        }
-      >
-        <Input {...text("expiresAt")} placeholder="2026-12-31T00:00:00Z" autoComplete="off" />
-      </Field>
+    <form
+      onSubmit={submit}
+      className="grid max-w-5xl gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]"
+      noValidate
+    >
+      <div className="min-w-0 space-y-6">
+        {!editing && (
+          <p className="text-muted-foreground">
+            You own {me.hooks} of {me.limits.maxHooks} hooks.
+          </p>
+        )}
+        {formError && (
+          <p role="alert" className="text-destructive">
+            {formError}
+          </p>
+        )}
+        <fieldset className={group}>
+          <legend className={legend}>Address</legend>
+          <Field
+            label="Path"
+            error={err("path")}
+            hint={
+              <>
+                Up to 8 segments of letters, digits, <code>.</code>, <code>_</code> and{" "}
+                <code>-</code>.{editing ? "" : " Leave it empty for three random words."}
+              </>
+            }
+          >
+            {(c) => (
+              <div className="flex min-w-0">
+                <span className="flex items-center rounded-l-lg border border-r-0 border-input bg-muted px-2 font-mono text-xs whitespace-nowrap text-muted-foreground">
+                  <span className="hidden sm:inline">{base.slice(0, tilde)}</span>
+                  {base.slice(tilde)}
+                </span>
+                <Input
+                  {...text("path")}
+                  id={c.id}
+                  aria-invalid={c["aria-invalid"]}
+                  aria-describedby={c["aria-describedby"]}
+                  className="rounded-l-none font-mono"
+                  placeholder={editing ? undefined : "three random words"}
+                  autoComplete="off"
+                />
+              </div>
+            )}
+          </Field>
+          <Field
+            label="Channel"
+            error={err("channel")}
+            hint={
+              <>
+                {pattern && !err("channel") && (
+                  <>
+                    ✓ allowed by <code>{pattern}</code>.{" "}
+                  </>
+                )}
+                Senders allowed on a channel may call its hooks. Names are dot-separated segments of
+                a-z, 0-9 and -.
+              </>
+            }
+          >
+            <Combobox
+              items={channels}
+              value={values["channel"] ?? ""}
+              onValueChange={set("channel")}
+              placeholder="default"
+              autoComplete="off"
+            />
+          </Field>
+          <Field label="Description" error={err("description")}>
+            <Textarea {...text("description")} rows={2} maxLength={280} />
+          </Field>
+        </fieldset>
 
-      <Collapsible open={delivery} onOpenChange={setDelivery} className="border-t pt-4">
-        <CollapsibleTrigger className="group flex w-full items-baseline gap-2 text-left">
-          <ChevronRight className="size-4 self-center text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-90 motion-reduce:transition-none" />
-          <span className="font-medium">Delivery</span>
-          <span className="text-xs text-muted-foreground">
-            Timeouts, limits and capture; the relay's defaults unless set
-          </span>
-        </CollapsibleTrigger>
-        <CollapsiblePanel className="-mx-1 px-1">
-          <fieldset className="space-y-4 pt-4 pb-1">
-            <legend className="sr-only">Delivery</legend>
-            <p className="text-xs text-muted-foreground">
-              Leave a field empty to use the relay default.
-            </p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Attach policy" error={err("settings.attachPolicy")}>
-                <NativeSelect {...text("settings.attachPolicy")}>
-                  <option value="">relay default ({defaults.attachPolicy})</option>
-                  <option value="takeover">takeover: a new tunnel replaces the attached one</option>
-                  <option value="reject">
-                    reject: a new tunnel is refused while one is attached
-                  </option>
-                </NativeSelect>
-              </Field>
-              <Field label="Host header" error={err("settings.hostHeader")}>
-                <NativeSelect {...text("settings.hostHeader")}>
-                  <option value="">relay default ({defaults.hostHeader})</option>
-                  <option value="preserve">preserve: your app sees the relay's host</option>
-                  <option value="rewrite">rewrite: your app sees its own host</option>
-                </NativeSelect>
-              </Field>
-              <Field
-                label="Hold timeout"
-                error={err("settings.holdTimeout")}
-                hint={`How long calls wait for a tunnel; 0s disables holding.${max.holdTimeout ? ` At most ${max.holdTimeout}.` : ""}`}
+        <fieldset className={group}>
+          <legend className={legend}>Lifetime</legend>
+          <Field
+            label="Kind"
+            error={err("ephemeral")}
+            hint="Ephemeral hooks are deleted once no tunnel has been attached for a while."
+          >
+            {(c) => (
+              <SegmentedControl
+                aria-labelledby={c["aria-labelledby"]}
+                aria-describedby={c["aria-describedby"]}
+                aria-invalid={c["aria-invalid"]}
+                value={values["ephemeral"] ?? "false"}
+                onValueChange={set("ephemeral")}
               >
-                <Input {...text("settings.holdTimeout")} placeholder={defaults.holdTimeout} />
-              </Field>
-              <Field
-                label="Response timeout"
-                error={err("settings.responseTimeout")}
-                hint={`Until your app's response headers arrive.${max.responseTimeout ? ` At most ${max.responseTimeout}.` : ""}`}
-              >
-                <Input
-                  {...text("settings.responseTimeout")}
-                  placeholder={defaults.responseTimeout}
-                />
-              </Field>
-              <Field
-                label="Idle timeout"
-                error={err("settings.idleTimeout")}
-                hint={`Longest pause in body traffic.${max.idleTimeout ? ` At most ${max.idleTimeout}.` : ""}`}
-              >
-                <Input {...text("settings.idleTimeout")} placeholder={defaults.idleTimeout} />
-              </Field>
-              <Field
-                label="Max body size"
-                error={err("settings.maxBodyBytes")}
-                hint={`In bytes; 0 means unlimited.${max.maxBodyBytes ? ` At most ${formatSize(max.maxBodyBytes)}.` : ""}`}
-              >
-                <Input
-                  {...text("settings.maxBodyBytes")}
-                  inputMode="numeric"
-                  placeholder={defaults.maxBodyBytes ? String(defaults.maxBodyBytes) : "unlimited"}
-                />
-              </Field>
-              <Field
-                label="Rate limit"
-                error={err("settings.rateLimit")}
-                hint={`Calls per second / burst.${max.rateLimit?.perSecond ? ` At most ${max.rateLimit.perSecond}/s.` : ""}${max.rateLimit?.burst ? ` Burst at most ${max.rateLimit.burst}.` : ""}`}
-              >
-                <Input
-                  {...text("settings.rateLimit")}
-                  placeholder={`${defaults.rateLimit.perSecond}/${defaults.rateLimit.burst}`}
-                />
-              </Field>
-              <Field label="Capture" error={err("settings.capture")}>
-                <NativeSelect {...text("settings.capture")}>
-                  <option value="">
-                    relay default ({defaults.capture ? "bodies and metadata" : "metadata only"})
-                  </option>
-                  <option value="true">bodies and metadata</option>
-                  <option value="false">metadata only</option>
-                </NativeSelect>
-              </Field>
-            </div>
-          </fieldset>
-        </CollapsiblePanel>
-      </Collapsible>
+                <Segment value="false">Persistent</Segment>
+                <Segment value="true">Ephemeral</Segment>
+              </SegmentedControl>
+            )}
+          </Field>
+          <Field
+            label="Expires at"
+            error={err("expiresAt")}
+            hint={`In your time zone, ${Intl.DateTimeFormat().resolvedOptions().timeZone}.`}
+          >
+            {(c) => (
+              <ExpiryField
+                control={c}
+                value={values["expiresAt"] ?? ""}
+                onChange={set("expiresAt")}
+                maxTTL={ephemeral ? undefined : me.limits.maxHookTTL}
+              />
+            )}
+          </Field>
+        </fieldset>
+
+        <Collapsible open={delivery} onOpenChange={setDelivery} className="border-t pt-4">
+          <CollapsibleTrigger className="group flex w-full items-baseline gap-2 text-left">
+            <ChevronRight className="size-4 self-center text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-90 motion-reduce:transition-none" />
+            <span className="font-medium">Delivery</span>
+            <span className="text-xs text-muted-foreground">
+              {overrides === 0
+                ? "all at the relay defaults"
+                : `${overrides} ${overrides === 1 ? "setting differs" : "settings differ"} from the relay defaults`}
+            </span>
+          </CollapsibleTrigger>
+          <CollapsiblePanel className="-mx-1 px-1">
+            <fieldset className="pt-4 pb-1">
+              <legend className="sr-only">Delivery</legend>
+              <DeliveryFields
+                form={{ values, set, err }}
+                policy={me.policy}
+                relayHost={hostOf(base)}
+                appHost={hook?.tunnel?.target && hostOf(hook.tunnel.target)}
+              />
+            </fieldset>
+          </CollapsiblePanel>
+        </Collapsible>
+      </div>
+
+      <HookPreview
+        className="self-start lg:sticky lg:top-4 lg:col-start-2 lg:row-span-2 lg:row-start-1"
+        url={path ? (current?.url ?? base + path) : undefined}
+        channel={channel}
+        pattern={pattern}
+        ephemeral={ephemeral}
+        expiresAt={values["expiresAt"] ?? ""}
+        effective={effective}
+        inherited={(k) => (values[`settings.${k}`] ?? "") === ""}
+      />
 
       <div className="flex gap-2">
         <Button type="submit" disabled={pending}>
@@ -281,4 +314,13 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
       </div>
     </form>
   );
+}
+
+/** hostOf is a URL's host, or the text itself if it isn't a URL with one. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host || url;
+  } catch {
+    return url;
+  }
 }
