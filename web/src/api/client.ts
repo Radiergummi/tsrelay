@@ -50,6 +50,7 @@ export const paths = {
   me: "/",
   hooks: (all = false, channel?: string) => "/hooks" + query({ all, channel }),
   hook: (hookId: string) => `/hooks/${id(hookId)}`,
+  rotatePublicUrl: (hookId: string) => `/hooks/${id(hookId)}/rotate-public-url`,
   calls: (hookId: string) => `/hooks/${id(hookId)}/calls`,
   call: (hookId: string, callId: string) => `/hooks/${id(hookId)}/calls/${id(callId)}`,
   replay: (hookId: string, callId: string) => `/hooks/${id(hookId)}/calls/${id(callId)}/replay`,

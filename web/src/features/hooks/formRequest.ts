@@ -8,6 +8,7 @@ export const fieldTypes: Record<string, FieldType> = {
   channel: "text",
   description: "text",
   ephemeral: "bool",
+  public: "bool",
   expiresAt: "time",
   "settings.attachPolicy": "text",
   "settings.hostHeader": "text",
@@ -79,6 +80,7 @@ export function formRequest(
 export function initialValues(h: Hook | undefined): Record<string, string> {
   const v: Record<string, string> = Object.fromEntries(Object.keys(fieldTypes).map((k) => [k, ""]));
   v["ephemeral"] = "false";
+  v["public"] = "false";
   if (!h) return v;
   const s = h.settings;
   Object.assign(v, {
@@ -86,6 +88,7 @@ export function initialValues(h: Hook | undefined): Record<string, string> {
     channel: h.channel,
     description: h.description ?? "",
     ephemeral: String(h.ephemeral),
+    public: String(h.public ?? false),
     expiresAt: h.expiresAt ? new Date(h.expiresAt).toISOString().replace(/\.000Z$/, "Z") : "",
     "settings.attachPolicy": s.attachPolicy ?? "",
     "settings.hostHeader": s.hostHeader ?? "",

@@ -26,3 +26,14 @@ test("creating a hook shows dry-run errors under their fields, then saves", asyn
   await expect(page.getByText(`Created ${name}`)).toBeVisible();
   await api(request).deleteHook(await api(request).hookId(name));
 });
+
+test("making a hook public shows its internet URL", async ({ page, request }) => {
+  await page.goto("/hooks/new");
+  const name = `e2e-public-${test.info().project.name}-${Date.now()}`;
+  await page.getByLabel("Path").fill(name);
+  await page.getByRole("switch", { name: /Reachable from the internet/ }).click();
+  await page.getByRole("button", { name: "Create hook" }).click();
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+  await expect(page.getByText(/^https:\/\/tsrelay\.example\.ts\.net\/\+/)).toBeVisible();
+  await api(request).deleteHook(await api(request).hookId(name));
+});

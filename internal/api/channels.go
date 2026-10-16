@@ -61,7 +61,7 @@ func (a *API) listChannels(w http.ResponseWriter, r *http.Request, id authz.Iden
 		}
 		c.HookCount++
 		if !all {
-			c.Hooks = append(c.Hooks, a.HookJSON(h))
+			c.Hooks = append(c.Hooks, a.HookJSON(h, id))
 		}
 	}
 	out := Channels{
@@ -92,7 +92,7 @@ func (a *API) getChannel(w http.ResponseWriter, r *http.Request, id authz.Identi
 	}
 	for _, h := range list {
 		if h.Channel == name {
-			out.Hooks = append(out.Hooks, a.HookJSON(h))
+			out.Hooks = append(out.Hooks, a.HookJSON(h, id))
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

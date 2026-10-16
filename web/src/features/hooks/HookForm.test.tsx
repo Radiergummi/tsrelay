@@ -184,7 +184,7 @@ test("expiry quick picks stay within maxHookTTL, which also takes away never", a
   expect(picks()).toEqual(["1 h", "1 d", "7 d", "30 d", "never"]);
   await userEvent.click(screen.getByRole("button", { name: "Never expire" }));
   await submit();
-  await waitFor(() => expect(saved.body).toEqual({ ephemeral: true }));
+  await waitFor(() => expect(saved.body).toEqual({ ephemeral: true, public: false }));
 });
 
 const tz = process.env["TZ"];

@@ -71,7 +71,7 @@ export function AdminPage() {
                   </Link>
                 </TableCell>
                 <TableCell>
-                  <ChannelChip name={h.channel} />
+                  <ChannelChip name={h.channel} all />
                 </TableCell>
                 <TableCell>
                   <TunnelText tunnel={h.tunnel} />

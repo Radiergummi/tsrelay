@@ -133,3 +133,22 @@ func TestListHooksByChannel(t *testing.T) {
 		}
 	}
 }
+
+// A channel's hooks show their public URL to their owner only, as /hooks does.
+func TestChannelHidesOthersPublicURL(t *testing.T) {
+	e := newEnv(t)
+	e.api.PublicBaseURL = publicBase
+	var h Hook
+	if resp := e.call(publicMoritz, "POST", "/hooks", map[string]any{"path": "cb", "public": true}, &h); resp.StatusCode != 201 || h.PublicURL == "" {
+		t.Fatalf("create: %d %+v", resp.StatusCode, h)
+	}
+	var mine, theirs ChannelDetail
+	e.call(publicMoritz, "GET", "/channels/default", nil, &mine)
+	e.call(publicAdmin, "GET", "/channels/default?all=true", nil, &theirs)
+	if len(mine.Hooks) != 1 || mine.Hooks[0].PublicURL != h.PublicURL {
+		t.Errorf("owner sees %+v", mine.Hooks)
+	}
+	if len(theirs.Hooks) != 1 || !theirs.Hooks[0].Public || theirs.Hooks[0].PublicURL != "" {
+		t.Errorf("admin sees %+v; want public without the URL", theirs.Hooks)
+	}
+}

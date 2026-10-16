@@ -54,6 +54,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   }, [patterns, inUse]);
   const channel = values["channel"]?.trim() || "default";
   const pattern = allowingPattern(patterns, channel);
+  const canPublish = (me.public ?? false) && (me.funnel ?? false);
 
   // The hook's URL is base followed by its path. A new hook has no URL
   // yet, and the entry document has no base URL, so it is this origin's.
@@ -227,6 +228,34 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
           </Field>
           <Field label="Description" error={err("description")}>
             <Textarea {...text("description")} rows={2} maxLength={280} />
+          </Field>
+          <Field
+            label="Reachable from"
+            error={err("public")}
+            hint={
+              !me.funnel
+                ? "This relay does not serve hooks on the internet."
+                : !me.public
+                  ? 'Your grants do not allow public hooks. A receiver grant needs "public": true.'
+                  : values["public"] === "true"
+                    ? "Anyone with the public URL can call this hook. Verify webhook signatures in your app."
+                    : "The internet reaches the hook at a secret URL, through the relay's Funnel."
+            }
+          >
+            {(c) => (
+              <SegmentedControl
+                aria-labelledby={c["aria-labelledby"]}
+                aria-describedby={c["aria-describedby"]}
+                aria-invalid={c["aria-invalid"]}
+                value={values["public"] ?? "false"}
+                onValueChange={set("public")}
+              >
+                <Segment value="false">Tailnet only</Segment>
+                <Segment value="true" disabled={!canPublish && values["public"] !== "true"}>
+                  Tailnet and internet
+                </Segment>
+              </SegmentedControl>
+            )}
           </Field>
         </fieldset>
 

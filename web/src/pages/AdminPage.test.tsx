@@ -32,7 +32,7 @@ test("lists every hook as metadata, subscribes to every hook's events, and delet
   );
   expect(within(row).getByRole("link", { name: "default" })).toHaveAttribute(
     "href",
-    "/channels/default",
+    "/channels/default?all=true",
   );
   expect(screen.getByText(/5 hooks, 1 tunnel/)).toBeInTheDocument();
   expect(FakeEventSource.latest()?.url).toBe("/hooks?all=true");

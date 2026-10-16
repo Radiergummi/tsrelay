@@ -86,7 +86,12 @@ test("creating saves, toasts and goes to the new hook", async () => {
   await userEvent.click(screen.getByRole("radio", { name: "2 min" }));
   await userEvent.click(screen.getByRole("button", { name: "Create hook" }));
   await waitFor(() => expect(router.state.location.pathname).toBe(`/hooks/${fixtures.idle.id}`));
-  expect(saved).toEqual({ path: "idle", ephemeral: false, settings: { holdTimeout: "2m" } });
+  expect(saved).toEqual({
+    path: "idle",
+    ephemeral: false,
+    public: false,
+    settings: { holdTimeout: "2m" },
+  });
   expect(await screen.findByText("Created idle")).toBeInTheDocument();
 });
 
@@ -201,6 +206,34 @@ test("editing prefills the hook and resets cleared fields to the default", async
   await userEvent.clear(desc);
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(patch).toMatchObject({ path: "payments/done", description: null }));
+});
+
+test("the internet choice is disabled without the grant or without Funnel", async () => {
+  renderWithProviders(<HookFormPage />, {
+    route: "/hooks/new",
+    path: "/hooks/new",
+    context: { ...fixtures.me, public: false, funnel: true },
+  });
+  // Base UI's Radio is a <span role="radio">, which jest-dom's
+  // toBeDisabled/toBeEnabled don't recognize (they only check native form
+  // tags), so this asserts the same thing through aria-disabled instead.
+  expect(await screen.findByRole("radio", { name: "Tailnet and internet" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(screen.getByText(/"public": true/)).toBeInTheDocument();
+});
+
+test("the internet choice is enabled with the grant and Funnel", async () => {
+  renderWithProviders(<HookFormPage />, {
+    route: "/hooks/new",
+    path: "/hooks/new",
+    context: { ...fixtures.me, public: true, funnel: true },
+  });
+  expect(await screen.findByRole("radio", { name: "Tailnet and internet" })).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
 });
 
 test("only the owner may edit", async () => {
