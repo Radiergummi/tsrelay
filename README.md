@@ -206,6 +206,10 @@ On a terminal, output is colored, call lines are aligned, and each call ends wit
 
 `-j`/`--json` (on every command) prints JSON on stdout instead of text. `http` and `attach` print one event per line (`url`, `connected`, `disconnected`, `call`, `stopped`), and the other commands print one value. On a terminal the JSON is indented; piped, it's compact. Errors go to stderr as `{"error": …, "problem": {…}}`.
 
+## Open-source licenses
+
+tsrelay is built from open-source projects whose licenses ask for their notices to travel with it. The web UI's footer links to the licenses page (`/licenses`), which lists each one with its license and notice texts, whatever roles you have. `tsrelay licenses` prints the same notices, and the relay's licenses page if it knows your relay. The relay also serves them as one text file at `/notices.txt`, and the software bill of materials they come from at `/sbom.cdx.json` (CycloneDX).
+
 # Running a relay
 
 This half is for operators: whoever adds the relay to the tailnet and decides who may use it.

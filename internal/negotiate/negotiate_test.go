@@ -65,7 +65,7 @@ func TestPick(t *testing.T) {
 }
 
 func TestExtensionsKeepsOtherPaths(t *testing.T) {
-	for _, p := range []string{"/", "/assets/index-abc.js", "/hooks/.json", "/openapi.yaml", "/hooks/h_1"} {
+	for _, p := range []string{"/", "/assets/index-abc.js", "/hooks/.json", "/openapi.yaml", "/hooks/h_1", "/sbom.cdx.json"} {
 		var got string
 		h := Extensions(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got = r.URL.Path }))
 		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, p, nil))

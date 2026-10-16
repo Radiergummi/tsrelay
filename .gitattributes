@@ -1,0 +1,3 @@
+# This fixture has CRLF line endings on purpose, for the license harvester's
+# normalization test (scripts/licensetexts); core.autocrlf would rewrite it.
+scripts/licensetexts/testdata/node_modules/@scope/pkg/LICENSE -text

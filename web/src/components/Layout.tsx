@@ -1,10 +1,13 @@
 import { useQueryClient } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { Navigate, Outlet, useLocation } from "react-router";
 import { ApiError } from "@/api/client";
 import { useMe } from "@/api/queries";
+import type { Me } from "@/api/schemas";
 import { LiveProvider } from "@/lib/live";
 import { isAdmin, isReceiver, isUser } from "@/lib/viewer";
 import { NoAccessPage } from "@/pages/NoAccessPage";
+import { Footer } from "./Footer";
 import { Header } from "./Header";
 import { LiveBar } from "./LiveBar";
 
@@ -20,24 +23,45 @@ export function Layout() {
   const location = useLocation();
   if (me.isPending) {
     return (
-      <main className="mx-auto max-w-[1400px] px-6 py-6">
-        <LoadingSkeleton />
-      </main>
+      <Page>
+        <main className="mx-auto w-full max-w-[1400px] px-6 py-6">
+          <LoadingSkeleton />
+        </main>
+      </Page>
     );
   }
-  if (me.isError) return <NotIdentified error={me.error} />;
+  if (me.isError)
+    return (
+      <Page>
+        <NotIdentified error={me.error} />
+      </Page>
+    );
   const viewer = me.data;
   const allowed = isReceiver(viewer) || isAdmin(viewer);
   if (allowed && !isReceiver(viewer) && location.pathname === "/hooks")
     return <Navigate to="/admin" replace />;
+  // The licenses page needs no role, so the footer's link works for everyone.
+  const open = allowed || location.pathname === "/licenses";
   return (
     <LiveProvider client={client} user={isUser(viewer)}>
-      <Header me={viewer} />
-      <LiveBar />
-      <main className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6">
-        {allowed ? <Outlet context={viewer} /> : <NoAccessPage me={viewer} />}
-      </main>
+      <Page me={viewer}>
+        <Header me={viewer} />
+        <LiveBar />
+        <main className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6">
+          {open ? <Outlet context={viewer} /> : <NoAccessPage me={viewer} />}
+        </main>
+      </Page>
     </LiveProvider>
+  );
+}
+
+/** Page puts the footer under every state of the layout. */
+function Page({ me, children }: { me?: Me; children: ReactNode }) {
+  return (
+    <div className="flex min-h-screen flex-col">
+      {children}
+      <Footer version={me?.version} commit={me?.commit} />
+    </div>
   );
 }
 
