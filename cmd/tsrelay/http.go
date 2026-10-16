@@ -141,7 +141,9 @@ func newHTTPCmd(c *cli) *cobra.Command {
 						}
 						// Only the path can change the URL; the prefix before it stays.
 						hook.Path = strings.TrimPrefix(h.URL, strings.TrimSuffix(hook.URL, hook.Path))
-						hook.URL, hook.PublicURL, hook.Public = h.URL, h.PublicURL, h.PublicURL != ""
+						// tunnel.HookInfo carries no Public field: deriving it from
+						// PublicURL would wrongly clear it when Funnel is off.
+						hook.URL, hook.PublicURL = h.URL, h.PublicURL
 						if err := state.Remember(key, hook.Path, hook.URL); err != nil {
 							out.status(styleWarn, "could not remember the hook path: "+err.Error())
 						}
