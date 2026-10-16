@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -36,13 +35,6 @@ func setVersion(t *testing.T, v string) {
 	old := version
 	version = v
 	t.Cleanup(func() { version = old })
-}
-
-func updateCommand(base string) string {
-	if runtime.GOOS == "windows" {
-		return "irm " + base + "/install.ps1 | iex"
-	}
-	return "curl -fsSL " + base + "/install.sh | sh"
 }
 
 func TestVersionMismatchWarnsOnStderr(t *testing.T) {

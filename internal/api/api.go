@@ -214,11 +214,15 @@ func notAcceptable(w http.ResponseWriter, offers []negotiate.Type) {
 // OpenAPI document.
 func (a *API) Routes() []string { return a.routes }
 
+// NotIdentified is the detail of the forbidden problem for a caller the
+// tailnet could not identify; the CLI explains it by this text.
+const NotIdentified = "could not identify you on the tailnet"
+
 func (a *API) authed(f func(http.ResponseWriter, *http.Request, authz.Identity)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, err := a.Identifier.Identify(r.Context(), r.RemoteAddr)
 		if err != nil {
-			problem.New(http.StatusForbidden, problem.Forbidden, "could not identify you on the tailnet").Write(w)
+			problem.New(http.StatusForbidden, problem.Forbidden, NotIdentified).Write(w)
 			return
 		}
 		if span := trace.SpanFromContext(r.Context()); span.IsRecording() {

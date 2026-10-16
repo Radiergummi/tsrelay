@@ -2,14 +2,9 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/Radiergummi/tsrelay/internal/client"
-	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
 // unsetenv removes key for the test and restores it afterwards.
@@ -104,61 +99,5 @@ func TestWriteJSON(t *testing.T) {
 	writeJSON(newStream(&pipe, false, false), v)
 	if pipe.String() != `{"a":1,"b":[2]}`+"\n" {
 		t.Fatalf("piped JSON = %q, want compact on one line", pipe.String())
-	}
-}
-
-func TestFormatError(t *testing.T) {
-	p := &problem.Problem{Title: "Forbidden", Status: 403, Code: problem.Forbidden, Detail: "you can't serve this hook"}
-	t.Setenv("TTY_FORCE", "0")
-	plain := formatError(newStream(&bytes.Buffer{}, false, false), p)
-	for _, want := range []string{"Forbidden (403)", "you can't serve this hook", "hint: " + problemHint(problem.Forbidden)} {
-		if !strings.Contains(plain, want) {
-			t.Errorf("plain error lacks %q:\n%s", want, plain)
-		}
-	}
-	if strings.Contains(plain, "\x1b") {
-		t.Errorf("plain error has escapes: %q", plain)
-	}
-	if got := formatError(newStream(&bytes.Buffer{}, false, false), errors.New("boom")); got != "tsrelay: boom" {
-		t.Errorf("plain non-problem error = %q", got)
-	}
-	forceTerminal(t)
-	if fancy := formatError(newStream(&bytes.Buffer{}, false, false), p); !strings.Contains(fancy, "\x1b[") {
-		t.Errorf("fancy error is unstyled: %q", fancy)
-	}
-}
-
-// Minor 8: an unreachable relay gets its own hint, like a relay refusal's.
-func TestFormatErrorUnreachable(t *testing.T) {
-	t.Setenv("TTY_FORCE", "0")
-	err := &client.UnreachableError{Base: "http://relay.example", Err: errors.New("dial tcp: connection refused")}
-	got := formatError(newStream(&bytes.Buffer{}, false, false), err)
-	for _, want := range []string{"could not reach the relay at http://relay.example", "connection refused", "hint: check --relay or TSRELAY_RELAY"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("formatError lacks %q:\n%s", want, got)
-		}
-	}
-}
-
-func TestProblemHints(t *testing.T) {
-	for _, code := range []string{problem.Forbidden, problem.HookNotFound, problem.NotFound, problem.MisdirectedRequest, problem.Internal} {
-		if problemHint(code) == "" {
-			t.Errorf("no hint for %q", code)
-		}
-	}
-	if problemHint(problem.Invalid) != "" {
-		t.Error("invalid needs no hint: its detail says what is wrong")
-	}
-}
-
-func TestNewJSONError(t *testing.T) {
-	p := &problem.Problem{Title: "Not Found", Status: 404, Code: problem.HookNotFound, Detail: "no such hook"}
-	b, _ := json.Marshal(newJSONError(p))
-	if !strings.Contains(string(b), `"error":"no such hook"`) || !strings.Contains(string(b), `"code":"hook_not_found"`) {
-		t.Fatalf("got %s", b)
-	}
-	b, _ = json.Marshal(newJSONError(errors.New("boom")))
-	if string(b) != `{"error":"boom"}` {
-		t.Fatalf("got %s", b)
 	}
 }

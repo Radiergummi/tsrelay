@@ -16,10 +16,11 @@ import (
 
 func newHooksCmd(c *cli) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "hooks",
-		Short: "Manage your hooks",
-		Args:  usageArgs(cobra.NoArgs),
-		RunE:  c.helpAndFail,
+		Use:                        "hooks",
+		Short:                      "Manage your hooks",
+		Args:                       subcommand,
+		SuggestionsMinimumDistance: 2,
+		RunE:                       c.helpAndFail,
 	}
 	cmd.AddCommand(newHooksListCmd(c), newHooksShowCmd(c), newHooksCreateCmd(c), newHooksUpdateCmd(c), newHooksDeleteCmd(c), newHooksRotateURLCmd(c))
 	return cmd
@@ -30,7 +31,7 @@ func newHooksListCmd(c *cli) *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List your hooks",
-		Args:    usageArgs(cobra.NoArgs),
+		Args:    arity(0, 0, ""),
 	}
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		ctx := cmd.Context()
@@ -57,11 +58,13 @@ func newHooksListCmd(c *cli) *cobra.Command {
 
 func newHooksShowCmd(c *cli) *cobra.Command {
 	return &cobra.Command{
-		Use:   "show <hook>",
-		Short: "Show one hook and its effective settings",
-		Args:  usageArgs(cobra.ExactArgs(1)),
+		Use:               "show <hook>",
+		Short:             "Show one hook and its effective settings",
+		Args:              arity(1, 1, "hook"),
+		ValidArgsFunction: c.completeHooks(1),
 		RunE: func(cmd *cobra.Command, refs []string) error {
 			ctx := cmd.Context()
+			c.hook = refs[0]
 			relayAPI, err := c.newRelayAPI(ctx)
 			if err != nil {
 				return err
@@ -84,7 +87,7 @@ func newHooksCreateCmd(c *cli) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create [<path>]",
 		Short: "Create a persistent hook",
-		Args:  usageArgs(cobra.MaximumNArgs(1)),
+		Args:  arity(0, 1, "path"),
 	}
 	fs := cmd.Flags()
 	channel := fs.StringP("channel", "c", "", `hook channel (default: "default")`)
@@ -93,14 +96,17 @@ func newHooksCreateCmd(c *cli) *cobra.Command {
 	expiresIn := fs.Duration("expires-in", 0, "delete the hook after this long (0: never)")
 	public := fs.Bool("public", false, "make the hook reachable from the internet through the relay's Funnel")
 	settings := registerHookSettingFlags(fs, false)
+	cmd.RegisterFlagCompletionFunc("channel", c.completeChannels)
+	completeSettingFlags(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if *expiresIn < 0 {
-			return usagef("--expires-in must not be negative")
+			return usage("--expires-in can't be negative", "It says how long from now the hook is deleted.",
+				strings.Join(append([]string{"tsrelay hooks create"}, args...), " ")+" --expires-in 24h")
 		}
 		s, err := settings()
 		if err != nil {
-			return &usageError{err.Error()}
+			return err
 		}
 		req := hooks.CreateRequest{Channel: *channel, Description: *description, Ephemeral: *ephemeral, Settings: s, Public: *public}
 		if len(args) == 1 {
@@ -125,9 +131,10 @@ func newHooksCreateCmd(c *cli) *cobra.Command {
 
 func newHooksUpdateCmd(c *cli) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "update <hook>",
-		Short: "Change a hook",
-		Args:  usageArgs(cobra.ExactArgs(1)),
+		Use:               "update <hook>",
+		Short:             "Change a hook",
+		Args:              arity(1, 1, "hook"),
+		ValidArgsFunction: c.completeHooks(1),
 	}
 	fs := cmd.Flags()
 	path := fs.String("path", "", "move the hook to this path (changes its URL)")
@@ -137,14 +144,18 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 	expiresIn := fs.Duration("expires-in", 0, "expire this long from now (0: never)")
 	public := fs.Bool("public", false, "make the hook reachable from the internet, or private again with --public=false")
 	settings := registerHookSettingFlags(fs, true)
+	cmd.RegisterFlagCompletionFunc("channel", c.completeChannels)
+	completeSettingFlags(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
+		c.hook = args[0]
 		if *expiresIn < 0 {
-			return usagef("--expires-in must not be negative")
+			return usage("--expires-in can't be negative", "It says how long from now the hook is deleted; 0 removes the expiry.",
+				"tsrelay hooks update "+args[0]+" --expires-in 24h", "tsrelay hooks update "+args[0]+" --expires-in 0")
 		}
 		s, err := settings()
 		if err != nil {
-			return &usageError{err.Error()}
+			return err
 		}
 		req := hooks.UpdateRequest{Settings: settingsPatch(s)}
 		changes := 0
@@ -179,7 +190,10 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 			}
 		})
 		if changes == 0 {
-			return usagef("nothing to change; give at least one flag (see tsrelay hooks update --help)")
+			return usage("Nothing to change", "hooks update changes only what its flags name.",
+				"tsrelay hooks update "+args[0]+" --description \"payments callbacks\"",
+				"tsrelay hooks update "+args[0]+" --channel prod",
+				"tsrelay hooks update --help")
 		}
 		relayAPI, err := c.newRelayAPI(ctx)
 		if err != nil {
@@ -200,13 +214,15 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 
 func newHooksDeleteCmd(c *cli) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "delete <hook>...",
-		Aliases: []string{"rm"},
-		Short:   "Delete hooks",
-		Args:    usageArgs(cobra.MinimumNArgs(1)),
+		Use:               "delete <hook>...",
+		Aliases:           []string{"rm"},
+		Short:             "Delete hooks",
+		Args:              arity(1, -1, "hook"),
+		ValidArgsFunction: c.completeHooks(-1),
 	}
 	cmd.RunE = func(cmd *cobra.Command, refs []string) error {
 		ctx := cmd.Context()
+		c.hook = refs[0]
 		relayAPI, err := c.newRelayAPI(ctx)
 		if err != nil {
 			return err
@@ -236,9 +252,10 @@ func newHooksDeleteCmd(c *cli) *cobra.Command {
 
 func newHooksRotateURLCmd(c *cli) *cobra.Command {
 	return &cobra.Command{
-		Use:   "rotate-url <hook>",
-		Short: "Give a public hook a new public URL; the old one stops working",
-		Args:  usageArgs(cobra.ExactArgs(1)),
+		Use:               "rotate-url <hook>",
+		Short:             "Give a public hook a new public URL; the old one stops working",
+		Args:              arity(1, 1, "hook"),
+		ValidArgsFunction: c.completeHooks(1),
 		RunE: func(cmd *cobra.Command, refs []string) error {
 			ctx := cmd.Context()
 			relayAPI, err := c.newRelayAPI(ctx)
@@ -282,7 +299,8 @@ func resolveHooks(ctx context.Context, c *client.API, refs []string) ([]api.Hook
 			i = slices.IndexFunc(all, func(h api.Hook) bool { return h.Path == strings.Trim(ref, "/") })
 		}
 		if i < 0 {
-			return nil, fmt.Errorf("you have no hook with ID or path %q (see tsrelay hooks list)", ref)
+			return nil, &cliError{Title: fmt.Sprintf("No hook %q", ref), Reason: "You have no hook with that ID or path.",
+				Fixes: []string{"tsrelay hooks list"}, Code: "no_such_hook"}
 		}
 		found = append(found, all[i])
 	}

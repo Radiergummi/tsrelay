@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -15,9 +14,10 @@ import (
 // file. It never contacts the relay, so it creates nothing.
 func newURLCmd(c *cli) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "url [<port|url>]",
-		Short: "Print the URL tsrelay http would use here",
-		Args:  usageArgs(cobra.MaximumNArgs(1)),
+		Use:               "url [<port|url>]",
+		Short:             "Print the URL tsrelay http would use here",
+		Args:              arity(0, 1, "port or URL"),
+		ValidArgsFunction: c.completeTargetArg,
 	}
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -32,8 +32,8 @@ func newURLCmd(c *cli) *cobra.Command {
 		cwd, _ := os.Getwd()
 		var target *url.URL
 		if len(args) == 1 {
-			if target, err = client.ParseTarget(args[0]); err != nil {
-				return &usageError{err.Error()}
+			if target, err = parseTarget(args[0], func(t string) string { return "tsrelay url " + t }); err != nil {
+				return err
 			}
 		} else {
 			switch targets := state.Targets(base, cwd); len(targets) {
@@ -41,7 +41,11 @@ func newURLCmd(c *cli) *cobra.Command {
 			case 1:
 				target, _ = url.Parse(targets[0])
 			default:
-				return usagef("this directory has hooks for several targets (%s); name one", strings.Join(targets, ", "))
+				e := usage("Hooks for several targets here", "This directory has hooks for "+strings.Join(targets, ", ")+"; name one.")
+				for _, t := range targets {
+					e.Fixes = append(e.Fixes, "tsrelay url "+t)
+				}
+				return e
 			}
 		}
 		hookURL := ""
@@ -49,7 +53,13 @@ func newURLCmd(c *cli) *cobra.Command {
 			hookURL = state.URL(client.StateKey(base, cwd, target))
 		}
 		if hookURL == "" {
-			return errors.New("no hook is known for this directory and target yet; run tsrelay http first")
+			fix := "tsrelay http 3000"
+			if len(args) == 1 {
+				fix = "tsrelay http " + args[0]
+			}
+			return &cliError{Title: "No hook known here yet", Code: "no_remembered_hook",
+				Reason: "tsrelay url prints what tsrelay http remembered for this directory and target, and it has run for neither yet.",
+				Fixes:  []string{fix}}
 		}
 		if c.json {
 			out := c.stdoutStream()

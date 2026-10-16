@@ -38,8 +38,8 @@ func TestEnvDefaultsInvalid(t *testing.T) {
 	fs.Bool("persistent", false, "")
 	t.Setenv("TSRELAY_PERSISTENT", "maybe")
 	err := envDefaults(fs)
-	var ue *usageError
-	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "TSRELAY_PERSISTENT") {
+	var ce *cliError
+	if !errors.As(err, &ce) || !ce.usage || !strings.Contains(err.Error(), "TSRELAY_PERSISTENT") {
 		t.Fatalf("err = %v, want a usage error naming TSRELAY_PERSISTENT", err)
 	}
 }
