@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { paths, request } from "./client";
+import { paths, request, requestText } from "./client";
 import * as s from "./schemas";
 
 export const keys = {
@@ -17,6 +17,8 @@ export const keys = {
   hook: (id: string) => ["hook", id] as const,
   calls: (id: string) => ["calls", id] as const,
   call: (hookId: string, callId: string) => ["call", hookId, callId] as const,
+  licenses: ["licenses"] as const,
+  licenseText: (textId: string) => ["licenseText", textId] as const,
 };
 
 export function useMe() {
@@ -68,5 +70,24 @@ export function useCall(hookId: string, callId: string | undefined) {
     queryKey: keys.call(hookId, callId ?? ""),
     queryFn: ({ signal }) => request(s.call, "GET", paths.call(hookId, callId!), undefined, signal),
     enabled: callId !== undefined,
+  });
+}
+
+/** useLicenses fetches the licenses document, which is built into the relay. */
+export function useLicenses() {
+  return useQuery({
+    queryKey: keys.licenses,
+    queryFn: ({ signal }) => request(s.licenses, "GET", paths.licenses, undefined, signal),
+    staleTime: Infinity,
+  });
+}
+
+/** useLicenseText fetches one license or notice text once enabled. Its ID is a hash of it. */
+export function useLicenseText(textId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: keys.licenseText(textId),
+    queryFn: ({ signal }) => requestText(paths.licenseText(textId), signal),
+    enabled,
+    staleTime: Infinity,
   });
 }

@@ -351,7 +351,7 @@ Negotiated responses carry `Vary: Accept`. A representation a resource doesn't h
 
 | Method & path | JSON | Events |
 |---|---|---|
-| `GET /` | The entry document: identity, effective grant (roles, channel patterns, limits), current usage, user slug, the relay's capability name (`capName`) and version, the relay-wide setting defaults and maxima, how many calls it keeps per hook (`policy`, with `callsPerHook`), and `links` to `/hooks`, `/channels`, `/tunnel` and `/openapi.json`. For admins, `latestVersion` and `releaseURL` name a tsrelay release newer than the relay's own: the relay asks GitHub's latest-release API on startup and every 6 hours and keeps the answer in memory. A failed check is logged once and keeps the last answer; nothing waits for it. A dev build and `--update-check=false` never ask. Browsers asking for HTML are redirected to `/hooks`. | |
+| `GET /` | The entry document: identity, effective grant (roles, channel patterns, limits), current usage, user slug, the relay's capability name (`capName`), version and, when known, the `commit` it was built from, the relay-wide setting defaults and maxima, how many calls it keeps per hook (`policy`, with `callsPerHook`), and `links` to `/hooks`, `/channels`, `/tunnel`, `/openapi.json` and `/licenses`. For admins, `latestVersion` and `releaseURL` name a tsrelay release newer than the relay's own: the relay asks GitHub's latest-release API on startup and every 6 hours and keeps the answer in memory. A failed check is logged once and keeps the last answer; nothing waits for it. A dev build and `--update-check=false` never ask. Browsers asking for HTML are redirected to `/hooks`. | |
 | `GET /hooks` | The caller's hooks (admins: `?all=true`); `?channel=` keeps those in one channel. Every hook object, here and elsewhere, carries `lastCall`: its newest call's summary. | The caller's hooks and their calls (admins: `?all=true`) |
 | `POST /hooks` | Create. `?dryRun=true` validates without saving and answers `200` with the would-be hook. | |
 | `GET/PATCH/DELETE /hooks/{id}` | Read, update or delete. `PATCH` also accepts `?dryRun=true`, which validates without saving and answers `200` with the would-be hook. | This hook and its calls |
@@ -363,6 +363,10 @@ Negotiated responses carry `Vary: Accept`. A representation a resource doesn't h
 | `GET /channels/{name}` | The channel's hooks (the caller's; admins with `?all=true`: everyone's, as metadata) and whether the caller may receive and send on it. A valid name without hooks is not an error; an invalid one is `404`. | |
 | `GET /tunnel` | Tunnel upgrade only (§6) | |
 | `GET /openapi.json`, `/openapi.yaml` | This API as an OpenAPI 3.1 document, written by hand (`internal/api/openapi.yaml`); a test fails when it and the registered routes disagree. | |
+| `GET /licenses` | The open-source components built into the relay: name, version, ecosystem (`go`, `npm`), licenses, homepage, repository, and the IDs of its license and notice texts. Projected from the SBOM (package `sbom`). | |
+| `GET /licenses/{textId}` | One license or notice text, as plain text. The ID is a hash of the text, so it is cached as immutable; an unknown ID is `404`. | |
+| `GET /notices.txt` | The relay's `NOTICE`, then every component's license and notice texts. `tsrelay licenses` prints the same. | |
+| `GET /sbom.cdx.json` | The CycloneDX 1.6 SBOM these are generated from (`make sbom`). The `.json` here is part of the file name, not a representation. | |
 
 The relay can't say who else may send on a channel: grants arrive per request through WhoIs (§5.1), so it only ever knows the caller's own patterns. The rest is in the tailnet policy.
 
@@ -370,6 +374,8 @@ Events are server-sent: `call` (a call summary, on arrival and on completion) an
 
 - **Hook IDs** are short, opaque and random, with a prefix (`h_`), so they never collide with the UI's `/hooks/new`. Hook paths contain slashes, so they can't serve as IDs.
 - **Validation errors** are `422` problem responses with a per-field `errors` list. A field error that comes from a grant names the limiting rule, for example "channel `billing` is not matched by your receiver patterns `prod`, `staging.*`".
+
+The open-source attribution (the last four) needs no role: anyone the relay can identify may read it.
 
 The CLI uses this same API.
 
@@ -384,6 +390,9 @@ The UI is a React single-page app in `web/`, built with Vite and styled with Tai
 - **Channel:** one channel's hooks, and whether you may receive and send on it. Channel names everywhere else (the hook list, the hook, the admin table) link here; from the admin table and another user's hook, with `?all=true`.
 - **No access:** what the caller is missing, with an example grant.
 - **Admin:** all hooks and tunnels (metadata only), with delete.
+- **Licenses:** the open-source components in the relay, searchable and filtered by ecosystem and license (each filter counts against the others), each opening its license and notice text, and the notices as a download. Open to viewers without a role.
+
+Every page, including the no-access and unidentified states, ends in a footer with the relay's version and commit (linked to GitHub), and links to the licenses and the repository.
 
 Data flow: the app reads and writes only through the JSON API (§10.1), so `Guard` protects it like any other client, and the server decides visibility: owners get a call's query, headers and bodies; admins get metadata only. The UI hides owner-only controls when the viewer isn't the owner, but the API enforces it.
 
@@ -391,9 +400,9 @@ Live updates: one `EventSource` per tab on the event stream of `/hooks` (with `?
 
 Theme: light, dark or the system's, stored in the browser and applied before the first paint by `/theme.js`.
 
-CSP (§5.7): every UI response carries `default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`. There is no inline script or style; the theme script is a file, and Base UI is told not to render `<style>` elements. Captured data is only ever rendered as text: the highlighting comes from the app's own tokenizer, invisible and bidi control characters are shown as `⟨U+XXXX⟩`, and only the hook's URL and the relay's own routes are links. CI fails on any HTML sink in the app's source and on any CSP violation in the end-to-end tests.
+CSP (§5.7): every UI response carries `default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`. There is no inline script or style; the theme script is a file, and Base UI is told not to render `<style>` elements. Captured data is only ever rendered as text: the highlighting comes from the app's own tokenizer, invisible and bidi control characters are shown as `⟨U+XXXX⟩`, and only the hook's URL, the relay's own routes and the http(s) homepages and repositories the SBOM names are links. CI fails on any HTML sink in the app's source and on any CSP violation in the end-to-end tests.
 
-Routes: `/hooks`, `/hooks/new`, `/hooks/{id}`, `/hooks/{id}/edit`, `/hooks/{id}/calls`, `/hooks/{id}/calls/{callID}`, `/channels`, `/channels/{name}`, `/admin`, `/cli`, and `/inspect/{callID}`, which redirects to the call on the server (the CLI links here) or shows that the call has expired. The relay serves the resources among them as HTML by giving browsers the app, and redirects `/` to `/hooks`. Every other path that isn't a built file gets the app when asked for HTML, and a 404 problem otherwise. An admin without the receiver role starts on `/admin`.
+Routes: `/hooks`, `/hooks/new`, `/hooks/{id}`, `/hooks/{id}/edit`, `/hooks/{id}/calls`, `/hooks/{id}/calls/{callID}`, `/channels`, `/channels/{name}`, `/admin`, `/cli`, `/licenses`, and `/inspect/{callID}`, which redirects to the call on the server (the CLI links here) or shows that the call has expired. The relay serves the resources among them as HTML by giving browsers the app, and redirects `/` to `/hooks`. Every other path that isn't a built file gets the app when asked for HTML, and a 404 problem otherwise. An admin without the receiver role starts on `/admin`.
 
 ## 11. Storage
 

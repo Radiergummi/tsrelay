@@ -95,6 +95,25 @@ jobs:
       - name: background tunnel tests
         run: go test -run '^TestBackground' ./cmd/tsrelay
 
+  # Regenerates the SBOM and license texts the binary embeds, and fails if
+  # they differ from what's committed.
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.1'
+
+      - uses: ./.github/actions/node
+
+      - name: Regenerate
+        run: ./scripts/build-sbom.sh
+
+      - name: Compare
+        run: make sbom-verify
+
   # Builds the release image for both platforms without pushing it, so a
   # broken Dockerfile fails here rather than on a tag.
   docker:

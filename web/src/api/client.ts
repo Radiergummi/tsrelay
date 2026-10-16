@@ -55,6 +55,9 @@ export const paths = {
   call: (hookId: string, callId: string) => `/hooks/${id(hookId)}/calls/${id(callId)}`,
   replay: (hookId: string, callId: string) => `/hooks/${id(hookId)}/calls/${id(callId)}/replay`,
   test: (hookId: string) => `/hooks/${id(hookId)}/test`,
+  licenses: "/licenses",
+  licenseText: (textId: string) => `/licenses/${id(textId)}`,
+  notices: "/notices.txt",
   channels: (all = false) => "/channels" + query({ all }),
   channel: (name: string, all = false) => `/channels/${id(name)}` + query({ all }),
 };
@@ -130,6 +133,12 @@ export async function request<T>(
 ): Promise<T> {
   const resp = await send(method, path, body, signal);
   return schema.parse(await resp.json());
+}
+
+/** requestText sends a GET request and returns the answer as text. */
+export async function requestText(path: string, signal?: AbortSignal): Promise<string> {
+  const resp = await send("GET", path, undefined, signal);
+  return resp.text();
 }
 
 /** requestVoid sends a request whose answer has no body (204). */

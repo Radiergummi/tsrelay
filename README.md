@@ -257,6 +257,10 @@ Errors go to stderr and say what went wrong, why, and what to try instead:
 
 With `--json` they are `{"error": {"title": …, "reason": …, "fixes": […], "code": …}}`, where `code` is the relay's `Tsrelay-Error` code for a refusal, `usage` for a mistake on the command line, or one of the CLI's own (such as `relay_unreachable`). A usage error exits with status 2, any other with 1.
 
+## Open-source licenses
+
+tsrelay is built from open-source projects whose licenses ask for their notices to travel with it. The web UI's footer links to the licenses page (`/licenses`), which lists each one with its license and notice texts, whatever roles you have. `tsrelay licenses` prints the same notices, and the relay's licenses page if it knows your relay. The relay also serves them as one text file at `/notices.txt`, and the software bill of materials they come from at `/sbom.cdx.json` (CycloneDX).
+
 # Running a relay
 
 This half is for operators: whoever adds the relay to the tailnet and decides who may use it.
