@@ -1,8 +1,14 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 
 afterEach(() => cleanup());
+
+// Pages are lazy routes, so the first test in a file to render one waits
+// for Vitest to transform that page on first import. With every worker
+// busy that can pass Testing Library's default of 1 s for findBy* and
+// waitFor; a failing query still fails, only later.
+configure({ asyncUtilTimeout: 5000 });
 
 // This file also runs for plugins/*.test.ts, which opt into the "node"
 // environment and have no window or Element. ./server pulls in msw/node,
