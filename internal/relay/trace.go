@@ -20,8 +20,8 @@ type callTrace struct {
 }
 
 // startCall starts a call's server span. A sender's call joins the
-// sender's trace if h.Propagator is set; an injected call is parented by
-// whatever span ctx already carries (the API request's).
+// sender's trace if h.Propagator is set; an injected or public call never
+// joins a trace from its headers.
 func (h *Handler) startCall(ctx context.Context, header http.Header, injected bool) callTrace {
 	if h.Tracer == nil {
 		return callTrace{ctx: ctx}

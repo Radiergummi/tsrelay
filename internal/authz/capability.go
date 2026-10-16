@@ -35,6 +35,9 @@ type Effective struct {
 	// Patterns maps each granted role to the channel patterns it applies to.
 	Patterns map[Role][]string
 	Limits   Limits
+	// Public lets the node's user make their hooks reachable from the
+	// internet. Only a value that grants the receiver role can set it.
+	Public bool
 }
 
 // Has reports whether the role was granted at all.
@@ -59,6 +62,7 @@ type grantValue struct {
 	MaxHooks   *int      `json:"maxHooks"`
 	MaxTunnels *int      `json:"maxTunnels"`
 	MaxHookTTL *duration `json:"maxHookTTL"`
+	Public     bool      `json:"public"`
 }
 
 type duration time.Duration
@@ -112,6 +116,9 @@ func Parse(values []tailcfg.RawMessage, defaults Limits) (eff Effective, errs []
 		}
 		if v.MaxHookTTL != nil && eff.Limits.MaxHookTTL != 0 {
 			eff.Limits.MaxHookTTL = max(eff.Limits.MaxHookTTL, time.Duration(*v.MaxHookTTL))
+		}
+		if v.Public && slices.Contains(v.Roles, RoleReceiver) {
+			eff.Public = true
 		}
 	}
 	return eff, errs

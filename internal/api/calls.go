@@ -144,7 +144,7 @@ func (a *API) replayCall(w http.ResponseWriter, r *http.Request, id authz.Identi
 	}
 	a.inject(w, r, relay.Injection{
 		Hook: h, Kind: inspect.KindReplay, ReplayOf: orig.ID,
-		Sender: authz.Identity{NodeName: orig.Sender.Node, Tags: orig.Sender.Tags, Login: orig.Sender.Login},
+		Sender: authz.Identity{NodeName: orig.Sender.Node, Tags: orig.Sender.Tags, Login: orig.Sender.Login}, Public: orig.Sender.Public,
 		Method: orig.Method, Path: orig.Path, Query: orig.Query, Header: orig.RequestHeaders, Body: orig.RequestBody.Body,
 		From: r,
 	})

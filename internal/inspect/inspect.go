@@ -19,6 +19,7 @@ const (
 	KindSender Kind = "sender" // a callback from a sender
 	KindReplay Kind = "replay" // the owner replayed a captured call
 	KindTest   Kind = "test"   // the owner sent a test request
+	KindPublic Kind = "public" // a callback from the internet, through Funnel
 )
 
 const (
@@ -49,6 +50,8 @@ type Sender struct {
 	Tags  []string `json:"tags,omitempty"`
 	Login string   `json:"login,omitempty"`
 	IP    string   `json:"ip,omitempty"`
+	// Public means the sender is on the internet; only IP is known.
+	Public bool `json:"public,omitempty"`
 }
 
 // Attempt is one try at delivering a call down a tunnel. v1 makes at most
@@ -113,7 +116,7 @@ type Summary struct {
 func (c *Call) Summary() Summary {
 	return Summary{
 		ID: c.ID, HookID: c.HookID, ReceivedAt: c.ReceivedAt, Kind: c.Kind, ReplayOf: c.ReplayOf,
-		Sender: Sender{Node: c.Sender.Node, Tags: slices.Clone(c.Sender.Tags), Login: c.Sender.Login, IP: c.Sender.IP},
+		Sender: Sender{Node: c.Sender.Node, Tags: slices.Clone(c.Sender.Tags), Login: c.Sender.Login, IP: c.Sender.IP, Public: c.Sender.Public},
 		Method: c.Method, Path: c.Path, Outcome: c.Outcome, Status: c.Status, Duration: c.Duration,
 	}
 }

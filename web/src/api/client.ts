@@ -46,6 +46,7 @@ export const paths = {
   me: "/api/v1/me",
   hooks: (all = false) => (all ? "/api/v1/hooks?all=true" : "/api/v1/hooks"),
   hook: (hookId: string) => `/api/v1/hooks/${id(hookId)}`,
+  rotatePublicUrl: (hookId: string) => `/api/v1/hooks/${id(hookId)}/rotate-public-url`,
   calls: (hookId: string) => `/api/v1/hooks/${id(hookId)}/calls`,
   call: (hookId: string, callId: string) => `/api/v1/hooks/${id(hookId)}/calls/${id(callId)}`,
   replay: (hookId: string, callId: string) =>

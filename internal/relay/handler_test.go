@@ -177,6 +177,8 @@ func TestHeaders(t *testing.T) {
 		"Tsrelay-Anything":    {"spoofed"},
 		"X-Forwarded-For":     {"6.6.6.6"},
 		"X-Forwarded-Prefix":  {"/spoofed"},
+		"X-Forwarded-Uri":     {"/admin"},
+		"X-Forwarded-Server":  {"spoofed"},
 		"Stripe-Signature":    {"t=1,v1=abc"},
 	})
 	h := <-seen
@@ -191,6 +193,8 @@ func TestHeaders(t *testing.T) {
 		"X-Forwarded-Host":     strings.TrimPrefix(e.srv.URL, "http://"),
 		"X-Forwarded-Proto":    "http",
 		"X-Forwarded-Prefix":   "/~moritz/cb",
+		"X-Forwarded-Uri":      "",
+		"X-Forwarded-Server":   "",
 		"Stripe-Signature":     "t=1,v1=abc",
 	}
 	for k, want := range checks {
@@ -322,10 +326,13 @@ func TestOverloaded(t *testing.T) {
 func TestTunnelLostBeforeHeaders(t *testing.T) {
 	e := newEnv(t)
 	var drop func()
-	entered := make(chan struct{})
+	entered, done := make(chan struct{}), make(chan struct{})
+	t.Cleanup(func() { close(done) })
+	// The app never answers: returning when its request is canceled would
+	// let the tunnel's server send an empty 200 before the drop arrives.
 	_, drop = e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		close(entered)
-		<-r.Context().Done()
+		<-done
 	}), tunnel.Options{})
 	go func() { <-entered; drop() }()
 	wantProblem(t, e.do(sender, "POST", "/~moritz/cb", nil, nil), 563, problem.TunnelLost)
