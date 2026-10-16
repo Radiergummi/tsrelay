@@ -20,9 +20,10 @@ export default defineConfig({
     strictPort: true,
     // The dev harness (make dev) answers the resources and the CLI's
     // inspect links. Resources share their URLs with the app's pages, so a
-    // page load (Accept: text/html) gets Vite's index.html instead.
+    // page load (Accept: text/html) gets Vite's index.html instead. Vite
+    // matches the URL with its query, as in /hooks?all=true.
     proxy: {
-      "^/(hooks(/.*)?|openapi(\\..*)?)?$": {
+      "^/(hooks(/[^?]*)?|openapi(\\.[^?]*)?)?(\\?.*)?$": {
         target: "http://127.0.0.1:8099",
         bypass: (req) => (req.headers.accept?.includes("text/html") ? "/index.html" : undefined),
       },
