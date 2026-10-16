@@ -195,6 +195,13 @@ func TestCompleteFailsSilently(t *testing.T) {
 	check("not identified", d, "--relay="+e.relayURL)
 	e.fake.Fail(nil)
 
+	// A bad TSRELAY_* variable fails the commands, but not completions.
+	t.Setenv("TSRELAY_JSON", "maybe")
+	if got, _ := complete(t, deps{}, "serve", "--log-format", ""); !slices.Equal(got, []string{"json", "text"}) {
+		t.Errorf("with a bad TSRELAY_JSON: got %q", got)
+	}
+	unsetenv(t, "TSRELAY_JSON")
+
 	// A relay of another version answers, but the warning stays off the
 	// terminal.
 	e.restartRelayAt("v9.9.9")

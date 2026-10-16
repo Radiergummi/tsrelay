@@ -38,6 +38,9 @@ func newRoot(c *cli) *cobra.Command {
 		SuggestionsMinimumDistance: 2,
 		RunE:                       c.helpAndFail,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if cmd.Name() == cobra.ShellCompRequestCmd || cmd.Name() == cobra.ShellCompNoDescRequestCmd {
+				return nil // completing applies the environment to the command completed
+			}
 			if err := envDefaults(cmd.Flags()); err != nil {
 				return err
 			}
