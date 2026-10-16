@@ -1,4 +1,4 @@
-import type { FieldError, Hook } from "@/api/schemas";
+import type { Effective, FieldError, Hook } from "@/api/schemas";
 
 export type FieldType = "text" | "bool" | "int" | "duration" | "ratelimit" | "time";
 
@@ -39,7 +39,7 @@ export function fieldValue(raw: string, type: FieldType): { value?: unknown; err
       const m = /^(\d+(?:\.\d+)?)\s*\/\s*(\d+)$/.exec(s);
       return m
         ? { value: { perSecond: Number(m[1]), burst: Number(m[2]) } }
-        : { error: "must be calls per second / burst, like 100/200" };
+        : { error: "needs calls per second and a whole-number burst" };
     }
     default:
       return { value: s };
@@ -100,6 +100,16 @@ export function initialValues(h: Hook | undefined): Record<string, string> {
     "settings.capture": s.capture === undefined ? "" : String(s.capture),
   });
   return v;
+}
+
+/** effectiveSettings are the delivery settings values would give: each valid override, else the relay default. */
+export function effectiveSettings(values: Record<string, string>, defaults: Effective): Effective {
+  const e: Record<string, unknown> = { ...defaults };
+  for (const k of Object.keys(defaults)) {
+    const r = fieldValue(values[`settings.${k}`] ?? "", fieldTypes[`settings.${k}`]!);
+    if (r.value !== undefined) e[k] = r.value;
+  }
+  return e as Effective;
 }
 
 /** parseHeaders turns "Name: value" lines into the API's header object. A line without a colon is a header with an empty value. */

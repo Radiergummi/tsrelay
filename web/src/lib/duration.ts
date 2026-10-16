@@ -32,4 +32,21 @@ export function formatDuration(ms: number): string {
 /** formatGoDuration formats a Go duration string, showing an unreadable one as 0. */
 export const formatGoDuration = (go: string) => formatDuration(parseDuration(go) ?? 0);
 
+/** humanDuration reads a setting's duration in words: "10 s", "60 s", "90 s", "2 min", "1 h". */
+export function humanDuration(ms: number): string {
+  if (ms >= 3_600_000 && ms % 3_600_000 === 0) return `${ms / 3_600_000} h`;
+  if (ms >= 120_000 && ms % 60_000 === 0) return `${ms / 60_000} min`;
+  if (ms >= 1000 || ms === 0) return `${trim(ms / 1000)} s`;
+  return `${trim(ms)} ms`;
+}
+
+/** humanSpan reads a lifetime coarsely, in whole days, hours or minutes: "76 d", "5 h", "30 min". */
+export function humanSpan(ms: number): string {
+  const hours = Math.round(ms / 3_600_000);
+  const minutes = Math.round(ms / 60_000);
+  if (hours >= 24) return `${Math.round(ms / 86_400_000)} d`;
+  if (minutes >= 60) return `${hours} h`;
+  return `${Math.max(1, minutes)} min`;
+}
+
 const trim = (n: number) => String(Number(n.toFixed(3)));
