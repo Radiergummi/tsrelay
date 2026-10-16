@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -258,7 +257,12 @@ func newHooksRotateURLCmd(c *cli) *cobra.Command {
 			if c.json {
 				return writeJSON(out, h)
 			}
-			fmt.Fprintln(out.w, out.style(styleBold, cmp.Or(h.PublicURL, h.URL)))
+			if h.PublicURL == "" {
+				errStream := c.stderrStream()
+				fmt.Fprintln(errStream.w, errStream.style(styleWarn, "the hook is public, but this relay does not serve hooks on the internet (it runs without --funnel)"))
+				return nil
+			}
+			fmt.Fprintln(out.w, out.style(styleBold, h.PublicURL))
 			return nil
 		},
 	}

@@ -271,3 +271,24 @@ func TestHooksPublic(t *testing.T) {
 		t.Fatalf("rotate-url on a private hook: exit %d\n%s", code, errOut)
 	}
 }
+
+// TestHooksRotateURLWithoutFunnel covers a relay running without --funnel:
+// a public hook has no PublicURL, so rotate-url must not print the tailnet
+// URL as if it were the new public one.
+func TestHooksRotateURLWithoutFunnel(t *testing.T) {
+	e := newCLIEnv(t)
+	if code, _, errOut := e.tsrelay("hooks", "create", "cb", "--public"); code != 0 {
+		t.Fatalf("create: exit %d\n%s", code, errOut)
+	}
+	e.restartRelayNoFunnel()
+	code, out, errOut := e.tsrelay("hooks", "rotate-url", "cb")
+	if code != 0 {
+		t.Fatalf("rotate-url: exit %d\n%s", code, errOut)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("stdout = %q, want nothing printed as a public URL", out)
+	}
+	if !strings.Contains(errOut, "does not serve hooks on the internet") {
+		t.Fatalf("rotate-url without --funnel does not warn:\n%s", errOut)
+	}
+}

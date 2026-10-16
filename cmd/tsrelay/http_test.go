@@ -88,6 +88,18 @@ func newCLIEnv(t *testing.T) *cliEnv {
 // already saw from the instance before it.
 func (e *cliEnv) restartRelay() { e.restartRelayAt("") }
 
+// restartRelayNoFunnel replaces the relay with a fresh instance over the
+// same hook store that does not serve Funnel, as if the operator had
+// restarted it without --funnel.
+func (e *cliEnv) restartRelayNoFunnel() {
+	e.handlerMu.Lock()
+	defer e.handlerMu.Unlock()
+	e.srv.Close()
+	srv := server.New(server.Config{BaseURL: e.relayURL, AllowedHosts: []string{"127.0.0.1"}},
+		e.fake, e.mgr, audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))))
+	e.srv, e.handler = srv, srv.Handler()
+}
+
 // restartRelayAt is restartRelay with the new instance reporting version
 // ("" is dev).
 func (e *cliEnv) restartRelayAt(version string) {
