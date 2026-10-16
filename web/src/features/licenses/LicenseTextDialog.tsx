@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { licenseLabel } from "@/lib/licenseLabel";
+import { licenseLabel, licensesOf } from "@/lib/licenseLabel";
 
 function TextPane({ id, enabled, failed }: { id: string; enabled: boolean; failed: string }) {
   const text = useLicenseText(id, enabled);
@@ -40,7 +40,7 @@ export function LicenseTextDialog({
         <DialogHeader>
           <DialogTitle>{component.name}</DialogTitle>
           <DialogDescription>
-            {component.licenses.map(licenseLabel).join(", ")}
+            {licensesOf(component).map(licenseLabel).join(", ")}
             {component.version ? ` · ${component.version}` : ""}
           </DialogDescription>
         </DialogHeader>

@@ -8,7 +8,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { LicenseTextDialog } from "@/features/licenses/LicenseTextDialog";
-import { licenseLabel } from "@/lib/licenseLabel";
+import { licenseLabel, licensesOf } from "@/lib/licenseLabel";
 import { cn } from "@/lib/utils";
 
 type Ecosystem = "all" | "go" | "npm" | "other";
@@ -27,7 +27,7 @@ const matchesSearch = (c: LicenseComponent, needle: string) =>
 const matchesEcosystem = (c: LicenseComponent, ecosystem: Ecosystem) =>
   ecosystem === "all" || c.ecosystem === ecosystem;
 const matchesLicense = (c: LicenseComponent, license: string) =>
-  license === "all" || c.licenses.some((l) => licenseLabel(l) === license);
+  license === "all" || licensesOf(c).some((l) => licenseLabel(l) === license);
 
 /**
  * browserURL turns a VCS URL ("git+https://…", "git://…") into one a
@@ -69,7 +69,7 @@ export function LicensesPage() {
   const licenseOptions = useMemo(() => {
     const perLicense = new Map<string, number>();
     for (const c of byEcosystemAndSearch)
-      for (const label of new Set(c.licenses.map(licenseLabel)))
+      for (const label of new Set(licensesOf(c).map(licenseLabel)))
         perLicense.set(label, (perLicense.get(label) ?? 0) + 1);
     return [...perLicense.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [byEcosystemAndSearch]);
@@ -189,7 +189,7 @@ function LicenseCard({ component: c }: { component: LicenseComponent }) {
       <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-1">
         {/* Every license on the card opens the same text, so the badges are
             buttons only when there is one. */}
-        {c.licenses.map((l, i) =>
+        {licensesOf(c).map((l, i) =>
           c.textId ? (
             <button
               key={l.id || l.name || i}

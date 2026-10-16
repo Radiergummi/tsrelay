@@ -101,6 +101,17 @@ test("opens the license text and the notice from a license badge", async () => {
   expect(within(dialog).getByRole("heading", { name: "NOTICE" })).toBeInTheDocument();
 });
 
+// License detection misses some license files the harvester still finds.
+test("a text whose license was not detected opens from an Unknown badge", async () => {
+  server.use(http.get("/licenses/:id", () => HttpResponse.text("MIT License body")));
+  renderPage([{ name: "alpha", ecosystem: "go", licenses: [], textId: "t1" }]);
+  await screen.findByText("alpha");
+  expect(options()).toContain("Unknown (1)");
+  await userEvent.click(screen.getByRole("button", { name: "Unknown" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(await within(dialog).findByText("MIT License body")).toBeInTheDocument();
+});
+
 test("a license without a text is not a button", async () => {
   renderPage([{ name: "alpha", ecosystem: "npm", licenses: [{ id: "MIT" }] }]);
   expect(await screen.findByText("MIT")).toBeInTheDocument();
