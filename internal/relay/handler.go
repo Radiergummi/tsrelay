@@ -32,11 +32,12 @@ import (
 // Headers the relay sets for the local application. Incoming headers with
 // the Tsrelay- prefix are always removed first, so senders cannot spoof them.
 const (
-	HeaderSenderNode  = "Tsrelay-Sender-Node"
-	HeaderSenderTags  = "Tsrelay-Sender-Tags"
-	HeaderSenderLogin = "Tsrelay-Sender-Login"
-	HeaderHook        = "Tsrelay-Hook"
-	HeaderCallID      = "Tsrelay-Call-Id"
+	HeaderSenderNode   = "Tsrelay-Sender-Node"
+	HeaderSenderTags   = "Tsrelay-Sender-Tags"
+	HeaderSenderLogin  = "Tsrelay-Sender-Login"
+	HeaderSenderPublic = "Tsrelay-Sender-Public"
+	HeaderHook         = "Tsrelay-Hook"
+	HeaderCallID       = "Tsrelay-Call-Id"
 )
 
 // DefaultHoldQueue is how many calls per hook may wait for a tunnel at once.
@@ -62,6 +63,8 @@ type Handler struct {
 	HoldQueue  int                // calls per hook that may wait for a tunnel; 0 means DefaultHoldQueue
 	Inspect    *inspect.Inspector // records calls for the inspector; nil records nothing
 
+	PublicMaxBody int64 // body cap of public calls; 0: only the hook's own limit
+
 	Tracer     trace.Tracer                  // nil: tracing off; no span code runs
 	Propagator propagation.TextMapPropagator // nil: don't join senders' traces or pass ours on
 
@@ -74,12 +77,26 @@ type Handler struct {
 // Held returns how many calls are currently waiting for a tunnel.
 func (h *Handler) Held() int64 { return h.heldTotal.Load() }
 
+type publicKey struct{}
+
+// ServePublic serves a call that arrived from the internet through Funnel
+// at /+{token}/…: no sender is identified, and the hook's token alone
+// routes the call. r.RemoteAddr must be the internet client's address.
+func (h *Handler) ServePublic(w http.ResponseWriter, r *http.Request) {
+	h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), publicKey{}, true)))
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	callID := ids.New("c_")
 	w.Header().Set(HeaderCallID, callID)
 	inj, _ := r.Context().Value(injectKey{}).(*injection) // nil for sender calls
-	ct := h.startCall(r.Context(), r.Header, inj != nil)
+	public := r.Context().Value(publicKey{}) != nil       // through ServePublic
+	logPath := r.URL.Path
+	if public {
+		logPath = publicLogPath(r.URL)
+	}
+	ct := h.startCall(r.Context(), r.Header, inj != nil || public)
 	rec := &recorder{ResponseWriter: w}
 	parent := r.Context() // ends when the sender goes away
 	// Limits cancel the call with a cause that selects the error reported.
@@ -95,6 +112,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	replayOf := ""
 	if inj != nil {
 		inj.callID, kind, replayOf = callID, inj.kind, inj.replayOf
+	}
+	if public {
+		kind = inspect.KindPublic
 	}
 	var record *callRecord    // set once the call is routed to a hook
 	var delivery time.Time    // when delivery began, holding included
@@ -127,17 +147,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		attrs = append(attrs,
 			slog.String("callID", callID), slog.String("kind", string(kind)),
 			slog.String("hookID", string(hook.ID)), audit.Actor(sender),
-			slog.String("method", r.Method), slog.String("path", r.URL.Path),
+			slog.String("method", r.Method), slog.String("path", logPath),
 			slog.Int("status", rec.status), slog.String("error", code),
 			slog.Int64("bytesIn", body.n), slog.Int64("bytesOut", rec.bytes),
 			slog.Duration("waited", waited), slog.Duration("duration", time.Since(start)),
 		)
+		if public {
+			ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+			attrs = append(attrs, slog.String("clientIP", ip))
+		}
 		if !headersAt.IsZero() {
 			attrs = append(attrs, slog.Duration("ttfb", headersAt.Sub(delivery.Add(waited))))
 		}
 		h.Audit.Log(r.Context(), audit.Call, attrs...)
 		ct.finish(callAttrs{
-			callID: callID, kind: string(kind), hookID: string(hook.ID), method: r.Method, path: r.URL.Path,
+			callID: callID, kind: string(kind), hookID: string(hook.ID), method: r.Method, path: logPath,
 			code: code, senderNode: sender.NodeName, senderTags: sender.Tags, status: rec.status,
 			bytesIn: body.n, bytesOut: rec.bytes, waited: waited,
 		})
@@ -153,26 +177,39 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	slug, rest, ok := splitRoute(r.URL.Path)
-	if !ok {
-		problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
-		return
-	}
 	var err error
-	if inj != nil {
-		sender = inj.sender // the owner's replay or test: no sender authorization (DESIGN.md §9.3)
-	} else {
-		at := ct.child(h.Tracer, "tsrelay.authorize")
-		sender, err = h.Identifier.Identify(at.ctx, r.RemoteAddr)
-		at.end(attribute.KeyValue{}, false)
-		if err != nil || !sender.Grants.Has(authz.RoleSender) {
-			h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender),
-				slog.String("action", "call"), slog.String("reason", "no sender role"))
-			problem.New(http.StatusForbidden, problem.SenderForbidden, "this node has no sender role on the relay").Write(rec)
+	var segs int
+	var found bool
+	if public {
+		// An internet client has no tailnet identity: sender stays empty,
+		// and the hook's token is all that routes the call.
+		token, ok := splitPublicRoute(r.URL.Path)
+		if !ok {
+			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 			return
 		}
+		hook, found = h.Hooks.RoutePublic(token)
+	} else {
+		slug, rest, ok := splitRoute(r.URL.Path)
+		if !ok {
+			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
+			return
+		}
+		if inj != nil {
+			sender = inj.sender // the owner's replay or test: no sender authorization (DESIGN.md §9.3)
+		} else {
+			at := ct.child(h.Tracer, "tsrelay.authorize")
+			sender, err = h.Identifier.Identify(at.ctx, r.RemoteAddr)
+			at.end(attribute.KeyValue{}, false)
+			if err != nil || !sender.Grants.Has(authz.RoleSender) {
+				h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender),
+					slog.String("action", "call"), slog.String("reason", "no sender role"))
+				problem.New(http.StatusForbidden, problem.SenderForbidden, "this node has no sender role on the relay").Write(rec)
+				return
+			}
+		}
+		hook, segs, found = h.Hooks.Route(slug, rest)
 	}
-	hook, segs, found := h.Hooks.Route(slug, rest)
 	if found && encodedSlashIn(r.URL, 1+segs) {
 		found = false // the decoded and escaped paths would split differently
 	}
@@ -191,7 +228,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			body.capture, rec.capture = record.reqBuf, record.respBuf
 		}
 	}
-	if !found || (inj == nil && !sender.Grants.Allows(authz.RoleSender, hook.Channel)) {
+	if !found || (inj == nil && !public && !sender.Grants.Allows(authz.RoleSender, hook.Channel)) {
 		if found {
 			ct.event("channel_denied")
 			h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender), audit.Hook(hook),
@@ -200,6 +237,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 		return
+	}
+	if public && h.PublicMaxBody > 0 && (eff.MaxBodyBytes == 0 || eff.MaxBodyBytes > h.PublicMaxBody) {
+		eff.MaxBodyBytes = h.PublicMaxBody
 	}
 	if eff.MaxBodyBytes > 0 && r.ContentLength > eff.MaxBodyBytes {
 		ct.event("body_too_large")
@@ -251,6 +291,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if public && !tun.Public() {
+		// The owner's grants no longer allow public hooks. The caller gets
+		// the same answer as for an unknown token; the owner sees the call.
+		delivery = time.Time{}
+		h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Hook(hook),
+			slog.String("action", "call"), slog.String("reason", "the owner may not receive public calls"))
+		problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
+		return
+	}
+
 	served = tun
 	idle := newIdleWatch(eff.IdleTimeout.Std(), func() {
 		cancel(errIdleTimeout)
@@ -261,7 +311,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Body = &callBody{ReadCloser: r.Body, max: eff.MaxBodyBytes, idle: idle, cancel: cancel}
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			h.rewrite(pr, hook, eff, sender, callID, 1+segs)
+			h.rewrite(pr, hook, eff, sender, callID, 1+segs, public)
 		},
 		// The relay's call ID replaces any the local app set. A Tsrelay-Error
 		// the app set is dropped, so its own answers are never taken for the
@@ -338,10 +388,20 @@ func (h *Handler) hookExists(id hooks.ID) bool {
 	return ok
 }
 
-func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.Effective, sender authz.Identity, callID string, segments int) {
+func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.Effective, sender authz.Identity, callID string, segments int, public bool) {
 	// Not pr.SetXForwarded: it appends to a sender-supplied X-Forwarded-For,
 	// which would let senders spoof it. These come from the connection only.
 	out := pr.Out
+	if public {
+		// An internet client may not supply forwarding or trace headers.
+		for k := range out.Header {
+			if strings.HasPrefix(k, "X-Forwarded-") {
+				delete(out.Header, k)
+			}
+		}
+		out.Header.Del("Traceparent")
+		out.Header.Del("Tracestate")
+	}
 	if ip, _, err := net.SplitHostPort(pr.In.RemoteAddr); err == nil {
 		out.Header.Set("X-Forwarded-For", ip)
 	}
@@ -359,13 +419,21 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.
 	if eff.HostHeader == hooks.HostRewrite {
 		out.Header.Set(tunnel.HeaderTunnelHost, "rewrite")
 	}
-	out.Header.Set("X-Forwarded-Prefix", hook.Route())
-	out.Header.Set(HeaderSenderNode, sender.NodeName)
-	if len(sender.Tags) > 0 {
-		out.Header.Set(HeaderSenderTags, strings.Join(sender.Tags, ","))
+	prefix := hook.Route()
+	if public {
+		prefix = hook.PublicRoute()
 	}
-	if sender.Login != "" {
-		out.Header.Set(HeaderSenderLogin, sender.Login)
+	out.Header.Set("X-Forwarded-Prefix", prefix)
+	if public {
+		out.Header.Set(HeaderSenderPublic, "true")
+	} else {
+		out.Header.Set(HeaderSenderNode, sender.NodeName)
+		if len(sender.Tags) > 0 {
+			out.Header.Set(HeaderSenderTags, strings.Join(sender.Tags, ","))
+		}
+		if sender.Login != "" {
+			out.Header.Set(HeaderSenderLogin, sender.Login)
+		}
 	}
 	out.Header.Set(HeaderHook, hook.Slug+"/"+hook.Path)
 	out.Header.Set(HeaderCallID, callID)

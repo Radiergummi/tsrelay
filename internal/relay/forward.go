@@ -65,6 +65,24 @@ func splitRoute(path string) (slug, rest string, ok bool) {
 	return slug, rest, slug != "" && rest != ""
 }
 
+// splitPublicRoute splits a public call's decoded path "/+{token}/…" and
+// returns the token.
+func splitPublicRoute(path string) (token string, ok bool) {
+	after, found := strings.CutPrefix(path, "/+")
+	if !found {
+		return "", false
+	}
+	token, _, _ = strings.Cut(after, "/")
+	return token, token != ""
+}
+
+// publicLogPath is a public call's path as logs and spans show it: the
+// token works like a password, so a placeholder stands in for it.
+func publicLogPath(u *url.URL) string {
+	rest, _ := remainder(u, 1)
+	return "/+{token}" + rest
+}
+
 // remainder returns u's path after its first n segments, decoded and
 // escaped, always starting with "/". The escaped form is what gets
 // forwarded, so encodings such as %2F survive the relay.

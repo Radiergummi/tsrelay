@@ -36,7 +36,7 @@ func (h *Handler) startRecord(r *http.Request, callID string, start time.Time, k
 	query, queryCut := h.Inspect.TruncateQuery(r.URL.RawQuery)
 	h.Inspect.Add(inspect.Call{
 		ID: callID, HookID: hook.ID, Owner: hook.Owner, ReceivedAt: start, Kind: kind, ReplayOf: replayOf,
-		Sender: inspect.Sender{Node: sender.NodeName, Tags: sender.Tags, Login: sender.Login, IP: ip},
+		Sender: inspect.Sender{Node: sender.NodeName, Tags: sender.Tags, Login: sender.Login, IP: ip, Public: kind == inspect.KindPublic},
 		Method: r.Method, Path: cmp.Or(rawPath, path), Query: query, QueryTruncated: queryCut,
 		RequestHeaders: headers, Redacted: redacted,
 		Outcome: inspect.OutcomePending, Attempts: []inspect.Attempt{},
