@@ -32,7 +32,7 @@ func visitTyped(fs *pflag.FlagSet, fn func(*pflag.Flag)) {
 // --ephemeral-grace ← TSRELAY_EPHEMERAL_GRACE). Variables that match no
 // flag are ignored.
 func envDefaults(fs *pflag.FlagSet) error {
-	var errs []string
+	var errs, fixes []string
 	fs.VisitAll(func(f *pflag.Flag) {
 		if f.Changed {
 			return
@@ -44,12 +44,13 @@ func envDefaults(fs *pflag.FlagSet) error {
 		}
 		if err := fs.Set(f.Name, v); err != nil {
 			errs = append(errs, fmt.Sprintf("%s=%q: %v", name, v, err))
+			fixes = append(fixes, fmt.Sprintf("Correct or unset %s (it sets --%s)", name, f.Name))
 			return
 		}
 		fs.SetAnnotation(f.Name, envAnnotation, []string{"1"})
 	})
 	if len(errs) > 0 {
-		return usagef("invalid environment: %s", strings.Join(errs, "; "))
+		return usage("Invalid TSRELAY_* variable in the environment", sentence(strings.Join(errs, "; ")), fixes...)
 	}
 	return nil
 }

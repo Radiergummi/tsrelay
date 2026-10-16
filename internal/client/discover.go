@@ -12,6 +12,9 @@ import (
 // DefaultRelayHost is the relay's default MagicDNS host name.
 const DefaultRelayHost = "tsrelay"
 
+// ErrNoMagicDNS means the tailnet has no MagicDNS suffix to find the relay by.
+var ErrNoMagicDNS = errors.New("could not determine the tailnet's MagicDNS suffix; pass --relay or set TSRELAY_RELAY")
+
 // RelayURL returns the relay base URL: explicit if given (https:// is
 // assumed without a scheme), else https://tsrelay.<MagicDNS suffix> of the
 // tailnet this machine is on.
@@ -27,7 +30,7 @@ func RelayURL(ctx context.Context, explicit string, status func(context.Context)
 		return "", fmt.Errorf("asking the local Tailscale for the tailnet name (is Tailscale running?): %w", err)
 	}
 	if st.CurrentTailnet == nil || st.CurrentTailnet.MagicDNSSuffix == "" {
-		return "", errors.New("could not determine the tailnet's MagicDNS suffix; pass --relay or set TSRELAY_RELAY")
+		return "", ErrNoMagicDNS
 	}
 	return "https://" + DefaultRelayHost + "." + st.CurrentTailnet.MagicDNSSuffix, nil
 }

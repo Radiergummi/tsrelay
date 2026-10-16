@@ -28,7 +28,7 @@ func main() {
 
 // run executes tsrelay with args and returns its exit status.
 func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) int {
-	c := &cli{d: d, stdout: stdout, stderr: stderr}
+	c := &cli{d: d, stdout: stdout, stderr: stderr, args: args}
 	root := newRoot(c)
 	root.SetArgs(args)
 	return exitStatus(fang.Execute(ctx, root,

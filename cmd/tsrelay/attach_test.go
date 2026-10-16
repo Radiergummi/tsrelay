@@ -123,10 +123,8 @@ func TestAttachRefusalsJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &last); err != nil || last.Event != "stopped" {
 		t.Fatalf("stdout's last line should be the stopped event: %v\n%s", err, out)
 	}
-	var je struct {
-		Error string `json:"error"`
-	}
-	if err := json.Unmarshal([]byte(errOut), &je); err != nil || !strings.Contains(je.Error, "nope") {
+	var je jsonError
+	if err := json.Unmarshal([]byte(errOut), &je); err != nil || !strings.Contains(je.Error.Title, "nope") {
 		t.Fatalf("stderr should be a JSON error mentioning %q: %v\n%s", "nope", err, errOut)
 	}
 }

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -81,19 +83,34 @@ func TestPolicyFlagErrors(t *testing.T) {
 	}
 }
 
-// A default above its maximum is reported by flag name, not hook field.
+// A default above its maximum is reported by flag name, not hook field. A
+// default that was given can also be fixed by raising the maximum.
 func TestPolicyFlagDefaultAboveMax(t *testing.T) {
-	cases := map[string][]string{
-		"--hook-max-body-bytes-default (unlimited) exceeds --hook-max-body-bytes-max 10485760; set the default too": {"--hook-max-body-bytes-max=10485760"},
-		"--hook-max-body-bytes-default 4096 exceeds --hook-max-body-bytes-max 1024; lower the default or raise the maximum": {
-			"--hook-max-body-bytes-default=4096", "--hook-max-body-bytes-max=1024"},
-		"--hook-response-timeout-default 2m0s exceeds --hook-response-timeout-max 1m0s; set the default too":             {"--hook-response-timeout-max=1m"},
-		"--hook-hold-timeout-default 10m0s exceeds --hook-hold-timeout-max 5m0s; lower the default or raise the maximum": {"--hook-hold-timeout-default=10m"},
-		"--hook-rate-limit-default 100/200 exceeds --hook-rate-limit-max 50/500; set the default too":                    {"--hook-rate-limit-max=50/500"},
-	}
-	for want, args := range cases {
-		if _, err := policyFrom(t, args...); err == nil || err.Error() != want {
-			t.Errorf("%v: err = %v, want %q", args, err, want)
+	for _, tc := range []struct {
+		args  []string
+		title string
+		fixes []string
+	}{
+		{[]string{"--hook-max-body-bytes-max=10485760"},
+			"--hook-max-body-bytes-default (unlimited) exceeds --hook-max-body-bytes-max 10485760",
+			[]string{"tsrelay serve --hook-max-body-bytes-default 10485760"}},
+		{[]string{"--hook-max-body-bytes-default=4096", "--hook-max-body-bytes-max=1024"},
+			"--hook-max-body-bytes-default 4096 exceeds --hook-max-body-bytes-max 1024",
+			[]string{"tsrelay serve --hook-max-body-bytes-default 1024", "tsrelay serve --hook-max-body-bytes-max 4096"}},
+		{[]string{"--hook-response-timeout-max=1m"},
+			"--hook-response-timeout-default 2m0s exceeds --hook-response-timeout-max 1m0s",
+			[]string{"tsrelay serve --hook-response-timeout-default 1m0s"}},
+		{[]string{"--hook-hold-timeout-default=10m"},
+			"--hook-hold-timeout-default 10m0s exceeds --hook-hold-timeout-max 5m0s",
+			[]string{"tsrelay serve --hook-hold-timeout-default 5m0s", "tsrelay serve --hook-hold-timeout-max 10m0s"}},
+		{[]string{"--hook-rate-limit-max=50/500"},
+			"--hook-rate-limit-default 100/200 exceeds --hook-rate-limit-max 50/500",
+			[]string{"tsrelay serve --hook-rate-limit-default 50/500"}},
+	} {
+		_, err := policyFrom(t, tc.args...)
+		var ce *cliError
+		if !errors.As(err, &ce) || !ce.usage || ce.Title != tc.title || !slices.Equal(ce.Fixes, tc.fixes) {
+			t.Errorf("%v: err = %#v, want title %q and fixes %q", tc.args, ce, tc.title, tc.fixes)
 		}
 	}
 }

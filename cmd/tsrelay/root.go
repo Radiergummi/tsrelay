@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"sync"
+	"sync/atomic"
 
 	"github.com/spf13/cobra"
 )
@@ -17,6 +18,13 @@ type cli struct {
 	noColor        bool      // --no-color
 	noLinks        bool      // --no-hyperlinks
 	versionWarned  sync.Once // warnVersion runs at most once per run
+	// What explaining an error needs to know about the run.
+	args      []string                    // the arguments as given
+	cmdPath   string                      // the command run, e.g. "tsrelay hooks list"
+	relayFrom string                      // where the relay URL came from: "--relay", "TSRELAY_RELAY" or "" (the tailnet)
+	base      string                      // the relay's URL, once known
+	hook      string                      // the hook the command names, if any
+	version   atomic.Pointer[versionSeen] // the relay's version, if it differs from this CLI's
 }
 
 func newRoot(c *cli) *cobra.Command {
@@ -26,15 +34,26 @@ func newRoot(c *cli) *cobra.Command {
 		Long: "tsrelay delivers callbacks from your tailnet to apps on your machine.\n\n" +
 			"Every flag can also be set as TSRELAY_<FLAG>, e.g. TSRELAY_RELAY for --relay; " +
 			"the command line wins.",
-		Args: usageArgs(cobra.NoArgs),
-		RunE: c.helpAndFail,
+		Args:                       subcommand,
+		SuggestionsMinimumDistance: 2,
+		RunE:                       c.helpAndFail,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			return envDefaults(cmd.Flags())
+			if err := envDefaults(cmd.Flags()); err != nil {
+				return err
+			}
+			c.cmdPath = cmd.CommandPath()
+			if f := cmd.Flags().Lookup("relay"); f != nil && f.Changed {
+				c.relayFrom = "--relay"
+				if envSet(f) {
+					c.relayFrom = "TSRELAY_RELAY"
+				}
+			}
+			return nil
 		},
 	}
 	root.SetOut(c.stdout)
 	root.SetErr(c.stderr)
-	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &usageError{err.Error()} })
+	root.SetFlagErrorFunc(c.flagError)
 	pf := root.PersistentFlags()
 	pf.StringVar(&c.relay, "relay", "", "relay URL or host (default: https://tsrelay.<your tailnet>)")
 	pf.BoolVarP(&c.json, "json", "j", false, "print JSON on stdout (indented on a terminal)")

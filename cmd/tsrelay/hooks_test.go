@@ -195,15 +195,12 @@ func TestJSONErrors(t *testing.T) {
 		if code != 1 || out != "" {
 			t.Errorf("%q: exit %d, stdout %q; want 1 and nothing on stdout", args, code, out)
 		}
-		var je struct {
-			Error   string           `json:"error"`
-			Problem *problem.Problem `json:"problem"`
-		}
-		if err := json.Unmarshal([]byte(errOut), &je); err != nil || je.Error == "" {
+		var je jsonError
+		if err := json.Unmarshal([]byte(errOut), &je); err != nil || je.Error.Title == "" || je.Error.Fixes == nil {
 			t.Errorf("%q: stderr is not a JSON error: %v\n%s", args, err, errOut)
 		}
-		if args[1] == "create" && (je.Problem == nil || je.Problem.Status != 422) {
-			t.Errorf("%q: want the relay's problem in the JSON error, got %+v", args, je.Problem)
+		if args[1] == "create" && je.Error.Code != problem.Invalid {
+			t.Errorf("%q: want the relay's problem code in the JSON error, got %+v", args, je.Error)
 		}
 	}
 }
@@ -214,7 +211,7 @@ func TestJSONErrorUnreachableRelay(t *testing.T) {
 	if code != 1 || out.String() != "" || !json.Valid([]byte(errOut.String())) {
 		t.Fatalf("exit %d, stdout %q, stderr %q", code, out.String(), errOut.String())
 	}
-	if !strings.Contains(errOut.String(), "could not reach the relay at http://127.0.0.1:1") {
+	if !strings.Contains(errOut.String(), `"code":"relay_unreachable"`) || !strings.Contains(errOut.String(), "Tried http://127.0.0.1:1 (from --relay)") {
 		t.Fatalf("stderr should name the unreachable relay: %s", errOut.String())
 	}
 }
@@ -227,8 +224,8 @@ func TestUnreachableRelayText(t *testing.T) {
 	if code != 1 || out.String() != "" {
 		t.Fatalf("exit %d, stdout %q", code, out.String())
 	}
-	if !strings.Contains(errOut.String(), "could not reach the relay at http://127.0.0.1:1") ||
-		!strings.Contains(errOut.String(), "check --relay or TSRELAY_RELAY") {
+	if !strings.HasPrefix(errOut.String(), "✗ Can't reach the relay\n  Tried http://127.0.0.1:1 (from --relay): ") ||
+		!strings.Contains(errOut.String(), "Try:\n    tailscale status\n") {
 		t.Fatalf("stderr = %q", errOut.String())
 	}
 }

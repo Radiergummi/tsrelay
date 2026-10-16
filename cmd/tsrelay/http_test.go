@@ -279,11 +279,8 @@ func TestHTTPRelayRefusalJSON(t *testing.T) {
 	if code := waitExit(t, r); code != 1 {
 		t.Fatalf("exit %d, want 1\n%s", code, r.stderr)
 	}
-	var je struct {
-		Error   string           `json:"error"`
-		Problem *problem.Problem `json:"problem"`
-	}
-	if err := json.Unmarshal([]byte(r.stderr.String()), &je); err != nil || je.Problem == nil || je.Problem.Status != 422 {
+	var je jsonError
+	if err := json.Unmarshal([]byte(r.stderr.String()), &je); err != nil || je.Error.Code != problem.Invalid {
 		t.Fatalf("stderr should be a JSON error carrying the problem: %v\n%s", err, r.stderr)
 	}
 	lines := strings.Split(strings.TrimSpace(r.stdout.String()), "\n")

@@ -60,7 +60,7 @@ type durationFlag struct {
 func checkDurations(ds []durationFlag) error {
 	for _, d := range ds {
 		if *d.v < 0 {
-			return fmt.Errorf("--%s must not be negative", d.name)
+			return usage("--"+d.name+" can't be negative", "Durations are 0 or more.", "Pass a duration such as --"+d.name+" 30s")
 		}
 	}
 	return nil
@@ -98,7 +98,8 @@ func registerPolicyFlags(fs *pflag.FlagSet) func() (hooks.Policy, error) {
 			return hooks.Policy{}, err
 		}
 		if *bodyMax < 0 {
-			return hooks.Policy{}, fmt.Errorf("--hook-max-body-bytes-max must not be negative")
+			return hooks.Policy{}, usage("--hook-max-body-bytes-max can't be negative", "It is the largest body limit a hook may set; 0 means no maximum.",
+				"tsrelay serve --hook-max-body-bytes-max 0")
 		}
 		p := hooks.Policy{
 			Defaults: hooks.Effective{
@@ -123,7 +124,9 @@ func registerPolicyFlags(fs *pflag.FlagSet) func() (hooks.Policy, error) {
 			return hooks.Policy{}, err
 		}
 		if err := p.Check(); err != nil {
-			return hooks.Policy{}, err
+			e := usage("Invalid hook defaults", sentence(err.Error()), "tsrelay serve --help")
+			e.err = err
+			return hooks.Policy{}, e
 		}
 		return p, nil
 	}
@@ -154,11 +157,17 @@ func checkDefaultsWithinMaxima(fs *pflag.FlagSet, p hooks.Policy) error {
 		if !c.over {
 			continue
 		}
-		hint := "set the default too"
+		e := usage(fmt.Sprintf("--hook-%s-default %s exceeds --hook-%s-max %s", c.setting, c.def, c.setting, c.max),
+			"Hooks that set nothing get the default, so it must lie within the maximum.",
+			fmt.Sprintf("tsrelay serve --hook-%s-default %s", c.setting, c.max))
 		if fs.Changed("hook-" + c.setting + "-default") {
-			hint = "lower the default or raise the maximum"
+			def := c.def
+			if def == "(unlimited)" {
+				def = "0"
+			}
+			e.Fixes = append(e.Fixes, fmt.Sprintf("tsrelay serve --hook-%s-max %s", c.setting, def))
 		}
-		return fmt.Errorf("--hook-%s-default %s exceeds --hook-%s-max %s; %s", c.setting, c.def, c.setting, c.max, hint)
+		return e
 	}
 	return nil
 }

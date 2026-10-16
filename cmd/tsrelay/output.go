@@ -25,6 +25,7 @@ type output struct {
 	out, err       stream    // stdout and stderr
 	stdout, stderr io.Writer // the raw writers, for a command started after "--"
 	now            func() time.Time
+	explain        func(error) *cliError
 	mu             sync.Mutex
 	// inspectBase is the relay's URL. Call lines link to the call's
 	// inspector page below it. Empty means no links.
@@ -65,7 +66,7 @@ var drops = map[tunnel.ControlType]struct{ reason, text string }{
 
 func newOutput(c *cli) *output {
 	out, err := c.streams()
-	return &output{json: c.json, stdout: c.stdout, stderr: c.stderr, now: time.Now, out: out, err: err}
+	return &output{json: c.json, stdout: c.stdout, stderr: c.stderr, now: time.Now, explain: c.explain, out: out, err: err}
 }
 
 func (o *output) emit(e jsonEvent) {
@@ -224,7 +225,7 @@ func (o *output) dropped(c tunnel.Control, urlOf func(hookID string) string) {
 func (o *output) upstreamError(err error) { o.status(styleBad, err.Error()) }
 
 // stopped reports why the command ends and returns its exit code. With
-// --json, an error also goes to stderr as JSON, keeping the relay's problem
+// --json, an error also goes to stderr as JSON, keeping its explanation
 // structured instead of flattening it into the stopped event's Error string.
 func (o *output) stopped(reason string, err error, code int) int {
 	switch {
@@ -232,11 +233,15 @@ func (o *output) stopped(reason string, err error, code int) int {
 		o.emit(jsonEvent{Event: "stopped", Reason: reason, Error: errText(err), ExitCode: &code})
 		if err != nil {
 			o.mu.Lock()
-			writeJSON(o.err, newJSONError(err))
+			writeJSON(o.err, newJSONError(o.explain(err)))
 			o.mu.Unlock()
 		}
 	case err != nil:
-		o.line(o.err, formatError(o.err, err))
+		text := formatError(o.err, o.explain(err))
+		if o.err.fancy { // indented like the lines before it
+			text = strings.ReplaceAll(strings.ReplaceAll(text, "\n", "\n  "), "\n  \n", "\n\n")
+		}
+		o.line(o.err, text)
 	case reason == "no-hooks":
 		o.status(styleWarn, "no hooks left to serve; stopping")
 	case reason == "command-exited":
