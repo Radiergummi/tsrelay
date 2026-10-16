@@ -80,7 +80,12 @@ test("creating saves, toasts and goes to the new hook", async () => {
   await userEvent.type(await screen.findByLabelText("Hold timeout"), "45s");
   await userEvent.click(screen.getByRole("button", { name: "Create hook" }));
   await waitFor(() => expect(router.state.location.pathname).toBe(`/hooks/${fixtures.idle.id}`));
-  expect(saved).toEqual({ path: "idle", ephemeral: false, settings: { holdTimeout: "45s" } });
+  expect(saved).toEqual({
+    path: "idle",
+    ephemeral: false,
+    public: false,
+    settings: { holdTimeout: "45s" },
+  });
   expect(await screen.findByText("Created idle")).toBeInTheDocument();
 });
 
@@ -191,6 +196,32 @@ test("editing prefills the hook and resets cleared fields to the default", async
   await userEvent.clear(desc);
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(patch).toMatchObject({ path: "payments/done", description: null }));
+});
+
+test("the public toggle is disabled without the grant or without Funnel", async () => {
+  renderWithProviders(<HookFormPage />, {
+    route: "/hooks/new",
+    path: "/hooks/new",
+    context: { ...fixtures.me, public: false, funnel: true },
+  });
+  // Base UI's Switch is a <span role="switch">, which jest-dom's
+  // toBeDisabled/toBeEnabled don't recognize (they only check native form
+  // tags), so this asserts the same thing through aria-disabled instead.
+  expect(
+    await screen.findByRole("switch", { name: /Reachable from the internet/ }),
+  ).toHaveAttribute("aria-disabled", "true");
+  expect(screen.getByText(/"public": true/)).toBeInTheDocument();
+});
+
+test("the public toggle is enabled with the grant and Funnel", async () => {
+  renderWithProviders(<HookFormPage />, {
+    route: "/hooks/new",
+    path: "/hooks/new",
+    context: { ...fixtures.me, public: true, funnel: true },
+  });
+  expect(
+    await screen.findByRole("switch", { name: /Reachable from the internet/ }),
+  ).not.toHaveAttribute("aria-disabled", "true");
 });
 
 test("only the owner may edit", async () => {

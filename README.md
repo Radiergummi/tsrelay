@@ -1,10 +1,12 @@
 # tsrelay
 
-Deliver HTTP callbacks from your tailnet to apps running locally, without letting production connect to developer machines and without exposing anything publicly.
+Deliver HTTP callbacks from your tailnet to apps running locally, without letting production connect to developer machines, and with nothing exposed publicly unless you opt in.
 
 Production services call the relay, which is its own tailnet node. Developer devices dial *out* to the relay and attach a tunnel. The relay forwards each callback down the tunnel to your local app and returns your app's response. Access is controlled entirely by your tailnet policy.
 
 <img width="936" height="648" alt="Graph depicting the call chain between a tailnet service and a local device" src="https://github.com/user-attachments/assets/dbacfb85-0221-4700-a9ac-2bf28610b504" />
+
+tsrelay is deliberately narrow. It forwards only to hooks you create explicitly. It never intercepts services as Telepresence or mirrord do, and it is reachable from the internet only for hooks their owners explicitly make public, through Tailscale Funnel, when the operator runs it with `--funnel`.
 
 ## Why
 
@@ -21,9 +23,9 @@ A web interface lets users manage their hooks and view the request log, which al
 **Contents**
 
 - [Using tsrelay](#using-tsrelay): for developers whose tailnet already runs a relay
-  - [Get started](#get-started) · [Hooks](#hooks) · [Channels](#channels) · [Managing hooks](#managing-hooks) · [Hook settings](#hook-settings) · [What your app receives](#what-your-app-receives) · [Web UI](#web-ui) · [Inspecting calls](#inspecting-calls) · [The API](#the-api) · [Errors](#errors) · [Completion and output](#completion-and-output)
+  - [Get started](#get-started) · [Hooks](#hooks) · [Public hooks](#public-hooks) · [Channels](#channels) · [Managing hooks](#managing-hooks) · [Hook settings](#hook-settings) · [What your app receives](#what-your-app-receives) · [Web UI](#web-ui) · [Inspecting calls](#inspecting-calls) · [The API](#the-api) · [Errors](#errors) · [Completion and output](#completion-and-output)
 - [Running a relay](#running-a-relay): for operators
-  - [Tailnet policy and roles](#tailnet-policy-and-roles) · [Making someone an admin](#making-someone-an-admin) · [Run the relay](#run-the-relay) · [Configuration](#configuration) · [Hook defaults and limits](#hook-defaults-and-limits) · [Deployment](#deployment) · [Metrics](#metrics) · [Tracing](#tracing) · [Profiling](#profiling) · [Verifying a download](#verifying-a-download)
+  - [Tailnet policy and roles](#tailnet-policy-and-roles) · [Making someone an admin](#making-someone-an-admin) · [Run the relay](#run-the-relay) · [Serving public hooks](#serving-public-hooks) · [Configuration](#configuration) · [Hook defaults and limits](#hook-defaults-and-limits) · [Deployment](#deployment) · [Metrics](#metrics) · [Tracing](#tracing) · [Profiling](#profiling) · [Verifying a download](#verifying-a-download)
 - [Contributing](#contributing)
 
 # Using tsrelay
@@ -73,6 +75,16 @@ tsrelay http 8080 -- npm run dev
 
 The command keeps the `TSRELAY_URL` it was started with, even if the hook's path changes while it runs.
 
+## Public hooks
+
+A hook can also be made reachable from the internet, for third-party webhooks (Stripe, GitHub, Twilio…) that can't reach your tailnet. It's opt-in twice over: the operator runs the relay with `--funnel` and grants you `"public": true` (see [Serving public hooks](#serving-public-hooks)), and you mark the hook `public`:
+
+```bash
+tsrelay http 3000 --public      # make this hook's URL reachable from the internet
+```
+
+Without the `public` grant, turning a hook public fails. The relay prints both URLs; the public one is a secret, so treat it like one, and rotate it with `tsrelay hooks rotate-url <hook>` if it leaks. An ephemeral `tsrelay http --public` hook gets a new public URL once it's reaped (after the relay's `--ephemeral-grace`, 10 minutes by default, without a tunnel), so use `-p`/`--persistent` (or `tsrelay hooks create --public`) for a stable URL to give to a provider. The relay does not verify provider signatures — see [SECURITY.md](SECURITY.md).
+
 ## Channels
 
 Every hook belongs to a channel, `default` unless you pick another with `--channel`. Your grant says which channels you may create hooks in, and senders' grants say which channels they may call. So a channel decides who can reach your hook. Ask your operator which channels exist on your tailnet.
@@ -85,6 +97,7 @@ tsrelay hooks show <hook>                          # one hook and its effective 
 tsrelay hooks create [<path>] [flags]              # create a persistent hook
 tsrelay hooks update <hook> [flags]                # change one (only the given flags)
 tsrelay hooks delete <hook>...                     # delete one or more (alias: rm)
+tsrelay hooks rotate-url <hook>                    # give a public hook a new public URL
 tsrelay url [<port|url>]                           # the URL tsrelay http would use, without contacting the relay
 tsrelay attach <hook>... -t <port|url>             # serve existing hooks from one local target
 ```
@@ -117,6 +130,8 @@ tsrelay hooks update payments/v1 --hold-timeout 0s
 
 `tsrelay http` takes the same flags; they apply when it creates the hook, not to a hook it reuses. `tsrelay hooks show <hook>` lists the effective values, defaults included.
 
+A hook's `public` flag is also a setting (`--public`), but it has no relay-wide default or maximum: it's governed by the `public` grant and `--funnel` instead — see [Public hooks](#public-hooks). Unlike the other settings, `tsrelay http --public` also changes a hook it reuses.
+
 ## What your app receives
 
 Bodies arrive exactly as sent, byte for byte, so signatures from Stripe, GitHub, Svix, or [Standard Webhooks](https://www.standardwebhooks.com/) verify normally. The relay adds these headers, after removing any copies the sender sent:
@@ -126,6 +141,7 @@ Bodies arrive exactly as sent, byte for byte, so signatures from Stripe, GitHub,
 | `Tsrelay-Sender-Node` | The calling machine's name |
 | `Tsrelay-Sender-Tags` | Its tags, comma-separated |
 | `Tsrelay-Sender-Login` | Its user, if it is not a tagged machine |
+| `Tsrelay-Sender-Public` | `true` for a call from the internet to a [public hook](#public-hooks); such a call has no `Tsrelay-Sender-Node`, `-Tags` or `-Login` |
 | `Tsrelay-Hook` | `user/path` of the hook |
 | `Tsrelay-Call-Id` | Also returned to the caller, for matching logs |
 | `X-Forwarded-For`, `-Host`, `-Proto`, `-Prefix` | The original request, for URL-signing schemes |
@@ -169,7 +185,7 @@ Errors produced by the relay itself are `application/problem+json` responses and
 |---|---|---|
 | `sender_forbidden` | 403 | The caller has no sender grant |
 | `hook_not_found` | 404 | No such hook, not in the caller's channels, or it was deleted/expired while a call was held for it |
-| `body_too_large` | 413 | Over the hook's `maxBodyBytes` |
+| `body_too_large` | 413 | Over the hook's `maxBodyBytes`, or for a call from the internet, over the relay's `--funnel-max-body-bytes` |
 | `rate_limited` | 429 | Over the hook's `rateLimit`; `Retry-After` is the limiter's wait, rounded up to whole seconds |
 | `tunnel_unavailable` | 503 | No tunnel attached within `holdTimeout`, or too many calls are already waiting; `Retry-After` is `holdTimeout`, but never less than 5 s |
 | `tunnel_overloaded` | 503 | Too many concurrent calls on the tunnel; `Retry-After: 1` |
@@ -218,6 +234,7 @@ Each capability value is an object with these fields:
 | `maxHooks` | Receivers: hooks owned at once (relay default 10) |
 | `maxTunnels` | Receivers: tunnels attached at once (relay default 5) |
 | `maxHookTTL` | Receivers: the longest a persistent hook may live, as a Go duration like `720h` (relay default: unlimited) |
+| `public` | Receivers: `true` lets them make their hooks reachable from the internet; see [Serving public hooks](#serving-public-hooks) |
 
 | Role | May |
 |---|---|
@@ -262,6 +279,14 @@ Use an OAuth client secret with the `tag:tsrelay` tag. Auth keys (`TS_AUTHKEY`) 
 
 The relay serves the web UI, the API and the CLI downloads on its own URL, so users need nothing else: point them at [Using tsrelay](#using-tsrelay).
 
+## Serving public hooks
+
+To let users make hooks reachable from the internet (see [Public hooks](#public-hooks)), run the relay with `--funnel`. The tailnet policy also needs the `funnel` node attribute for the relay, and `"public": true` on the grants of the users who may make hooks public — see [deploy/policy.example.hujson](deploy/policy.example.hujson) for both.
+
+```bash
+tsrelay serve --funnel          # serve public hooks through Tailscale Funnel
+```
+
 ## Configuration
 
 Every flag can also be set as an environment variable: `--ephemeral-grace` becomes `TSRELAY_EPHEMERAL_GRACE`. Run `tsrelay serve --help` for the full list. The most relevant flags:
@@ -270,6 +295,9 @@ Every flag can also be set as an environment variable: `--ephemeral-grace` becom
 |---|---|---|
 | `--hostname` | `tsrelay` | Tailnet machine name |
 | `--tls` | `true` | HTTPS on 443; `false` serves HTTP on 80 |
+| `--funnel` | `false` | Serve hooks their owners made public on the internet, through Tailscale Funnel; requires `--tls` |
+| `--funnel-port` | `443` | The Funnel port for public hooks: `443`, `8443` or `10000` |
+| `--funnel-max-body-bytes` | `26214400` (25 MiB) | Largest request body of a call from the internet |
 | `--advertise-tags` | `tag:tsrelay` | |
 | `--cap-name` | `mazetti.me/cap/relay` | Capability that carries grants |
 | `--user-slug` | `local-part` | `moritz@example.com` → `~moritz`; `login` uses the full login |
@@ -306,7 +334,7 @@ Each [hook setting](#hook-settings) has a relay-wide default, `--hook-<setting>-
 | `rateLimit` | `100/200` | none |
 | `capture` | `true` | |
 
-For example `--hook-rate-limit-default=100/200`, or `--hook-max-body-bytes-default=1048576 --hook-max-body-bytes-max=10485760` (the default body size is unlimited, which a maximum would not allow, so set both). A hook may only set a value within the maximum. `--response-timeout` still works as a deprecated alias of `--hook-response-timeout-default`.
+For example `--hook-rate-limit-default=100/200`, or `--hook-max-body-bytes-default=1048576 --hook-max-body-bytes-max=10485760` (the default body size is unlimited, which a maximum would not allow, so set both). A hook may only set a value within the maximum.
 
 ## Deployment
 

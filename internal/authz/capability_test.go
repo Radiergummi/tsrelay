@@ -107,6 +107,27 @@ func TestIdentityIsUser(t *testing.T) {
 	}
 }
 
+func TestParsePublic(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		values []string
+		want   bool
+	}{
+		{"absent", []string{`{"roles":["receiver"]}`}, false},
+		{"receiver", []string{`{"roles":["receiver"],"public":true}`}, true},
+		{"sender only", []string{`{"roles":["sender"],"public":true}`}, false},
+		{"any grant", []string{`{"roles":["receiver"]}`, `{"roles":["receiver"],"public":true}`}, true},
+		{"false", []string{`{"roles":["receiver"],"public":false}`}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			eff, errs := Parse(raw(tc.values...), DefaultLimits)
+			if len(errs) != 0 || eff.Public != tc.want {
+				t.Fatalf("Public = %v (errs %v), want %v", eff.Public, errs, tc.want)
+			}
+		})
+	}
+}
+
 func FuzzParse(f *testing.F) {
 	f.Add(`{"roles":["receiver"],"channels":["prod.*"],"maxHooks":3,"maxHookTTL":"8h"}`)
 	f.Fuzz(func(t *testing.T, v string) {
