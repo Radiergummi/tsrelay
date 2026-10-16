@@ -23,6 +23,7 @@ const meIs = (me: Record<string, unknown>, status = 200) =>
 test("a receiver who is an admin sees both sections and their identity", async () => {
   renderAt("/");
   expect(await screen.findByRole("link", { name: "Hooks" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Channels" })).toHaveAttribute("href", "/channels");
   expect(screen.getByRole("link", { name: "Admin" })).toBeInTheDocument();
   expect(screen.getByText("dev@example.com")).toBeInTheDocument();
 });

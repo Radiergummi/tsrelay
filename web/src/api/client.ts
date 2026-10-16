@@ -48,7 +48,7 @@ const id = encodeURIComponent;
  */
 export const paths = {
   me: "/",
-  hooks: (all = false) => (all ? "/hooks?all=true" : "/hooks"),
+  hooks: (all = false, channel?: string) => "/hooks" + query({ all, channel }),
   hook: (hookId: string) => `/hooks/${id(hookId)}`,
   rotatePublicUrl: (hookId: string) => `/hooks/${id(hookId)}/rotate-public-url`,
   calls: (hookId: string) => `/hooks/${id(hookId)}/calls`,
@@ -58,7 +58,18 @@ export const paths = {
   licenses: "/licenses",
   licenseText: (textId: string) => `/licenses/${id(textId)}`,
   notices: "/notices.txt",
+  channels: (all = false) => "/channels" + query({ all }),
+  channel: (name: string, all = false) => `/channels/${id(name)}` + query({ all }),
 };
+
+/** query is "?all=true&channel=…" for the options that are set, or "". */
+function query({ all, channel }: { all: boolean; channel?: string | undefined }): string {
+  const q = new URLSearchParams();
+  if (all) q.set("all", "true");
+  if (channel) q.set("channel", channel);
+  const s = q.toString();
+  return s ? `?${s}` : "";
+}
 
 async function send(
   method: string,

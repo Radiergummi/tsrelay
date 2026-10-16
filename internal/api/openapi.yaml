@@ -45,6 +45,10 @@ paths:
           in: query
           description: Admins only; every user's hooks, as metadata.
           schema: { type: boolean }
+        - name: channel
+          in: query
+          description: Only the hooks in this channel. Doesn't apply to the event stream.
+          schema: { type: string }
       responses:
         "200":
           description: The hooks, or a stream of their changes
@@ -217,6 +221,53 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "422": { $ref: "#/components/responses/Problem" }
+  /channels:
+    get:
+      operationId: listChannels
+      summary: Your channel patterns, and the channels your hooks are in
+      description: |
+        The relay knows only your own grants, so it can't list who else
+        may send on a channel; that is in the tailnet policy.
+      parameters:
+        - name: all
+          in: query
+          description: Admins only; every channel in use, with hook counts but no hooks.
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: The channels
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Channels" }
+            text/html: {}
+        "403": { $ref: "#/components/responses/Problem" }
+        "406": { $ref: "#/components/responses/Problem" }
+  /channels/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: A channel name, such as `prod.payments`.
+        schema: { type: string }
+    get:
+      operationId: getChannel
+      summary: A channel's hooks, and whether you may receive and send on it
+      description: A valid name without hooks is not an error; an invalid one is `404`.
+      parameters:
+        - name: all
+          in: query
+          description: Admins only; every user's hooks in the channel, as metadata.
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: The channel
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChannelDetail" }
+            text/html: {}
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "406": { $ref: "#/components/responses/Problem" }
   /tunnel:
     get:
       operationId: attachTunnel
@@ -451,7 +502,7 @@ components:
         funnel: { type: boolean, description: "The relay serves public hooks on the internet" }
         links:
           type: object
-          required: [hooks, tunnel, openapi, licenses]
+          required: [hooks, channels, tunnel, openapi, licenses]
           additionalProperties: { type: string }
     Hook:
       type: object
@@ -478,6 +529,46 @@ components:
             node: { type: string }
             target: { type: string }
         lastCall: { $ref: "#/components/schemas/Summary" }
+    Channels:
+      type: object
+      required: [receive, send, channels]
+      properties:
+        receive:
+          type: array
+          description: Your receiver role's channel patterns.
+          items: { type: string }
+        send:
+          type: array
+          description: Your sender role's channel patterns.
+          items: { type: string }
+        channels:
+          type: array
+          description: The channels in use, by name.
+          items: { $ref: "#/components/schemas/Channel" }
+    Channel:
+      type: object
+      required: [name, hookCount, receive]
+      properties:
+        name: { type: string }
+        hookCount: { type: integer }
+        hooks:
+          type: array
+          description: Your hooks in the channel; left out with `all`.
+          items: { $ref: "#/components/schemas/Hook" }
+        receive:
+          type: array
+          description: Your receive patterns that match the channel.
+          items: { type: string }
+    ChannelDetail:
+      type: object
+      required: [name, canReceive, canSend, hooks]
+      properties:
+        name: { type: string }
+        canReceive: { type: boolean }
+        canSend: { type: boolean }
+        hooks:
+          type: array
+          items: { $ref: "#/components/schemas/Hook" }
     CreateRequest:
       type: object
       properties:

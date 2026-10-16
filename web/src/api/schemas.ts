@@ -117,6 +117,26 @@ export const hook = z.object({
 });
 export const hooks = z.array(hook);
 
+export const channel = z.object({
+  name: z.string(),
+  hookCount: z.number(),
+  hooks: z.optional(hooks), // the viewer's; left out for an admin's ?all=true
+  receive: z.array(z.string()),
+});
+
+export const channels = z.object({
+  receive: z.array(z.string()),
+  send: z.array(z.string()),
+  channels: z.array(channel),
+});
+
+export const channelDetail = z.object({
+  name: z.string(),
+  canReceive: z.boolean(),
+  canSend: z.boolean(),
+  hooks,
+});
+
 export const me = z.object({
   login: z.optional(z.string()),
   node: z.string(),
@@ -179,6 +199,9 @@ export type Effective = z.infer<typeof effective>;
 export type Settings = z.infer<typeof settings>;
 export type Maxima = z.infer<typeof maxima>;
 export type Hook = z.infer<typeof hook>;
+export type Channel = z.infer<typeof channel>;
+export type Channels = z.infer<typeof channels>;
+export type ChannelDetail = z.infer<typeof channelDetail>;
 export type Me = z.infer<typeof me>;
 export type LicenseEntry = z.infer<typeof licenseEntry>;
 export type LicenseComponent = z.infer<typeof licenseComponent>;

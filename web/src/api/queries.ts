@@ -6,7 +6,14 @@ export const keys = {
   me: ["me"] as const,
   /** allHooks prefixes both hook lists, the viewer's and ?all=true. */
   allHooks: ["hooks"] as const,
-  hooks: (all: boolean) => ["hooks", all ? "all" : "mine"] as const,
+  hooks: (all: boolean, channel?: string) =>
+    channel
+      ? (["hooks", all ? "all" : "mine", channel] as const)
+      : (["hooks", all ? "all" : "mine"] as const),
+  /** allChannels prefixes the channel list and every channel, in either scope. */
+  allChannels: ["channels"] as const,
+  channels: (all: boolean) => ["channels", all ? "all" : "mine"] as const,
+  channel: (name: string, all: boolean) => ["channels", all ? "all" : "mine", name] as const,
   hook: (id: string) => ["hook", id] as const,
   calls: (id: string) => ["calls", id] as const,
   call: (hookId: string, callId: string) => ["call", hookId, callId] as const,
@@ -22,10 +29,25 @@ export function useMe() {
   });
 }
 
-export function useHooks(all: boolean) {
+export function useHooks(all: boolean, channel?: string) {
   return useQuery({
-    queryKey: keys.hooks(all),
-    queryFn: ({ signal }) => request(s.hooks, "GET", paths.hooks(all), undefined, signal),
+    queryKey: keys.hooks(all, channel),
+    queryFn: ({ signal }) => request(s.hooks, "GET", paths.hooks(all, channel), undefined, signal),
+  });
+}
+
+export function useChannels(all: boolean) {
+  return useQuery({
+    queryKey: keys.channels(all),
+    queryFn: ({ signal }) => request(s.channels, "GET", paths.channels(all), undefined, signal),
+  });
+}
+
+export function useChannel(name: string, all: boolean) {
+  return useQuery({
+    queryKey: keys.channel(name, all),
+    queryFn: ({ signal }) =>
+      request(s.channelDetail, "GET", paths.channel(name, all), undefined, signal),
   });
 }
 
