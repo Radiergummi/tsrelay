@@ -41,3 +41,7 @@ test("status classes and labels", () => {
   expect(senderLabel({ ip: "100.64.0.9" })).toBe("100.64.0.9");
   expect(senderLabel({})).toBe("unknown");
 });
+
+test("an internet sender is labelled with its IP", () => {
+  expect(senderLabel({ public: true, ip: "203.0.113.7" })).toBe("Internet · 203.0.113.7");
+});

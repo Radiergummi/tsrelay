@@ -23,6 +23,7 @@ export function relativeTime(iso: string, now = Date.now()): string {
 
 /** senderLabel names a call's sender: its tags, else its user, else its node or IP. */
 export function senderLabel(s: Sender): string {
+  if (s.public) return `Internet · ${s.ip ?? "unknown"}`;
   if (s.tags?.length) return s.tags.join(", ");
   return s.login || s.node || s.ip || "unknown";
 }
