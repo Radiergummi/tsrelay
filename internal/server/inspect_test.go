@@ -87,7 +87,7 @@ func TestReplayEndToEnd(t *testing.T) {
 		got <- seen{r.Header.Get("Authorization"), string(b)}
 	}))
 	defer local.Close()
-	h, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	h, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb", Settings: hooks.Settings{Capture: new(true)}})
 	defer e.cli(h.ID, local.URL)()
 
 	resp := e.send(h, "/done", []byte(`{"n":1}`), http.Header{"Authorization": {"Bearer s3cr3t"}})

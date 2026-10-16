@@ -106,7 +106,7 @@ Every hook has delivery settings. Your relay sets a default and, for most of the
 | `idleTimeout` | `--idle-timeout` | Longest gap in body traffic, either direction, before the call fails |
 | `maxBodyBytes` | `--max-body-bytes` | Request body size limit; `0` is unlimited |
 | `rateLimit` | `--rate-limit` | Calls per second and burst, as `perSecond/burst` |
-| `capture` | `--capture` | Keep request and response bodies for the inspector; metadata and headers are always recorded |
+| `capture` | `--capture` | Keep request and response bodies for the inspector, which relays don't do by default; metadata and headers are always recorded |
 
 Set them when creating or updating a hook:
 
@@ -138,7 +138,7 @@ Each hook's page has the call list on the left and the selected call on the righ
 
 ## Inspecting calls
 
-The relay keeps the most recent calls of each hook in memory (100 unless your operator changed it): method, path, sender, status and timings, the query and the headers (minus redacted ones such as `Authorization`), and the start of each body if the hook captures bodies. Only you see your hooks' queries, headers and bodies; admins see metadata only. Calls are lost when the relay restarts.
+The relay keeps the most recent calls of each hook in memory (100 unless your operator changed it): method, path, sender, status and timings, the query and the headers (minus redacted ones such as `Authorization`), and the start of each body if the hook captures bodies, which it doesn't unless you or your operator turn capture on. Only you see your hooks' queries, headers and bodies; admins see metadata only. Calls are lost when the relay restarts.
 
 | | |
 |---|---|
@@ -294,7 +294,7 @@ Each [hook setting](#hook-settings) has a relay-wide default, `--hook-<setting>-
 | `idleTimeout` | `60s` | `30m` |
 | `maxBodyBytes` | unlimited | none |
 | `rateLimit` | `100/200` | none |
-| `capture` | `true` | |
+| `capture` | `false` | |
 
 For example `--hook-rate-limit-default=100/200`, or `--hook-max-body-bytes-default=1048576 --hook-max-body-bytes-max=10485760` (the default body size is unlimited, which a maximum would not allow, so set both). A hook may only set a value within the maximum. `--response-timeout` still works as a deprecated alias of `--hook-response-timeout-default`.
 

@@ -17,6 +17,7 @@ import (
 
 func TestInject(t *testing.T) {
 	e := newEnv(t)
+	e.patch(hooks.SettingsPatch{Capture: hooks.Opt[bool]{Set: true, Value: new(true)}})
 	type seen struct{ method, uri, body, login, xff, custom string }
 	got := make(chan seen, 1)
 	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

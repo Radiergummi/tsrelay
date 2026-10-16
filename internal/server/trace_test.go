@@ -452,7 +452,7 @@ func TestRefusedAttachSpan(t *testing.T) {
 func TestReplayParentedByAPISpan(t *testing.T) {
 	e, rec := tracedEnv(t, Config{})
 	app, _ := traceApp(t)
-	h, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	h, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb", Settings: hooks.Settings{Capture: new(true)}})
 	defer e.cli(h.ID, app)()
 	resp := e.send(h, "", []byte("x"), nil)
 	io.ReadAll(resp.Body)

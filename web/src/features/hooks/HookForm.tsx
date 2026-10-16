@@ -254,7 +254,11 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
                   placeholder={`${defaults.rateLimit.perSecond}/${defaults.rateLimit.burst}`}
                 />
               </Field>
-              <Field label="Capture" error={err("settings.capture")}>
+              <Field
+                label="Capture"
+                error={err("settings.capture")}
+                hint="Bodies are kept for the inspector only if capture is on. Metadata is always recorded."
+              >
                 <NativeSelect {...text("settings.capture")}>
                   <option value="">
                     relay default ({defaults.capture ? "bodies and metadata" : "metadata only"})

@@ -143,10 +143,11 @@ func (e *env) serve(hookID string) {
 func TestReplayRules(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb", Settings: hooks.Settings{Capture: new(true)}}, &h)
 	e.serve(h.ID)
 	e.seedCall("c_full", h.ID, completeBody(`{"n":1}`))
 	e.seedCall("c_cut", h.ID, inspect.Capture{Body: []byte(`{"n":`), Size: 4096, Truncated: true, Captured: true})
+	e.seedCall("c_uncaptured", h.ID, inspect.Capture{Size: 7})
 	e.in.Add(inspect.Call{
 		ID: "c_refused", HookID: hooks.ID(h.ID), Owner: moritz.UserID, Kind: inspect.KindSender,
 		Method: "POST", Path: "/done", Outcome: problem.HookNotFound, Status: http.StatusNotFound,
@@ -163,6 +164,14 @@ func TestReplayRules(t *testing.T) {
 	}
 	if code := replay(moritz, "c_cut"); code != 409 {
 		t.Errorf("replay of a truncated body = %d, want 409", code)
+	}
+	if code := replay(moritz, "c_uncaptured"); code != 409 {
+		t.Errorf("replay of an uncaptured body = %d, want 409", code)
+	}
+	var got CallJSON
+	e.call(moritz, "GET", "/api/v1/hooks/"+h.ID+"/calls/c_uncaptured", nil, &got)
+	if got.Replay == nil || got.Replay.Allowed || !strings.Contains(got.Replay.Reason, "aren't captured for this hook") {
+		t.Errorf("uncaptured call replay = %+v", got.Replay)
 	}
 	if code := replay(moritz, "c_refused"); code != 409 {
 		t.Errorf("replay of a call refused by channel = %d, want 409", code)
@@ -196,7 +205,7 @@ func TestReplayRules(t *testing.T) {
 func TestTestRequest(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb", Settings: hooks.Settings{Capture: new(true)}}, &h)
 	e.serve(h.ID)
 	var c CallJSON
 	resp := e.call(moritz, "POST", "/api/v1/hooks/"+h.ID+"/test", TestRequest{

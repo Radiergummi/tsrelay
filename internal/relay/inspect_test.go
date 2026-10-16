@@ -36,6 +36,7 @@ func (e *env) finished(resp *http.Response) inspect.Call {
 
 func TestRecordsCall(t *testing.T) {
 	e := newEnv(t)
+	e.patch(hooks.SettingsPatch{Capture: hooks.Opt[bool]{Set: true, Value: new(true)}})
 	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.ReadAll(r.Body)
 		w.Header().Set("Set-Cookie", "session=s3cr3t")
@@ -83,6 +84,7 @@ func TestRecordsCall(t *testing.T) {
 // still arrives in full and byte-exact.
 func TestCaptureLimitKeepsForwardingExact(t *testing.T) {
 	e := newEnvWith(t, inspect.Config{CaptureLimit: 1024})
+	e.patch(hooks.SettingsPatch{Capture: hooks.Opt[bool]{Set: true, Value: new(true)}})
 	payload := make([]byte, 1<<20)
 	rand.Read(payload)
 	want := sha256.Sum256(payload)

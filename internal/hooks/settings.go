@@ -99,7 +99,7 @@ var DefaultPolicy = Policy{
 		ResponseTimeout: Duration(2 * time.Minute),
 		IdleTimeout:     Duration(60 * time.Second),
 		RateLimit:       RateLimit{PerSecond: 100, Burst: 200},
-		Capture:         true,
+		Capture:         false, // bodies are the most sensitive part of a call
 	},
 	Max: Maxima{
 		HoldTimeout:     Duration(5 * time.Minute),

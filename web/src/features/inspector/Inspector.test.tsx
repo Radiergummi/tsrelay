@@ -39,6 +39,21 @@ test("replay is disabled with the server's reason", async () => {
   expect(screen.getByText(/request body was not captured in full/)).toBeInTheDocument();
 });
 
+test("a call without captured bodies says so and cannot be replayed", async () => {
+  show("c_uncaptured");
+  expect(await screen.findByRole("button", { name: "Replay" })).toBeDisabled();
+  expect(
+    screen.getByText(/bodies aren't captured for this hook, so this call cannot be replayed/),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(/23 B body\. Bodies aren't captured for this hook\./),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Edit the hook" })).toHaveAttribute(
+    "href",
+    `/hooks/${fixtures.hook.id}/edit`,
+  );
+});
+
 test("replaying selects the new call", async () => {
   server.use(
     http.post("/api/v1/hooks/:id/calls/:callId/replay", () =>

@@ -296,7 +296,7 @@ Every setting has a relay-wide default and a relay-wide maximum. Settings that a
 | `idleTimeout` | 60 s | Longest gap in body traffic, in either direction |
 | `maxBodyBytes` | unlimited | Request body |
 | `rateLimit` | 100/s, burst 200 | Token bucket per hook |
-| `capture` | `true` | Capture bodies for the inspector. Metadata is always recorded. Relay-wide default `--hook-capture-default`; `--capture-bodies=false` turns capture off for every hook. |
+| `capture` | `false` | Capture bodies for the inspector. Off by default, because bodies are the most sensitive part of a call; metadata is always recorded. Operators opt every hook in with `--hook-capture-default`, hooks opt in with `capture: true`; `--capture-bodies=false` turns capture off for every hook. |
 
 ## 9. Inspector
 
@@ -326,11 +326,11 @@ Every call has an attempts list from the start, even though v1 only ever creates
 - **Retention:** the last 100 calls per hook (configurable), in memory, gone on restart. Each captured body is held up to 64 KiB (configurable). Calls that were denied by channel are recorded on the hook they targeted, so the owner can see them.
 - **Visibility:** only the hook's owner sees query strings, headers and bodies. Admins see metadata only.
 - **Redaction:** `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and `X-Api-Key` are redacted by default. The list is configurable relay-wide. Redacted values are dropped at capture time and never held in memory.
-- **Global switch:** operators can turn body capture off for the whole relay with `--capture-bodies=false`.
+- **Opt-in bodies:** body capture is off unless the hook or the relay's default turns it on (§8). Operators can turn it off for the whole relay with `--capture-bodies=false`, whatever hooks set.
 
 ### 9.3 Actions
 
-- **Replay:** re-sends a captured call down the hook's current tunnel, for calls whose request body was captured in full. Redacted headers are left out. The response goes only to the inspector, never back to the original sender. Only the owner can replay. The `Tsrelay-Sender-*` headers name the original sender, because a replay reproduces that call. A call whose request body or query string was not captured in full gets `409`. A call refused by channel was never delivered either, so it also gets `409`.
+- **Replay:** re-sends a captured call down the hook's current tunnel, for calls whose request body was captured in full. Redacted headers are left out. The response goes only to the inspector, never back to the original sender. Only the owner can replay. The `Tsrelay-Sender-*` headers name the original sender, because a replay reproduces that call. A call whose request body or query string was not captured in full gets `409`, as does one with a request body that was not captured at all because capture was off. A call refused by channel was never delivered either, so it also gets `409`.
 - **Copy as curl:** two variants. One targets the hook URL, which only works for nodes with the sender role. The other targets the tunnel's local target (e.g. `http://localhost:8080/…`), which is what developers usually want.
 - **Send test request:** the owner writes a request (method, path, headers, body; prefilled with a small JSON sample) and sends it through the normal pipeline as a call of kind `test`. The sender authorization step is skipped, because the owner is calling their own hook. This proves the whole chain works on first setup. The API takes `{method, path, headers, body}`. `method` defaults to `POST`, `path` to `/`, and `path` may include a query string. The sender is the owner. Replay and test both answer `201` with the finished call; admins get `403`.
 
@@ -415,7 +415,7 @@ Relay-wide settings (flag / environment variable):
 | `--capture-limit` / `--capture-calls` | 64 KiB / 100 per hook |
 | `--capture-bodies` | `true` |
 | `--redact-headers` | `Authorization,Proxy-Authorization,Cookie,Set-Cookie,X-Api-Key` |
-| `--hook-capture-default` | `true` |
+| `--hook-capture-default` | `false` |
 | `--ops-listen` | empty (off) |
 | `--ops-pprof` | `false` |
 | `--otel` | `false` (OTLP/HTTP, configured by `OTEL_*`) |

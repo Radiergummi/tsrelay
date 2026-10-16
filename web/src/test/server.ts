@@ -10,6 +10,7 @@ const calls = [
   fixtures.callBin,
   fixtures.callRefused,
   fixtures.callPending,
+  fixtures.callUncaptured,
 ];
 const hostileCalls = [fixtures.hostileHtml, fixtures.hostileJson, fixtures.hostileForm];
 const notFound = () =>
