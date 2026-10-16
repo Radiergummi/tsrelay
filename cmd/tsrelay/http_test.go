@@ -30,7 +30,7 @@ import (
 )
 
 var (
-	receiver = identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"]}`)
+	receiver = identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"public":true}`)
 	sender   = identify.Tagged("worker", []string{"tag:prod-worker"}, `{"roles":["sender"]}`)
 )
 
@@ -69,7 +69,7 @@ func newCLIEnv(t *testing.T) *cliEnv {
 		h.ServeHTTP(w, r)
 	}))
 	e.relayURL = "http://" + ts.Listener.Addr().String()
-	e.srv = server.New(server.Config{BaseURL: e.relayURL, AllowedHosts: []string{"127.0.0.1"}},
+	e.srv = server.New(server.Config{BaseURL: e.relayURL, AllowedHosts: []string{"127.0.0.1"}, PublicBaseURL: "https://tsrelay.example.ts.net"},
 		e.fake, e.mgr, audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))))
 	e.handler = e.srv.Handler()
 	ts.Start()
@@ -88,6 +88,18 @@ func newCLIEnv(t *testing.T) *cliEnv {
 // already saw from the instance before it.
 func (e *cliEnv) restartRelay() { e.restartRelayAt("") }
 
+// restartRelayNoFunnel replaces the relay with a fresh instance over the
+// same hook store that does not serve Funnel, as if the operator had
+// restarted it without --funnel.
+func (e *cliEnv) restartRelayNoFunnel() {
+	e.handlerMu.Lock()
+	defer e.handlerMu.Unlock()
+	e.srv.Close()
+	srv := server.New(server.Config{BaseURL: e.relayURL, AllowedHosts: []string{"127.0.0.1"}},
+		e.fake, e.mgr, audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))))
+	e.srv, e.handler = srv, srv.Handler()
+}
+
 // restartRelayAt is restartRelay with the new instance reporting version
 // ("" is dev).
 func (e *cliEnv) restartRelayAt(version string) {
@@ -97,7 +109,7 @@ func (e *cliEnv) restartRelayAt(version string) {
 	e.handlerMu.Lock()
 	defer e.handlerMu.Unlock()
 	e.srv.Close() // drops the old tunnel so the CLI reconnects
-	srv := server.New(server.Config{BaseURL: e.relayURL, AllowedHosts: []string{"127.0.0.1"}, Version: version},
+	srv := server.New(server.Config{BaseURL: e.relayURL, AllowedHosts: []string{"127.0.0.1"}, PublicBaseURL: "https://tsrelay.example.ts.net", Version: version},
 		e.fake, e.mgr, audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))))
 	e.srv, e.handler = srv, srv.Handler()
 }
@@ -632,5 +644,79 @@ func TestHTTPReportsTarget(t *testing.T) {
 	hs, err := e.api().ListHooks(context.Background())
 	if err != nil || len(hs) != 1 || hs[0].Tunnel == nil || hs[0].Tunnel.Target != e.local.URL {
 		t.Fatalf("hooks = %+v, %v; want the tunnel's target %s", hs, err, e.local.URL)
+	}
+}
+
+func TestHTTPPublic(t *testing.T) {
+	e := newCLIEnv(t)
+	r := e.start("--public")
+	e.url(r)
+	waitOutput(t, r.stderr, "public (internet): https://tsrelay.example.ts.net/+")
+	hs, _ := e.api().ListHooks(context.Background())
+	if len(hs) != 1 || !hs[0].Public {
+		t.Fatalf("hooks = %+v", hs)
+	}
+}
+
+func TestHTTPFollowsPublicTurnedOff(t *testing.T) {
+	e := newCLIEnv(t)
+	r := e.start("--public")
+	u := e.url(r)
+	waitOutput(t, r.stderr, "public (internet): ")
+	ctx := context.Background()
+	hs, err := e.api().ListHooks(ctx)
+	if err != nil || len(hs) != 1 {
+		t.Fatalf("hooks = %+v, %v", hs, err)
+	}
+	if _, err := e.api().UpdateHook(ctx, hs[0].ID, hooks.UpdateRequest{Public: hooks.Opt[bool]{Set: true, Value: new(false)}}); err != nil {
+		t.Fatal(err)
+	}
+	waitOutput(t, r.stdout, u+"\n"+u+"\n") // the update is reported again
+	if errOut := r.stderr.String(); strings.Contains(errOut, "does not serve hooks on the internet") {
+		t.Fatalf("stderr = %q, want no Funnel warning for a hook that is no longer public", errOut)
+	}
+}
+
+func TestHTTPPublicOnRemembered(t *testing.T) {
+	e := newCLIEnv(t)
+	r1 := e.start()
+	first := e.url(r1)
+	r1.cancel()
+	waitExit(t, r1)
+
+	r2 := e.start("--public") // the remembered hook, now asked to be public
+	if second := e.url(r2); second != first {
+		t.Fatalf("URL changed: %q → %q", first, second)
+	}
+	waitOutput(t, r2.stderr, "public (internet): ")
+	if hs, _ := e.api().ListHooks(context.Background()); !hs[0].Public {
+		t.Fatal("--public did not make the remembered hook public")
+	}
+}
+
+func TestHTTPPublicRecreatedHookStaysPublic(t *testing.T) {
+	e := newCLIEnv(t)
+	r := e.start("--public")
+	e.url(r)
+	ctx := context.Background()
+	hs, err := e.api().ListHooks(ctx)
+	if err != nil || len(hs) != 1 || hs[0].PublicURL == "" {
+		t.Fatalf("hooks = %+v, %v", hs, err)
+	}
+	old := hs[0].PublicURL
+
+	e.offline.Store(true)
+	r.hc.CloseIdleConnections()
+	e.srv.Close() // drops the tunnel; the CLI cannot redial while offline
+	waitOutput(t, r.stderr, "tunnel lost")
+	if err := e.api().DeleteHook(ctx, hs[0].ID); err != nil { // what the reaper does
+		t.Fatal(err)
+	}
+	e.offline.Store(false)
+
+	waitOutput(t, r.stderr, "its public URL changed: https://tsrelay.example.ts.net/+")
+	hs, _ = e.api().ListHooks(ctx)
+	if len(hs) != 1 || !hs[0].Public || hs[0].PublicURL == old {
+		t.Fatalf("recreated = %+v; want public with a new URL", hs)
 	}
 }

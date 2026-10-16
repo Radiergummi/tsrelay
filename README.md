@@ -1,6 +1,6 @@
 # tsrelay
 
-Deliver HTTP callbacks from your tailnet to apps running on your laptop, without letting production connect to developer machines and without exposing anything publicly.
+Deliver HTTP callbacks from your tailnet to apps running on your laptop, without letting production connect to developer machines, and with nothing exposed publicly unless you opt in.
 
 Production services call the relay, which is its own tailnet node. Your laptop dials *out* to the relay and attaches a tunnel. The relay forwards each callback down the tunnel to your local app and returns your app's response. Access is controlled entirely by your tailnet policy.
 
@@ -8,7 +8,7 @@ Production services call the relay, which is its own tailnet node. Your laptop d
 prod service ──HTTPS──▶ tsrelay (tailnet node) ◀──tunnel── tsrelay http 8080 ──▶ localhost:8080
 ```
 
-tsrelay is deliberately narrow. It forwards only to hooks you create explicitly. It never intercepts services as Telepresence or mirrord do, and it is never reachable from the internet (it never uses Funnel).
+tsrelay is deliberately narrow. It forwards only to hooks you create explicitly. It never intercepts services as Telepresence or mirrord do, and it is reachable from the internet only for hooks their owners explicitly make public, through Tailscale Funnel, when the operator runs it with `--funnel`.
 
 ## Quick start
 
@@ -63,6 +63,19 @@ Useful flags:
 - `-p`/`--persistent` keeps the hook after the command exits. While no tunnel is attached, callers get `503` with `Retry-After`.
 - `--relay host` points at a relay that isn't at `tsrelay.<your tailnet>`.
 
+## Public hooks
+
+A hook can also be made reachable from the internet, for third-party webhooks (Stripe, GitHub, Twilio…) that can't reach your tailnet. It's opt-in twice over: the operator runs the relay with `--funnel`, and you mark the hook `public`.
+
+The operator also needs to add the `funnel` node attribute to the tailnet policy, and grant `"public": true` to the users who may make hooks public — see [deploy/policy.example.hujson](deploy/policy.example.hujson) for both.
+
+```bash
+tsrelay serve --funnel          # operator: serve public hooks through Tailscale Funnel
+tsrelay http 3000 --public      # you: make this hook's URL reachable from the internet
+```
+
+Without the `public` grant, turning a hook public fails. The relay prints both URLs; the public one is a secret, so treat it like one, and rotate it with `tsrelay hooks rotate-url <hook>` if it leaks. An ephemeral `tsrelay http --public` hook gets a new public URL once it's reaped (see `--ephemeral-grace` below), so use `-p`/`--persistent` (or `tsrelay hooks create --public`) for a stable URL to give to a provider. The relay does not verify provider signatures — see [SECURITY.md](SECURITY.md).
+
 ## Channels
 
 Grants can scope senders to receivers with channel patterns (`*` matches anything):
@@ -98,6 +111,8 @@ tsrelay hooks update payments/v1 --hold-timeout 0s
 
 `tsrelay http` takes the same settings flags; they apply when it creates the hook, not to a hook it reuses.
 
+A hook's `public` flag is also a setting (`--public`), but it has no relay-wide default or maximum: it's governed by the `public` grant and `--funnel` instead — see [Public hooks](#public-hooks).
+
 ## Managing hooks
 
 ```bash
@@ -106,6 +121,7 @@ tsrelay hooks show <hook>                          # one hook and its effective 
 tsrelay hooks create [<path>] [flags]              # create a persistent hook
 tsrelay hooks update <hook> [flags]                # change one (only the given flags)
 tsrelay hooks delete <hook>...                     # delete one or more (alias: rm)
+tsrelay hooks rotate-url <hook>                    # give a public hook a new public URL
 tsrelay url [<port|url>]                           # the URL tsrelay http would use, without contacting the relay
 tsrelay attach <hook>... -t <port|url>             # serve existing hooks from one local target
 ```
@@ -188,6 +204,9 @@ Every flag can also be set as an environment variable: `--ephemeral-grace` becom
 |---|---|---|
 | `--hostname` | `tsrelay` | Tailnet machine name |
 | `--tls` | `true` | HTTPS on 443; `false` serves HTTP on 80 |
+| `--funnel` | `false` | Serve hooks their owners made public on the internet, through Tailscale Funnel; requires `--tls` |
+| `--funnel-port` | `443` | The Funnel port for public hooks: `443`, `8443` or `10000` |
+| `--funnel-max-body-bytes` | `26214400` (25 MiB) | Largest request body of a call from the internet |
 | `--advertise-tags` | `tag:tsrelay` | |
 | `--cap-name` | `mazetti.me/cap/relay` | Capability that carries grants |
 | `--user-slug` | `local-part` | `moritz@example.com` → `~moritz`; `login` uses the full login |

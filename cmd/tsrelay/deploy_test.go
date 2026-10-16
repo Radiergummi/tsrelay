@@ -127,6 +127,8 @@ func TestExamplePolicy(t *testing.T) {
 		"mazetti.me/cap/relay",
 		`"roles": ["receiver"]`,
 		`"roles": ["sender"]`,
+		"funnel",
+		`"public": true`,
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("policy.example.hujson missing %q", want)

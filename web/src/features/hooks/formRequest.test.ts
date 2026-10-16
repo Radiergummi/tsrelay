@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { fixtures } from "@/test/fixtures";
-import { fieldValue, formRequest, initialValues, parseHeaders } from "./formRequest";
+import { fieldTypes, fieldValue, formRequest, initialValues, parseHeaders } from "./formRequest";
 
 test("field values by type", () => {
   expect(fieldValue("  ", "duration")).toEqual({ value: undefined });
@@ -40,6 +40,15 @@ test("initial values come from the hook, with relay defaults left empty", () => 
   expect(v["path"]).toBe("payments/done");
   expect(v["settings.holdTimeout"]).toBe("");
   expect(initialValues(undefined)["ephemeral"]).toBe("false");
+});
+
+test("public is a bool field that starts false and follows the hook", () => {
+  expect(initialValues(undefined)["public"]).toBe("false");
+  expect(
+    initialValues({ ...fixtures.hook, public: true, publicUrl: "https://x/+t" })["public"],
+  ).toBe("true");
+  const { body } = formRequest([["public", "true", fieldTypes["public"]!]], false);
+  expect(body).toEqual({ public: true });
 });
 
 test("headers are Name: value lines", () => {

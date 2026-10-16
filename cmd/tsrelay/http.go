@@ -47,6 +47,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 	channel := fs.StringP("channel", "c", "", `hook channel (default: "default")`)
 	persistent := fs.BoolP("persistent", "p", false, "keep the hook after tsrelay exits")
 	insecure := fs.BoolP("insecure", "k", false, "skip TLS certificate verification for an https:// target")
+	public := fs.Bool("public", false, "make the hook reachable from the internet through the relay's Funnel")
 	settings := registerHookSettingFlags(fs, false)
 	cmd.Long += " Settings flags apply only when the hook is created."
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -76,10 +77,16 @@ func newHTTPCmd(c *cli) *cobra.Command {
 		}
 		cwd, _ := os.Getwd()
 		key := client.StateKey(relayAPI.BaseURL, cwd, target)
-		req := hooks.CreateRequest{Channel: *channel, Ephemeral: !*persistent, Settings: s}
+		req := hooks.CreateRequest{Channel: *channel, Ephemeral: !*persistent, Settings: s, Public: *public}
 		hook, created, err := ensureHook(ctx, relayAPI, *name, state.Path(key), req)
 		if err != nil {
 			return exitWith(out.fail(err))
+		}
+		if !created && fs.Changed("public") && hook.Public != *public {
+			hook, err = relayAPI.UpdateHook(ctx, hook.ID, hooks.UpdateRequest{Public: optPtr(public)})
+			if err != nil {
+				return exitWith(out.fail(err))
+			}
 		}
 		if !created && !c.json && anyHookSettingGivenOnCLI(fs) {
 			out.status(styleWarn, fmt.Sprintf("settings flags apply only when the hook is created; use tsrelay hooks update to change %s", hook.Path))
@@ -110,7 +117,9 @@ func newHTTPCmd(c *cli) *cobra.Command {
 				mu.Lock()
 				old := hook
 				mu.Unlock()
-				h, _, err := ensureHook(ctx, relayAPI, old.Path, "", req)
+				recreate := req
+				recreate.Public = old.Public // as it was last, not as the flags first asked
+				h, _, err := ensureHook(ctx, relayAPI, old.Path, "", recreate)
 				if err != nil {
 					return nil, err
 				}
@@ -129,12 +138,12 @@ func newHTTPCmd(c *cli) *cobra.Command {
 				seqs.observe(ctl)
 				if ctl.Type == tunnel.ControlHookUpdated {
 					for _, h := range ctl.Hooks {
-						if h.ID != hook.ID || !seqs.fresh(h.ID, ctl.Seq) || h.URL == hook.URL {
+						if h.ID != hook.ID || !seqs.fresh(h.ID, ctl.Seq) || (h.URL == hook.URL && h.Public == hook.Public && h.PublicURL == hook.PublicURL) {
 							continue
 						}
 						// Only the path can change the URL; the prefix before it stays.
 						hook.Path = strings.TrimPrefix(h.URL, strings.TrimSuffix(hook.URL, hook.Path))
-						hook.URL = h.URL
+						hook.URL, hook.PublicURL, hook.Public = h.URL, h.PublicURL, h.Public
 						if err := state.Remember(key, hook.Path, hook.URL); err != nil {
 							out.status(styleWarn, "could not remember the hook path: "+err.Error())
 						}

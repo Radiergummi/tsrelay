@@ -210,3 +210,39 @@ test("a 422 whose errors don't map to a shown field shows a form-level message i
     await within(reopened).findByText("the body is too large for this hook"),
   ).toBeInTheDocument();
 });
+
+test("a public hook shows its public URL to the owner, who can rotate it", async () => {
+  const publicHook = {
+    ...fixtures.hook,
+    public: true,
+    publicUrl: "https://tsrelay.example.ts.net/+old",
+  };
+  let rotated = false;
+  server.use(
+    http.get(`/api/v1/hooks/${fixtures.hook.id}`, () =>
+      HttpResponse.json(
+        rotated ? { ...publicHook, publicUrl: "https://tsrelay.example.ts.net/+new" } : publicHook,
+      ),
+    ),
+    http.post(`/api/v1/hooks/${fixtures.hook.id}/rotate-public-url`, () => {
+      rotated = true;
+      return HttpResponse.json({ ...publicHook, publicUrl: "https://tsrelay.example.ts.net/+new" });
+    }),
+  );
+  open(fixtures.hook.id);
+  expect(await screen.findByText("https://tsrelay.example.ts.net/+old")).toBeInTheDocument();
+  expect(screen.getByText("Public")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Rotate public URL" }));
+  expect(await screen.findByText("https://tsrelay.example.ts.net/+new")).toBeInTheDocument();
+});
+
+test("a public hook explains that it's unreachable while this relay runs without Funnel", async () => {
+  server.use(
+    http.get(`/api/v1/hooks/${fixtures.hook.id}`, () =>
+      HttpResponse.json({ ...fixtures.hook, public: true }),
+    ),
+  );
+  open(fixtures.hook.id); // fixtures.me has no funnel field, i.e. Funnel is off
+  expect(await screen.findByText("Public")).toBeInTheDocument();
+  expect(screen.getByText(/does not serve hooks on the internet/i)).toBeInTheDocument();
+});
