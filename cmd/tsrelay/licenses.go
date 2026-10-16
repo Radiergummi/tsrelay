@@ -15,7 +15,7 @@ func newLicensesCmd(c *cli) *cobra.Command {
 	return &cobra.Command{
 		Use:   "licenses",
 		Short: "Print the licenses of the open-source components in tsrelay",
-		Args:  usageArgs(cobra.NoArgs),
+		Args:  arity(0, 0, ""),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c.stdout.Write(sbom.Notices())
 			if base, err := relayBase(cmd.Context(), c.relay, c.d); err == nil {
