@@ -89,6 +89,8 @@ Without the `public` grant, turning a hook public fails. The relay prints both U
 
 Every hook belongs to a channel, `default` unless you pick another with `--channel`. Your grant says which channels you may create hooks in, and senders' grants say which channels they may call. So a channel decides who can reach your hook. Ask your operator which channels exist on your tailnet.
 
+The web UI's Channels page lists your patterns and the channels your hooks are in, and each channel's page shows its hooks and whether you may receive and send on it. Channel names in the hook list link there, and the hook list can be filtered by channel. The same data is in the API: `GET /channels`, `GET /channels/{name}`, and `GET /hooks?channel=prod.payments` for the hooks in one channel. Who else may send on a channel isn't something the relay knows; that's in the tailnet policy.
+
 ## Managing hooks
 
 ```bash
