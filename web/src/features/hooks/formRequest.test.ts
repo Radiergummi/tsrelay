@@ -1,6 +1,13 @@
 import { expect, test } from "vitest";
 import { fixtures } from "@/test/fixtures";
-import { fieldTypes, fieldValue, formRequest, initialValues, parseHeaders } from "./formRequest";
+import {
+  effectiveSettings,
+  fieldTypes,
+  fieldValue,
+  formRequest,
+  initialValues,
+  parseHeaders,
+} from "./formRequest";
 
 test("field values by type", () => {
   expect(fieldValue("  ", "duration")).toEqual({ value: undefined });
@@ -10,7 +17,9 @@ test("field values by type", () => {
   expect(fieldValue("1e3", "int").error).toMatch(/whole number/);
   expect(fieldValue("10/20", "ratelimit")).toEqual({ value: { perSecond: 10, burst: 20 } });
   expect(fieldValue("0.5 / 1", "ratelimit")).toEqual({ value: { perSecond: 0.5, burst: 1 } });
-  expect(fieldValue("fast", "ratelimit").error).toMatch(/per second \/ burst/);
+  expect(fieldValue("fast", "ratelimit").error).toMatch(
+    /calls per second and a whole-number burst/,
+  );
   expect(fieldValue("false", "bool")).toEqual({ value: false });
 });
 
@@ -40,6 +49,18 @@ test("initial values come from the hook, with relay defaults left empty", () => 
   expect(v["path"]).toBe("payments/done");
   expect(v["settings.holdTimeout"]).toBe("");
   expect(initialValues(undefined)["ephemeral"]).toBe("false");
+});
+
+test("effective settings are the valid overrides over the relay defaults", () => {
+  const v = initialValues(undefined);
+  v["settings.holdTimeout"] = "2m";
+  v["settings.idleTimeout"] = "soon";
+  v["settings.capture"] = "false";
+  expect(effectiveSettings(v, fixtures.me.policy.defaults)).toEqual({
+    ...fixtures.me.policy.defaults,
+    holdTimeout: "2m",
+    capture: false,
+  });
 });
 
 test("public is a bool field that starts false and follows the hook", () => {

@@ -7,6 +7,23 @@ export function formatSize(n: number): string {
   return `${(n / (1 << 20)).toFixed(1)} MiB`;
 }
 
+/** rfc3339 is a time in UTC to the second, as the API takes it: "2026-12-31T17:00:00Z". */
+export const rfc3339 = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
+
+/** localInputValue is an RFC 3339 time as an <input type="datetime-local"> shows it: in the browser's time zone, to the minute. */
+export function localInputValue(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** fromLocalInput reads an <input type="datetime-local"> value, which is local time, as RFC 3339 in UTC; "" if it isn't a time. */
+export function fromLocalInput(local: string): string {
+  const d = new Date(local); // a date and time without an offset is local time
+  return local === "" || Number.isNaN(d.getTime()) ? "" : rfc3339(d);
+}
+
 /** absoluteTime is an RFC 3339 time in UTC to the second: "2026-10-14 11:59:58Z". */
 export function absoluteTime(iso: string): string {
   return new Date(iso).toISOString().slice(0, 19).replace("T", " ") + "Z";
