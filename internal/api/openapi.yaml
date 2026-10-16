@@ -320,6 +320,60 @@ paths:
           description: The OpenAPI document
           content:
             application/yaml: {}
+  /licenses:
+    get:
+      operationId: getLicenses
+      summary: The open-source components built into the relay and their licenses
+      description: Needs no role.
+      responses:
+        "200":
+          description: The licenses document, projected from `/sbom.cdx.json`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Licenses" }
+            text/html: {}
+        "403": { $ref: "#/components/responses/Problem" }
+        "406": { $ref: "#/components/responses/Problem" }
+  /licenses/{textId}:
+    parameters:
+      - name: textId
+        in: path
+        required: true
+        description: A component's `textId` or `noticeId`.
+        schema: { type: string }
+    get:
+      operationId: getLicenseText
+      summary: One license or notice text
+      description: The ID is a hash of the text, so responses are cached as immutable. Needs no role.
+      responses:
+        "200":
+          description: The text
+          content:
+            text/plain: {}
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /notices.txt:
+    get:
+      operationId: getNotices
+      summary: The relay's NOTICE, then every component's license and notice texts
+      description: Needs no role.
+      responses:
+        "200":
+          description: The notices
+          content:
+            text/plain: {}
+        "403": { $ref: "#/components/responses/Problem" }
+  /sbom.cdx.json:
+    get:
+      operationId: getSBOM
+      summary: The relay's software bill of materials, as CycloneDX 1.6
+      description: Needs no role.
+      responses:
+        "200":
+          description: The SBOM
+          content:
+            application/vnd.cyclonedx+json: {}
+        "403": { $ref: "#/components/responses/Problem" }
 components:
   parameters:
     id:
@@ -429,6 +483,7 @@ components:
         hooks: { type: integer, description: "Hooks the caller owns" }
         capName: { type: string }
         version: { type: string }
+        commit: { type: string, description: "The revision the relay was built from, when known" }
         policy:
           type: object
           required: [defaults, max, callsPerHook]
@@ -447,7 +502,7 @@ components:
         funnel: { type: boolean, description: "The relay serves public hooks on the internet" }
         links:
           type: object
-          required: [hooks, channels, tunnel, openapi]
+          required: [hooks, channels, tunnel, openapi, licenses]
           additionalProperties: { type: string }
     Hook:
       type: object
@@ -638,6 +693,32 @@ components:
           required: [id]
           properties:
             id: { type: string }
+    Licenses:
+      type: object
+      required: [components]
+      properties:
+        components:
+          type: array
+          items:
+            type: object
+            required: [name, ecosystem, licenses]
+            properties:
+              name: { type: string }
+              version: { type: string }
+              description: { type: string }
+              ecosystem: { type: string, enum: [go, npm, other] }
+              licenses:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, description: "An SPDX identifier or expression" }
+                    name: { type: string }
+                    url: { type: string }
+              homepage: { type: string }
+              repository: { type: string }
+              textId: { type: string, description: "The license text, at `/licenses/{textId}`" }
+              noticeId: { type: string, description: "The NOTICE text, at `/licenses/{textId}`" }
     Problem:
       type: object
       required: [type, title, status, code]

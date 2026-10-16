@@ -41,11 +41,13 @@ type forcedKey struct{}
 
 // Extensions strips a .json or .html extension from the last segment of
 // the path and remembers it for Pick, so routes match the bare resource.
+// A segment with another extension before it, as in /sbom.cdx.json, names
+// a file and is kept.
 func Extensions(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for ext, t := range extensions {
 			p, ok := strings.CutSuffix(r.URL.Path, ext)
-			if !ok || strings.HasSuffix(p, "/") {
+			if !ok || strings.HasSuffix(p, "/") || strings.Contains(p[strings.LastIndexByte(p, '/')+1:], ".") {
 				continue
 			}
 			u := *r.URL
