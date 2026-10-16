@@ -1,5 +1,5 @@
 import * as z from "zod/mini";
-import { fieldError, me, problem, type FieldError, type Me } from "./schemas";
+import { fieldError, problem, type FieldError } from "./schemas";
 
 /** ApiError is a failed API request: a problem response, or no response at all (status 0). */
 export class ApiError extends Error {
@@ -126,10 +126,4 @@ export async function requestVoid(
   signal?: AbortSignal,
 ): Promise<void> {
   await send(method, path, body, signal);
-}
-
-/** requestMe is GET /me with the relay's version (its Tsrelay-Version header, "dev" without one). */
-export async function requestMe(signal?: AbortSignal): Promise<Me> {
-  const resp = await send("GET", paths.me, undefined, signal);
-  return { ...me.parse(await resp.json()), version: resp.headers.get("Tsrelay-Version") ?? "dev" };
 }

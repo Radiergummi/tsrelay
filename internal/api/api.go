@@ -36,6 +36,7 @@ type API struct {
 	Audit      *audit.Logger
 	BaseURL    string // e.g. "https://tsrelay.example.ts.net", no trailing slash
 	CapName    string // the capability carrying relay grants; GET /me names it for the no-access page
+	Version    string // the relay's version ("v0.3.0", or "dev"); GET /me names it next to the CLI's download
 	Tunnel     tunnel.Options
 	Tracer     trace.Tracer // nil: no spans
 	Meter      metric.Meter // nil: no API latency histogram
@@ -49,8 +50,7 @@ type API struct {
 }
 
 // VersionHeader names the relay's version ("v0.3.0", or "dev") on every
-// response but a callback's. The CLI compares it with its own, and the UI
-// shows it next to the CLI's download.
+// response but a callback's. The CLI compares it with its own.
 const VersionHeader = "Tsrelay-Version"
 
 type Me struct {
@@ -62,6 +62,7 @@ type Me struct {
 	Limits  Limits                  `json:"limits"`
 	Hooks   int                     `json:"hooks"`
 	CapName string                  `json:"capName"`
+	Version string                  `json:"version"`
 	Policy  Policy                  `json:"policy"`
 }
 
@@ -161,7 +162,7 @@ func (a *API) MeOf(id authz.Identity) Me {
 		me.Hooks = len(a.Hooks.List(id.UserID))
 	}
 	p := a.Hooks.Policy()
-	me.CapName, me.Policy = a.CapName, Policy{Defaults: p.Defaults, Max: p.Max, CallsPerHook: a.Inspect.CallsPerHook()}
+	me.CapName, me.Version, me.Policy = a.CapName, a.Version, Policy{Defaults: p.Defaults, Max: p.Max, CallsPerHook: a.Inspect.CallsPerHook()}
 	return me
 }
 

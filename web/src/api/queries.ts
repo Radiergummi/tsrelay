@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { paths, request, requestMe } from "./client";
+import { paths, request } from "./client";
 import * as s from "./schemas";
 
 export const keys = {
@@ -15,7 +15,7 @@ export const keys = {
 export function useMe() {
   return useQuery({
     queryKey: keys.me,
-    queryFn: ({ signal }) => requestMe(signal),
+    queryFn: ({ signal }) => request(s.me, "GET", paths.me, undefined, signal),
     staleTime: 60_000,
   });
 }

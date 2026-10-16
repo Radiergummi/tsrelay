@@ -75,8 +75,9 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	}
 	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect}
 
+	version := cmp.Or(cfg.Version, "dev")
 	mux := http.NewServeMux()
-	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, CapName: cfg.CapName, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName)}
+	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, CapName: cfg.CapName, Version: version, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName)}
 	if s.tel.Tracing {
 		s.relay.Tracer = s.tel.Tracer.Tracer(telemetry.ScopeName)
 		if !cfg.NoTracePropagation {
@@ -86,30 +87,22 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	}
 	a.Register(mux)
 	ui.New(a, web.Dist).Register(mux)
-	version := cmp.Or(cfg.Version, "dev")
 	(&install.Handler{Version: version, BaseURL: cfg.BaseURL}).Register(mux)
-	versioned := withVersion(version, mux)
 
 	// Callbacks bypass the mux, whose path cleaning would rewrite paths
-	// such as "/~m/cb//x" that must reach the local app unchanged.
+	// such as "/~m/cb//x" that must reach the local app unchanged. They
+	// also go without the version header: their responses stay exactly
+	// what the receiver's app returned.
 	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/~") {
 			s.relay.ServeHTTP(w, r)
 			return
 		}
-		versioned.ServeHTTP(w, r)
+		w.Header().Set(api.VersionHeader, version)
+		mux.ServeHTTP(w, r)
 	})
 	s.handler = api.Guard(cfg.AllowedHosts, root)
 	return s
-}
-
-// withVersion names the relay's version on every response next writes.
-// Callbacks never pass through it.
-func withVersion(version string, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set(api.VersionHeader, version)
-		next.ServeHTTP(w, r)
-	})
 }
 
 func (s *Server) Handler() http.Handler { return s.handler }

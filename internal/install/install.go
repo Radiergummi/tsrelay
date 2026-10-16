@@ -6,6 +6,7 @@
 package install
 
 import (
+	"bytes"
 	"embed"
 	"net/http"
 	"net/url"
@@ -32,18 +33,20 @@ var targets = map[string][]string{
 }
 
 type Handler struct {
-	Version  string // the relay's version; "dev" (or "") for a build without one
+	Version  string // the relay's version, or "dev" for a build without one
 	BaseURL  string // the relay's URL on the tailnet, no trailing slash
 	Releases string // base URL of the release assets; "" means GitHub's
 }
 
+// Register renders the install scripts once; nothing in them changes for
+// the relay's lifetime.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /install.sh", h.script("install.sh.tmpl", "text/x-shellscript; charset=utf-8"))
 	mux.HandleFunc("GET /install.ps1", h.script("install.ps1.tmpl", "text/plain; charset=utf-8"))
 	mux.HandleFunc("GET /download/{os}/{arch}", h.download)
 }
 
-func (h *Handler) dev() bool { return h.Version == "" || h.Version == "dev" }
+func (h *Handler) dev() bool { return h.Version == "dev" }
 
 // assetBase is the URL the release assets are below.
 func (h *Handler) assetBase() string {
@@ -70,19 +73,24 @@ func (h *Handler) relayHint() string {
 }
 
 func (h *Handler) script(name, contentType string) http.HandlerFunc {
+	version := h.Version
+	if h.dev() {
+		version = "latest"
+	}
+	var buf bytes.Buffer
+	if err := scripts.ExecuteTemplate(&buf, name, map[string]string{
+		"AssetBase": h.assetBase(),
+		"Version":   version,
+		"RelayURL":  h.BaseURL,
+		"RelayHint": h.relayHint(),
+	}); err != nil {
+		panic(err) // the templates are embedded, so this is a build defect
+	}
+	body := buf.Bytes()
 	return func(w http.ResponseWriter, r *http.Request) {
-		version := h.Version
-		if h.dev() {
-			version = "latest"
-		}
 		w.Header().Set("Content-Type", contentType)
 		w.Header().Set("Cache-Control", "no-cache")
-		scripts.ExecuteTemplate(w, name, map[string]string{
-			"AssetBase": h.assetBase(),
-			"Version":   version,
-			"RelayURL":  h.BaseURL,
-			"RelayHint": h.relayHint(),
-		})
+		w.Write(body)
 	}
 }
 

@@ -127,6 +127,7 @@ export const me = z.object({
   }),
   hooks: z.number(),
   capName: z.string(),
+  version: z.string(),
   policy: z.object({ defaults: effective, max: maxima, callsPerHook: z.number() }),
 });
 
@@ -152,8 +153,7 @@ export type Effective = z.infer<typeof effective>;
 export type Settings = z.infer<typeof settings>;
 export type Maxima = z.infer<typeof maxima>;
 export type Hook = z.infer<typeof hook>;
-/** Me is GET /me plus the relay's version, from its Tsrelay-Version header. */
-export type Me = z.infer<typeof me> & { version: string };
+export type Me = z.infer<typeof me>;
 export type FieldError = z.infer<typeof fieldError>;
 
 /** HookRequest is the body of POST and PATCH /api/v1/hooks (hooks.CreateRequest and UpdateRequest). */

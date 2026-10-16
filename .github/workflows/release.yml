@@ -41,11 +41,7 @@ jobs:
           if-no-files-found: error
 
   binaries:
-    needs: [create-release, web]
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
+    needs: [web]
     strategy:
       fail-fast: false
       matrix:
@@ -78,40 +74,19 @@ jobs:
           go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o "$out" ./cmd/tsrelay
           echo "path=$out" >> "$GITHUB_OUTPUT"
 
-      # Signing changes the macOS binaries, so sign-macos writes their
-      # checksums and uploads them.
-      - name: Write the checksum
-        if: matrix.goos != 'darwin'
-        working-directory: dist
-        env:
-          BINARY: ${{ steps.build.outputs.path }}
-        run: sha256sum "${BINARY#dist/}" > "tsrelay_${{ matrix.goos }}_${{ matrix.goarch }}.sha256"
-
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        if: matrix.goos != 'darwin'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          subject-path: ${{ steps.build.outputs.path }}
-
-      - name: Upload to the draft release
-        if: matrix.goos != 'darwin'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${GITHUB_REF_NAME}" dist/*
-
-      - name: Hand the binary to sign-macos
-        if: matrix.goos == 'darwin'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: darwin-${{ matrix.goarch }}
+          name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ steps.build.outputs.path }}
           if-no-files-found: error
 
-  # Signs and notarizes the macOS binaries with the Developer ID certificate.
-  # It is the only job that can read the signing secrets: they live in the
-  # release environment, which only v* tags can deploy to. The build jobs
-  # compile third-party code, so they never see them.
-  sign-macos:
-    needs: [binaries]
+  # Signs and notarizes the macOS binaries with the Developer ID certificate,
+  # then checksums, attests and uploads all of them. It is the only job that
+  # can read the signing secrets: they live in the release environment,
+  # which only v* tags can deploy to. The build jobs compile third-party
+  # code, so they never see them.
+  publish-binaries:
+    needs: [create-release, binaries]
     environment: release
     permissions:
       contents: write
@@ -124,7 +99,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: darwin-*
+          pattern: binary-*
           merge-multiple: true
           path: dist
 
@@ -150,8 +125,8 @@ jobs:
       # timestamp, and refuses anything but a Developer ID certificate. The
       # identifier is set so both architectures share one, rather than each
       # taking its file name. A bare binary cannot have its ticket stapled,
-      # so it goes to Apple in a zip, and macOS checks it online on first
-      # launch.
+      # so both go to Apple in one zip, notarized in a single submission,
+      # and macOS checks them online on first launch.
       - name: Sign and notarize
         working-directory: dist
         run: |
@@ -159,10 +134,9 @@ jobs:
             rcodesign sign --for-notarization \
               --p12-file "$RUNNER_TEMP/cert.p12" --p12-password-file "$RUNNER_TEMP/cert.pass" \
               --binary-identifier com.radiergummi.tsrelay "$f"
-            zip -q "$RUNNER_TEMP/$f.zip" "$f"
-            rcodesign notary-submit --api-key-file "$RUNNER_TEMP/asc-key.json" --wait "$RUNNER_TEMP/$f.zip"
-            sha256sum "$f" > "$f.sha256"
           done
+          zip -q "$RUNNER_TEMP/darwin.zip" tsrelay_darwin_*
+          rcodesign notary-submit --api-key-file "$RUNNER_TEMP/asc-key.json" --wait "$RUNNER_TEMP/darwin.zip"
 
       - name: Remove the signing credentials
         if: always()
@@ -170,9 +144,12 @@ jobs:
 
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: |
-            dist/tsrelay_darwin_amd64
-            dist/tsrelay_darwin_arm64
+          subject-path: dist/tsrelay_*
+
+      # The install scripts fetch tsrelay_<os>_<arch>.sha256, without .exe.
+      - name: Write the checksums
+        working-directory: dist
+        run: for f in tsrelay_*; do sha256sum "$f" > "${f%.exe}.sha256"; done
 
       - name: Upload to the draft release
         env:
@@ -250,7 +227,7 @@ jobs:
   # Publishing makes the release, its assets and its tag immutable, so it
   # waits for the binaries and the image.
   publish-release:
-    needs: [binaries, sign-macos, docker]
+    needs: [publish-binaries, docker]
     permissions:
       contents: write
     runs-on: ubuntu-latest

@@ -1,8 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
-import { fixtures } from "@/test/fixtures";
 import { server } from "@/test/server";
-import { ApiError, fieldMessage, request, requestMe, requestVoid, paths } from "./client";
+import { ApiError, fieldMessage, request, requestVoid, paths } from "./client";
 import { hook } from "./schemas";
 
 test("a problem response becomes an ApiError with its field errors", async () => {
@@ -51,18 +50,4 @@ test("requestVoid accepts 204, and paths escape IDs", async () => {
   server.use(http.delete("/api/v1/hooks/:id", () => new HttpResponse(null, { status: 204 })));
   await expect(requestVoid("DELETE", paths.hook("h_1"))).resolves.toBeUndefined();
   expect(paths.call("a/b", "c?d")).toBe("/api/v1/hooks/a%2Fb/calls/c%3Fd");
-});
-
-test("requestMe carries the relay's version from its header", async () => {
-  server.use(
-    http.get("/api/v1/me", () =>
-      HttpResponse.json(fixtures.me, { headers: { "Tsrelay-Version": "v0.4.1" } }),
-    ),
-  );
-  expect((await requestMe()).version).toBe("v0.4.1");
-});
-
-test("requestMe treats a relay without a version header as dev", async () => {
-  server.use(http.get("/api/v1/me", () => HttpResponse.json(fixtures.me)));
-  expect((await requestMe()).version).toBe("dev");
 });

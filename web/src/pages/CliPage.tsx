@@ -1,13 +1,10 @@
-import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InstallCommand } from "@/features/cli/InstallCommand";
-import { detectPlatform, downloads, type Platform } from "@/lib/install";
+import { detectPlatform, downloads } from "@/lib/install";
 import { useViewer } from "@/lib/useViewer";
 
 export function CliPage() {
   const me = useViewer();
-  const [platform, setPlatform] = useState<Platform>(() => detectPlatform());
-  const origin = window.location.origin;
   return (
     <section className="max-w-3xl space-y-6">
       <div>
@@ -18,16 +15,16 @@ export function CliPage() {
             : `You'll get tsrelay ${me.version}, the version this relay runs.`}
         </p>
       </div>
-      <Tabs value={platform} onValueChange={(v) => setPlatform(v as Platform)}>
+      <Tabs defaultValue={detectPlatform()}>
         <TabsList>
           <TabsTrigger value="unix">macOS / Linux</TabsTrigger>
           <TabsTrigger value="windows">Windows</TabsTrigger>
         </TabsList>
         <TabsContent value="unix">
-          <InstallCommand platform="unix" origin={origin} />
+          <InstallCommand platform="unix" />
         </TabsContent>
         <TabsContent value="windows">
-          <InstallCommand platform="windows" origin={origin} />
+          <InstallCommand platform="windows" />
         </TabsContent>
       </Tabs>
       <p className="text-muted-foreground">

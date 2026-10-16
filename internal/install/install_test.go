@@ -24,14 +24,12 @@ func get(t *testing.T, h *Handler, p string) *httptest.ResponseRecorder {
 	return rec
 }
 
-const releases = "https://github.com/Radiergummi/tsrelay/releases"
-
 func TestDownloadRedirectsToTheRelaysRelease(t *testing.T) {
 	h := &Handler{Version: "v0.3.0", BaseURL: "https://tsrelay.example.ts.net"}
 	for p, want := range map[string]string{
-		"/download/darwin/arm64":  releases + "/download/v0.3.0/tsrelay_darwin_arm64",
-		"/download/linux/amd64":   releases + "/download/v0.3.0/tsrelay_linux_amd64",
-		"/download/windows/amd64": releases + "/download/v0.3.0/tsrelay_windows_amd64.exe",
+		"/download/darwin/arm64":  github + "/download/v0.3.0/tsrelay_darwin_arm64",
+		"/download/linux/amd64":   github + "/download/v0.3.0/tsrelay_linux_amd64",
+		"/download/windows/amd64": github + "/download/v0.3.0/tsrelay_windows_amd64.exe",
 	} {
 		rec := get(t, h, p)
 		if rec.Code != http.StatusFound || rec.Header().Get("Location") != want {
@@ -41,11 +39,9 @@ func TestDownloadRedirectsToTheRelaysRelease(t *testing.T) {
 }
 
 func TestDownloadOnADevRelayUsesTheLatestRelease(t *testing.T) {
-	for _, v := range []string{"dev", ""} {
-		rec := get(t, &Handler{Version: v}, "/download/linux/arm64")
-		if want := releases + "/latest/download/tsrelay_linux_arm64"; rec.Header().Get("Location") != want {
-			t.Errorf("version %q → %q, want %q", v, rec.Header().Get("Location"), want)
-		}
+	rec := get(t, &Handler{Version: "dev"}, "/download/linux/arm64")
+	if want := github + "/latest/download/tsrelay_linux_arm64"; rec.Header().Get("Location") != want {
+		t.Errorf("Location = %q, want %q", rec.Header().Get("Location"), want)
 	}
 }
 
@@ -60,8 +56,8 @@ func TestDownloadRejectsUnbuiltTargets(t *testing.T) {
 
 func TestScriptsFetchFromTheRelaysRelease(t *testing.T) {
 	for _, tc := range []struct{ version, base string }{
-		{"v0.3.0", releases + "/download/v0.3.0"},
-		{"dev", releases + "/latest/download"},
+		{"v0.3.0", github + "/download/v0.3.0"},
+		{"dev", github + "/latest/download"},
 	} {
 		h := &Handler{Version: tc.version, BaseURL: "https://tsrelay.example.ts.net"}
 		for p, ctype := range map[string]string{
@@ -144,6 +140,7 @@ func TestShellScriptInstalls(t *testing.T) {
 	}
 	bin := []byte("#!/bin/sh\necho tsrelay version v0.3.0\n")
 	sum := sha256.Sum256(bin)
+	good := hex.EncodeToString(sum[:])
 	release := func(t *testing.T, sumHex string) string {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if name, ok := strings.CutSuffix(path.Base(r.URL.Path), ".sha256"); ok {
@@ -176,7 +173,7 @@ func TestShellScriptInstalls(t *testing.T) {
 
 	t.Run("installs", func(t *testing.T) {
 		home := t.TempDir()
-		out, err := install(t, release(t, hex.EncodeToString(sum[:])), home)
+		out, err := install(t, release(t, good), home)
 		if err != nil {
 			t.Fatalf("%v\n%s", err, out)
 		}
@@ -191,7 +188,7 @@ func TestShellScriptInstalls(t *testing.T) {
 	t.Run("replaces an existing binary", func(t *testing.T) {
 		home := t.TempDir()
 		dst := existing(t, home)
-		if out, err := install(t, release(t, hex.EncodeToString(sum[:])), home); err != nil {
+		if out, err := install(t, release(t, good), home); err != nil {
 			t.Fatalf("%v\n%s", err, out)
 		}
 		if b, _ := os.ReadFile(dst); string(b) != string(bin) {

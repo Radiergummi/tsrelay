@@ -20,9 +20,7 @@ const notFound = () =>
 
 /** handlers answer as the dev user (receiver and admin) would be answered. Tests override with server.use. */
 export const handlers = [
-  http.get("/api/v1/me", () =>
-    HttpResponse.json(fixtures.me, { headers: { "Tsrelay-Version": "v0.3.0" } }),
-  ),
+  http.get("/api/v1/me", () => HttpResponse.json(fixtures.me)),
   http.get("/api/v1/hooks", ({ request }) =>
     HttpResponse.json(
       new URL(request.url).searchParams.get("all") === "true" ? fixtures.hooksAll : fixtures.hooks,

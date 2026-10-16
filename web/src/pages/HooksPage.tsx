@@ -44,7 +44,7 @@ export function HooksPage() {
         <EmptyState title="You have no hooks yet">
           <div className="mx-auto max-w-xl space-y-3">
             <p>Install the CLI:</p>
-            <InstallCommand platform={detectPlatform()} origin={window.location.origin} />
+            <InstallCommand platform={detectPlatform()} />
             <p>
               Then run <code>tsrelay http 8080</code> on your machine to get a hook whose calls
               reach port 8080, or{" "}

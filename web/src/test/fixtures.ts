@@ -25,10 +25,10 @@ import me from "./fixtures/me.json";
 
 /** fixtures are real API responses from the dev harness, parsed by the app's schemas. */
 export const fixtures = {
-  me: { ...s.me.parse(me), version: "v0.3.0" },
-  meAdmin: { ...s.me.parse(meAdmin), version: "v0.3.0" },
-  meNobody: { ...s.me.parse(meNobody), version: "v0.3.0" },
-  meOther: { ...s.me.parse(meOther), version: "v0.3.0" },
+  me: s.me.parse(me),
+  meAdmin: s.me.parse(meAdmin),
+  meNobody: s.me.parse(meNobody),
+  meOther: s.me.parse(meOther),
   hooks: s.hooks.parse(hooks),
   hooksAll: s.hooks.parse(hooksAll),
   hook: s.hook.parse(hook),
