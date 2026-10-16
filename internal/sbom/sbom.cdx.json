@@ -2407,6 +2407,21 @@
       }
     },
     {
+      "bom-ref": "pkg:golang/std@go1.27.1?type=module",
+      "type": "library",
+      "name": "std",
+      "version": "go1.27.1",
+      "scope": "required",
+      "purl": "pkg:golang/std@go1.27.1?type=module&goos=linux&goarch=amd64",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
       "bom-ref": "pkg:golang/tailscale.com@v1.104.1?type=module",
       "type": "library",
       "name": "tailscale.com",

@@ -10,6 +10,7 @@ import (
 func testRoots() Roots {
 	return Roots{
 		GoModCache:  "testdata/gomodcache",
+		GoRoot:      "testdata/goroot",
 		NodeModules: "testdata/node_modules",
 	}
 }
@@ -32,6 +33,25 @@ func TestHarvestResolvesEscapedModulePaths(t *testing.T) {
 	}
 
 	if got := artifact.Texts[entry.License]; got != "MIT License\n\nCopyright (c) 2026 Upper Case\n" {
+		t.Errorf("license text = %q", got)
+	}
+}
+
+// The standard library is linked into every Go binary, and its BSD license
+// asks for its notice in binary distributions. It is not in the module
+// cache: its license is GOROOT's.
+func TestHarvestReadsTheStandardLibrarysLicenseFromGoRoot(t *testing.T) {
+	doc := sbom.Document{Components: []sbom.Component{
+		{Name: "std", Version: "go1.27.1", Ecosystem: "go"},
+	}}
+
+	artifact, err := Harvest(doc, testRoots())
+	if err != nil {
+		t.Fatalf("Harvest: %v", err)
+	}
+
+	entry := artifact.Components["go:std@go1.27.1"]
+	if got := artifact.Texts[entry.License]; got != "Copyright 2009 The Go Authors.\n" {
 		t.Errorf("license text = %q", got)
 	}
 }

@@ -64,6 +64,20 @@ func TestNoticesAreHarvested(t *testing.T) {
 	t.Skip("github.com/prometheus/client_golang is no longer a dependency")
 }
 
+// The standard library is linked into the binary, and its BSD license asks
+// for its notice in binary distributions.
+func TestTheStandardLibraryIsListed(t *testing.T) {
+	for _, c := range served(t).Components {
+		if c.Ecosystem == "go" && c.Name == "std" {
+			if c.TextID == "" {
+				t.Fatal("the standard library has no license text")
+			}
+			return
+		}
+	}
+	t.Fatal("the standard library is not in the SBOM; run 'make sbom'")
+}
+
 func TestTextRejectsUnknownIDs(t *testing.T) {
 	if _, ok := Text("00000000000000000000000000000000"); ok {
 		t.Error("an unknown ID resolved to a text")

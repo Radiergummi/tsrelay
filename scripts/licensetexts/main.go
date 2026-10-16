@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/Radiergummi/tsrelay/internal/sbom"
@@ -39,11 +40,16 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("project %s: %w", sbomPath, err)
 	}
-	out, err := exec.Command("go", "env", "GOMODCACHE").Output()
+	out, err := exec.Command("go", "env", "GOMODCACHE", "GOROOT").Output()
 	if err != nil {
-		return fmt.Errorf("go env GOMODCACHE: %w", err)
+		return fmt.Errorf("go env: %w", err)
 	}
-	artifact, err := Harvest(doc, Roots{GoModCache: strings.TrimSpace(string(out)), NodeModules: nodeModules})
+	modCache, goRoot, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+	// Homebrew moves the toolchain's LICENSE from GOROOT to its parent.
+	if _, err := os.Stat(filepath.Join(goRoot, "LICENSE")); err != nil {
+		goRoot = filepath.Dir(goRoot)
+	}
+	artifact, err := Harvest(doc, Roots{GoModCache: modCache, GoRoot: goRoot, NodeModules: nodeModules})
 	if err != nil {
 		return err
 	}

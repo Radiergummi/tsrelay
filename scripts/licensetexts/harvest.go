@@ -40,10 +40,12 @@ func isLicenseCandidate(name string) bool {
 	return !rejectedExtensions[strings.ToLower(strings.TrimPrefix(filepath.Ext(name), "."))]
 }
 
-// Roots are the package stores the harvester reads: the Go module cache
+// Roots are the package stores the harvester reads: the Go module cache,
+// the directory holding the Go toolchain's LICENSE (the standard library's)
 // and pnpm's virtual store. Tests point them at fixtures.
 type Roots struct {
 	GoModCache  string
+	GoRoot      string
 	NodeModules string
 }
 
@@ -92,6 +94,9 @@ func Harvest(doc sbom.Document, roots Roots) (sbom.Artifact, error) {
 func componentDir(c sbom.Component, roots Roots) (string, bool, error) {
 	switch c.Ecosystem {
 	case "go":
+		if c.Name == "std" {
+			return roots.GoRoot, true, nil
+		}
 		// The module cache spells an uppercase letter as "!" and its
 		// lowercase form, so case-insensitive filesystems cannot collide.
 		escaped, err := module.EscapePath(c.Name)
