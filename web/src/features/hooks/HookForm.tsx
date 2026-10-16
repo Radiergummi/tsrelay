@@ -37,6 +37,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   const { defaults, max } = me.policy;
   const patterns = me.roles["receiver"] ?? [];
   const channels = useMemo(() => channelChoices(patterns), [patterns]);
+  const canPublish = (me.public ?? false) && (me.funnel ?? false);
 
   const build = () =>
     formRequest(
@@ -165,6 +166,34 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
           Ephemeral: delete the hook once no tunnel has been attached for a while
         </label>
         {err("ephemeral") && <p className="text-xs text-destructive">{err("ephemeral")}</p>}
+      </div>
+      <div className="space-y-1">
+        <label className="flex items-center gap-2" htmlFor="public">
+          <Switch
+            id="public"
+            checked={values["public"] === "true"}
+            disabled={!canPublish && values["public"] !== "true"}
+            onCheckedChange={(on: boolean) => set("public")(String(on))}
+          />
+          Reachable from the internet, through the relay's Funnel
+        </label>
+        {!me.funnel ? (
+          <p className="text-xs text-muted-foreground">
+            This relay does not serve hooks on the internet.
+          </p>
+        ) : !me.public ? (
+          <p className="text-xs text-muted-foreground">
+            Your grants do not allow public hooks. A receiver grant needs{" "}
+            <code>"public": true</code>.
+          </p>
+        ) : (
+          values["public"] === "true" && (
+            <p className="text-xs text-muted-foreground">
+              Anyone with the public URL can call this hook. Verify webhook signatures in your app.
+            </p>
+          )
+        )}
+        {err("public") && <p className="text-xs text-destructive">{err("public")}</p>}
       </div>
       <Field
         label="Expires at"

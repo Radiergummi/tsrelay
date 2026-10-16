@@ -133,6 +133,20 @@ paths:
         "204":
           description: Deleted
         "404": { $ref: "#/components/responses/Problem" }
+  /hooks/{id}/rotate-public-url:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    post:
+      operationId: rotatePublicURL
+      summary: Give a public hook a new public URL; the old one stops working
+      responses:
+        "200":
+          description: The hook, with its new public URL
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Hook" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
   /hooks/{id}/calls:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -390,7 +404,7 @@ components:
         capture: { type: boolean }
     Me:
       type: object
-      required: [node, roles, limits, hooks, capName, version, policy, links]
+      required: [node, roles, limits, hooks, capName, version, policy, public, funnel, links]
       properties:
         login: { type: string, description: "Empty for tagged nodes" }
         node: { type: string }
@@ -429,13 +443,15 @@ components:
                 maxBodyBytes: { type: integer }
                 rateLimit: { $ref: "#/components/schemas/RateLimit" }
             callsPerHook: { type: integer }
+        public: { type: boolean, description: "The caller may make hooks public" }
+        funnel: { type: boolean, description: "The relay serves public hooks on the internet" }
         links:
           type: object
           required: [hooks, channels, tunnel, openapi]
           additionalProperties: { type: string }
     Hook:
       type: object
-      required: [id, url, owner, path, channel, ephemeral, settings, effective, createdAt]
+      required: [id, url, owner, path, channel, ephemeral, public, settings, effective, createdAt]
       properties:
         id: { type: string }
         url: { type: string, format: uri }
@@ -444,6 +460,8 @@ components:
         channel: { type: string }
         description: { type: string }
         ephemeral: { type: boolean }
+        public: { type: boolean }
+        publicUrl: { type: string, format: uri, description: "The owner's only, while the relay serves public hooks" }
         expiresAt: { type: string, format: date-time }
         settings: { $ref: "#/components/schemas/Settings" }
         effective: { $ref: "#/components/schemas/Effective" }
@@ -503,6 +521,7 @@ components:
         channel: { type: string, description: "Empty: `default`" }
         description: { type: string }
         ephemeral: { type: boolean }
+        public: { type: boolean }
         expiresAt: { type: [string, "null"], format: date-time }
         settings: { $ref: "#/components/schemas/Settings" }
     UpdateRequest:
@@ -512,6 +531,7 @@ components:
         channel: { type: string }
         description: { type: string }
         ephemeral: { type: boolean }
+        public: { type: boolean }
         expiresAt: { type: [string, "null"], format: date-time }
         settings: { $ref: "#/components/schemas/SettingsPatch" }
     Sender:
@@ -523,6 +543,7 @@ components:
           items: { type: string }
         login: { type: string }
         ip: { type: string }
+        public: { type: boolean, description: "The sender is on the internet; only ip is known" }
     Summary:
       type: object
       description: A call without headers and bodies.

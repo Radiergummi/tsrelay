@@ -55,7 +55,9 @@ export function CallList({
                   </span>
                 )}
               </span>
-              <StatusText call={c} short />
+              <span className="text-right">
+                <StatusText call={c} short />
+              </span>
               <span className="truncate text-xs text-muted-foreground">
                 {senderLabel(c.sender)}
               </span>

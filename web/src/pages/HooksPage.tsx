@@ -131,7 +131,10 @@ function HooksTable({ hooks }: { hooks: Hook[] }) {
               <TableCell>
                 <ChannelChip name={h.channel} />
               </TableCell>
-              <TableCell>{h.ephemeral ? "Ephemeral" : "Persistent"}</TableCell>
+              <TableCell>
+                {h.ephemeral ? "Ephemeral" : "Persistent"}
+                {h.public && " · Public"}
+              </TableCell>
               <TableCell>
                 <TunnelText tunnel={h.tunnel} />
               </TableCell>

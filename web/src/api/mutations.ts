@@ -28,6 +28,18 @@ export function useUpdateHook(id: string) {
   });
 }
 
+/** useRotatePublicUrl gives a public hook a new public URL; the old one stops working. */
+export function useRotatePublicUrl(hookId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => request(s.hook, "POST", paths.rotatePublicUrl(hookId)),
+    onSuccess: (h) => {
+      qc.setQueryData(keys.hook(h.id), h);
+      void qc.invalidateQueries({ queryKey: keys.allHooks });
+    },
+  });
+}
+
 export function useDeleteHook() {
   const qc = useQueryClient();
   return useMutation({
