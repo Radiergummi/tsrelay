@@ -144,13 +144,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case aborted:
 			code = problem.TunnelLost
 		}
+		bytesIn, bodyEOF := body.counts() // the transport may still be reading the body
 		attrs := make([]slog.Attr, 0, 13)
 		attrs = append(attrs,
 			slog.String("callID", callID), slog.String("kind", string(kind)),
 			slog.String("hookID", string(hook.ID)), audit.Actor(sender),
 			slog.String("method", r.Method), slog.String("path", logPath),
 			slog.Int("status", rec.status), slog.String("error", code),
-			slog.Int64("bytesIn", body.n), slog.Int64("bytesOut", rec.bytes),
+			slog.Int64("bytesIn", bytesIn), slog.Int64("bytesOut", rec.bytes),
 			slog.Duration("waited", waited), slog.Duration("duration", time.Since(start)),
 		)
 		if public {
@@ -164,13 +165,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ct.finish(callAttrs{
 			callID: callID, kind: string(kind), hookID: string(hook.ID), method: r.Method, path: logPath,
 			code: code, senderNode: sender.NodeName, senderTags: sender.Tags, status: rec.status,
-			bytesIn: body.n, bytesOut: rec.bytes, waited: waited,
+			bytesIn: bytesIn, bytesOut: rec.bytes, waited: waited,
 		})
 		record.finish(outcome{
 			code: code, status: rec.status, header: rec.Header(),
 			start: start, delivery: delivery, wrote: rec.wrote, waited: waited, tunnel: served,
-			bytesIn: body.n, bytesOut: rec.bytes,
-			bodyRead: body.eof || r.ContentLength == 0,
+			bytesIn: bytesIn, bytesOut: rec.bytes,
+			bodyRead: bodyEOF || r.ContentLength == 0,
 			whole:    !aborted && parent.Err() == nil,
 		})
 		if p != nil {

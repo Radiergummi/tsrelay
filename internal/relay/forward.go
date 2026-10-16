@@ -146,20 +146,30 @@ func (r *recorder) Write(b []byte) (int, error) {
 func (r *recorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 // countingReader counts a request body as it is read and passes it to
-// capture, which may be nil. eof reports whether it was read to the end.
+// capture, which may be nil. A RoundTripper may go on reading the body
+// after it returns, so the counts are read through counts.
 type countingReader struct {
 	io.ReadCloser
-	n       int64
-	eof     bool
 	capture *inspect.Buffer
+
+	mu  sync.Mutex
+	n   int64
+	eof bool // read to the end
 }
 
 func (c *countingReader) Read(p []byte) (int, error) {
 	n, err := c.ReadCloser.Read(p)
-	c.n += int64(n)
 	c.capture.Write(p[:n])
-	if err == io.EOF {
-		c.eof = true
-	}
+	c.mu.Lock()
+	c.n += int64(n)
+	c.eof = c.eof || err == io.EOF
+	c.mu.Unlock()
 	return n, err
+}
+
+// counts returns how many bytes were read so far, and whether to the end.
+func (c *countingReader) counts() (n int64, eof bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.n, c.eof
 }
