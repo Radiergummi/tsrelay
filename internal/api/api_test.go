@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/relay"
+	"github.com/Radiergummi/tsrelay/internal/release"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"github.com/Radiergummi/tsrelay/internal/tunnel/tunneltest"
 )
@@ -126,6 +128,47 @@ func TestMeNamesCapAndPolicy(t *testing.T) {
 	}
 	if me.Policy.CallsPerHook != inspect.DefaultCallsPerHook {
 		t.Errorf("policy.callsPerHook = %d, want %d", me.Policy.CallsPerHook, inspect.DefaultCallsPerHook)
+	}
+}
+
+func TestMeNamesNewerReleaseToAdmins(t *testing.T) {
+	var latest atomic.Value
+	latest.Store("v0.4.0")
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		v := latest.Load().(string)
+		fmt.Fprintf(w, `{"tag_name":%q,"html_url":"https://github.com/Radiergummi/tsrelay/releases/tag/%s"}`, v, v)
+	}))
+	t.Cleanup(github.Close)
+	e := newEnv(t)
+	var me Me
+	e.call(admin, "GET", "/", nil, &me)
+	if me.LatestVersion != "" || me.ReleaseURL != "" {
+		t.Fatalf("without a release check: %+v", me)
+	}
+
+	e.api.Releases = &release.Checker{URL: github.URL}
+	e.api.Releases.Check(t.Context())
+	me = Me{}
+	e.call(admin, "GET", "/", nil, &me)
+	if me.LatestVersion != "v0.4.0" || me.ReleaseURL != "https://github.com/Radiergummi/tsrelay/releases/tag/v0.4.0" {
+		t.Fatalf("admin: latestVersion %q, releaseURL %q", me.LatestVersion, me.ReleaseURL)
+	}
+	for _, id := range []authz.Identity{moritz, worker} {
+		var m Me
+		e.call(id, "GET", "/", nil, &m)
+		if m.LatestVersion != "" || m.ReleaseURL != "" {
+			t.Errorf("%s was told about the release: %+v", id.NodeName, m)
+		}
+	}
+
+	for _, v := range []string{"v0.3.0", "v0.2.0"} { // the relay's own version, and an older one
+		latest.Store(v)
+		e.api.Releases.Check(t.Context())
+		me = Me{}
+		e.call(admin, "GET", "/", nil, &me)
+		if me.LatestVersion != "" || me.ReleaseURL != "" {
+			t.Errorf("latest release %s, relay v0.3.0: %+v", v, me)
+		}
 	}
 }
 

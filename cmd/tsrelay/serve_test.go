@@ -39,6 +39,23 @@ func TestAllowedHostsDropsEmpty(t *testing.T) {
 	}
 }
 
+func TestReleaseCheckOptOut(t *testing.T) {
+	if releaseChecker(true, nil) != nil {
+		t.Error("a dev relay checks for releases")
+	}
+	setVersion(t, "v0.3.0")
+	if releaseChecker(true, nil) == nil {
+		t.Error("a released relay doesn't check for releases")
+	}
+	if releaseChecker(false, nil) != nil {
+		t.Error("--update-check=false still checks for releases")
+	}
+	t.Setenv("TSRELAY_UPDATE_CHECK", "nope")
+	if code, out := serveExit(t); code != 2 || !strings.Contains(out, "TSRELAY_UPDATE_CHECK") {
+		t.Errorf("TSRELAY_UPDATE_CHECK=nope: exit %d, stderr %q", code, out)
+	}
+}
+
 func TestServeRejectsEmptyHoldQueue(t *testing.T) {
 	code, out := serveExit(t, "--hold-queue=0")
 	if code != 2 || !strings.Contains(out, "--hold-queue") {

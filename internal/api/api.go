@@ -27,7 +27,9 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/negotiate"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/relay"
+	"github.com/Radiergummi/tsrelay/internal/release"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"golang.org/x/mod/semver"
 	"tailscale.com/tailcfg"
 )
 
@@ -39,11 +41,12 @@ type API struct {
 	Relay         *relay.Handler // delivers replays and test requests
 	Events        *events.Hub    // receives hook changes; the event stream reads it
 	Audit         *audit.Logger
-	BaseURL       string // e.g. "https://tsrelay.example.ts.net", no trailing slash
-	PublicBaseURL string // the relay's URL on the internet, through Funnel; empty: Funnel is off
-	CapName       string // the capability carrying relay grants; GET / names it for the no-access page
-	Version       string // the relay's version ("v0.3.0", or "dev"); GET / names it next to the CLI's download
-	Commit        string // the revision the relay was built from; empty when unknown
+	BaseURL       string           // e.g. "https://tsrelay.example.ts.net", no trailing slash
+	PublicBaseURL string           // the relay's URL on the internet, through Funnel; empty: Funnel is off
+	CapName       string           // the capability carrying relay grants; GET / names it for the no-access page
+	Version       string           // the relay's version ("v0.3.0", or "dev"); GET / names it next to the CLI's download
+	Releases      *release.Checker // the latest release, which GET / names for admins when newer; nil: none
+	Commit        string           // the revision the relay was built from; empty when unknown
 	Tunnel        tunnel.Options
 	HTML          http.Handler // the web UI, for resources asked for as HTML; nil: JSON and streams only
 	Tracer        trace.Tracer // nil: no spans
@@ -80,6 +83,9 @@ type Me struct {
 	Public  bool                    `json:"public"` // the caller may make hooks public
 	Funnel  bool                    `json:"funnel"` // the relay serves public hooks
 	Links   map[string]string       `json:"links"`
+	// For admins, a release newer than Version, and its release notes.
+	LatestVersion string `json:"latestVersion,omitempty"`
+	ReleaseURL    string `json:"releaseURL,omitempty"`
 }
 
 // links point from the entry document to the relay's resources.
@@ -258,6 +264,11 @@ func (a *API) MeOf(id authz.Identity) Me {
 	me.Public = id.Grants.Public
 	me.Funnel = a.PublicBaseURL != ""
 	me.Links = links
+	if a.Releases != nil && id.Grants.Has(authz.RoleAdmin) {
+		if r := a.Releases.Latest(); semver.Compare(r.Version, a.Version) > 0 {
+			me.LatestVersion, me.ReleaseURL = r.Version, r.URL
+		}
+	}
 	return me
 }
 

@@ -484,6 +484,8 @@ components:
         capName: { type: string }
         version: { type: string }
         commit: { type: string, description: "The revision the relay was built from, when known" }
+        latestVersion: { type: string, description: "Admins only: a tsrelay release newer than `version`, unless the relay runs with --update-check=false" }
+        releaseURL: { type: string, format: uri, description: "Admins only: the release notes of `latestVersion`" }
         policy:
           type: object
           required: [defaults, max, callsPerHook]

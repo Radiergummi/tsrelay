@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"runtime"
 
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"golang.org/x/mod/semver"
@@ -32,22 +31,23 @@ func (v *versionCheck) RoundTrip(r *http.Request) (*http.Response, error) {
 	return resp, err
 }
 
-// updateCommand installs the version of tsrelay the relay at base runs.
-func updateCommand(base string) string {
-	if runtime.GOOS == "windows" {
-		return "irm " + base + "/install.ps1 | iex"
+// updateCommand installs the relay's version of tsrelay (see update.go),
+// naming the relay as the command line did.
+func (c *cli) updateCommand() string {
+	if c.relayFrom == "--relay" {
+		return "tsrelay update --relay " + c.relay
 	}
-	return "curl -fsSL " + base + "/install.sh | sh"
+	return "tsrelay update"
 }
 
-// warnVersion tells the user on stderr that this CLI and the relay at base
-// differ, and how to install the relay's version.
-func (c *cli) warnVersion(base, relay string) {
+// warnVersion tells the user on stderr that this CLI and the relay differ,
+// and how to install the relay's version.
+func (c *cli) warnVersion(relay string) {
 	rel := "older than"
 	if semver.Compare(version, relay) > 0 {
 		rel = "newer than"
 	}
-	msg := fmt.Sprintf("tsrelay %s is %s the relay (%s); update with: %s", version, rel, relay, updateCommand(base))
+	msg := fmt.Sprintf("tsrelay %s is %s the relay (%s); update with: %s", version, rel, relay, c.updateCommand())
 	s := c.stderrStream()
 	if c.json {
 		writeJSON(s, struct {
