@@ -27,7 +27,10 @@ Other useful targets:
 ```bash
 make ui        # build the web UI into web/dist, which the binary embeds
 make build     # make ui, then build ./tsrelay
+make sbom      # regenerate the SBOM and license texts in internal/sbom (needs jq)
 ```
+
+The binary embeds a software bill of materials, its components' license and notice texts, and the notices built from them (`internal/sbom`), which the licenses page and `tsrelay licenses` show. When you add, remove or upgrade a Go module or a web UI dependency, run `make sbom` and commit the result. CI regenerates them and fails if they differ from what's committed (`make sbom-check` does the same locally). The output is the same on every machine: the Go part is pinned to linux/amd64 and to the Go version go.mod names.
 
 A plain `go build` works without Node and pnpm; its binary serves a placeholder page instead of the UI.
 

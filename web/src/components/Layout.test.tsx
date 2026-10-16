@@ -44,6 +44,35 @@ test("a user without a role sees what is missing and an example grant", async ()
   expect(grant.textContent).toContain('"mazetti.me/cap/relay"');
 });
 
+test("the footer names the relay's version and commit", async () => {
+  meIs({ ...fixtures.me, version: "v0.3.0", commit: "0123456789abcdef" });
+  renderAt("/hooks");
+  expect(await screen.findByText("v0.3.0")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "(0123456)" })).toBeInTheDocument();
+});
+
+test("the footer is under the no-access state", async () => {
+  meIs(fixtures.meNobody);
+  renderAt("/hooks");
+  await screen.findByText(/grants you no access to this relay/);
+  expect(screen.getByRole("link", { name: "Licenses" })).toBeInTheDocument();
+});
+
+test("a user without a role can read the licenses", async () => {
+  meIs(fixtures.meNobody);
+  server.use(
+    http.get("/licenses", () =>
+      HttpResponse.json({
+        components: [{ name: "react", ecosystem: "npm", licenses: [{ id: "MIT" }] }],
+      }),
+    ),
+  );
+  renderAt("/licenses");
+  expect(await screen.findByRole("heading", { name: "Open-source licenses" })).toBeInTheDocument();
+  expect(await screen.findByText("react")).toBeInTheDocument();
+  expect(screen.queryByText(/grants you no access/)).not.toBeInTheDocument();
+});
+
 test("a tagged node is told it cannot own hooks", async () => {
   meIs({ ...fixtures.meNobody, login: undefined, tags: ["tag:ci"], roles: { sender: ["*"] } });
   renderAt("/");
@@ -64,6 +93,7 @@ test("an unidentified viewer gets one message and a reload button", async () => 
   renderAt("/");
   expect(await screen.findByText(/could not identify your device/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Reload" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Licenses" })).toBeInTheDocument();
 });
 
 test("unknown pages and expired inspect links", async () => {
