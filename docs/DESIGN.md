@@ -522,7 +522,8 @@ tsrelay --version                                 fang; there is no `version` su
   - Hook URLs go to stdout and everything else to stderr, so `$(tsrelay url)` works.
   - Each stream is styled only when it's a terminal with colors on (`NO_COLOR` and `--no-color` turn colors off).
   - `--json` prints JSON on stdout: indented on a terminal, compact otherwise. Errors go to stderr as JSON.
-- **Errors:** relay refusals show their title, detail and, for common codes, a hint.
+- **Errors:** every error says what went wrong, why, and what to try instead: the CLI's own mistakes, cobra's and pflag's, each relay problem code (quoting the relay's detail), and failures to find, reach, trust or be identified by the relay. With `--json` it goes to stderr as `{"error": {"title", "reason", "fixes", "code"}}`.
+- **Completions:** hooks, channels and remembered targets complete live, within 2 seconds; any failure offers nothing and prints nothing.
 - **Exit codes:** 2 for usage errors (including bad `TSRELAY_*` values), 1 for failures, and the child's own code when the command after `--` exits.
 - **Disconnects:** the CLI says so plainly ("tunnel lost, reconnecting… calls are held for 30s") and reports when it has reattached ("reconnected").
 
