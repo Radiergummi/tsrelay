@@ -22,6 +22,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
@@ -58,7 +59,7 @@ func TestUIDev(t *testing.T) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	me := identify.User("dev-laptop", "dev@example.com", 1, `{"roles":["receiver","admin"],"channels":["default","prod","staging.*"]}`)
+	me := identify.User("dev-laptop", "dev@example.com", 1, `{"roles":["receiver","admin"],"channels":["default","prod","staging.*"],"public":true}`)
 	ops := identify.User("ops-box", "ops@example.com", 3, `{"roles":["admin"]}`)
 	nobody := identify.User("box", "nobody@example.com", 4)
 	other := identify.User("desk", "other@example.com", 2, `{"roles":["receiver"]}`)
@@ -73,7 +74,7 @@ func TestUIDev(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := "http://127.0.0.1:8099"
-	s := New(Config{BaseURL: base, AllowedHosts: []string{"127.0.0.1", "localhost"}, CapName: "mazetti.me/cap/relay"},
+	s := New(Config{BaseURL: base, PublicBaseURL: "https://tsrelay.example.ts.net", AllowedHosts: []string{"127.0.0.1", "localhost"}, CapName: "mazetti.me/cap/relay"},
 		byListener{}, mgr, audit.New(slog.New(slog.NewTextHandler(os.Stderr, nil))))
 	defer s.Close()
 
@@ -90,7 +91,7 @@ func TestUIDev(t *testing.T) {
 		}
 		return h
 	}
-	live := create(me, hooks.CreateRequest{Path: "payments/done", Description: "has a tunnel"})
+	live := create(me, hooks.CreateRequest{Path: "payments/done", Description: "has a tunnel", Settings: hooks.Settings{Capture: new(true)}})
 	create(me, hooks.CreateRequest{Path: "idle", Channel: "prod"})
 	busy := create(me, hooks.CreateRequest{Path: "busy", Description: "100 calls"})
 	hostile := create(me, hooks.CreateRequest{Path: "hostile", Description: "captures that must stay text"})
@@ -145,6 +146,11 @@ func TestUIDev(t *testing.T) {
 		RequestBody:    inspect.Capture{Body: []byte(`{"big":"aaaaaaaa`), Size: 1 << 20, Truncated: true, Captured: true}})
 	sample(live, me, "c_bin", inspect.Call{ReceivedAt: now.Add(-2 * time.Minute),
 		RequestHeaders: http.Header{"Content-Type": {"application/octet-stream"}}, RequestBody: full("\x89PNG\r\n\x1a\n\x00\xff")})
+	sample(live, me, "c_uncaptured", inspect.Call{ReceivedAt: now.Add(-90 * time.Second),
+		RequestHeaders: http.Header{"Content-Type": {"application/json"}}, RequestBody: inspect.Capture{Size: 23},
+		Attempts: []inspect.Attempt{{ID: "a_c_uncaptured", StartedAt: now.Add(-90 * time.Second), TunnelID: "t_dev", Node: "dev-laptop", Status: 200,
+			TTFB: hooks.Duration(30 * time.Millisecond), Duration: hooks.Duration(42 * time.Millisecond),
+			ResponseHeaders: http.Header{"Content-Type": {"application/json"}}, ResponseBody: inspect.Capture{Size: 17}}}})
 	sample(live, me, "c_refused", inspect.Call{ReceivedAt: now.Add(-time.Minute), Outcome: "hook_not_found", Status: 404, Attempts: []inspect.Attempt{}})
 	sample(live, me, "c_pending", inspect.Call{Outcome: inspect.OutcomePending, Attempts: []inspect.Attempt{}})
 
@@ -155,7 +161,7 @@ func TestUIDev(t *testing.T) {
 		c := inspect.Call{ReceivedAt: now.Add(-time.Duration(100-i) * time.Second), Method: methods[i%len(methods)],
 			Path: fmt.Sprintf("/busy/item/%d", i), Status: st, RequestBody: full(fmt.Sprintf(`{"n":%d}`, i))}
 		if st >= 500 && i%2 == 0 {
-			c.Outcome = "upstream_unreachable"
+			c.Outcome, c.Status = problem.UpstreamUnreachable, problem.StatusUpstreamUnreachable
 		}
 		if i%7 == 0 {
 			c.Sender = inspect.Sender{Node: "billing", Tags: []string{"tag:billing"}}

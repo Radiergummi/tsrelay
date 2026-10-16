@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -29,8 +30,10 @@ const DefaultEphemeralGrace = 10 * time.Minute
 
 type Config struct {
 	BaseURL        string   // public URL of the relay on the tailnet, no trailing slash
+	PublicBaseURL  string   // the relay's URL on the internet, through Funnel; empty: no public hooks are served
+	PublicMaxBody  int64    // body cap of public calls; 0: only each hook's own limit
 	AllowedHosts   []string // Host header values the relay answers to
-	CapName        string   // the capability carrying relay grants; GET /me names it
+	CapName        string   // the capability carrying relay grants; GET / names it
 	Version        string   // the relay's version, sent as api.VersionHeader; "" means "dev"
 	EphemeralGrace time.Duration
 	HoldQueue      int // calls per hook that may wait for a tunnel; 0 means relay.DefaultHoldQueue
@@ -49,6 +52,7 @@ type Server struct {
 	audit   *audit.Logger
 	relay   *relay.Handler // serves callbacks; its Held() feeds the held-calls gauge
 	handler http.Handler
+	public  http.Handler // nil unless cfg.PublicBaseURL is set
 	inspect *inspect.Inspector
 	events  *events.Hub
 
@@ -76,11 +80,11 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	s.inspect.OnChange = func(owner tailcfg.UserID, sum inspect.Summary) {
 		s.events.Publish(events.Event{Type: events.TypeCall, Owner: owner, HookID: string(sum.HookID), Data: sum})
 	}
-	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect}
+	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect, PublicMaxBody: cfg.PublicMaxBody}
 
 	version := cmp.Or(cfg.Version, "dev")
 	mux := http.NewServeMux()
-	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, CapName: cfg.CapName, Version: version, Releases: cfg.Releases, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName)}
+	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, PublicBaseURL: cfg.PublicBaseURL, CapName: cfg.CapName, Version: version, Releases: cfg.Releases, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName)}
 	if s.tel.Tracing {
 		s.relay.Tracer = s.tel.Tracer.Tracer(telemetry.ScopeName)
 		if !cfg.NoTracePropagation {
@@ -108,10 +112,31 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 		resources.ServeHTTP(w, r)
 	})
 	s.handler = api.Guard(cfg.AllowedHosts, root)
+
+	if cfg.PublicBaseURL != "" {
+		u, err := url.Parse(cfg.PublicBaseURL)
+		if err != nil {
+			panic("server: invalid PublicBaseURL: " + err.Error())
+		}
+		guarded := api.Guard([]string{u.Hostname()}, http.HandlerFunc(s.relay.ServePublic))
+		s.public = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Nothing but public hooks: the UI, the API and tailnet hooks
+			// must not be reachable from the internet, not even as errors.
+			if !strings.HasPrefix(r.URL.Path, "/+") {
+				http.NotFound(w, r)
+				return
+			}
+			guarded.ServeHTTP(w, r)
+		})
+	}
 	return s
 }
 
 func (s *Server) Handler() http.Handler { return s.handler }
+
+// PublicHandler serves the hooks made public, for the Funnel listener. It
+// is nil when Config.PublicBaseURL is empty.
+func (s *Server) PublicHandler() http.Handler { return s.public }
 
 // RunReaper deletes expired ephemeral hooks every interval until ctx is done.
 func (s *Server) RunReaper(ctx context.Context, interval time.Duration) {

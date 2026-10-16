@@ -212,6 +212,7 @@ function CallView({
             contentType={headerValue(call.requestHeaders, "Content-Type")}
             metadataOnly={!owner}
             label="request body"
+            hookId={hook.id}
           />
         </TabsContent>
         <TabsContent value="response" className="space-y-4 pt-3">
@@ -227,6 +228,7 @@ function CallView({
                 contentType={headerValue(last.responseHeaders, "Content-Type")}
                 metadataOnly={!owner}
                 label="response body"
+                hookId={hook.id}
               />
             </>
           ) : (

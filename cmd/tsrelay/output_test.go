@@ -10,6 +10,7 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/client"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -34,7 +35,7 @@ func sampleEvents(o *output) {
 	o.url(api.Hook{ID: "h_1", URL: testURL, Path: "cb", Channel: "default", Ephemeral: true}, false)
 	state := o.onState("http://localhost:8080", 30*time.Second)
 	state(true, nil)
-	for _, status := range []int{200, 302, 404, 502} {
+	for _, status := range []int{200, 302, 404, 502, problem.StatusUpstreamUnreachable} {
 		o.call(client.Call{Hook: "h_1", Method: "POST", Path: "/done", Status: status, Duration: 12 * time.Millisecond, Sender: "tag:ci", CallID: "c_1"})
 	}
 	o.call(client.Call{Method: "GET", Path: "/" + strings.Repeat("very-long-segment/", 20), Status: 200, Duration: time.Second, Sender: "node build-01", CallID: "c_2"})
@@ -60,6 +61,7 @@ func TestOutputText(t *testing.T) {
 		"hook h_1  ephemeral  channel default\n",
 		"connected\n",
 		"15:04:05 POST /done → 502  12ms  tag:ci  https://r/inspect/c_1\n",
+		"15:04:05 POST /done → 564 Upstream unreachable  12ms  tag:ci  https://r/inspect/c_1\n",
 		"tunnel lost (boom), reconnecting… calls are held for 30s\n",
 		"reconnected\n",
 		"calls fail until it is back\n",

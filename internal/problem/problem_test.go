@@ -10,7 +10,7 @@ import (
 
 func TestWriteAndDecode(t *testing.T) {
 	rec := httptest.NewRecorder()
-	p := New(http.StatusServiceUnavailable, TunnelUnavailable, "no tunnel is attached")
+	p := New(StatusTunnelUnavailable, TunnelUnavailable, "no tunnel is attached")
 	p.Errors = []map[string]string{{"field": "path"}}
 	p.Write(rec)
 
@@ -26,7 +26,7 @@ func TestWriteAndDecode(t *testing.T) {
 	if !errors.As(err, &got) {
 		t.Fatalf("Decode returned %T %v, want *Problem", err, err)
 	}
-	if got.Status != 503 || got.Code != TunnelUnavailable || got.Type != "https://tsrelay.mazetti.me/errors/tunnel_unavailable" || got.Title != "Service Unavailable" {
+	if got.Status != 561 || got.Code != TunnelUnavailable || got.Type != "https://tsrelay.mazetti.me/errors/tunnel_unavailable" || got.Title != "Tunnel Unavailable" {
 		t.Fatalf("decoded %+v", got)
 	}
 }

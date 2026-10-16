@@ -54,6 +54,20 @@ const phrases: Record<number, string> = {
   511: "Network Authentication Required",
 };
 
+/** relayPhrases name the relay's own statuses for tunnel and transport failures. */
+const relayPhrases: Record<number, string> = {
+  561: "Tunnel unavailable",
+  562: "Tunnel overloaded",
+  563: "Tunnel lost",
+  564: "Upstream unreachable",
+  565: "Upstream timeout",
+};
+
+/** relayPhrase names a status from the relay's 56x range, or is "" for any other status. */
+export function relayPhrase(status: number): string {
+  return relayPhrases[status] ?? "";
+}
+
 /** reasonPhrase is the status's standard phrase, or "" for an unregistered one. */
 export function reasonPhrase(status: number): string {
   return phrases[status] ?? "";

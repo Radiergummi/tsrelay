@@ -114,6 +114,8 @@ func ReplayRefusal(c inspect.Call) *problem.Problem {
 		return problem.New(http.StatusConflict, problem.Conflict, "this call is still being delivered, so it cannot be replayed yet")
 	case c.Outcome == problem.HookNotFound:
 		return problem.New(http.StatusConflict, problem.Conflict, "this call was refused by channel and never delivered, so it cannot be replayed")
+	case !c.RequestBody.Captured && c.RequestBody.Size > 0:
+		return problem.New(http.StatusConflict, problem.Conflict, "bodies aren't captured for this hook, so this call cannot be replayed")
 	case c.QueryTruncated:
 		return problem.New(http.StatusConflict, problem.Conflict, "this call's query string was not captured in full, so it cannot be replayed")
 	case !c.RequestBody.Complete():
@@ -142,7 +144,7 @@ func (a *API) replayCall(w http.ResponseWriter, r *http.Request, id authz.Identi
 	}
 	a.inject(w, r, relay.Injection{
 		Hook: h, Kind: inspect.KindReplay, ReplayOf: orig.ID,
-		Sender: authz.Identity{NodeName: orig.Sender.Node, Tags: orig.Sender.Tags, Login: orig.Sender.Login},
+		Sender: authz.Identity{NodeName: orig.Sender.Node, Tags: orig.Sender.Tags, Login: orig.Sender.Login}, Public: orig.Sender.Public,
 		Method: orig.Method, Path: orig.Path, Query: orig.Query, Header: orig.RequestHeaders, Body: orig.RequestBody.Body,
 		From: r,
 	})

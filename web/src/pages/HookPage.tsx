@@ -91,7 +91,7 @@ function Loaded({
 
   return (
     <div>
-      <HookHeader hook={hook} owner={owner} onTest={() => setTesting(true)} />
+      <HookHeader hook={hook} me={me} owner={owner} onTest={() => setTesting(true)} />
       <div className="grid gap-6 min-[900px]:grid-cols-[minmax(300px,400px)_1fr]">
         <section className={cn("min-w-0", callId && "hidden min-[900px]:block")} aria-label="Calls">
           <FilterBar

@@ -15,7 +15,6 @@ const navClass = (isActive: boolean) =>
   isActive ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground";
 
 export function Header({ me }: { me: Me }) {
-  const roles = Object.keys(me.roles).sort();
   return (
     <header className="border-b">
       <div className="mx-auto flex h-12 max-w-[1400px] items-center gap-6 px-4 sm:px-6">
@@ -26,6 +25,11 @@ export function Header({ me }: { me: Me }) {
           {isReceiver(me) && (
             <NavLink to="/hooks" end className={({ isActive }) => navClass(isActive)}>
               Hooks
+            </NavLink>
+          )}
+          {(isReceiver(me) || isAdmin(me)) && (
+            <NavLink to="/channels" className={({ isActive }) => navClass(isActive)}>
+              Channels
             </NavLink>
           )}
           {isReceiver(me) && (
@@ -44,11 +48,6 @@ export function Header({ me }: { me: Me }) {
             <ThemeToggle />
           </Suspense>
           <span className="truncate">{me.login ?? me.node}</span>
-          {roles.length > 0 && (
-            <span className="hidden text-xs text-muted-foreground sm:inline">
-              {roles.join(", ")}
-            </span>
-          )}
         </div>
       </div>
     </header>
