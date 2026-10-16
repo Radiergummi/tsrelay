@@ -45,3 +45,32 @@ test("one young timestamp keeps the shared clock ticking every second", () => {
   act(() => void vi.advanceTimersByTime(1000));
   expect(screen.getByText("6 s ago")).toBeInTheDocument();
 });
+
+test("a tick re-renders only the timestamps whose label changed", () => {
+  const onRender = vi.fn<() => void>();
+  render(
+    <>
+      <Profiler id="old" onRender={onRender}>
+        <TimeAgo iso="2026-10-14T11:00:00Z" />
+      </Profiler>
+      <TimeAgo iso="2026-10-14T12:00:00Z" />
+    </>,
+  );
+  onRender.mockClear();
+  act(() => void vi.advanceTimersByTime(3000));
+  expect(screen.getByText("8 s ago")).toBeInTheDocument();
+  expect(onRender).not.toHaveBeenCalled();
+});
+
+test("timestamps mounting faster than once a second do not hold back the tick", () => {
+  const { rerender } = render(<TimeAgo iso="2026-10-14T12:00:00Z" />);
+  act(() => void vi.advanceTimersByTime(500));
+  rerender(
+    <>
+      <TimeAgo iso="2026-10-14T12:00:00Z" />
+      <TimeAgo iso="2026-10-14T11:00:00Z" />
+    </>,
+  );
+  act(() => void vi.advanceTimersByTime(500));
+  expect(screen.getByText("6 s ago")).toBeInTheDocument();
+});
