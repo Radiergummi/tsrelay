@@ -45,6 +45,7 @@ func (s *syncBuf) String() string              { s.mu.Lock(); defer s.mu.Unlock(
 type cliEnv struct {
 	t         *testing.T
 	fake      *identify.Fake
+	id        identify.Identifier // what the relay identifies callers with: fake, unless a test replaces it
 	relayURL  string
 	statePath string
 	local     *httptest.Server
@@ -59,6 +60,7 @@ type cliEnv struct {
 
 func newCLIEnv(t *testing.T) *cliEnv {
 	e := &cliEnv{t: t, fake: &identify.Fake{}, statePath: filepath.Join(t.TempDir(), "state.json"), calls: make(chan string, 8)}
+	e.id = e.fake
 	store, _ := hooks.OpenJSON(t.TempDir())
 	t.Cleanup(func() { store.Close() })
 	e.mgr, _ = hooks.NewManager(context.Background(), store, hooks.SlugConfig{})
@@ -70,7 +72,7 @@ func newCLIEnv(t *testing.T) *cliEnv {
 	}))
 	e.relayURL = "http://" + ts.Listener.Addr().String()
 	e.srv = server.New(server.Config{BaseURL: e.relayURL, AllowedHosts: []string{"127.0.0.1"}},
-		e.fake, e.mgr, audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))))
+		e.id, e.mgr, audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))))
 	e.handler = e.srv.Handler()
 	ts.Start()
 	t.Cleanup(func() { e.srv.Close(); ts.Close() })
@@ -98,7 +100,7 @@ func (e *cliEnv) restartRelayAt(version string) {
 	defer e.handlerMu.Unlock()
 	e.srv.Close() // drops the old tunnel so the CLI reconnects
 	srv := server.New(server.Config{BaseURL: e.relayURL, AllowedHosts: []string{"127.0.0.1"}, Version: version},
-		e.fake, e.mgr, audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))))
+		e.id, e.mgr, audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))))
 	e.srv, e.handler = srv, srv.Handler()
 }
 

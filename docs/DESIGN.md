@@ -504,6 +504,9 @@ tsrelay hooks create [<path>] [flags]
 tsrelay hooks update <hook> [flags]
 tsrelay hooks delete <hook>... (alias rm)
 tsrelay url [<port|url>]                          print the URL `http` would use
+tsrelay ps                                        list background tunnels
+tsrelay logs <id|hook> [-f]                       print or follow a background tunnel's log
+tsrelay stop <id|hook>... | --all                 stop background tunnels
 tsrelay serve [flags]                             run the relay
 tsrelay completion bash|zsh|fish|powershell       cobra's generated completion
 tsrelay --version                                 fang; there is no `version` subcommand
@@ -517,6 +520,13 @@ tsrelay --version                                 fang; there is no `version` su
 - **Targets:** a bare port means `http://localhost:<port>`. A full URL is also accepted, including a path prefix and `https://` (with `--insecure` for self-signed local certificates).
 - **Stable URLs:** the CLI remembers the hook path it used for each working directory and target, in `$XDG_STATE_HOME/tsrelay/hooks.json`, and asks for the same path next time. The URL put into `.env` therefore keeps working across restarts, including after the ephemeral grace period has passed.
 - **`-- cmd args...`** starts the local application with `TSRELAY_URL` set in its environment, and stops it when the tunnel command exits.
+- **Background tunnels:** `--background` on `http` and `attach` runs the same command line again as a detached process: in a new session (`Setsid`) on Unix, with `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` on Windows. `TSRELAY_BACKGROUND_ID` tells it its ID, six random lowercase letters and digits.
+  - **Files:** the tunnel appends its output to `$XDG_STATE_HOME/tsrelay/run/<id>.log` and, once attached, writes `run/<id>.json`: pid, arguments, relay, hooks, target and start time.
+  - **Starting:** the tunnel's stdout is a pipe to the foreground tsrelay. It sends one JSON line, its record once first connected or the explained error that ended it, and closes the pipe (so it never dies of SIGPIPE later). The foreground tsrelay prints the hook URLs and the ID, or the error, and exits. If the pipe closes empty, the tunnel doesn't attach within 30 s, or the start is interrupted, it kills the tunnel. On any failure it removes the record and log, so nothing is left behind.
+  - **`ps`** lists the records. A record whose process is gone is listed once as `exited`, then removed with its log.
+  - **`stop`** asks a tunnel to detach, waits up to 10 s, then kills it and says so. On Unix the request is SIGTERM. A detached Windows process has no console, so no console control event reaches it; instead each tunnel waits on the named event `Local\tsrelay-stop-<id>`, which `stop` sets.
+  - **`logs`** prints the log; `-f` keeps polling it until interrupted.
+  - **Limits:** a pid reused by another process counts as a running tunnel. `http --background -- cmd` is refused, as a command in the background would make stopping and logging ambiguous. Surviving a reboot and restarting on failure are left to service managers.
 - **Finding the relay:** `--relay`, then `TSRELAY_RELAY`, then a default built from `https://tsrelay.` plus the tailnet's MagicDNS suffix, read from the local Tailscale API.
 - **Output:**
   - Hook URLs go to stdout and everything else to stderr, so `$(tsrelay url)` works.

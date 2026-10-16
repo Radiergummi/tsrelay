@@ -25,6 +25,7 @@ type cli struct {
 	base      string                      // the relay's URL, once known
 	hook      string                      // the hook the command names, if any
 	version   atomic.Pointer[versionSeen] // the relay's version, if it differs from this CLI's
+	bg        *bgChild                    // the background tunnel this process runs as, if any
 }
 
 func newRoot(c *cli) *cobra.Command {
@@ -59,7 +60,8 @@ func newRoot(c *cli) *cobra.Command {
 	pf.BoolVarP(&c.json, "json", "j", false, "print JSON on stdout (indented on a terminal)")
 	pf.BoolVar(&c.noColor, "no-color", false, "print plain text, as NO_COLOR does")
 	pf.BoolVar(&c.noLinks, "no-hyperlinks", false, "print full inspector URLs instead of clickable call IDs")
-	root.AddCommand(newHTTPCmd(c), newAttachCmd(c), newHooksCmd(c), newURLCmd(c), newServeCmd(c))
+	root.AddCommand(newHTTPCmd(c), newAttachCmd(c), newHooksCmd(c), newURLCmd(c), newServeCmd(c),
+		newPsCmd(c), newStopCmd(c), newLogsCmd(c))
 	return root
 }
 

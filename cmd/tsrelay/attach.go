@@ -25,6 +25,7 @@ func newAttachCmd(c *cli) *cobra.Command {
 	to := cmd.Flags().StringP("to", "t", "", "the local app to deliver calls to: a port or an http(s) URL (required)")
 	cmd.RegisterFlagCompletionFunc("to", c.completeTargets)
 	insecure := cmd.Flags().BoolP("insecure", "k", false, "skip TLS certificate verification for an https:// target")
+	background := cmd.Flags().Bool("background", false, "run in the background once attached; see tsrelay ps, logs and stop")
 	cmd.RunE = func(cmd *cobra.Command, refs []string) error {
 		ctx := cmd.Context()
 		c.hook = refs[0]
@@ -36,6 +37,9 @@ func newAttachCmd(c *cli) *cobra.Command {
 		target, err := parseTarget(*to, example)
 		if err != nil {
 			return err
+		}
+		if *background && c.bg == nil {
+			return c.startBackground(ctx)
 		}
 		out := newOutput(c)
 
@@ -73,7 +77,7 @@ func newAttachCmd(c *cli) *cobra.Command {
 				return tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, ids...))
 			},
 			Handler: callHandler(target, *insecure, out),
-			OnState: out.onState(target.String(), hold),
+			OnState: c.whenAttached(out.onState(target.String(), hold), list, target.Redacted()),
 			OnControl: func(ctl tunnel.Control) {
 				mu.Lock() // control messages arrive concurrently
 				defer mu.Unlock()

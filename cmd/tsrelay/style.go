@@ -155,6 +155,7 @@ func (c *cli) handleError(_ io.Writer, _ fang.Styles, err error) {
 	if errors.As(err, &ec) {
 		return
 	}
+	c.bg.fail(c.explain(err))
 	s := c.stderrStream()
 	if c.json {
 		writeJSON(s, newJSONError(c.explain(err)))

@@ -35,6 +35,16 @@ func DefaultStatePath() (string, error) {
 	return filepath.Join(home, ".local", "state", "tsrelay", "hooks.json"), nil
 }
 
+// DefaultRunDir is where background tunnels keep their records and logs:
+// run/ next to DefaultStatePath.
+func DefaultRunDir() (string, error) {
+	p, err := DefaultStatePath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(p), "run"), nil
+}
+
 // LegacyStatePath is where tsrelay kept its state before DefaultStatePath:
 // <user config dir>/tsrelay/state.json.
 func LegacyStatePath() (string, error) {

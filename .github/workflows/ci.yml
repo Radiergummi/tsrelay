@@ -77,6 +77,24 @@ jobs:
       - name: tailnet integration test
         run: go test -race -tags tailnet ./internal/server
 
+  # Background tunnels detach, signal and stop processes differently per
+  # system, so their tests run on each.
+  background:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.1'
+
+      - name: background tunnel tests
+        run: go test -run '^TestBackground' ./cmd/tsrelay
+
   # Builds the release image for both platforms without pushing it, so a
   # broken Dockerfile fails here rather than on a tag.
   docker:
