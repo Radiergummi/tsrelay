@@ -411,9 +411,13 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.
 		proto = "https"
 	}
 	out.Header.Set("X-Forwarded-Proto", proto)
-	// Only the connection may say where a call came from.
+	// Only the connection may say where a call came from. (httputil.ReverseProxy
+	// already removes Forwarded and X-Forwarded-* before Rewrite runs, since
+	// Out is built with Rewrite rather than Director; this is kept explicit
+	// so it does not depend on that.)
 	out.Header.Del("X-Real-Ip")
 	out.Header.Del("X-Forwarded-Port")
+	out.Header.Del("Forwarded")
 	stripTsrelay(out.Header)
 	stripTsrelay(out.Trailer)
 	if eff.HostHeader == hooks.HostRewrite {

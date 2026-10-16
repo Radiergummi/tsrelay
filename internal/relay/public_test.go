@@ -61,11 +61,14 @@ func TestPublicCallHeaders(t *testing.T) {
 	seen := make(chan *http.Request, 1)
 	e.attachPublic(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { seen <- r.Clone(r.Context()) }))
 	resp := e.post(e.hook.PublicRoute()+"/stripe?x=1", http.Header{
-		"Tsrelay-Sender-Node": {"spoofed"},
-		"X-Forwarded-For":     {"6.6.6.6"},
-		"X-Forwarded-Server":  {"spoofed"},
-		"Traceparent":         {"00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"},
-		"Stripe-Signature":    {"t=1,v1=abc"},
+		"Tsrelay-Sender-Node":   {"spoofed"},
+		"Tsrelay-Sender-Public": {"false"}, // a spoofed sender identity
+		"X-Forwarded-For":       {"6.6.6.6"},
+		"X-Forwarded-Server":    {"spoofed"},
+		"Forwarded":             {"for=6.6.6.6;proto=http;host=evil.example"},
+		"Traceparent":           {"00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"},
+		"Tracestate":            {"vendor=spoofed"},
+		"Stripe-Signature":      {"t=1,v1=abc"},
 	})
 	if resp.StatusCode != 200 {
 		t.Fatalf("status %d", resp.StatusCode)
@@ -83,13 +86,25 @@ func TestPublicCallHeaders(t *testing.T) {
 		"X-Forwarded-For":       "127.0.0.1",
 		"X-Forwarded-Server":    "",
 		"X-Forwarded-Prefix":    e.hook.PublicRoute(),
+		"Forwarded":             "",
 		"Traceparent":           "",
+		"Tracestate":            "",
 		"Stripe-Signature":      "t=1,v1=abc",
 	}
 	for k, want := range checks {
 		if got := strings.Join(r.Header.Values(k), ","); got != want {
 			t.Errorf("%s = %q, want %q", k, got, want)
 		}
+	}
+	wantHost := strings.TrimPrefix(e.pub.URL, "http://")
+	if got := r.Header.Get("X-Forwarded-Host"); got != wantHost {
+		t.Errorf("X-Forwarded-Host = %q, want %q", got, wantHost)
+	}
+	if got := r.Header.Get("X-Forwarded-Proto"); got == "" {
+		t.Errorf("X-Forwarded-Proto not set")
+	}
+	if got := r.Header.Get("Tsrelay-Call-Id"); got == "" {
+		t.Errorf("Tsrelay-Call-Id not set")
 	}
 }
 
@@ -104,8 +119,10 @@ func TestPublicNotFoundIsUniform(t *testing.T) {
 	tun.SetPublic(true)
 	// The hook was made private again: its old token no longer routes.
 	old := e.hook.PublicRoute()
-	e.mgr.Update(context.Background(), publicReceiver, e.hook.ID,
-		hooks.UpdateRequest{Public: hooks.Opt[bool]{Set: true, Value: new(false)}})
+	if _, _, err := e.mgr.Update(context.Background(), publicReceiver, e.hook.ID,
+		hooks.UpdateRequest{Public: hooks.Opt[bool]{Set: true, Value: new(false)}}); err != nil {
+		t.Fatal(err)
+	}
 	wantProblem(t, e.post(old+"/x", nil), 404, "hook_not_found")
 }
 
