@@ -57,12 +57,18 @@ func TestUIRoutes(t *testing.T) {
 		}
 	}
 	for _, path := range []string{"/hooks", "/hooks/new", "/hooks/" + h.ID, "/hooks/" + h.ID + "/edit", "/hooks/" + h.ID + "/calls",
-		"/hooks/" + h.ID + "/calls/c_1", "/hooks.html", "/admin", "/inspect/c_gone", "/no/such/page"} {
+		"/hooks/" + h.ID + "/calls/c_1", "/admin", "/inspect/c_gone", "/no/such/page"} {
 		resp, _ := e.page(receiver, path)
 		hd := resp.Header
 		if !strings.HasPrefix(hd.Get("Content-Type"), "text/html") || hd.Get("Content-Security-Policy") != ui.CSP ||
 			hd.Get("X-Content-Type-Options") != "nosniff" || hd.Get("Referrer-Policy") != "same-origin" {
 			t.Errorf("%s = %d %v", path, resp.StatusCode, hd)
+		}
+	}
+	// The app routes only bare URLs, so a .html extension is redirected away.
+	for path, want := range map[string]string{"/hooks.html?all=true": "/hooks?all=true", "/admin.html": "/admin"} {
+		if resp, _ := e.page(receiver, path); resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != want {
+			t.Errorf("%s = %d → %q, want a redirect to %s", path, resp.StatusCode, resp.Header.Get("Location"), want)
 		}
 	}
 	if resp, _ := e.page(receiver, "/nope.json"); resp.StatusCode != 404 || resp.Header.Get("Content-Type") != "application/problem+json" {

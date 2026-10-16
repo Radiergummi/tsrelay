@@ -337,7 +337,7 @@ Every call has an attempts list from the start, even though v1 only ever creates
 
 The UI and the API share one URL space: each resource has a single URL, and the client picks its representation (package `negotiate`).
 
-1. A `.json` or `.html` extension on the last path segment wins, and is stripped before routing.
+1. A `.json` or `.html` extension on the last path segment wins, and is stripped before routing. The app routes only bare URLs, so a `.html` URL is redirected to the bare one.
 2. Otherwise the `Accept` header decides (RFC 9110, with q-values and wildcards). `application/vnd.tsrelay.v1+json` is a versioned alias of JSON. An event stream is only chosen when `text/event-stream` is named; a wildcard never picks it.
 3. Without either, the answer is JSON.
 
