@@ -26,6 +26,7 @@ type output struct {
 	stdout, stderr io.Writer // the raw writers, for a command started after "--"
 	now            func() time.Time
 	explain        func(error) *cliError
+	bg             *bgChild // told why the command stops, if this is a background tunnel
 	mu             sync.Mutex
 	// inspectBase is the relay's URL. Call lines link to the call's
 	// inspector page below it. Empty means no links.
@@ -67,7 +68,7 @@ var drops = map[tunnel.ControlType]struct{ reason, text string }{
 
 func newOutput(c *cli) *output {
 	out, err := c.streams()
-	return &output{json: c.json, stdout: c.stdout, stderr: c.stderr, now: time.Now, explain: c.explain, out: out, err: err}
+	return &output{json: c.json, stdout: c.stdout, stderr: c.stderr, now: time.Now, explain: c.explain, bg: c.bg, out: out, err: err}
 }
 
 func (o *output) emit(e jsonEvent) {
@@ -272,6 +273,9 @@ func (o *output) upstreamError(err error) { o.status(styleBad, err.Error()) }
 // --json, an error also goes to stderr as JSON, keeping its explanation
 // structured instead of flattening it into the stopped event's Error string.
 func (o *output) stopped(reason string, err error, code int) int {
+	if err != nil {
+		o.bg.fail(o.explain(err))
+	}
 	switch {
 	case o.json:
 		o.emit(jsonEvent{Event: "stopped", Reason: reason, Error: errText(err), ExitCode: &code})

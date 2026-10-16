@@ -55,6 +55,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 	channel := fs.StringP("channel", "c", "", `hook channel (default: "default")`)
 	persistent := fs.BoolP("persistent", "p", false, "keep the hook after tsrelay exits")
 	insecure := fs.BoolP("insecure", "k", false, "skip TLS certificate verification for an https:// target")
+	background := fs.Bool("background", false, "run in the background once attached; see tsrelay ps, logs and stop")
 	public := fs.Bool("public", false, "make the hook reachable from the internet through the relay's Funnel")
 	settings := registerHookSettingFlags(fs, false)
 	cmd.RegisterFlagCompletionFunc("channel", c.completeChannels)
@@ -66,6 +67,13 @@ func newHTTPCmd(c *cli) *cobra.Command {
 		if d := cmd.ArgsLenAtDash(); d >= 0 {
 			command = args[d:]
 		}
+		if *background && len(command) > 0 {
+			return usage("--background can't start a command",
+				"The command would run in the background too, where tsrelay stop and tsrelay logs couldn't tell it apart from the tunnel.",
+				"tsrelay http "+args[0]+" --background",
+				"TSRELAY_URL=$(tsrelay url "+args[0]+") "+strings.Join(command, " "),
+				"tsrelay http "+args[0]+" -- "+strings.Join(command, " "))
+		}
 		target, err := parseTarget(args[0], func(t string) string { return "tsrelay http " + t })
 		if err != nil {
 			return err
@@ -73,6 +81,9 @@ func newHTTPCmd(c *cli) *cobra.Command {
 		s, err := settings()
 		if err != nil {
 			return err
+		}
+		if *background && c.bg == nil {
+			return c.startBackground(ctx)
 		}
 		out := newOutput(c)
 
@@ -143,7 +154,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 				return tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, h.ID))
 			},
 			Handler: callHandler(target, *insecure, out),
-			OnState: out.onState(target.String(), hook.Effective.HoldTimeout.Std()),
+			OnState: c.whenAttached(out.onState(target.String(), hook.Effective.HoldTimeout.Std()), []api.Hook{hook}, target.Redacted()),
 			OnControl: func(ctl tunnel.Control) {
 				mu.Lock()
 				defer mu.Unlock()

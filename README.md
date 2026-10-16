@@ -108,6 +108,29 @@ tsrelay attach <hook>... -t <port|url>             # serve existing hooks from o
 
 If a served hook's path is changed (`tsrelay hooks update`, the web UI or the API), `http` and `attach` print its new URL on stdout, and `tsrelay http` remembers it.
 
+## Background tunnels
+
+`--background` (on `http` and `attach`) gives you the terminal back once the tunnel is attached. tsrelay prints the hook URL and an ID for the tunnel, which keeps running on its own:
+
+```bash
+$ tsrelay http 8080 --background
+https://tsrelay.example.ts.net/~moritz/amber-otter-lamp
+running in the background as k3x9qa
+tsrelay logs k3x9qa -f  ·  tsrelay stop k3x9qa
+```
+
+If the tunnel can't attach, you get the error as you would in the foreground, and nothing is left running.
+
+```bash
+tsrelay ps                                         # background tunnels: ID, hooks, target, uptime, state
+tsrelay logs <id|hook> [-f]                        # print a tunnel's log, or follow it
+tsrelay stop <id|hook>... | --all                  # stop tunnels
+```
+
+A tunnel is named by its ID or by a hook it serves. `stop` gives each tunnel 10 s to detach cleanly, then kills it and says so. A tunnel whose process has ended, say because its hook was deleted, shows up once in `ps` as `exited` and is then forgotten, log included; read its log before that with `tsrelay logs`.
+
+Each tunnel keeps its record and log in `$XDG_STATE_HOME/tsrelay/run/` (`~/.local/state/tsrelay/run/` by default). Background tunnels don't survive a reboot or logout, and aren't restarted when they fail; use your system's service manager for that. `tsrelay http --background -- cmd` is refused: start the command yourself, e.g. `TSRELAY_URL=$(tsrelay url 8080) npm run dev`.
+
 ## Hook settings
 
 Every hook has delivery settings. Your relay sets a default and, for most of them, a maximum; a hook may only choose values within the maximum.
@@ -198,7 +221,7 @@ Errors produced by the relay itself are `application/problem+json` responses and
 
 ## Completion and output
 
-`tsrelay completion bash|zsh|fish|powershell` prints a completion script; for example `tsrelay completion fish > ~/.config/fish/completions/tsrelay.fish`. Besides commands and flags, it completes your hooks (by path and ID, for `attach` and `hooks show|update|delete`), channels for `--channel` (those your grants name, and those your hooks use), and the targets `tsrelay http` remembered in this directory for `--to` and `<port|url>`. These ask the relay live and give up after 2 seconds; when anything fails, they offer nothing and print nothing.
+`tsrelay completion bash|zsh|fish|powershell` prints a completion script; for example `tsrelay completion fish > ~/.config/fish/completions/tsrelay.fish`. Besides commands and flags, it completes your hooks (by path and ID, for `attach` and `hooks show|update|delete`), channels for `--channel` (those your grants name, and those your hooks use), the targets `tsrelay http` remembered in this directory for `--to` and `<port|url>`, and background tunnels by ID and hook for `stop` and `logs`. These ask the relay live and give up after 2 seconds; when anything fails, they offer nothing and print nothing.
 
 Every flag can also be set in the environment as `TSRELAY_<FLAG>`, with dashes as underscores (`--relay` ← `TSRELAY_RELAY`, `--hold-timeout` ← `TSRELAY_HOLD_TIMEOUT`); the command line wins.
 

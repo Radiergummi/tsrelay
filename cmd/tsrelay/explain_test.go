@@ -73,7 +73,7 @@ func TestUsageErrorSites(t *testing.T) {
 	for _, tc := range []errorCase{
 		// cobra: commands and arity
 		{args: []string{"hoks"}, title: `Unknown command "hoks"`, reason: `tsrelay has no command "hoks".`,
-			fixes: []string{"tsrelay hooks", "tsrelay --help"}},
+			fixes: []string{"tsrelay hooks", "tsrelay logs", "tsrelay --help"}},
 		{args: []string{"hooks", "lst"}, title: `Unknown command "lst"`, reason: `tsrelay hooks has no command "lst".`,
 			fixes: []string{"tsrelay hooks list", "tsrelay hooks --help"}},
 		{args: []string{"attach", "--to", "8080"}, title: "No hook given", reason: "tsrelay attach takes one or more hooks.",

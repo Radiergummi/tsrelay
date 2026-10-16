@@ -40,10 +40,7 @@ func hookExpiry(h api.Hook) string {
 	return h.ExpiresAt.Local().Format(time.DateTime)
 }
 
-// writeHookList prints hooks as a table on out when out is fancy, else as
-// tab-separated lines with a header, for cut and awk. A fancy, empty list
-// prints its "no hooks yet" hint to errStream instead of an empty table,
-// since stdout carries only the URL/data output of hooks commands.
+// writeHookList prints hooks with writeTable.
 func writeHookList(out, errStream stream, hs []api.Hook) {
 	header := []string{"ID", "PATH", "CHANNEL", "KIND", "TUNNEL", "EXPIRES", "URL"}
 	rows := make([][]string, len(hs))
@@ -54,6 +51,14 @@ func writeHookList(out, errStream stream, hs []api.Hook) {
 		}
 		rows[i] = []string{h.ID, h.Path, h.Channel, hookKind(h), tun, hookExpiry(h), out.link(h.URL, h.URL)}
 	}
+	writeTable(out, errStream, header, rows, "no hooks yet; tsrelay http <port> creates one")
+}
+
+// writeTable prints rows as a table on out when out is fancy, else as
+// tab-separated lines with a header, for cut and awk. Without rows, a
+// fancy out gets no table: the hint empty goes to errStream instead, since
+// stdout carries only the data.
+func writeTable(out, errStream stream, header []string, rows [][]string, empty string) {
 	if !out.fancy {
 		fmt.Fprintln(out.w, strings.Join(header, "\t"))
 		for _, r := range rows {
@@ -61,8 +66,8 @@ func writeHookList(out, errStream stream, hs []api.Hook) {
 		}
 		return
 	}
-	if len(hs) == 0 {
-		fmt.Fprintln(errStream.w, errStream.style(styleDim, "no hooks yet; tsrelay http <port> creates one"))
+	if len(rows) == 0 {
+		fmt.Fprintln(errStream.w, errStream.style(styleDim, empty))
 		return
 	}
 	cell := lipgloss.NewStyle().Padding(0, 1)
