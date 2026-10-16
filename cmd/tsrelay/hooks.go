@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -21,7 +22,7 @@ func newHooksCmd(c *cli) *cobra.Command {
 		Args:  usageArgs(cobra.NoArgs),
 		RunE:  c.helpAndFail,
 	}
-	cmd.AddCommand(newHooksListCmd(c), newHooksShowCmd(c), newHooksCreateCmd(c), newHooksUpdateCmd(c), newHooksDeleteCmd(c))
+	cmd.AddCommand(newHooksListCmd(c), newHooksShowCmd(c), newHooksCreateCmd(c), newHooksUpdateCmd(c), newHooksDeleteCmd(c), newHooksRotateURLCmd(c))
 	return cmd
 }
 
@@ -91,6 +92,7 @@ func newHooksCreateCmd(c *cli) *cobra.Command {
 	description := fs.String("description", "", "free text, at most 280 characters")
 	ephemeral := fs.Bool("ephemeral", false, "delete the hook once it had no tunnel for the relay's grace period")
 	expiresIn := fs.Duration("expires-in", 0, "delete the hook after this long (0: never)")
+	public := fs.Bool("public", false, "make the hook reachable from the internet through the relay's Funnel")
 	settings := registerHookSettingFlags(fs, false)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -101,7 +103,7 @@ func newHooksCreateCmd(c *cli) *cobra.Command {
 		if err != nil {
 			return &usageError{err.Error()}
 		}
-		req := hooks.CreateRequest{Channel: *channel, Description: *description, Ephemeral: *ephemeral, Settings: s}
+		req := hooks.CreateRequest{Channel: *channel, Description: *description, Ephemeral: *ephemeral, Settings: s, Public: *public}
 		if len(args) == 1 {
 			req.Path = args[0]
 		}
@@ -134,6 +136,7 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 	description := fs.String("description", "", "replace the description")
 	ephemeral := fs.Bool("ephemeral", false, "make the hook ephemeral, or persistent with --ephemeral=false")
 	expiresIn := fs.Duration("expires-in", 0, "expire this long from now (0: never)")
+	public := fs.Bool("public", false, "make the hook reachable from the internet, or private again with --public=false")
 	settings := registerHookSettingFlags(fs, true)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -167,6 +170,8 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 				req.Description = optPtr(description)
 			case "ephemeral":
 				req.Ephemeral = optPtr(ephemeral)
+			case "public":
+				req.Public = optPtr(public)
 			case "expires-in":
 				req.ExpiresAt = hooks.Opt[time.Time]{Set: true} // 0 removes the expiry
 				if *expiresIn != 0 {
@@ -230,6 +235,35 @@ func newHooksDeleteCmd(c *cli) *cobra.Command {
 	return cmd
 }
 
+func newHooksRotateURLCmd(c *cli) *cobra.Command {
+	return &cobra.Command{
+		Use:   "rotate-url <hook>",
+		Short: "Give a public hook a new public URL; the old one stops working",
+		Args:  usageArgs(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, refs []string) error {
+			ctx := cmd.Context()
+			relayAPI, err := c.newRelayAPI(ctx)
+			if err != nil {
+				return err
+			}
+			found, err := resolveHooks(ctx, relayAPI, refs)
+			if err != nil {
+				return err
+			}
+			h, err := relayAPI.RotatePublicURL(ctx, found[0].ID)
+			if err != nil {
+				return err
+			}
+			out := c.stdoutStream()
+			if c.json {
+				return writeJSON(out, h)
+			}
+			fmt.Fprintln(out.w, out.style(styleBold, cmp.Or(h.PublicURL, h.URL)))
+			return nil
+		},
+	}
+}
+
 // resolveHooks finds the caller's hooks named by ID or path, in order. It
 // fails if any of them does not exist.
 func resolveHooks(ctx context.Context, c *client.API, refs []string) ([]api.Hook, error) {
@@ -275,5 +309,9 @@ func (c *cli) printHook(h api.Hook) error {
 		return writeJSON(out, h)
 	}
 	fmt.Fprintln(out.w, out.style(styleBold, h.URL))
+	if h.PublicURL != "" {
+		errStream := c.stderrStream()
+		fmt.Fprintln(errStream.w, errStream.style(styleWarn, "public (internet): ")+errStream.style(styleBold, h.PublicURL))
+	}
 	return nil
 }
