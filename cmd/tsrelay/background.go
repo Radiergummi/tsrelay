@@ -147,22 +147,25 @@ func (c *cli) startBackground(ctx context.Context) error {
 	if err != nil {
 		return startFailed(err)
 	}
-	log, err := os.OpenFile(logPath(dir, id), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-	if err != nil {
-		return startFailed(err)
-	}
-	defer log.Close()
 	pr, pw, err := os.Pipe()
 	if err != nil {
 		return startFailed(err)
 	}
 	defer pr.Close()
+	log, err := os.OpenFile(logPath(dir, id), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		pw.Close()
+		return startFailed(err)
+	}
 	cmd := exec.Command(exe, c.args...)
 	cmd.Env = append(os.Environ(), backgroundIDEnv+"="+id)
 	cmd.Stdout, cmd.Stderr = pw, log
 	detach(cmd)
 	err = cmd.Start()
+	// Only the tunnel writes to these. Windows can't remove a file that is
+	// still open, so the log must be closed before a failure removes it.
 	pw.Close()
+	log.Close()
 	if err != nil {
 		return startFailed(err)
 	}
