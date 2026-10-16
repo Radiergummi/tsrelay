@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -35,12 +37,18 @@ func newHTTPCmd(c *cli) *cobra.Command {
 			"so its URL stays the same across runs. A command given after -- is started with " +
 			"TSRELAY_URL set and stopped when tsrelay stops.",
 		Example: "  tsrelay http 8080\n  tsrelay http 8080 -n payments -- npm run dev",
-		Args: usageArgs(func(cmd *cobra.Command, args []string) error {
-			if n := targetArgs(cmd, args); n != 1 {
-				return fmt.Errorf("want one <port|url>, got %d", n)
+		Args: func(cmd *cobra.Command, args []string) error {
+			switch n := targetArgs(cmd, args); {
+			case n == 0:
+				return usage("No target to forward calls to", "http needs to know where your local app listens.",
+					"tsrelay http 3000", "tsrelay http http://localhost:8080")
+			case n > 1:
+				return usage(fmt.Sprintf("Unexpected argument %q", args[1]), "http forwards to one local app; a command to start goes after --.",
+					fmt.Sprintf("tsrelay http %s -- %s", args[0], strings.Join(args[1:n], " ")))
 			}
 			return nil
-		}),
+		},
+		ValidArgsFunction: c.completeTargetArg,
 	}
 	fs := cmd.Flags()
 	name := fs.StringP("name", "n", "", "hook path below your ~user prefix (default: remembered, else three random words)")
@@ -49,6 +57,8 @@ func newHTTPCmd(c *cli) *cobra.Command {
 	insecure := fs.BoolP("insecure", "k", false, "skip TLS certificate verification for an https:// target")
 	public := fs.Bool("public", false, "make the hook reachable from the internet through the relay's Funnel")
 	settings := registerHookSettingFlags(fs, false)
+	cmd.RegisterFlagCompletionFunc("channel", c.completeChannels)
+	completeSettingFlags(cmd)
 	cmd.Long += " Settings flags apply only when the hook is created."
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -56,13 +66,13 @@ func newHTTPCmd(c *cli) *cobra.Command {
 		if d := cmd.ArgsLenAtDash(); d >= 0 {
 			command = args[d:]
 		}
-		target, err := client.ParseTarget(args[0])
+		target, err := parseTarget(args[0], func(t string) string { return "tsrelay http " + t })
 		if err != nil {
-			return &usageError{err.Error()}
+			return err
 		}
 		s, err := settings()
 		if err != nil {
-			return &usageError{err.Error()}
+			return err
 		}
 		out := newOutput(c)
 
@@ -78,10 +88,12 @@ func newHTTPCmd(c *cli) *cobra.Command {
 		cwd, _ := os.Getwd()
 		key := client.StateKey(relayAPI.BaseURL, cwd, target)
 		req := hooks.CreateRequest{Channel: *channel, Ephemeral: !*persistent, Settings: s, Public: *public}
+		c.hook = cmp.Or(*name, state.Path(key))
 		hook, created, err := ensureHook(ctx, relayAPI, *name, state.Path(key), req)
 		if err != nil {
 			return exitWith(out.fail(err))
 		}
+		c.hook = hook.Path
 		if !created && fs.Changed("public") && hook.Public != *public {
 			hook, err = relayAPI.UpdateHook(ctx, hook.ID, hooks.UpdateRequest{Public: optPtr(public)})
 			if err != nil {
@@ -166,6 +178,22 @@ func targetArgs(cmd *cobra.Command, args []string) int {
 	return len(args)
 }
 
+// parseTarget is client.ParseTarget with its error explained; example is
+// the command line that would work with a given target.
+func parseTarget(s string, example func(target string) string) (*url.URL, error) {
+	u, err := client.ParseTarget(s)
+	if err == nil {
+		return u, nil
+	}
+	e := usage(fmt.Sprintf("%q isn't a port or an http(s) URL", s), "tsrelay forwards calls to a port on this machine, or to an http(s) URL.",
+		example("3000"), example("http://localhost:3000"))
+	if _, perr := strconv.Atoi(strings.TrimPrefix(s, ":")); perr == nil {
+		e.Title, e.Reason = fmt.Sprintf("Port %s is out of range", strings.TrimPrefix(s, ":")), "Ports go from 1 to 65535."
+	}
+	e.err = err
+	return nil, e
+}
+
 // runTunnel runs tc until it stops and returns the exit code. With a
 // command, it first starts the command with TSRELAY_URL set. Whichever ends
 // first stops the other: the command gets SIGTERM, and is killed after
@@ -190,7 +218,8 @@ func runTunnel(ctx context.Context, tc *tunnel.Client, command []string, hookURL
 		}
 		cmd.WaitDelay = childStopTimeout
 		if err := cmd.Start(); err != nil {
-			return out.fail(fmt.Errorf("starting %s: %w", command[0], err))
+			return out.fail(&cliError{Title: "Couldn't start " + command[0], Reason: sentence(err.Error()), Code: "command_failed", err: err,
+				Fixes: []string{"Check that " + command[0] + " is installed and on your PATH"}})
 		}
 		childDone = make(chan error, 1)
 		go func() { childDone <- cmd.Wait() }()
@@ -236,7 +265,18 @@ func relayBase(ctx context.Context, relayFlag string, d deps) (string, error) {
 	if status == nil {
 		status = (&local.Client{}).StatusWithoutPeers
 	}
-	return client.RelayURL(ctx, relayFlag, status)
+	base, err := client.RelayURL(ctx, relayFlag, status)
+	switch {
+	case errors.Is(err, client.ErrNoMagicDNS):
+		return "", &cliError{Title: "Can't tell which relay to use", Code: "no_relay", err: err,
+			Reason: "tsrelay finds the relay at https://tsrelay.<your tailnet>, but this tailnet has no MagicDNS name.",
+			Fixes:  []string{"Name the relay with --relay https://<relay host>, or set TSRELAY_RELAY"}}
+	case err != nil:
+		return "", &cliError{Title: "Can't ask Tailscale for your tailnet", Code: "tailscale_unavailable", err: err,
+			Reason: "tsrelay finds the relay by your tailnet's name, which the local Tailscale didn't give: " + sentence(errors.Unwrap(err).Error()),
+			Fixes:  []string{"tailscale up", "Name the relay with --relay https://tsrelay.<your tailnet>.ts.net"}}
+	}
+	return base, nil
 }
 
 // newRelayAPI returns a client for the relay's API; see relayBase. It
@@ -256,8 +296,12 @@ func (c *cli) newRelayAPI(ctx context.Context) (*client.API, error) {
 	}
 	checked := *hc
 	checked.Transport = &versionCheck{next: next, seen: func(relay string) {
-		c.versionWarned.Do(func() { c.warnVersion(base, relay) })
+		c.versionWarned.Do(func() {
+			c.version.Store(&versionSeen{base: base, relay: relay})
+			c.warnVersion(base, relay)
+		})
 	}}
+	c.base = base
 	return &client.API{BaseURL: base, HTTP: &checked}, nil
 }
 
@@ -282,9 +326,13 @@ func ensureHook(ctx context.Context, c *client.API, explicit, remembered string,
 			}
 			switch {
 			case req.Channel != "" && h.Channel != req.Channel:
-				return api.Hook{}, false, fmt.Errorf("your hook %q is in channel %q, not %q; delete it or pick another --name", h.Path, h.Channel, req.Channel)
+				return api.Hook{}, false, &cliError{Title: fmt.Sprintf("Your hook %q is in channel %q, not %q", h.Path, h.Channel, req.Channel), Code: "hook_mismatch",
+					Reason: "tsrelay http reuses the hook at this path, and won't move it to another channel on its own.",
+					Fixes:  []string{fmt.Sprintf("tsrelay hooks update %s --channel %s", h.Path, req.Channel), "tsrelay hooks delete " + h.Path, "Pick another path with --name"}}
 			case !req.Ephemeral && h.Ephemeral:
-				return api.Hook{}, false, fmt.Errorf("your hook %q is ephemeral, but --persistent was given; delete it or pick another --name", h.Path)
+				return api.Hook{}, false, &cliError{Title: fmt.Sprintf("Your hook %q is ephemeral", h.Path), Code: "hook_mismatch",
+					Reason: "--persistent asks for a hook that outlives tsrelay, and tsrelay http won't change the hook it reuses on its own.",
+					Fixes:  []string{fmt.Sprintf("tsrelay hooks update %s --ephemeral=false", h.Path), "tsrelay hooks delete " + h.Path, "Pick another path with --name"}}
 			}
 			return h, false, nil
 		}
@@ -328,7 +376,9 @@ func openState(d deps) (*client.State, error) {
 	}
 	s, err := client.LoadState(path, legacy)
 	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", path, err)
+		return nil, &cliError{Title: "Can't read tsrelay's remembered hooks", Code: "state_unreadable", err: err,
+			Reason: fmt.Sprintf("tsrelay remembers hooks per directory in %s: %s", path, sentence(err.Error())),
+			Fixes:  []string{"Repair the file, or move it aside to start over: mv " + path + " " + path + ".bak"}}
 	}
 	return s, nil
 }

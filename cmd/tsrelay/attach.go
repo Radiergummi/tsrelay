@@ -4,10 +4,10 @@ import (
 	"context"
 	"net"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/Radiergummi/tsrelay/internal/api"
-	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"github.com/spf13/cobra"
 )
@@ -19,18 +19,23 @@ func newAttachCmd(c *cli) *cobra.Command {
 		Use:     "attach <hook>... --to <port|url>",
 		Short:   "Serve existing hooks from one local app",
 		Example: "  tsrelay attach payments ship/v1 --to 8080",
-		Args:    usageArgs(cobra.MinimumNArgs(1)),
+		Args:    arity(1, -1, "hook"),
 	}
+	cmd.ValidArgsFunction = c.completeHooks(-1)
 	to := cmd.Flags().StringP("to", "t", "", "the local app to deliver calls to: a port or an http(s) URL (required)")
+	cmd.RegisterFlagCompletionFunc("to", c.completeTargets)
 	insecure := cmd.Flags().BoolP("insecure", "k", false, "skip TLS certificate verification for an https:// target")
 	cmd.RunE = func(cmd *cobra.Command, refs []string) error {
 		ctx := cmd.Context()
+		c.hook = refs[0]
+		example := func(target string) string { return "tsrelay attach " + strings.Join(refs, " ") + " --to " + target }
 		if *to == "" {
-			return usagef("--to is required")
+			return usage("No target to forward calls to", "attach needs to know where your local app listens.",
+				example("3000"), example("http://localhost:8080"))
 		}
-		target, err := client.ParseTarget(*to)
+		target, err := parseTarget(*to, example)
 		if err != nil {
-			return &usageError{err.Error()}
+			return err
 		}
 		out := newOutput(c)
 

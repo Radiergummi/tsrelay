@@ -13,9 +13,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/term"
-
-	"github.com/Radiergummi/tsrelay/internal/client"
-	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
 // stream is one output stream and how much styling it takes. Plain output
@@ -114,74 +111,45 @@ func writeJSON(s stream, v any) error {
 	return err
 }
 
-// problemHints say what to do about a relay refusal, by problem code.
-// Codes whose detail already says what is wrong have none.
-var problemHints = map[string]string{
-	problem.Forbidden:          "check your grants for the relay's capability in your tailnet policy",
-	problem.HookNotFound:       "tsrelay hooks list shows your hooks",
-	problem.NotFound:           "tsrelay hooks list shows your hooks",
-	problem.MisdirectedRequest: "check --relay (or TSRELAY_RELAY): it may name the wrong host",
-	problem.Internal:           "the relay failed; its logs have the details",
-}
-
-func problemHint(code string) string { return problemHints[code] }
-
-// formatError renders err for people: a relay refusal as its title, its
-// detail and a hint; anything else on one line, with its own hint if it has
-// one (e.g. an unreachable relay).
-func formatError(s stream, err error) string {
-	var p *problem.Problem
-	if !errors.As(err, &p) {
-		msg := s.glyph(s.style(styleBad, "✗")) + s.style(styleBad, "tsrelay: ") + err.Error()
-		if h := errHint(err); h != "" {
-			msg += "\n  " + s.style(styleDim, "hint: "+h)
-		}
-		return msg
-	}
+// formatError renders e for people: a headline saying what went wrong,
+// the reason, and the fixes to try.
+func formatError(s stream, e *cliError) string {
 	var b strings.Builder
-	b.WriteString(s.glyph(s.style(styleBad, "✗")))
-	b.WriteString(s.style(styleBad.Bold(true), fmt.Sprintf("%s (%d)", p.Title, p.Status)))
-	if p.Detail != "" {
-		b.WriteString("\n  " + p.Detail)
+	b.WriteString(s.style(styleBad, "✗") + " " + s.style(styleBad.Bold(true), e.Title))
+	if e.Reason != "" {
+		b.WriteString("\n  " + strings.ReplaceAll(e.Reason, "\n", "\n  "))
 	}
-	if h := problemHint(p.Code); h != "" {
-		b.WriteString("\n  " + s.style(styleDim, "hint: "+h))
+	if len(e.Fixes) > 0 {
+		b.WriteString("\n\n  " + s.style(styleDim, "Try:"))
+		for _, f := range e.Fixes {
+			b.WriteString("\n    " + s.style(styleInfo, f))
+		}
 	}
 	return b.String()
 }
 
-// errHint gives a hint for an error that is not a relay refusal, e.g. one
-// that means the relay could not be reached at all.
-func errHint(err error) string {
-	var ue *client.UnreachableError
-	if errors.As(err, &ue) {
-		return "check --relay or TSRELAY_RELAY"
-	}
-	return ""
-}
-
 // jsonError is how an error is reported on stderr with --json.
 type jsonError struct {
-	Error   string           `json:"error"`
-	Problem *problem.Problem `json:"problem,omitempty"`
+	Error struct {
+		Title  string   `json:"title"`
+		Reason string   `json:"reason"`
+		Fixes  []string `json:"fixes"`
+		Code   string   `json:"code"`
+	} `json:"error"`
 }
 
-func newJSONError(err error) jsonError {
-	var p *problem.Problem
-	if errors.As(err, &p) {
-		msg := p.Detail
-		if msg == "" {
-			msg = p.Title
-		}
-		return jsonError{Error: msg, Problem: p}
+func newJSONError(e *cliError) jsonError {
+	var je jsonError
+	je.Error.Title, je.Error.Reason, je.Error.Fixes, je.Error.Code = e.Title, e.Reason, e.Fixes, e.Code
+	if je.Error.Fixes == nil {
+		je.Error.Fixes = []string{}
 	}
-	return jsonError{Error: err.Error()}
+	return je
 }
 
 // handleError is fang's error handler. Errors already reported
-// (exitCodeError) print nothing; with --json the error goes to stderr as
-// JSON; otherwise it is formatted for people, with a pointer to --help for
-// usage errors.
+// (exitCodeError) print nothing; the others are explained on stderr, as
+// JSON with --json.
 func (c *cli) handleError(_ io.Writer, _ fang.Styles, err error) {
 	var ec exitCodeError
 	if errors.As(err, &ec) {
@@ -189,11 +157,8 @@ func (c *cli) handleError(_ io.Writer, _ fang.Styles, err error) {
 	}
 	s := c.stderrStream()
 	if c.json {
-		writeJSON(s, newJSONError(err))
+		writeJSON(s, newJSONError(c.explain(err)))
 		return
 	}
-	fmt.Fprintln(s.w, formatError(s, err))
-	if exitStatus(err) == 2 {
-		fmt.Fprintln(s.w, s.style(styleDim, "  run with --help for usage"))
-	}
+	fmt.Fprintln(s.w, formatError(s, c.explain(err)))
 }

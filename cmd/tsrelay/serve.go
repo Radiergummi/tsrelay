@@ -37,7 +37,7 @@ func newServeCmd(c *cli) *cobra.Command {
 		Short: "Run the relay as its own tailnet node",
 		Long: "Run the relay as its own tailnet node. Every flag can also be set as " +
 			"TSRELAY_<FLAG>, e.g. TSRELAY_STATE_DIR for --state-dir.",
-		Args: usageArgs(cobra.NoArgs),
+		Args: arity(0, 0, ""),
 	}
 	fs := cmd.Flags()
 	hostname := fs.String("hostname", "tsrelay", "tailnet machine name of the relay")
@@ -72,43 +72,58 @@ func newServeCmd(c *cli) *cobra.Command {
 	logFormat := fs.String("log-format", "json", `the log line format: "json" or "text"`)
 	logLevel := fs.String("log-level", "info", "debug, info, warn or error")
 	verbose := fs.Bool("verbose-tailscale", false, "include tsnet's own logs")
+	cmd.RegisterFlagCompletionFunc("user-slug", enum(string(hooks.SlugLocalPart), string(hooks.SlugLogin)))
+	cmd.RegisterFlagCompletionFunc("log-format", enum("json", "text"))
+	cmd.RegisterFlagCompletionFunc("log-level", enum("debug", "info", "warn", "error"))
+	cmd.RegisterFlagCompletionFunc("hook-attach-policy-default", enum(string(hooks.AttachTakeover), string(hooks.AttachReject)))
+	cmd.RegisterFlagCompletionFunc("hook-host-header-default", enum(string(hooks.HostPreserve), string(hooks.HostRewrite)))
 
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		ctx := cmd.Context()
 		stderr := c.stderr
 		if *slugMode != string(hooks.SlugLocalPart) && *slugMode != string(hooks.SlugLogin) {
-			return usagef("--user-slug must be %q or %q", hooks.SlugLocalPart, hooks.SlugLogin)
+			return usage(fmt.Sprintf("Unknown --user-slug %q", *slugMode),
+				fmt.Sprintf("Slugs derive from the login's local part (%s) or from the whole login (%s).", hooks.SlugLocalPart, hooks.SlugLogin),
+				"tsrelay serve --user-slug "+string(hooks.SlugLocalPart), "tsrelay serve --user-slug "+string(hooks.SlugLogin))
 		}
 		if *revalidate <= 0 {
-			return usagef("--revalidate-interval must be positive")
+			return usage("--revalidate-interval must be positive", "It says how often attached tunnels are re-authorized.",
+				"tsrelay serve --revalidate-interval 1m")
 		}
 		if *holdQueue < 1 {
-			return usagef("--hold-queue must be at least 1; use --hook-hold-timeout-default=0s to disable holding")
+			return usage("--hold-queue must be at least 1", "It says how many calls per hook may wait for a tunnel at once.",
+				"tsrelay serve --hold-queue 16", "To disable holding: tsrelay serve --hook-hold-timeout-default=0s")
 		}
 		if *captureLimit < 1 || *captureCalls < 1 {
-			return usagef("--capture-limit and --capture-calls must be at least 1; use --capture-bodies=false to keep no bodies")
+			return usage("--capture-limit and --capture-calls must be at least 1", "The inspector keeps at least one call, and at least one byte of it.",
+				"tsrelay serve --capture-calls 50 --capture-limit 65536", "To keep no bodies: tsrelay serve --capture-bodies=false")
 		}
 		if *funnel && !*useTLS {
-			return usagef("--funnel needs --tls: Funnel only serves HTTPS")
+			return usage("--funnel needs --tls", "Funnel only serves HTTPS.", "tsrelay serve --tls --funnel")
 		}
 		if *funnelPort != 443 && *funnelPort != 8443 && *funnelPort != 10000 {
-			return usagef("--funnel-port must be 443, 8443 or 10000, the ports Funnel supports")
+			return usage("--funnel-port must be 443, 8443 or 10000", "Those are the only ports Funnel serves.", "tsrelay serve --tls --funnel --funnel-port 443")
 		}
 		if *funnelMaxBody < 1 {
-			return usagef("--funnel-max-body-bytes must be at least 1")
+			return usage("--funnel-max-body-bytes must be at least 1", "A call from the internet needs room for its body.", "tsrelay serve --tls --funnel --funnel-max-body-bytes 1048576")
 		}
 		for login, slug := range overrides {
 			if !hooks.ValidSlug(slug) {
-				return usagef("--user-slug-override %s=%s: a slug may only contain a-z, 0-9, '.', '_' and '-'", login, slug)
+				e := usage(fmt.Sprintf("Invalid slug %q for %s", slug, login), "A slug may only contain a-z, 0-9, '.', '_' and '-'.")
+				// Deriving a slug from the invalid one, as from a login, makes it valid.
+				if s, err := (hooks.SlugConfig{Mode: hooks.SlugLogin}).Slug(slug); err == nil {
+					e.Fixes = []string{fmt.Sprintf("tsrelay serve --user-slug-override %s=%s", login, s)}
+				}
+				return e
 			}
 		}
 		logger, err := newLogger(stderr, *logFormat, *logLevel)
 		if err != nil {
-			return &usageError{err.Error()}
+			return err
 		}
 		policy, err := policyFlags()
 		if err != nil {
-			return &usageError{err.Error()}
+			return err
 		}
 
 		err = runRelay(ctx, logger, relayConfig{
@@ -327,7 +342,9 @@ func fileExists(p string) bool {
 func newLogger(w io.Writer, format, level string) (*slog.Logger, error) {
 	var lvl slog.Level
 	if err := lvl.UnmarshalText([]byte(level)); err != nil {
-		return nil, fmt.Errorf("--log-level: %w", err)
+		e := usage(fmt.Sprintf("Unknown --log-level %q", level), "The levels are debug, info, warn and error.", "tsrelay serve --log-level info")
+		e.err = err
+		return nil, e
 	}
 	opts := &slog.HandlerOptions{Level: lvl}
 	switch format {
@@ -336,5 +353,6 @@ func newLogger(w io.Writer, format, level string) (*slog.Logger, error) {
 	case "text":
 		return slog.New(slog.NewTextHandler(w, opts)), nil
 	}
-	return nil, fmt.Errorf(`--log-format must be "json" or "text", not %q`, format)
+	return nil, usage(fmt.Sprintf("Unknown --log-format %q", format), "Logs are JSON lines (json) or logfmt-style text (text).",
+		"tsrelay serve --log-format json", "tsrelay serve --log-format text")
 }

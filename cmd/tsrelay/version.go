@@ -32,6 +32,14 @@ func (v *versionCheck) RoundTrip(r *http.Request) (*http.Response, error) {
 	return resp, err
 }
 
+// updateCommand installs the version of tsrelay the relay at base runs.
+func updateCommand(base string) string {
+	if runtime.GOOS == "windows" {
+		return "irm " + base + "/install.ps1 | iex"
+	}
+	return "curl -fsSL " + base + "/install.sh | sh"
+}
+
 // warnVersion tells the user on stderr that this CLI and the relay at base
 // differ, and how to install the relay's version.
 func (c *cli) warnVersion(base, relay string) {
@@ -39,11 +47,7 @@ func (c *cli) warnVersion(base, relay string) {
 	if semver.Compare(version, relay) > 0 {
 		rel = "newer than"
 	}
-	update := "curl -fsSL " + base + "/install.sh | sh"
-	if runtime.GOOS == "windows" {
-		update = "irm " + base + "/install.ps1 | iex"
-	}
-	msg := fmt.Sprintf("tsrelay %s is %s the relay (%s); update with: %s", version, rel, relay, update)
+	msg := fmt.Sprintf("tsrelay %s is %s the relay (%s); update with: %s", version, rel, relay, updateCommand(base))
 	s := c.stderrStream()
 	if c.json {
 		writeJSON(s, struct {
