@@ -114,6 +114,19 @@ test("body size takes a unit, and rate limit fills in the other half from the de
   );
 });
 
+test("clearing the rate limit's halves goes back to the default", async () => {
+  const saved = render(fixtures.me, {
+    ...fixtures.hook,
+    settings: { rateLimit: { perSecond: 5, burst: 9 } },
+  });
+  await userEvent.clear(screen.getByLabelText("per second"));
+  await userEvent.clear(screen.getByLabelText("burst"));
+  expect(screen.getByLabelText("per second")).toHaveValue(null);
+  expect(screen.queryByText("custom")).not.toBeInTheDocument();
+  await submit();
+  await waitFor(() => expect(saved.body?.["settings"]).toMatchObject({ rateLimit: null }));
+});
+
 test("the channel says which pattern allows it, and flags one no pattern allows", async () => {
   server.use(
     http.get("/channels", () =>

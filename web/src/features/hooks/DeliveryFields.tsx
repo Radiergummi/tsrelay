@@ -78,7 +78,12 @@ export function DeliveryFields({
         {(c) => {
           const raw = form.values["settings.rateLimit"] ?? "";
           const [perSecond = "", burst = ""] = raw ? raw.split("/") : [];
-          const put = (p: string, b: string) => form.set("settings.rateLimit")(`${p}/${b}`);
+          // Clearing a half while the other is at its default resets.
+          const { perSecond: dp, burst: db } = defaults.rateLimit;
+          const put = (p: string, b: string) =>
+            form.set("settings.rateLimit")(
+              (p === "" && b === String(db)) || (b === "" && p === String(dp)) ? "" : `${p}/${b}`,
+            );
           return (
             <fieldset
               aria-labelledby={c["aria-labelledby"]}
@@ -94,8 +99,8 @@ export function DeliveryFields({
                   className="w-24"
                   aria-invalid={c["aria-invalid"]}
                   value={perSecond}
-                  placeholder={String(defaults.rateLimit.perSecond)}
-                  onChange={(e) => put(e.target.value, burst || String(defaults.rateLimit.burst))}
+                  placeholder={String(dp)}
+                  onChange={(e) => put(e.target.value, burst || String(db))}
                 />
                 <label htmlFor={`${c.id}-rate`}>per second</label>
               </span>
@@ -108,10 +113,8 @@ export function DeliveryFields({
                   className="w-24"
                   aria-invalid={c["aria-invalid"]}
                   value={burst}
-                  placeholder={String(defaults.rateLimit.burst)}
-                  onChange={(e) =>
-                    put(perSecond || String(defaults.rateLimit.perSecond), e.target.value)
-                  }
+                  placeholder={String(db)}
+                  onChange={(e) => put(perSecond || String(dp), e.target.value)}
                 />
                 <label htmlFor={`${c.id}-burst`}>burst</label>
               </span>
