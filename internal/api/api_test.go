@@ -40,6 +40,7 @@ type env struct {
 	reg  *tunnel.Registry
 	in   *inspect.Inspector
 	srv  *httptest.Server
+	api  *API
 }
 
 func newEnv(t *testing.T) *env {
@@ -57,6 +58,7 @@ func newEnv(t *testing.T) *env {
 		CapName: "example.com/cap/relay",
 		Version: "v0.3.0",
 	}
+	e.api = a
 	mux := http.NewServeMux()
 	a.Register(mux)
 	e.srv = httptest.NewServer(Guard([]string{"127.0.0.1"}, mux))

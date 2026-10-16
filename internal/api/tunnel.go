@@ -144,7 +144,7 @@ func (a *API) register(ctx context.Context, t *tunnel.Tunnel, id authz.Identity,
 		if _, ok := a.Hooks.Get(h.ID); ok {
 			a.Hooks.SetAttached(h.ID, true)
 			live = append(live, string(h.ID))
-			infos = append(infos, tunnel.HookInfo{ID: string(h.ID), URL: a.BaseURL + h.Route()})
+			infos = append(infos, tunnel.HookInfo{ID: string(h.ID), URL: a.BaseURL + h.Route(), PublicURL: a.publicURL(h)})
 			continue
 		}
 		dt, o, ok := a.Tunnels.DetachHook(string(h.ID))
