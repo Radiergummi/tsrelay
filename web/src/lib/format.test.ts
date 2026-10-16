@@ -19,7 +19,15 @@ test("sizes", () => {
 test("times", () => {
   const now = Date.parse("2026-10-14T12:00:00Z");
   expect(absoluteTime("2026-10-14T11:59:58.123456789Z")).toBe("2026-10-14 11:59:58Z");
-  expect(relativeTime("2026-10-14T11:59:58Z", now)).toBe("just now");
+  expect(relativeTime("2026-10-14T12:00:00Z", now)).toBe("0 s ago");
+  expect(relativeTime("2026-10-14T12:00:05Z", now)).toBe("0 s ago");
+  expect(relativeTime("2026-10-14T11:59:58Z", now)).toBe("2 s ago");
+  expect(relativeTime("2026-10-14T11:59:30.001Z", now)).toBe("29 s ago");
+  expect(relativeTime("2026-10-14T11:59:30Z", now)).toBe("30 s ago");
+  expect(relativeTime("2026-10-14T11:59:29.999Z", now)).toBe("30 s ago");
+  expect(relativeTime("2026-10-14T11:59:29Z", now)).toBe("less than a minute ago");
+  expect(relativeTime("2026-10-14T11:59:00.001Z", now)).toBe("less than a minute ago");
+  expect(relativeTime("2026-10-14T11:59:00Z", now)).toBe("1 min ago");
   expect(relativeTime("2026-10-14T11:58:00Z", now)).toBe("2 min ago");
   expect(relativeTime("2026-10-14T09:00:00Z", now)).toBe("3 h ago");
   expect(relativeTime("2026-10-11T12:00:00Z", now)).toBe("3 d ago");
