@@ -53,7 +53,8 @@ func newAssetServer(t *testing.T, version string) *assetServer {
 		a.hits.Add(1)
 		w.Write(newBinary)
 	})
-	mux.HandleFunc("GET /download/"+version+"/"+name+".sha256", func(w http.ResponseWriter, r *http.Request) {
+	// As the release workflow names it: without .exe.
+	mux.HandleFunc("GET /download/"+version+"/"+strings.TrimSuffix(name, ".exe")+".sha256", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, a.sum+"  "+name+"\n")
 	})
 	a.Server = httptest.NewServer(mux)
@@ -458,5 +459,17 @@ func TestReleaseNoticeForAdmins(t *testing.T) {
 	t.Setenv("TTY_FORCE", "0")
 	if _, _, errOut := e.tsrelayAs(admin, "", "", "hooks", "list"); strings.Contains(errOut, "is available") {
 		t.Fatalf("told without a terminal:\n%s", errOut)
+	}
+}
+
+// The release names a Windows binary's checksum without its .exe.
+func TestChecksumURL(t *testing.T) {
+	for asset, want := range map[string]string{
+		"https://example.com/v1/tsrelay_linux_amd64":       "https://example.com/v1/tsrelay_linux_amd64.sha256",
+		"https://example.com/v1/tsrelay_windows_amd64.exe": "https://example.com/v1/tsrelay_windows_amd64.sha256",
+	} {
+		if got := checksumURL(asset); got != want {
+			t.Errorf("checksumURL(%q) = %q, want %q", asset, got, want)
+		}
 	}
 }

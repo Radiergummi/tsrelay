@@ -168,7 +168,14 @@ func installCommand(base string) string {
 // download writes the relay's tsrelay for this platform to f, and checks
 // it against the release's checksum. The relay redirects
 // /download/{os}/{arch} to the release asset; the checksum is next to it,
-// at the asset's URL plus ".sha256", as install.sh expects.
+// at checksumURL(asset).
+// checksumURL is where a release keeps asset's checksum: its URL without
+// ".exe", plus ".sha256", as the release workflow names it and install.sh
+// and install.ps1 fetch it.
+func checksumURL(asset string) string {
+	return strings.TrimSuffix(asset, ".exe") + ".sha256"
+}
+
 func download(ctx context.Context, hc *http.Client, base string, f *os.File) error {
 	asset, err := assetURL(ctx, hc, base+"/download/"+runtime.GOOS+"/"+runtime.GOARCH)
 	if err != nil {
@@ -183,19 +190,20 @@ func download(ctx context.Context, hc *http.Client, base string, f *os.File) err
 	if _, err := io.Copy(io.MultiWriter(f, h), resp.Body); err != nil {
 		return downloadFailed(asset, err)
 	}
-	sumResp, err := fetch(ctx, hc, asset+".sha256")
+	sum := checksumURL(asset)
+	sumResp, err := fetch(ctx, hc, sum)
 	if err != nil {
 		return err
 	}
 	defer sumResp.Body.Close()
 	b, err := io.ReadAll(io.LimitReader(sumResp.Body, 1024))
 	if err != nil {
-		return downloadFailed(asset+".sha256", err)
+		return downloadFailed(sum, err)
 	}
 	want, got := strings.Fields(string(b)), hex.EncodeToString(h.Sum(nil))
 	if len(want) == 0 || !strings.EqualFold(want[0], got) {
 		return &cliError{Title: "The download doesn't match its checksum", Code: "checksum_mismatch",
-			Reason: fmt.Sprintf("%s has SHA-256 %s, but %s.sha256 says otherwise. Nothing was replaced.", asset, got, asset),
+			Reason: fmt.Sprintf("%s has SHA-256 %s, but %s says otherwise. Nothing was replaced.", asset, got, sum),
 			Fixes:  []string{"Retry; if it keeps failing, the download is being altered on its way"}}
 	}
 	return nil
