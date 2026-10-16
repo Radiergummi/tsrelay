@@ -114,6 +114,8 @@ func ReplayRefusal(c inspect.Call) *problem.Problem {
 		return problem.New(http.StatusConflict, problem.Conflict, "this call is still being delivered, so it cannot be replayed yet")
 	case c.Outcome == problem.HookNotFound:
 		return problem.New(http.StatusConflict, problem.Conflict, "this call was refused by channel and never delivered, so it cannot be replayed")
+	case !c.RequestBody.Captured && c.RequestBody.Size > 0:
+		return problem.New(http.StatusConflict, problem.Conflict, "bodies aren't captured for this hook, so this call cannot be replayed")
 	case c.QueryTruncated:
 		return problem.New(http.StatusConflict, problem.Conflict, "this call's query string was not captured in full, so it cannot be replayed")
 	case !c.RequestBody.Complete():

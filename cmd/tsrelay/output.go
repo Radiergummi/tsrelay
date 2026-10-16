@@ -178,12 +178,17 @@ func (o *output) call(c client.Call) {
 }
 
 // callLine renders one call: today's format when plain, aligned columns
-// with a clickable call ID when fancy.
+// with a clickable call ID when fancy. A status from the relay's 56x range
+// is followed by its name.
 func (o *output) callLine(s stream, c client.Call, link string) string {
 	ts := o.now().Format("15:04:05")
 	dur := c.Duration.Round(time.Millisecond).String()
+	status := fmt.Sprintf("%3d", c.Status)
+	if name := relayStatus(c.Status); name != "" {
+		status += " " + name
+	}
 	if !s.fancy {
-		line := fmt.Sprintf("%s %s %s → %d  %s  %s", ts, c.Method, c.Path, c.Status, dur, c.Sender)
+		line := fmt.Sprintf("%s %s %s → %s  %s  %s", ts, c.Method, c.Path, strings.TrimSpace(status), dur, c.Sender)
 		if link != "" {
 			line += "  " + link
 		}
@@ -194,7 +199,7 @@ func (o *output) callLine(s stream, c client.Call, link string) string {
 		ref = s.link(c.CallID, link) + " ↗"
 	}
 	const sep = 2
-	fixed := 2 + 8 + sep + 6 + sep + sep + 3 + sep + 7 + sep + ansi.StringWidth(c.Sender)
+	fixed := 2 + 8 + sep + 6 + sep + sep + ansi.StringWidth(status) + sep + 7 + sep + ansi.StringWidth(c.Sender)
 	if ref != "" {
 		fixed += sep + ansi.StringWidth(ref)
 	}
@@ -205,7 +210,7 @@ func (o *output) callLine(s stream, c client.Call, link string) string {
 		s.style(styleDim, ts),
 		s.style(styleBold, fmt.Sprintf("%-6s", c.Method)),
 		path,
-		s.style(statusStyle(c.Status), fmt.Sprintf("%3d", c.Status)),
+		s.style(statusStyle(c.Status), status),
 		s.style(styleDim, fmt.Sprintf("%7s", dur)),
 		s.style(styleDim, c.Sender),
 	}
@@ -215,8 +220,23 @@ func (o *output) callLine(s stream, c client.Call, link string) string {
 	return strings.Join(cols, "  ")
 }
 
+// relayStatus names a status from the relay's 56x range, such as "Tunnel
+// lost", and returns "" for any other status.
+func relayStatus(code int) string {
+	if code < 560 || code > 569 {
+		return ""
+	}
+	name := problem.StatusText(code)
+	if name == "" {
+		return ""
+	}
+	return name[:1] + strings.ToLower(name[1:])
+}
+
 func statusStyle(code int) lipgloss.Style {
 	switch {
+	case relayStatus(code) != "":
+		return styleBad.Bold(true) // like the relay's own problems, not the app's 5xx
 	case code >= 500:
 		return styleBad
 	case code >= 400:
