@@ -59,6 +59,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.27.1'
+          cache: false
 
       # Fills in the Details tab of the .exe's properties. Windows wants a
       # numeric version there, so v0.3.0-rc.1 becomes 0.3.0.0, with the full
@@ -201,6 +202,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.27.1'
+          cache: false
 
       # cyclonedx-gomod reads the build info with go version -m, which only
       # takes executable files.
