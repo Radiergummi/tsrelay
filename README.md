@@ -130,7 +130,7 @@ tsrelay hooks update payments/v1 --hold-timeout 0s
 
 `tsrelay http` takes the same flags; they apply when it creates the hook, not to a hook it reuses. `tsrelay hooks show <hook>` lists the effective values, defaults included.
 
-A hook's `public` flag is also a setting (`--public`), but it has no relay-wide default or maximum: it's governed by the `public` grant and `--funnel` instead — see [Public hooks](#public-hooks).
+A hook's `public` flag is also a setting (`--public`), but it has no relay-wide default or maximum: it's governed by the `public` grant and `--funnel` instead — see [Public hooks](#public-hooks). Unlike the other settings, `tsrelay http --public` also changes a hook it reuses.
 
 ## What your app receives
 
@@ -141,6 +141,7 @@ Bodies arrive exactly as sent, byte for byte, so signatures from Stripe, GitHub,
 | `Tsrelay-Sender-Node` | The calling machine's name |
 | `Tsrelay-Sender-Tags` | Its tags, comma-separated |
 | `Tsrelay-Sender-Login` | Its user, if it is not a tagged machine |
+| `Tsrelay-Sender-Public` | `true` for a call from the internet to a [public hook](#public-hooks); such a call has no `Tsrelay-Sender-Node`, `-Tags` or `-Login` |
 | `Tsrelay-Hook` | `user/path` of the hook |
 | `Tsrelay-Call-Id` | Also returned to the caller, for matching logs |
 | `X-Forwarded-For`, `-Host`, `-Proto`, `-Prefix` | The original request, for URL-signing schemes |
@@ -173,7 +174,7 @@ Errors produced by the relay itself are `application/problem+json` responses and
 |---|---|---|
 | `sender_forbidden` | 403 | The caller has no sender grant |
 | `hook_not_found` | 404 | No such hook, not in the caller's channels, or it was deleted/expired while a call was held for it |
-| `body_too_large` | 413 | Over the hook's `maxBodyBytes` |
+| `body_too_large` | 413 | Over the hook's `maxBodyBytes`, or for a call from the internet, over the relay's `--funnel-max-body-bytes` |
 | `rate_limited` | 429 | Over the hook's `rateLimit`; `Retry-After` is the limiter's wait, rounded up to whole seconds |
 | `tunnel_unavailable` | 503 | No tunnel attached within `holdTimeout`, or too many calls are already waiting; `Retry-After` is `holdTimeout`, but never less than 5 s |
 | `tunnel_overloaded` | 503 | Too many concurrent calls on the tunnel; `Retry-After: 1` |
@@ -222,6 +223,7 @@ Each capability value is an object with these fields:
 | `maxHooks` | Receivers: hooks owned at once (relay default 10) |
 | `maxTunnels` | Receivers: tunnels attached at once (relay default 5) |
 | `maxHookTTL` | Receivers: the longest a persistent hook may live, as a Go duration like `720h` (relay default: unlimited) |
+| `public` | Receivers: `true` lets them make their hooks reachable from the internet; see [Serving public hooks](#serving-public-hooks) |
 
 | Role | May |
 |---|---|
@@ -321,7 +323,7 @@ Each [hook setting](#hook-settings) has a relay-wide default, `--hook-<setting>-
 | `rateLimit` | `100/200` | none |
 | `capture` | `true` | |
 
-For example `--hook-rate-limit-default=100/200`, or `--hook-max-body-bytes-default=1048576 --hook-max-body-bytes-max=10485760` (the default body size is unlimited, which a maximum would not allow, so set both). A hook may only set a value within the maximum. `--response-timeout` still works as a deprecated alias of `--hook-response-timeout-default`.
+For example `--hook-rate-limit-default=100/200`, or `--hook-max-body-bytes-default=1048576 --hook-max-body-bytes-max=10485760` (the default body size is unlimited, which a maximum would not allow, so set both). A hook may only set a value within the maximum.
 
 ## Deployment
 
