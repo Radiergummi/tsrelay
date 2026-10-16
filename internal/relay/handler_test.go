@@ -112,8 +112,11 @@ func (e *env) do(id authz.Identity, method, path string, body io.Reader, hdr htt
 
 func wantProblem(t *testing.T, resp *http.Response, status int, code string) {
 	t.Helper()
-	if resp.StatusCode != status || resp.Header.Get(problem.HeaderError) != code {
-		b, _ := io.ReadAll(resp.Body)
+	b, _ := io.ReadAll(resp.Body)
+	var p problem.Problem
+	_ = json.Unmarshal(b, &p)
+	if resp.StatusCode != status || resp.Header.Get(problem.HeaderError) != code ||
+		p.Status != status || p.Type != "https://tsrelay.mazetti.me/errors/"+code {
 		t.Fatalf("got %d %q (%s), want %d %q", resp.StatusCode, resp.Header.Get(problem.HeaderError), b, status, code)
 	}
 }
@@ -246,6 +249,28 @@ func TestLocalErrorsPassThroughUnmarked(t *testing.T) {
 	}
 }
 
+// The app's own 502 is not the relay's, even if it claims to be: only the
+// CLI forwarder's 564 keeps its Tsrelay-Error.
+func TestLocalBadGatewayPassesThroughUnmarked(t *testing.T) {
+	e := newEnv(t)
+	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(problem.HeaderError, problem.UpstreamUnreachable)
+		w.WriteHeader(http.StatusBadGateway)
+	}), tunnel.Options{})
+	resp := e.do(sender, "POST", "/~moritz/cb", nil, nil)
+	if resp.StatusCode != 502 || resp.Header.Get(problem.HeaderError) != "" {
+		t.Fatalf("got %d err=%q", resp.StatusCode, resp.Header.Get(problem.HeaderError))
+	}
+}
+
+func TestUpstreamUnreachable(t *testing.T) {
+	e := newEnv(t)
+	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		problem.New(problem.StatusUpstreamUnreachable, problem.UpstreamUnreachable, "the local application is not reachable").Write(w)
+	}), tunnel.Options{})
+	wantProblem(t, e.do(sender, "POST", "/~moritz/cb", nil, nil), 564, problem.UpstreamUnreachable)
+}
+
 func TestErrors(t *testing.T) {
 	e := newEnv(t)
 	e.patch(hooks.SettingsPatch{HoldTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: new(hooks.Duration(0))}})
@@ -261,7 +286,7 @@ func TestErrors(t *testing.T) {
 	wantProblem(t, e.do(staging, "POST", "/~moritz/cb", nil, nil), 404, problem.HookNotFound)
 
 	resp := e.do(sender, "POST", "/~moritz/cb", nil, nil)
-	wantProblem(t, resp, 503, problem.TunnelUnavailable)
+	wantProblem(t, resp, 561, problem.TunnelUnavailable)
 	if resp.Header.Get("Retry-After") == "" {
 		t.Error("tunnel_unavailable must carry Retry-After")
 	}
@@ -276,7 +301,7 @@ func TestResponseTimeout(t *testing.T) {
 		case <-r.Context().Done():
 		}
 	}), tunnel.Options{})
-	wantProblem(t, e.do(sender, "POST", "/~moritz/cb", nil, nil), 504, problem.UpstreamTimeout)
+	wantProblem(t, e.do(sender, "POST", "/~moritz/cb", nil, nil), 565, problem.UpstreamTimeout)
 }
 
 func TestOverloaded(t *testing.T) {
@@ -295,7 +320,7 @@ func TestOverloaded(t *testing.T) {
 	<-entered
 	resp := e.do(sender, "POST", "/~moritz/cb", nil, nil)
 	close(release)
-	wantProblem(t, resp, 503, problem.TunnelOverloaded)
+	wantProblem(t, resp, 562, problem.TunnelOverloaded)
 }
 
 func TestTunnelLostBeforeHeaders(t *testing.T) {
@@ -310,7 +335,7 @@ func TestTunnelLostBeforeHeaders(t *testing.T) {
 		<-done
 	}), tunnel.Options{})
 	go func() { <-entered; drop() }()
-	wantProblem(t, e.do(sender, "POST", "/~moritz/cb", nil, nil), 502, problem.TunnelLost)
+	wantProblem(t, e.do(sender, "POST", "/~moritz/cb", nil, nil), 563, problem.TunnelLost)
 }
 
 func TestAuditCallRecord(t *testing.T) {

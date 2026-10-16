@@ -2,6 +2,7 @@ import { getDefaultNormalizer, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { fixtures } from "@/test/fixtures";
+import { renderWithProviders } from "@/test/render";
 import { BodyViewer } from "./BodyViewer";
 
 const ct = (c: { requestHeaders?: Record<string, string[]> | undefined }) =>
@@ -23,6 +24,7 @@ test("JSON shows as a tree with exact numbers, with a raw toggle", async () => {
       contentType={ct(c)}
       metadataOnly={false}
       label="request body"
+      hookId="h_1"
     />,
   );
   expect(await screen.findByText("12345678901234567890")).toBeInTheDocument();
@@ -38,6 +40,7 @@ test("a large valid JSON body is shown raw, not as a tree", () => {
       contentType="application/json"
       metadataOnly={false}
       label="b"
+      hookId="h_1"
     />,
   );
   expect(screen.getByText(/0,0,0/)).toBeInTheDocument();
@@ -53,6 +56,7 @@ test("a truncated body says how much was kept", () => {
       contentType="application/json"
       metadataOnly={false}
       label="request body"
+      hookId="h_1"
     />,
   );
   expect(screen.getByText(/1\.0 MiB, showing the first 16 B/)).toBeInTheDocument();
@@ -65,6 +69,7 @@ test("binary bodies show as hex; text with NUL can be shown as text", async () =
       contentType="application/octet-stream"
       metadataOnly={false}
       label="request body"
+      hookId="h_1"
     />,
   );
   expect(
@@ -79,6 +84,7 @@ test("binary bodies show as hex; text with NUL can be shown as text", async () =
       contentType="text/plain"
       metadataOnly={false}
       label="b"
+      hookId="h_1"
     />,
   );
   await userEvent.click(screen.getByRole("button", { name: "Show as text" }));
@@ -92,24 +98,17 @@ test("states without a body to show", () => {
       contentType={undefined}
       metadataOnly={false}
       label="b"
+      hookId="h_1"
     />,
   );
   expect(screen.getByText("No body.")).toBeInTheDocument();
-  rerender(
-    <BodyViewer
-      capture={{ size: 10, captured: false }}
-      contentType={undefined}
-      metadataOnly={false}
-      label="b"
-    />,
-  );
-  expect(screen.getByText(/10 B body, not captured: body capture is off/)).toBeInTheDocument();
   rerender(
     <BodyViewer
       capture={{ size: 0, truncated: true, captured: false }}
       contentType={undefined}
       metadataOnly={false}
       label="b"
+      hookId="h_1"
     />,
   );
   expect(screen.getByText(/refused before delivery/)).toBeInTheDocument();
@@ -119,7 +118,27 @@ test("states without a body to show", () => {
       contentType={undefined}
       metadataOnly
       label="b"
+      hookId="h_1"
     />,
   );
   expect(screen.getByText(/only the hook's owner sees bodies/)).toBeInTheDocument();
+});
+
+test("a body not captured links to the hook's settings", () => {
+  renderWithProviders(
+    <BodyViewer
+      capture={{ size: 10, captured: false }}
+      contentType={undefined}
+      metadataOnly={false}
+      label="b"
+      hookId="h_1"
+    />,
+  );
+  expect(
+    screen.getByText(/10 B body\. Bodies aren't captured for this hook\./),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Edit the hook" })).toHaveAttribute(
+    "href",
+    "/hooks/h_1/edit",
+  );
 });

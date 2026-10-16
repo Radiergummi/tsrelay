@@ -1,5 +1,5 @@
 import type { Sender } from "@/api/schemas";
-import { reasonPhrase } from "./httpStatus";
+import { reasonPhrase, relayPhrase } from "./httpStatus";
 
 export function formatSize(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -65,10 +65,14 @@ export function statusClass(
   return failed(c) ? "failed" : "other";
 }
 
-/** outcomeLabel: "200 OK" for a delivered call, "404 hook_not_found" for a relay error, "pending". */
+/**
+ * outcomeLabel: "200 OK" for a delivered call, "563 Tunnel lost" for a status
+ * of the relay's 56x range, "404 hook_not_found" for another relay error, "pending".
+ */
 export function outcomeLabel(c: Outcome): string {
   if (c.outcome === "pending") return "pending";
   const st = c.status ? String(c.status) : "";
-  const rest = c.outcome === "ok" ? reasonPhrase(c.status ?? 0) : c.outcome;
+  const rest =
+    relayPhrase(c.status ?? 0) || (c.outcome === "ok" ? reasonPhrase(c.status ?? 0) : c.outcome);
   return [st, rest].filter(Boolean).join(" ");
 }

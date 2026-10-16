@@ -135,13 +135,16 @@ func TestHookSettingFlags(t *testing.T) {
 func TestCaptureFlags(t *testing.T) {
 	fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
 	get := registerHookSettingFlags(fs, false)
-	fs.Parse([]string{"--capture=false"})
-	if s, err := get(); err != nil || s.Capture == nil || *s.Capture {
-		t.Fatalf("--capture=false = %+v, %v", s, err)
+	fs.Parse([]string{"--capture"})
+	if s, err := get(); err != nil || s.Capture == nil || !*s.Capture {
+		t.Fatalf("--capture = %+v, %v", s, err)
 	}
-	p, err := policyFrom(t, "--hook-capture-default=false")
-	if err != nil || p.Defaults.Capture {
-		t.Fatalf("--hook-capture-default=false = %+v, %v", p.Defaults, err)
+	if p, err := policyFrom(t); err != nil || p.Defaults.Capture {
+		t.Fatalf("no flags = %+v, %v, want capture off", p.Defaults, err)
+	}
+	p, err := policyFrom(t, "--hook-capture-default")
+	if err != nil || !p.Defaults.Capture {
+		t.Fatalf("--hook-capture-default = %+v, %v", p.Defaults, err)
 	}
 }
 

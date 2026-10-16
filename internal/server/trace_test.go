@@ -287,8 +287,8 @@ func TestHoldTimeoutSpan(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp := e.send(h, "", nil, nil)
-	if resp.StatusCode != 503 {
-		t.Fatalf("status = %d, want 503", resp.StatusCode)
+	if resp.StatusCode != 561 {
+		t.Fatalf("status = %d, want 561", resp.StatusCode)
 	}
 	hold := e.spanNamed(rec, "tsrelay.hold")
 	if got, _ := attr(hold, "tsrelay.hold.result"); got != "timeout" {
@@ -452,7 +452,7 @@ func TestRefusedAttachSpan(t *testing.T) {
 func TestReplayParentedByAPISpan(t *testing.T) {
 	e, rec := tracedEnv(t, Config{})
 	app, _ := traceApp(t)
-	h, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	h, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb", Settings: hooks.Settings{Capture: new(true)}})
 	defer e.cli(h.ID, app)()
 	resp := e.send(h, "", []byte("x"), nil)
 	io.ReadAll(resp.Body)

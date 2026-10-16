@@ -1,4 +1,5 @@
 import { outcomeLabel, statusClass } from "@/lib/format";
+import { relayPhrase } from "@/lib/httpStatus";
 import { cn } from "@/lib/utils";
 
 const colours = {
@@ -11,7 +12,11 @@ const colours = {
   other: "text-muted-foreground",
 };
 
-/** StatusText is a call's status ("200 OK", "502 upstream_unreachable", "pending"), its numeral coloured by class. */
+/**
+ * StatusText is a call's status ("200 OK", "563 Tunnel lost", "pending"), its
+ * numeral coloured by class. A status of the relay's 56x range is set in bold,
+ * marking it as the relay's rather than the app's.
+ */
 export function StatusText({
   call,
   short = false,
@@ -20,5 +25,13 @@ export function StatusText({
   short?: boolean;
 }) {
   const label = short ? (call.status ? String(call.status) : call.outcome) : outcomeLabel(call);
-  return <span className={cn("font-mono tabular-nums", colours[statusClass(call)])}>{label}</span>;
+  const relay = relayPhrase(call.status ?? 0);
+  return (
+    <span
+      className={cn("font-mono tabular-nums", colours[statusClass(call)], relay && "font-semibold")}
+      title={short && relay ? relay : undefined}
+    >
+      {label}
+    </span>
+  );
 }

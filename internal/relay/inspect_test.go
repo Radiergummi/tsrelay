@@ -36,6 +36,7 @@ func (e *env) finished(resp *http.Response) inspect.Call {
 
 func TestRecordsCall(t *testing.T) {
 	e := newEnv(t)
+	e.patch(hooks.SettingsPatch{Capture: hooks.Opt[bool]{Set: true, Value: new(true)}})
 	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.ReadAll(r.Body)
 		w.Header().Set("Set-Cookie", "session=s3cr3t")
@@ -83,6 +84,7 @@ func TestRecordsCall(t *testing.T) {
 // still arrives in full and byte-exact.
 func TestCaptureLimitKeepsForwardingExact(t *testing.T) {
 	e := newEnvWith(t, inspect.Config{CaptureLimit: 1024})
+	e.patch(hooks.SettingsPatch{Capture: hooks.Opt[bool]{Set: true, Value: new(true)}})
 	payload := make([]byte, 1<<20)
 	rand.Read(payload)
 	want := sha256.Sum256(payload)
@@ -152,9 +154,9 @@ func TestRecordsRefusedCalls(t *testing.T) {
 	// No tunnel: delivery started and failed, so there is one attempt. The
 	// body was never read, so it cannot be replayed.
 	resp := e.do(sender, "POST", "/~moritz/cb", strings.NewReader("{}"), nil)
-	wantProblem(t, resp, 503, problem.TunnelUnavailable)
+	wantProblem(t, resp, 561, problem.TunnelUnavailable)
 	c := e.finished(resp)
-	if c.Outcome != problem.TunnelUnavailable || c.Status != 503 || len(c.Attempts) != 1 ||
+	if c.Outcome != problem.TunnelUnavailable || c.Status != 561 || len(c.Attempts) != 1 ||
 		c.Attempts[0].Error != problem.TunnelUnavailable || c.Attempts[0].TunnelID != "" || c.RequestBody.Complete() {
 		t.Fatalf("held call = %+v", c)
 	}
