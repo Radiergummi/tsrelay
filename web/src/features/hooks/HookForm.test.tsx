@@ -196,7 +196,8 @@ test("the preview shows every effective setting, marking the defaults, and follo
   expect(preview).toHaveTextContent("three random words, chosen on save");
   expect(preview).toHaveTextContent("Hold30 s default");
   expect(preview).toHaveTextContent("Rate100/s, burst 200 default");
-  expect(preview).toHaveTextContent("Captureon default");
+  const capture = fixtures.me.policy.defaults.capture ? "on" : "off";
+  expect(preview).toHaveTextContent(`Capture${capture} default`);
   await userEvent.type(screen.getByLabelText("Path"), "idle");
   // The form's own idea of the URL, until the dry run answers with the relay's.
   expect(preview).toHaveTextContent(`${window.location.origin}/~dev/idle`);
