@@ -64,6 +64,12 @@ func (c *API) DeleteHook(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodDelete, "/hooks/"+url.PathEscape(id), nil, nil)
 }
 
+func (c *API) RotatePublicURL(ctx context.Context, id string) (api.Hook, error) {
+	var h api.Hook
+	err := c.do(ctx, http.MethodPost, "/hooks/"+url.PathEscape(id)+"/rotate-public-url", nil, &h)
+	return h, err
+}
+
 // TunnelURL is the endpoint tunnel.Dial attaches to for the given hooks.
 func (c *API) TunnelURL(a tunnel.Attach, hookIDs ...string) string {
 	q := url.Values{"hook": hookIDs}

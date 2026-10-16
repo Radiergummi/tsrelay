@@ -58,7 +58,7 @@ func TestUIDev(t *testing.T) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	me := identify.User("dev-laptop", "dev@example.com", 1, `{"roles":["receiver","admin"],"channels":["default","prod","staging.*"]}`)
+	me := identify.User("dev-laptop", "dev@example.com", 1, `{"roles":["receiver","admin"],"channels":["default","prod","staging.*"],"public":true}`)
 	ops := identify.User("ops-box", "ops@example.com", 3, `{"roles":["admin"]}`)
 	nobody := identify.User("box", "nobody@example.com", 4)
 	other := identify.User("desk", "other@example.com", 2, `{"roles":["receiver"]}`)
@@ -73,7 +73,7 @@ func TestUIDev(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := "http://127.0.0.1:8099"
-	s := New(Config{BaseURL: base, AllowedHosts: []string{"127.0.0.1", "localhost"}, CapName: "mazetti.me/cap/relay"},
+	s := New(Config{BaseURL: base, PublicBaseURL: "https://tsrelay.example.ts.net", AllowedHosts: []string{"127.0.0.1", "localhost"}, CapName: "mazetti.me/cap/relay"},
 		byListener{}, mgr, audit.New(slog.New(slog.NewTextHandler(os.Stderr, nil))))
 	defer s.Close()
 

@@ -242,3 +242,53 @@ func TestRelayFromEnvironment(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, errOut.String())
 	}
 }
+
+func TestHooksPublic(t *testing.T) {
+	e := newCLIEnv(t)
+	code, out, errOut := e.tsrelay("hooks", "create", "cb", "--public")
+	if code != 0 || !strings.HasPrefix(strings.TrimSpace(out), e.relayURL+"/~moritz/cb") {
+		t.Fatalf("create: exit %d %q\n%s", code, out, errOut)
+	}
+	if !strings.Contains(errOut, "https://tsrelay.example.ts.net/+") {
+		t.Fatalf("create does not print the public URL:\n%s", errOut)
+	}
+	hs := e.listJSON()
+	if len(hs) != 1 || !hs[0].Public || hs[0].PublicURL == "" {
+		t.Fatalf("hooks = %+v", hs)
+	}
+	old := hs[0].PublicURL
+	code, out, errOut = e.tsrelay("hooks", "rotate-url", "cb")
+	if code != 0 || strings.TrimSpace(out) == old || !strings.HasPrefix(strings.TrimSpace(out), "https://tsrelay.example.ts.net/+") {
+		t.Fatalf("rotate-url: exit %d %q\n%s", code, out, errOut)
+	}
+	if code, _, errOut := e.tsrelay("hooks", "update", "cb", "--public=false"); code != 0 {
+		t.Fatalf("update --public=false: exit %d\n%s", code, errOut)
+	}
+	if hs := e.listJSON(); hs[0].Public || hs[0].PublicURL != "" {
+		t.Fatalf("after --public=false: %+v", hs[0])
+	}
+	if code, _, errOut := e.tsrelay("hooks", "rotate-url", "cb"); code == 0 || !strings.Contains(errOut, "not public") {
+		t.Fatalf("rotate-url on a private hook: exit %d\n%s", code, errOut)
+	}
+}
+
+// TestHooksRotateURLWithoutFunnel covers a relay running without --funnel:
+// a public hook has no PublicURL, so rotate-url must not print the tailnet
+// URL as if it were the new public one.
+func TestHooksRotateURLWithoutFunnel(t *testing.T) {
+	e := newCLIEnv(t)
+	if code, _, errOut := e.tsrelay("hooks", "create", "cb", "--public"); code != 0 {
+		t.Fatalf("create: exit %d\n%s", code, errOut)
+	}
+	e.restartRelayNoFunnel()
+	code, out, errOut := e.tsrelay("hooks", "rotate-url", "cb")
+	if code != 0 {
+		t.Fatalf("rotate-url: exit %d\n%s", code, errOut)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("stdout = %q, want nothing printed as a public URL", out)
+	}
+	if !strings.Contains(errOut, "does not serve hooks on the internet") {
+		t.Fatalf("rotate-url without --funnel does not warn:\n%s", errOut)
+	}
+}

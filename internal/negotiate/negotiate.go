@@ -60,6 +60,12 @@ func Extensions(next http.Handler) http.Handler {
 	})
 }
 
+// Stripped reports whether Extensions removed an extension from r's path.
+func Stripped(r *http.Request) bool {
+	_, ok := r.Context().Value(forcedKey{}).(Type)
+	return ok
+}
+
 // Pick returns the representation of offers that r asks for, and false when
 // it asks for none of them. It adds Vary: Accept to the response.
 func Pick(w http.ResponseWriter, r *http.Request, offers ...Type) (Type, bool) {

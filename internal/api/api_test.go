@@ -62,6 +62,7 @@ func newEnv(t *testing.T) *env {
 			io.WriteString(w, "the app")
 		}),
 	}
+	e.api = a
 	mux := http.NewServeMux()
 	a.Register(mux)
 	e.api = a

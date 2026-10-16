@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-// TestNoFunnel enforces that the relay can never become publicly reachable:
-// no non-test code in the module may refer to tsnet's Funnel APIs.
-func TestNoFunnel(t *testing.T) {
+// TestFunnelConfined enforces that only funnel.go may use tsnet's Funnel
+// APIs, so the public surface stays in one reviewable place.
+func TestFunnelConfined(t *testing.T) {
 	root, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)
@@ -31,9 +31,13 @@ func TestNoFunnel(t *testing.T) {
 			return err
 		}
 		checked++
+		rel, _ := filepath.Rel(root, path)
+		if filepath.ToSlash(rel) == "cmd/tsrelay/funnel.go" {
+			return nil
+		}
 		for _, banned := range []string{"ListenFunnel", "FunnelOnly"} {
 			if strings.Contains(string(b), banned) {
-				t.Errorf("%s refers to %s; tsrelay must never be publicly reachable", path, banned)
+				t.Errorf("%s refers to %s; only cmd/tsrelay/funnel.go may use Funnel", path, banned)
 			}
 		}
 		return nil

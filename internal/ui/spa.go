@@ -46,6 +46,16 @@ func (u *UI) serve(w http.ResponseWriter, r *http.Request) {
 		notFound(w)
 		return
 	}
+	u.app(w, r)
+}
+
+// app sends the app for a request asking for HTML. A .html extension is
+// redirected away first, since the app routes only the bare URL.
+func (u *UI) app(w http.ResponseWriter, r *http.Request) {
+	if representation.Stripped(r) {
+		http.Redirect(w, r, r.URL.RequestURI(), http.StatusFound)
+		return
+	}
 	u.writeIndex(w, r, http.StatusOK)
 }
 
