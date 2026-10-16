@@ -21,7 +21,7 @@ tsrelay is a reverse relay. The relay is its own tailnet node. Developer machine
 
 **Non-goals**
 
-- Public exposure. The relay never enables Funnel and never listens outside the tailnet, apart from an optional ops listener (§13).
+- Public exposure, except for hooks their owners explicitly make public, served through Funnel on a separate listener (§19). Nothing else of the relay is ever reachable from the internet.
 - Intercepting or hijacking services, as Telepresence or mirrord do. tsrelay delivers only to URLs that were explicitly created as hooks.
 - Transforming traffic: no header rewrite rules, no payload transformation, and no signature verification at the relay.
 - Multiple replicas in v1 (see §17).
@@ -126,7 +126,8 @@ The capability name is configurable with `--cap-name`. The default is **`mazetti
   "channels":   ["prod", "staging.*"], // channel patterns; default ["*"]
   "maxHooks":   10,                    // receiver: hooks owned at once
   "maxTunnels": 5,                     // receiver: tunnels attached at once
-  "maxHookTTL": "720h"                 // receiver: cap on a hook's expiry; Go duration
+  "maxHookTTL": "720h",                // receiver: cap on a hook's expiry; Go duration
+  "public": true                       // receiver: may make hooks public (§19)
 }
 ```
 
@@ -159,6 +160,7 @@ The grant's `ip` part is what gives network access. The `app` part only authoriz
 - **Each value is parsed on its own.** A malformed value is ignored and logged once per node (fail closed); the others still apply. **Unknown fields are ignored**, which keeps the schema forward-compatible.
 - **`roles` and `channels`** are combined by union. Channels are tracked per role, so a `sender` grant's channels never widen what the same node can do as a `receiver`.
 - **Numeric and duration limits:** for each value, take the value it sets, or the relay's configured default if it sets none. The effective limit is the **maximum** of those. Grants only ever add access in Tailscale, and merging does the same. As a result a grant cannot push a limit *below* the relay default. To restrict most users, an operator lowers the relay default and raises it for specific groups.
+- **`public`** merges by OR: any matching value with it set to `true` grants it. It only counts on a value whose `roles` include `receiver` (§19).
 
 ### 5.4 Channels and patterns
 
@@ -294,6 +296,7 @@ Every setting has a relay-wide default and a relay-wide maximum. Settings that a
 | `maxBodyBytes` | unlimited | Request body |
 | `rateLimit` | 100/s, burst 200 | Token bucket per hook |
 | `capture` | `true` | Capture bodies for the inspector. Metadata is always recorded. Relay-wide default `--hook-capture-default`; `--capture-bodies=false` turns capture off for every hook. |
+| `public` | `false` | Reachable from the internet at `/+{token}`; needs the `public` grant and `--funnel` (§19) |
 
 ## 9. Inspector
 
@@ -474,7 +477,7 @@ With `--trace-propagation` (the default), a sender's call joins the sender's tra
 
 - **State:** one directory holds both the tsnet state and `hooks.json`. That is a plain directory for the binary, a volume under Docker, Compose or Swarm, and a PVC on Kubernetes. Tailscale's Kubernetes Secret store (`ipn/store/kubestore`) could hold the tsnet state, but the hook store needs a volume anyway, so the default is a single PVC.
 - **Replicas:** exactly one. The shipped StatefulSet uses `replicas: 1`, and the state-directory lock (§11) guards against accidents.
-- **No Funnel:** the relay never calls tsnet's Funnel APIs. A test fails the build if any non-test code in the module refers to `ListenFunnel` or `FunnelOnly`.
+- **Funnel is confined:** only `cmd/tsrelay/funnel.go` may call tsnet's Funnel APIs, and a test fails the build otherwise. The public listener's handler serves nothing but `/+…` (§19).
 - **TLS:** with `--tls` (the default), certificates come from tsnet and require HTTPS to be enabled for the tailnet. If it isn't, startup fails with a clear message pointing at the `--tls=false` option.
 - **Shipped artifacts:**
   - static binaries for linux, darwin and windows on amd64 and arm64
@@ -537,7 +540,7 @@ tsrelay --version                                 fang; there is no `version` su
   - replay and test requests
   - CSRF and Host-header rejection
 - **Unit and fuzz tests:** capability parsing and merging, channel pattern matching, slug derivation, path validation and nesting, the JSON store (crash-safe writes), and redaction.
-- **Funnel guard test** (§14).
+- **Funnel confinement and public-surface tests** (§14, §19).
 - **`testcontrol`:** during planning, check whether `tstest/integration/testcontrol` can inject app-capability grants. If it can, add one or two tests that run real tsnet nodes against it to prove the `WhoIs`→`CapMap` path. If it can't, document a manual smoke test against a real tailnet.
 - **Performance:** benchmarks for a call through the whole relay (with and without tracing) against the app called directly, the tunnel's framing, and the inspector's capture and redaction; CI runs each once so they keep working. `TestLoad` (gated by `TSRELAY_LOAD=1`) is an in-process load harness reporting the latency the relay adds. `docs/perf/baseline.md` holds the reference numbers.
 
@@ -558,3 +561,19 @@ tsrelay --version                                 fang; there is no `version` su
 2. Taking over the connection behind tsnet's `ListenTLS` listener, with the client forcing HTTP/1.1 through ALPN (§6.1).
 3. Whether `http2.Transport.NewClientConn` can be driven over a connection whose server-side TLS has already been negotiated, without wrapping it in a second TLS layer. Expected yes: the tunnel runs HTTP/2 without TLS (h2c framing) inside the already-encrypted connection.
 4. How tsnet advertises tags when it is given an OAuth client secret (`AdvertiseTags`).
+
+## 19. Public hooks
+
+A hook can be made reachable from the internet through Tailscale Funnel, opt-in at two levels: the operator runs the relay with `--funnel`, and the hook's owner sets it `public`. Everything else — the UI, the API, `/~user/hook` routes and static files — stays tailnet-only. The relay does no sender authentication for public calls; apps are expected to verify the provider's signature themselves, which works because bodies are forwarded byte-exact (§7.2), as third-party webhooks (Stripe, GitHub, Twilio) already assume.
+
+**Configuration:** `--funnel` (default `false`) opens the public listener; `--funnel-port` (default `443`, or `8443`/`10000`, the only ports Funnel supports) and `--funnel-max-body-bytes` (default 25 MiB, GitHub's webhook maximum) bound it. `--funnel` requires `--tls`. Startup fails with a clear message if the policy denies the node the `funnel` node attribute for this port, or if Funnel is requested without HTTPS enabled. Whether a user may mark their own hooks public is a policy decision: a `"public": true` field on a receiver grant value (§5.2), merged by OR and meaningless without `"roles": ["receiver"]` (§5.3).
+
+**URL and token:** `https://<relay MagicDNS name>[:port]/+{token}/{remainder...}`, the port omitted at 443; `{remainder}` and the query string are forwarded exactly as for tailnet hooks (§4), and `/+` mirrors `/~`. Each public hook carries a `PublicToken`: 16 bytes of `crypto/rand`, base64url, 22 characters. It is generated when `public` goes false→true, cleared on true→false, and replaced on an explicit rotate (`POST /api/v1/hooks/{id}/rotate-public-url`, or `tsrelay hooks rotate-url`). The owner can always see it; it never appears in audit records, spans or metric labels.
+
+**Listener:** `cmd/tsrelay/funnel.go` is the only non-test file allowed to call `ListenFunnel`/`FunnelOnly` (enforced by `TestFunnelConfined`). It opens a Funnel-only listener served by its own `http.Server`, sharing no router with the tailnet side; its `ConnContext` accepts only a genuine `*ipn.FunnelConn` and closes anything else, failing closed. Shutting the listener down cleanly clears the node's `AllowFunnel` serve-config entry, but tsnet persists that entry otherwise: a crash, or a restart without `--funnel`, can leave the node still showing Funnel allowed even though nothing is listening. The relay is still safe (no listener means no traffic reaches it), but `--funnel=false` is not by itself proof that Tailscale has stopped advertising the node as Funnel-capable.
+
+**Request handling:** `PublicHandler()` answers a plain `404` for every path that doesn't start with `/+`, revealing nothing about what else the relay serves. A public call runs the ordinary pipeline (§7.1) with a pre-built anonymous sender, routed by its token — scanning hooks linearly, like `Route` does, rather than through a separate index. Body cap (`min(--funnel-max-body-bytes, hook.maxBodyBytes)`) and the rate limit are checked first, then the call holds for a tunnel if none is attached, exactly as for a tailnet call. An unknown token, a hook that isn't public, and a hook whose owner has since lost the `public` grant are all answered identically with `404 hook_not_found` — but only once a tunnel is in hand, already attached or after a successful hold; a call that instead times out waiting for a tunnel gets the ordinary `503 tunnel_unavailable`, and an oversized or throttled call gets `413`/`429` before the owner's grant is even checked. The relay strips every incoming `Tsrelay-*`, `X-Forwarded-*`, `Traceparent` and `Tracestate` header and sets `Tsrelay-Sender-Public: true`, `Tsrelay-Hook`, `Tsrelay-Call-Id` and its own `X-Forwarded-*` headers; there is no `Tsrelay-Sender-Node/Tags/Login`, since there is no tailnet identity.
+
+**Revocation:** the tunnel revalidator (§5.5) also refreshes whether each tunnel's owner still holds the `public` grant, so losing it stops public delivery within one `--revalidate-interval`, the same as any other revocation. The hook's `public` flag and token are left alone, so restoring the grant brings the same URL back.
+
+**API and CLI:** hook JSON gains `public` (visible to anyone who can see the hook) and `publicUrl` (owner only, and only while the hook is public — admins see `public` but never the URL). `GET /api/v1/me` gains `public` (the caller's own grant) and `funnel` (a bool: whether this relay serves Funnel at all). `tsrelay http`, `hooks create` and `hooks update` take `--public`; `tsrelay hooks rotate-url <hook>` issues a new token. Granting `public` without the policy field is a `422` field error on `public`, the same shape as any other disallowed setting, not a `403`.

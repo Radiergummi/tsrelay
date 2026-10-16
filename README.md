@@ -8,7 +8,7 @@ Production services call the relay, which is its own tailnet node. Your laptop d
 prod service ──HTTPS──▶ tsrelay (tailnet node) ◀──tunnel── tsrelay http 8080 ──▶ localhost:8080
 ```
 
-tsrelay is deliberately narrow. It forwards only to hooks you create explicitly. It never intercepts services as Telepresence or mirrord do, and it is never reachable from the internet (it never uses Funnel).
+tsrelay is deliberately narrow. It forwards only to hooks you create explicitly. It never intercepts services as Telepresence or mirrord do, and it is reachable from the internet only for hooks their owners explicitly make public, through Tailscale Funnel, when the operator runs it with `--funnel`.
 
 ## Quick start
 
@@ -62,6 +62,17 @@ Useful flags:
 - `-n`/`--name payments/v1` picks the path yourself.
 - `-p`/`--persistent` keeps the hook after the command exits. While no tunnel is attached, callers get `503` with `Retry-After`.
 - `--relay host` points at a relay that isn't at `tsrelay.<your tailnet>`.
+
+## Public hooks
+
+A hook can also be made reachable from the internet, for third-party webhooks (Stripe, GitHub, Twilio…) that can't reach your tailnet. It's opt-in twice over: the operator runs the relay with `--funnel`, and you mark the hook `public`.
+
+```bash
+tsrelay serve --funnel          # operator: serve public hooks through Tailscale Funnel
+tsrelay http 3000 --public      # you: make this hook's URL reachable from the internet
+```
+
+You need the `public` grant from your tailnet policy (above) to turn a hook public. The relay prints both URLs; the public one is a secret, so treat it like one, and rotate it with `tsrelay hooks rotate-url <hook>` if it leaks. The relay does not verify provider signatures — see [SECURITY.md](SECURITY.md).
 
 ## Channels
 
