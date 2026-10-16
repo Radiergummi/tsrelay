@@ -9,7 +9,7 @@ export function InspectPage() {
         The relay keeps only the most recent calls of each hook, in memory, and forgets them when it
         restarts.
       </p>
-      <Link to="/" className="text-primary hover:underline">
+      <Link to="/hooks" className="text-primary hover:underline">
         Go to your hooks
       </Link>
     </EmptyState>

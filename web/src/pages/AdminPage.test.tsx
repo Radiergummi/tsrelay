@@ -13,7 +13,7 @@ import { AdminPage } from "./AdminPage";
 test("lists every hook as metadata, subscribes to every hook's events, and deletes", async () => {
   const deleted: string[] = [];
   server.use(
-    http.delete("/api/v1/hooks/:id", ({ params }) => {
+    http.delete("/hooks/:id", ({ params }) => {
       deleted.push(String(params.id));
       return new HttpResponse(null, { status: 204 });
     }),
@@ -31,7 +31,7 @@ test("lists every hook as metadata, subscribes to every hook's events, and delet
     `/hooks/${fixtures.theirs.id}`,
   );
   expect(screen.getByText(/5 hooks, 1 tunnel/)).toBeInTheDocument();
-  expect(FakeEventSource.latest()?.url).toBe("/api/v1/events?all=true");
+  expect(FakeEventSource.latest()?.url).toBe("/hooks?all=true");
 
   await userEvent.click(within(row).getByRole("button", { name: "Delete theirs" }));
   await userEvent.click(await screen.findByRole("button", { name: "Delete hook" }));
@@ -41,9 +41,7 @@ test("lists every hook as metadata, subscribes to every hook's events, and delet
 
 test("another user's hook path is shown with its control characters revealed", async () => {
   server.use(
-    http.get("/api/v1/hooks", () =>
-      HttpResponse.json([{ ...fixtures.theirs, path: "pay\u202egnp.exe" }]),
-    ),
+    http.get("/hooks", () => HttpResponse.json([{ ...fixtures.theirs, path: "pay\u202egnp.exe" }])),
   );
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   renderWithProviders(

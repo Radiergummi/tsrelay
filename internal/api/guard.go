@@ -22,7 +22,8 @@ func Guard(allowedHosts []string, next http.Handler) http.Handler {
 			problem.New(http.StatusMisdirectedRequest, problem.MisdirectedRequest, "this relay does not serve host "+r.Host).Write(w)
 			return
 		}
-		if strings.HasPrefix(r.URL.Path, "/api/") && !safeMethod(r.Method) {
+		// Every write but a callback's is an API write.
+		if !strings.HasPrefix(r.URL.Path, "/~") && !safeMethod(r.Method) {
 			if s := r.Header.Get("Sec-Fetch-Site"); s != "" && s != "same-origin" && s != "none" {
 				problem.New(http.StatusForbidden, problem.Forbidden, "cross-site requests to the API are not allowed").Write(w)
 				return

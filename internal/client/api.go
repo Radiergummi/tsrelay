@@ -29,8 +29,8 @@ func (e *UnreachableError) Error() string {
 
 func (e *UnreachableError) Unwrap() error { return e.Err }
 
-// API is a client for the relay's /api/v1. Errors from the relay are
-// returned as *problem.Problem.
+// API is a client for the relay's resources, which it asks for as JSON.
+// Errors from the relay are returned as *problem.Problem.
 type API struct {
 	BaseURL string
 	HTTP    *http.Client
@@ -38,30 +38,30 @@ type API struct {
 
 func (c *API) Me(ctx context.Context) (api.Me, error) {
 	var me api.Me
-	err := c.do(ctx, http.MethodGet, "/api/v1/me", nil, &me)
+	err := c.do(ctx, http.MethodGet, "/", nil, &me)
 	return me, err
 }
 
 func (c *API) ListHooks(ctx context.Context) ([]api.Hook, error) {
 	var hs []api.Hook
-	err := c.do(ctx, http.MethodGet, "/api/v1/hooks", nil, &hs)
+	err := c.do(ctx, http.MethodGet, "/hooks", nil, &hs)
 	return hs, err
 }
 
 func (c *API) CreateHook(ctx context.Context, req hooks.CreateRequest) (api.Hook, error) {
 	var h api.Hook
-	err := c.do(ctx, http.MethodPost, "/api/v1/hooks", req, &h)
+	err := c.do(ctx, http.MethodPost, "/hooks", req, &h)
 	return h, err
 }
 
 func (c *API) UpdateHook(ctx context.Context, id string, req hooks.UpdateRequest) (api.Hook, error) {
 	var h api.Hook
-	err := c.do(ctx, http.MethodPatch, "/api/v1/hooks/"+url.PathEscape(id), req, &h)
+	err := c.do(ctx, http.MethodPatch, "/hooks/"+url.PathEscape(id), req, &h)
 	return h, err
 }
 
 func (c *API) DeleteHook(ctx context.Context, id string) error {
-	return c.do(ctx, http.MethodDelete, "/api/v1/hooks/"+url.PathEscape(id), nil, nil)
+	return c.do(ctx, http.MethodDelete, "/hooks/"+url.PathEscape(id), nil, nil)
 }
 
 // TunnelURL is the endpoint tunnel.Dial attaches to for the given hooks.
@@ -76,7 +76,7 @@ func (c *API) TunnelURL(a tunnel.Attach, hookIDs ...string) string {
 	if a.Target != "" {
 		q.Set("target", a.Target)
 	}
-	return c.BaseURL + "/api/v1/tunnel?" + q.Encode()
+	return c.BaseURL + "/tunnel?" + q.Encode()
 }
 
 func (c *API) do(ctx context.Context, method, path string, in, out any) error {
@@ -92,6 +92,7 @@ func (c *API) do(ctx context.Context, method, path string, in, out any) error {
 	if err != nil {
 		return err
 	}
+	req.Header.Set("Accept", "application/json")
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

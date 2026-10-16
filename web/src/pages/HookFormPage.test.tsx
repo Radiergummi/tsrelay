@@ -22,7 +22,7 @@ const invalid = (field: string, message: string) =>
 
 test("dry-run errors appear under their fields as the user types", async () => {
   server.use(
-    http.post("/api/v1/hooks", ({ request }) =>
+    http.post("/hooks", ({ request }) =>
       new URL(request.url).searchParams.get("dryRun") === "true"
         ? invalid("path", "segments may only contain letters, digits, ., _ and -")
         : HttpResponse.error(),
@@ -63,7 +63,7 @@ test("hints show the relay's defaults and maxima, and channels come from the gra
 test("creating saves, toasts and goes to the new hook", async () => {
   let saved: unknown;
   server.use(
-    http.post("/api/v1/hooks", async ({ request }) => {
+    http.post("/hooks", async ({ request }) => {
       if (new URL(request.url).searchParams.get("dryRun") === "true")
         return HttpResponse.json(fixtures.idle);
       saved = await request.json();
@@ -88,7 +88,7 @@ test("creating saves, toasts and goes to the new hook", async () => {
 // doesn't repeat them.
 test("delivery starts shut, and opens for an error in one of its fields", async () => {
   server.use(
-    http.post("/api/v1/hooks", () =>
+    http.post("/hooks", () =>
       HttpResponse.json(
         {
           status: 422,
@@ -115,7 +115,7 @@ test("delivery starts shut, and opens for an error in one of its fields", async 
 
 test("a failed save other than a 422 is reported once, by the toast", async () => {
   server.use(
-    http.post("/api/v1/hooks", ({ request }) =>
+    http.post("/hooks", ({ request }) =>
       new URL(request.url).searchParams.get("dryRun") === "true"
         ? HttpResponse.json(fixtures.idle)
         : HttpResponse.json(
@@ -144,7 +144,7 @@ test("a failed save other than a 422 is reported once, by the toast", async () =
 
 // A dry run is no mutation, so nothing else reports its failure.
 test("a dry run that can't reach the relay says so in the form", async () => {
-  server.use(http.post("/api/v1/hooks", () => HttpResponse.error()));
+  server.use(http.post("/hooks", () => HttpResponse.error()));
   renderWithProviders(<HookFormPage />, {
     route: "/hooks/new",
     path: "/hooks/new",
@@ -156,9 +156,7 @@ test("a dry run that can't reach the relay says so in the form", async () => {
 });
 
 test("a form-level error goes away once the next change fails local validation", async () => {
-  server.use(
-    http.post("/api/v1/hooks", () => invalid("settings.unknown", "the relay refused this")),
-  );
+  server.use(http.post("/hooks", () => invalid("settings.unknown", "the relay refused this")));
   renderWithProviders(<HookFormPage />, {
     route: "/hooks/new",
     path: "/hooks/new",
@@ -176,7 +174,7 @@ test("a form-level error goes away once the next change fails local validation",
 test("editing prefills the hook and resets cleared fields to the default", async () => {
   let patch: unknown;
   server.use(
-    http.patch("/api/v1/hooks/:id", async ({ request }) => {
+    http.patch("/hooks/:id", async ({ request }) => {
       if (new URL(request.url).searchParams.get("dryRun") === "true")
         return HttpResponse.json(fixtures.hook);
       patch = await request.json();

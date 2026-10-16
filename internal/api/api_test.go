@@ -56,6 +56,10 @@ func newEnv(t *testing.T) *env {
 		BaseURL: "https://tsrelay.example.ts.net",
 		CapName: "example.com/cap/relay",
 		Version: "v0.3.0",
+		HTML: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			io.WriteString(w, "the app")
+		}),
 	}
 	mux := http.NewServeMux()
 	a.Register(mux)
@@ -93,13 +97,13 @@ func (e *env) call(id authz.Identity, method, path string, in any, out any) *htt
 func TestMe(t *testing.T) {
 	e := newEnv(t)
 	var me Me
-	e.call(moritz, "GET", "/api/v1/me", nil, &me)
+	e.call(moritz, "GET", "/", nil, &me)
 	if me.Login != "moritz@example.com" || me.Slug != "moritz" || me.Node != "laptop" ||
 		len(me.Roles[authz.RoleReceiver]) != 2 || me.Limits.MaxHooks != authz.DefaultLimits.MaxHooks {
 		t.Fatalf("me = %+v", me)
 	}
 	var w Me
-	if resp := e.call(worker, "GET", "/api/v1/me", nil, &w); resp.StatusCode != 200 || w.Slug != "" || w.Login != "" {
+	if resp := e.call(worker, "GET", "/", nil, &w); resp.StatusCode != 200 || w.Slug != "" || w.Login != "" {
 		t.Fatalf("tagged me = %d %+v", resp.StatusCode, w)
 	}
 }
@@ -107,7 +111,7 @@ func TestMe(t *testing.T) {
 func TestMeNamesCapAndPolicy(t *testing.T) {
 	e := newEnv(t)
 	var me Me
-	if resp := e.call(moritz, "GET", "/api/v1/me", nil, &me); resp.StatusCode != 200 {
+	if resp := e.call(moritz, "GET", "/", nil, &me); resp.StatusCode != 200 {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
 	if me.CapName != "example.com/cap/relay" || me.Version != "v0.3.0" {
@@ -127,24 +131,24 @@ func TestMeNamesCapAndPolicy(t *testing.T) {
 func TestHookLastCall(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
 	if h.LastCall != nil {
 		t.Fatalf("a new hook has lastCall %+v", h.LastCall)
 	}
 	e.seedCall("c_1", h.ID, completeBody(`{"secret":true}`))
 
 	var list []Hook
-	e.call(moritz, "GET", "/api/v1/hooks", nil, &list)
+	e.call(moritz, "GET", "/hooks", nil, &list)
 	if len(list) != 1 || list[0].LastCall == nil || list[0].LastCall.ID != "c_1" {
 		t.Fatalf("list = %+v", list)
 	}
 	var one Hook
-	e.call(moritz, "GET", "/api/v1/hooks/"+h.ID, nil, &one)
+	e.call(moritz, "GET", "/hooks/"+h.ID, nil, &one)
 	if one.LastCall == nil || one.LastCall.ID != "c_1" {
 		t.Fatalf("hook = %+v", one)
 	}
 	var raw json.RawMessage
-	if resp := e.call(admin, "GET", "/api/v1/hooks?all=true", nil, &raw); resp.StatusCode != 200 || !strings.Contains(string(raw), `"lastCall"`) {
+	if resp := e.call(admin, "GET", "/hooks?all=true", nil, &raw); resp.StatusCode != 200 || !strings.Contains(string(raw), `"lastCall"`) {
 		t.Fatalf("admin list = %d %s", resp.StatusCode, raw)
 	}
 	for _, secret := range []string{"s3cr3t", "secret-header", "secret-reply", "c2VjcmV0"} {
@@ -152,7 +156,7 @@ func TestHookLastCall(t *testing.T) {
 			t.Errorf("the admin's hook list contains %q", secret)
 		}
 	}
-	if resp := e.call(other, "GET", "/api/v1/hooks/"+h.ID, nil, nil); resp.StatusCode != 404 {
+	if resp := e.call(other, "GET", "/hooks/"+h.ID, nil, nil); resp.StatusCode != 404 {
 		t.Errorf("another user's GET hook = %d, want 404", resp.StatusCode)
 	}
 }
@@ -160,42 +164,42 @@ func TestHookLastCall(t *testing.T) {
 func TestHookCRUD(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	resp := e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb", Ephemeral: true}, &h)
+	resp := e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb", Ephemeral: true}, &h)
 	if resp.StatusCode != 201 || h.URL != "https://tsrelay.example.ts.net/~moritz/cb" || !h.Ephemeral || h.Channel != "default" || h.Tunnel != nil {
 		t.Fatalf("create = %d %+v", resp.StatusCode, h)
 	}
-	if loc := resp.Header.Get("Location"); loc != "/api/v1/hooks/"+h.ID {
+	if loc := resp.Header.Get("Location"); loc != "/hooks/"+h.ID {
 		t.Fatalf("Location = %q", loc)
 	}
 
 	var list []Hook
-	e.call(moritz, "GET", "/api/v1/hooks", nil, &list)
+	e.call(moritz, "GET", "/hooks", nil, &list)
 	if len(list) != 1 || list[0].ID != h.ID {
 		t.Fatalf("list = %+v", list)
 	}
-	e.call(other, "GET", "/api/v1/hooks", nil, &list)
+	e.call(other, "GET", "/hooks", nil, &list)
 	if len(list) != 0 {
 		t.Fatalf("other user sees %+v", list)
 	}
-	e.call(other, "GET", "/api/v1/hooks?all=true", nil, &list)
+	e.call(other, "GET", "/hooks?all=true", nil, &list)
 	if len(list) != 0 {
 		t.Fatal("all=true must be ignored for non-admins")
 	}
-	e.call(admin, "GET", "/api/v1/hooks?all=true", nil, &list)
+	e.call(admin, "GET", "/hooks?all=true", nil, &list)
 	if len(list) != 1 {
 		t.Fatalf("admin list = %+v", list)
 	}
 
-	if resp := e.call(other, "GET", "/api/v1/hooks/"+h.ID, nil, nil); resp.StatusCode != 404 {
+	if resp := e.call(other, "GET", "/hooks/"+h.ID, nil, nil); resp.StatusCode != 404 {
 		t.Fatalf("other user get = %d, want 404", resp.StatusCode)
 	}
-	if resp := e.call(other, "DELETE", "/api/v1/hooks/"+h.ID, nil, nil); resp.StatusCode != 404 {
+	if resp := e.call(other, "DELETE", "/hooks/"+h.ID, nil, nil); resp.StatusCode != 404 {
 		t.Fatalf("other user delete = %d, want 404", resp.StatusCode)
 	}
-	if resp := e.call(admin, "DELETE", "/api/v1/hooks/"+h.ID, nil, nil); resp.StatusCode != 204 {
+	if resp := e.call(admin, "DELETE", "/hooks/"+h.ID, nil, nil); resp.StatusCode != 204 {
 		t.Fatalf("admin delete = %d, want 204", resp.StatusCode)
 	}
-	if resp := e.call(moritz, "GET", "/api/v1/hooks/"+h.ID, nil, nil); resp.StatusCode != 404 {
+	if resp := e.call(moritz, "GET", "/hooks/"+h.ID, nil, nil); resp.StatusCode != 404 {
 		t.Fatalf("get after delete = %d", resp.StatusCode)
 	}
 }
@@ -203,15 +207,15 @@ func TestHookCRUD(t *testing.T) {
 func TestCreateErrors(t *testing.T) {
 	e := newEnv(t)
 	var p problem.Problem
-	resp := e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Channel: "billing"}, &p)
+	resp := e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Channel: "billing"}, &p)
 	if resp.StatusCode != 422 || p.Code != problem.Invalid || !strings.Contains(p.Detail+toJSON(p.Errors), "channel") {
 		t.Fatalf("invalid channel = %d %+v", resp.StatusCode, p)
 	}
-	resp = e.call(moritz, "POST", "/api/v1/hooks", map[string]any{"path": "x", "bogus": 1}, &p)
+	resp = e.call(moritz, "POST", "/hooks", map[string]any{"path": "x", "bogus": 1}, &p)
 	if resp.StatusCode != 400 {
 		t.Fatalf("unknown field = %d", resp.StatusCode)
 	}
-	resp = e.call(worker, "POST", "/api/v1/hooks", hooks.CreateRequest{}, &p)
+	resp = e.call(worker, "POST", "/hooks", hooks.CreateRequest{}, &p)
 	if resp.StatusCode != 403 || p.Code != problem.Forbidden {
 		t.Fatalf("tagged create = %d %+v", resp.StatusCode, p)
 	}
@@ -237,7 +241,7 @@ func (e *env) openTunnelQ(id authz.Identity, extra string, hookIDs ...string) (c
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	e.t.Cleanup(cancel)
-	conn, err := tunnel.Dial(ctx, tunnel.NewHTTPClient(e.fake.Dial(id)), e.srv.URL+"/api/v1/tunnel?"+q)
+	conn, err := tunnel.Dial(ctx, tunnel.NewHTTPClient(e.fake.Dial(id)), e.srv.URL+"/tunnel?"+q)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -263,7 +267,7 @@ func next[T any](t *testing.T, ch <-chan T) T {
 func TestTunnelAttachAndTakeover(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
 
 	c1, served1, err := e.openTunnel(moritz, h.ID)
 	if err != nil {
@@ -273,7 +277,7 @@ func TestTunnelAttachAndTakeover(t *testing.T) {
 		t.Fatalf("first control = %+v", c)
 	}
 	var got Hook
-	e.call(moritz, "GET", "/api/v1/hooks/"+h.ID, nil, &got)
+	e.call(moritz, "GET", "/hooks/"+h.ID, nil, &got)
 	if got.Tunnel == nil || got.Tunnel.Node != "laptop" {
 		t.Fatalf("hook tunnel = %+v", got.Tunnel)
 	}
@@ -289,7 +293,7 @@ func TestTunnelAttachAndTakeover(t *testing.T) {
 	next(t, served1) // the orphaned tunnel is closed
 
 	// Deleting the hook tells the remaining tunnel and closes it.
-	e.call(moritz, "DELETE", "/api/v1/hooks/"+h.ID, nil, nil)
+	e.call(moritz, "DELETE", "/hooks/"+h.ID, nil, nil)
 	if c := next(t, c2); c.Type != tunnel.ControlHookDeleted {
 		t.Fatalf("got %+v, want hook-deleted", c)
 	}
@@ -298,7 +302,7 @@ func TestTunnelAttachAndTakeover(t *testing.T) {
 func TestTunnelRejections(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
 	cases := map[string]struct {
 		id     authz.Identity
 		hooks  []string
@@ -316,7 +320,7 @@ func TestTunnelRejections(t *testing.T) {
 			t.Errorf("%s: err = %v, want status %d", name, err, c.status)
 		}
 	}
-	if resp := e.call(moritz, "GET", "/api/v1/tunnel?hook="+h.ID, nil, nil); resp.StatusCode != 400 {
+	if resp := e.call(moritz, "GET", "/tunnel?hook="+h.ID, nil, nil); resp.StatusCode != 400 {
 		t.Errorf("non-upgrade request = %d, want 400", resp.StatusCode)
 	}
 }
@@ -327,7 +331,7 @@ func TestTunnelRejections(t *testing.T) {
 func TestResumeCannotTakeOverOtherSessions(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
 	if _, _, err := e.openTunnelQ(moritz, "session=s_old", h.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +344,7 @@ func TestResumeCannotTakeOverOtherSessions(t *testing.T) {
 		t.Fatalf("replaced session resuming: err = %v, want 409 conflict", err)
 	}
 	var got Hook
-	e.call(moritz, "GET", "/api/v1/hooks/"+h.ID, nil, &got)
+	e.call(moritz, "GET", "/hooks/"+h.ID, nil, &got)
 	if _, _, err := e.openTunnelQ(moritz, "session=s_new&resume=1", h.ID); err != nil {
 		t.Fatalf("resuming the serving session (stale half-open tunnel) must work: %v", err)
 	}
@@ -349,28 +353,28 @@ func TestResumeCannotTakeOverOtherSessions(t *testing.T) {
 func TestPatchHook(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", map[string]any{"path": "cb", "settings": map[string]any{"holdTimeout": "5s"}}, &h)
+	e.call(moritz, "POST", "/hooks", map[string]any{"path": "cb", "settings": map[string]any{"holdTimeout": "5s"}}, &h)
 	if h.Effective.HoldTimeout != hooks.Duration(5*time.Second) || h.Settings.HoldTimeout == nil {
 		t.Fatalf("created = %+v", h)
 	}
 
 	var got Hook
-	resp := e.call(moritz, "PATCH", "/api/v1/hooks/"+h.ID, map[string]any{"description": "pay", "settings": map[string]any{"holdTimeout": nil}}, &got)
+	resp := e.call(moritz, "PATCH", "/hooks/"+h.ID, map[string]any{"description": "pay", "settings": map[string]any{"holdTimeout": nil}}, &got)
 	if resp.StatusCode != 200 || got.Description != "pay" || got.Settings.HoldTimeout != nil || got.Effective.HoldTimeout != hooks.DefaultPolicy.Defaults.HoldTimeout {
 		t.Fatalf("patch = %d %+v", resp.StatusCode, got)
 	}
 
 	var p problem.Problem
-	if resp := e.call(moritz, "PATCH", "/api/v1/hooks/"+h.ID, map[string]any{"channel": "billing"}, &p); resp.StatusCode != 422 {
+	if resp := e.call(moritz, "PATCH", "/hooks/"+h.ID, map[string]any{"channel": "billing"}, &p); resp.StatusCode != 422 {
 		t.Fatalf("invalid patch = %d", resp.StatusCode)
 	}
-	if resp := e.call(moritz, "PATCH", "/api/v1/hooks/"+h.ID, map[string]any{"bogus": 1}, nil); resp.StatusCode != 400 {
+	if resp := e.call(moritz, "PATCH", "/hooks/"+h.ID, map[string]any{"bogus": 1}, nil); resp.StatusCode != 400 {
 		t.Fatalf("unknown field = %d", resp.StatusCode)
 	}
-	if resp := e.call(other, "PATCH", "/api/v1/hooks/"+h.ID, map[string]any{"description": "x"}, nil); resp.StatusCode != 404 {
+	if resp := e.call(other, "PATCH", "/hooks/"+h.ID, map[string]any{"description": "x"}, nil); resp.StatusCode != 404 {
 		t.Fatalf("other user patch = %d", resp.StatusCode)
 	}
-	if resp := e.call(admin, "PATCH", "/api/v1/hooks/"+h.ID, map[string]any{"description": "x"}, nil); resp.StatusCode != 404 {
+	if resp := e.call(admin, "PATCH", "/hooks/"+h.ID, map[string]any{"description": "x"}, nil); resp.StatusCode != 404 {
 		t.Fatalf("admins may delete but not edit others' hooks: %d", resp.StatusCode)
 	}
 }
@@ -379,7 +383,7 @@ func TestPatchHook(t *testing.T) {
 func TestPatchNotifiesServingTunnel(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
 	controls, _, err := e.openTunnel(moritz, h.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -387,7 +391,7 @@ func TestPatchNotifiesServingTunnel(t *testing.T) {
 	next(t, controls) // attached
 
 	var got Hook
-	if resp := e.call(moritz, "PATCH", "/api/v1/hooks/"+h.ID, map[string]any{"path": "cb2"}, &got); resp.StatusCode != 200 {
+	if resp := e.call(moritz, "PATCH", "/hooks/"+h.ID, map[string]any{"path": "cb2"}, &got); resp.StatusCode != 200 {
 		t.Fatalf("patch = %d", resp.StatusCode)
 	}
 	c := next(t, controls)
@@ -403,7 +407,7 @@ func TestPatchNotifiesServingTunnel(t *testing.T) {
 func TestDeleteReleasesHeldCalls(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", map[string]any{"path": "held"}, &h)
+	e.call(moritz, "POST", "/hooks", map[string]any{"path": "held"}, &h)
 	waited := make(chan error, 1)
 	go func() {
 		_, err := e.reg.Wait(context.Background(), h.ID, func() bool {
@@ -412,7 +416,7 @@ func TestDeleteReleasesHeldCalls(t *testing.T) {
 		})
 		waited <- err
 	}()
-	if resp := e.call(moritz, "DELETE", "/api/v1/hooks/"+h.ID, nil, nil); resp.StatusCode != 204 {
+	if resp := e.call(moritz, "DELETE", "/hooks/"+h.ID, nil, nil); resp.StatusCode != 204 {
 		t.Fatalf("delete = %d", resp.StatusCode)
 	}
 	select {
@@ -428,7 +432,7 @@ func TestDeleteReleasesHeldCalls(t *testing.T) {
 func TestAttachPolicyReject(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", map[string]any{"path": "cb", "settings": map[string]any{"attachPolicy": "reject"}}, &h)
+	e.call(moritz, "POST", "/hooks", map[string]any{"path": "cb", "settings": map[string]any{"attachPolicy": "reject"}}, &h)
 	c1, _, err := e.openTunnelQ(moritz, "session=s_a", h.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -451,9 +455,9 @@ func TestMaxTunnels(t *testing.T) {
 	limited := identify.User("lim", "lim@example.com", 7, `{"roles":["receiver"]}`)
 	limited.Grants.Limits.MaxTunnels = 2
 	var a, b, c Hook
-	e.call(limited, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "a"}, &a)
-	e.call(limited, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "b"}, &b)
-	e.call(limited, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "c"}, &c)
+	e.call(limited, "POST", "/hooks", hooks.CreateRequest{Path: "a"}, &a)
+	e.call(limited, "POST", "/hooks", hooks.CreateRequest{Path: "b"}, &b)
+	e.call(limited, "POST", "/hooks", hooks.CreateRequest{Path: "c"}, &c)
 	for i, h := range []Hook{a, b} {
 		controls, _, err := e.openTunnelQ(limited, fmt.Sprintf("session=s%d", i), h.ID)
 		if err != nil {
@@ -473,7 +477,7 @@ func TestMaxTunnels(t *testing.T) {
 	}
 	// Other users' tunnels never count.
 	var o Hook
-	e.call(other, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "o"}, &o)
+	e.call(other, "POST", "/hooks", hooks.CreateRequest{Path: "o"}, &o)
 	if _, _, err := e.openTunnel(other, o.ID); err != nil {
 		t.Fatalf("another user's attach: %v", err)
 	}
@@ -486,8 +490,8 @@ func TestAttachRechecksDeletedHooks(t *testing.T) {
 	e := newEnv(t)
 	a := &API{Hooks: e.mgr, Tunnels: e.reg, Audit: audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))), BaseURL: "https://r"}
 	var keep, gone Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "keep"}, &keep)
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "gone"}, &gone)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "keep"}, &keep)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "gone"}, &gone)
 	hk, _ := e.mgr.Get(hooks.ID(keep.ID))
 	hg, _ := e.mgr.Get(hooks.ID(gone.ID))
 	if err := e.mgr.Delete(context.Background(), hg.ID); err != nil {
@@ -534,7 +538,7 @@ func TestConcurrentAttachesRespectMaxTunnels(t *testing.T) {
 	ids := make([]string, 10) // the default maxHooks
 	for i := range ids {
 		var h Hook
-		if resp := e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: fmt.Sprintf("h%d", i)}, &h); resp.StatusCode != 201 {
+		if resp := e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: fmt.Sprintf("h%d", i)}, &h); resp.StatusCode != 201 {
 			t.Fatalf("create %d: %d", i, resp.StatusCode)
 		}
 		ids[i] = h.ID
@@ -562,7 +566,7 @@ func TestConcurrentAttachesRespectMaxTunnels(t *testing.T) {
 func TestConcurrentAttachesRespectReject(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "r",
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "r",
 		Settings: hooks.Settings{AttachPolicy: new(hooks.AttachReject)}}, &h)
 	var wg sync.WaitGroup
 	results := make(chan error, 2)
@@ -590,14 +594,14 @@ func TestConcurrentAttachesRespectReject(t *testing.T) {
 func TestHookUpdatedSequence(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "a"}, &h)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "a"}, &h)
 	controls, _, err := e.openTunnel(moritz, h.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	next(t, controls) // attached
 	for _, p := range []string{"a1", "a2"} {
-		if resp := e.call(moritz, "PATCH", "/api/v1/hooks/"+h.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new(p)}}, nil); resp.StatusCode != 200 {
+		if resp := e.call(moritz, "PATCH", "/hooks/"+h.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new(p)}}, nil); resp.StatusCode != 200 {
 			t.Fatalf("PATCH %s: %d", p, resp.StatusCode)
 		}
 	}
@@ -617,28 +621,28 @@ func TestHookUpdatedSequence(t *testing.T) {
 func TestDryRun(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	resp := e.call(moritz, "POST", "/api/v1/hooks?dryRun=true", hooks.CreateRequest{Path: "x", Channel: "prod.eu"}, &h)
+	resp := e.call(moritz, "POST", "/hooks?dryRun=true", hooks.CreateRequest{Path: "x", Channel: "prod.eu"}, &h)
 	if resp.StatusCode != 200 || h.ID != "" || h.Path != "x" || h.URL != "https://tsrelay.example.ts.net/~moritz/x" {
 		t.Fatalf("dry-run create = %d %+v", resp.StatusCode, h)
 	}
 	var list []Hook
-	e.call(moritz, "GET", "/api/v1/hooks", nil, &list)
+	e.call(moritz, "GET", "/hooks", nil, &list)
 	if len(list) != 0 {
 		t.Fatalf("a dry run saved a hook: %+v", list)
 	}
 	var p problem.Problem
-	if resp := e.call(moritz, "POST", "/api/v1/hooks?dryRun=true", hooks.CreateRequest{Channel: "billing"}, &p); resp.StatusCode != 422 || !strings.Contains(p.Detail, "billing") {
+	if resp := e.call(moritz, "POST", "/hooks?dryRun=true", hooks.CreateRequest{Channel: "billing"}, &p); resp.StatusCode != 422 || !strings.Contains(p.Detail, "billing") {
 		t.Fatalf("invalid dry-run create = %d %+v", resp.StatusCode, p)
 	}
 
 	var real Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "y"}, &real)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "y"}, &real)
 	var got Hook
-	resp = e.call(moritz, "PATCH", "/api/v1/hooks/"+real.ID+"?dryRun=true", hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new("z")}}, &got)
+	resp = e.call(moritz, "PATCH", "/hooks/"+real.ID+"?dryRun=true", hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new("z")}}, &got)
 	if resp.StatusCode != 200 || got.Path != "z" || got.ID != real.ID {
 		t.Fatalf("dry-run update = %d %+v", resp.StatusCode, got)
 	}
-	e.call(moritz, "GET", "/api/v1/hooks/"+real.ID, nil, &got)
+	e.call(moritz, "GET", "/hooks/"+real.ID, nil, &got)
 	if got.Path != "y" {
 		t.Fatalf("a dry-run PATCH saved: path = %q", got.Path)
 	}
@@ -646,7 +650,7 @@ func TestDryRun(t *testing.T) {
 	// The slug check runs too: "moritz" is now bound to the first user.
 	twin := identify.User("twin-box", "moritz@other.org", 9, `{"roles":["receiver"]}`)
 	p = problem.Problem{}
-	if resp := e.call(twin, "POST", "/api/v1/hooks?dryRun=true", hooks.CreateRequest{}, &p); resp.StatusCode != 422 || !strings.Contains(p.Detail, "belongs to another user") {
+	if resp := e.call(twin, "POST", "/hooks?dryRun=true", hooks.CreateRequest{}, &p); resp.StatusCode != 422 || !strings.Contains(p.Detail, "belongs to another user") {
 		t.Fatalf("dry run with a taken slug = %d %+v", resp.StatusCode, p)
 	}
 }
@@ -661,7 +665,7 @@ func TestTunnelTarget(t *testing.T) {
 		"": "",
 	} {
 		var h Hook
-		e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{}, &h)
+		e.call(moritz, "POST", "/hooks", hooks.CreateRequest{}, &h)
 		controls, _, err := e.openTunnelQ(moritz, "target="+target, h.ID)
 		if err != nil {
 			t.Fatal(err)
@@ -670,7 +674,7 @@ func TestTunnelTarget(t *testing.T) {
 			t.Fatalf("first control = %+v, want attached", c)
 		}
 		var got Hook
-		e.call(moritz, "GET", "/api/v1/hooks/"+h.ID, nil, &got)
+		e.call(moritz, "GET", "/hooks/"+h.ID, nil, &got)
 		if got.Tunnel == nil || got.Tunnel.Target != want {
 			t.Errorf("target %q: tunnel = %+v, want target %q", target, got.Tunnel, want)
 		}

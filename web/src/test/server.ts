@@ -20,20 +20,20 @@ const notFound = () =>
 
 /** handlers answer as the dev user (receiver and admin) would be answered. Tests override with server.use. */
 export const handlers = [
-  http.get("/api/v1/me", () => HttpResponse.json(fixtures.me)),
-  http.get("/api/v1/hooks", ({ request }) =>
+  http.get("/", () => HttpResponse.json(fixtures.me)),
+  http.get("/hooks", ({ request }) =>
     HttpResponse.json(
       new URL(request.url).searchParams.get("all") === "true" ? fixtures.hooksAll : fixtures.hooks,
     ),
   ),
-  http.get("/api/v1/hooks/:id", ({ params }) => {
+  http.get("/hooks/:id", ({ params }) => {
     const h = byId(
       [fixtures.hook, fixtures.idle, fixtures.busy, fixtures.hostile, fixtures.theirs],
       params.id,
     );
     return h ? HttpResponse.json(h) : notFound();
   }),
-  http.get("/api/v1/hooks/:id/calls", ({ params }) => {
+  http.get("/hooks/:id/calls", ({ params }) => {
     if (params.id === fixtures.hook.id) return HttpResponse.json(fixtures.calls);
     if (params.id === fixtures.busy.id) return HttpResponse.json(fixtures.busyCalls);
     if (params.id === fixtures.hostile.id)
@@ -55,7 +55,7 @@ export const handlers = [
       );
     return HttpResponse.json([]);
   }),
-  http.get("/api/v1/hooks/:id/calls/:callId", ({ params }) => {
+  http.get("/hooks/:id/calls/:callId", ({ params }) => {
     const c = byId([...calls, ...hostileCalls], params.callId);
     return c ? HttpResponse.json(c) : notFound();
   }),

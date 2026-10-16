@@ -39,27 +39,27 @@ func completeBody(s string) inspect.Capture {
 func TestCallVisibility(t *testing.T) {
 	e := newEnv(t)
 	var h, h2 Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb2"}, &h2)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb2"}, &h2)
 	e.seedCall("c_1", h.ID, completeBody(`{"secret":true}`))
 
 	var list []inspect.Summary
-	if resp := e.call(moritz, "GET", "/api/v1/hooks/"+h.ID+"/calls", nil, &list); resp.StatusCode != 200 || len(list) != 1 || list[0].ID != "c_1" {
+	if resp := e.call(moritz, "GET", "/hooks/"+h.ID+"/calls", nil, &list); resp.StatusCode != 200 || len(list) != 1 || list[0].ID != "c_1" {
 		t.Fatalf("owner list = %d %+v", resp.StatusCode, list)
 	}
 	var full inspect.Call
-	if resp := e.call(moritz, "GET", "/api/v1/hooks/"+h.ID+"/calls/c_1", nil, &full); resp.StatusCode != 200 ||
+	if resp := e.call(moritz, "GET", "/hooks/"+h.ID+"/calls/c_1", nil, &full); resp.StatusCode != 200 ||
 		full.Query != "token=s3cr3t" || string(full.RequestBody.Body) != `{"secret":true}` || full.Attempts[0].ResponseHeaders.Get("X-Reply") == "" {
 		t.Fatalf("owner detail = %d %+v", resp.StatusCode, full)
 	}
 
 	// Admins see metadata only.
 	list = nil
-	if resp := e.call(admin, "GET", "/api/v1/hooks/"+h.ID+"/calls", nil, &list); resp.StatusCode != 200 || len(list) != 1 {
+	if resp := e.call(admin, "GET", "/hooks/"+h.ID+"/calls", nil, &list); resp.StatusCode != 200 || len(list) != 1 {
 		t.Fatalf("admin list = %d %+v", resp.StatusCode, list)
 	}
 	var meta inspect.Call
-	if resp := e.call(admin, "GET", "/api/v1/hooks/"+h.ID+"/calls/c_1", nil, &meta); resp.StatusCode != 200 {
+	if resp := e.call(admin, "GET", "/hooks/"+h.ID+"/calls/c_1", nil, &meta); resp.StatusCode != 200 {
 		t.Fatalf("admin detail = %d", resp.StatusCode)
 	}
 	if meta.Query != "" || meta.RequestHeaders != nil || meta.RequestBody.Body != nil ||
@@ -71,12 +71,12 @@ func TestCallVisibility(t *testing.T) {
 	}
 
 	// Everyone else sees nothing, and a call is only found under its own hook.
-	for _, path := range []string{"/api/v1/hooks/" + h.ID + "/calls", "/api/v1/hooks/" + h.ID + "/calls/c_1"} {
+	for _, path := range []string{"/hooks/" + h.ID + "/calls", "/hooks/" + h.ID + "/calls/c_1"} {
 		if resp := e.call(other, "GET", path, nil, nil); resp.StatusCode != 404 {
 			t.Errorf("other user GET %s = %d, want 404", path, resp.StatusCode)
 		}
 	}
-	if resp := e.call(moritz, "GET", "/api/v1/hooks/"+h2.ID+"/calls/c_1", nil, nil); resp.StatusCode != 404 {
+	if resp := e.call(moritz, "GET", "/hooks/"+h2.ID+"/calls/c_1", nil, nil); resp.StatusCode != 404 {
 		t.Errorf("call under another hook = %d, want 404", resp.StatusCode)
 	}
 }
@@ -86,24 +86,24 @@ func TestCallVisibility(t *testing.T) {
 func TestCallReplayField(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
 	e.seedCall("c_ok", h.ID, completeBody("x"))
 	e.in.Add(inspect.Call{ID: "c_pending", HookID: hooks.ID(h.ID), Owner: moritz.UserID, ReceivedAt: time.Now(),
 		Kind: inspect.KindSender, Method: "POST", Path: "/done", Outcome: inspect.OutcomePending, Attempts: []inspect.Attempt{}})
 
 	var ok CallJSON
-	e.call(moritz, "GET", "/api/v1/hooks/"+h.ID+"/calls/c_ok", nil, &ok)
+	e.call(moritz, "GET", "/hooks/"+h.ID+"/calls/c_ok", nil, &ok)
 	if ok.Replay == nil || !ok.Replay.Allowed || ok.Replay.Reason != "" {
 		t.Errorf("c_ok replay = %+v", ok.Replay)
 	}
 	var p CallJSON
-	e.call(moritz, "GET", "/api/v1/hooks/"+h.ID+"/calls/c_pending", nil, &p)
+	e.call(moritz, "GET", "/hooks/"+h.ID+"/calls/c_pending", nil, &p)
 	if p.Replay == nil || p.Replay.Allowed || !strings.Contains(p.Replay.Reason, "still being delivered") {
 		t.Errorf("c_pending replay = %+v", p.Replay)
 	}
 
 	var raw json.RawMessage
-	if resp := e.call(admin, "GET", "/api/v1/hooks/"+h.ID+"/calls/c_ok", nil, &raw); resp.StatusCode != 200 {
+	if resp := e.call(admin, "GET", "/hooks/"+h.ID+"/calls/c_ok", nil, &raw); resp.StatusCode != 200 {
 		t.Fatalf("admin detail = %d", resp.StatusCode)
 	}
 	for _, leak := range []string{`"replay"`, "s3cr3t", "secret-header", "secret-reply", `"body"`} {
@@ -111,7 +111,7 @@ func TestCallReplayField(t *testing.T) {
 			t.Errorf("the admin's call detail contains %s:\n%s", leak, raw)
 		}
 	}
-	for _, path := range []string{"/api/v1/hooks/" + h.ID + "/calls", "/api/v1/hooks/" + h.ID + "/calls/c_ok"} {
+	for _, path := range []string{"/hooks/" + h.ID + "/calls", "/hooks/" + h.ID + "/calls/c_ok"} {
 		if resp := e.call(other, "GET", path, nil, nil); resp.StatusCode != 404 {
 			t.Errorf("another user's %s = %d, want 404", path, resp.StatusCode)
 		}
@@ -121,9 +121,9 @@ func TestCallReplayField(t *testing.T) {
 func TestDeleteForgetsCalls(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
 	e.seedCall("c_1", h.ID, completeBody("{}"))
-	if resp := e.call(moritz, "DELETE", "/api/v1/hooks/"+h.ID, nil, nil); resp.StatusCode != 204 {
+	if resp := e.call(moritz, "DELETE", "/hooks/"+h.ID, nil, nil); resp.StatusCode != 204 {
 		t.Fatalf("delete = %d", resp.StatusCode)
 	}
 	if _, ok := e.in.Get("c_1"); ok {
@@ -143,7 +143,7 @@ func (e *env) serve(hookID string) {
 func TestReplayRules(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
 	e.serve(h.ID)
 	e.seedCall("c_full", h.ID, completeBody(`{"n":1}`))
 	e.seedCall("c_cut", h.ID, inspect.Capture{Body: []byte(`{"n":`), Size: 4096, Truncated: true, Captured: true})
@@ -159,7 +159,7 @@ func TestReplayRules(t *testing.T) {
 	long := e.seedCall("c_long", h.ID, completeBody(`{}`))
 	e.in.Update(long.ID, func(c *inspect.Call) { c.QueryTruncated = true })
 	replay := func(id authz.Identity, callID string) int {
-		return e.call(id, "POST", "/api/v1/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, nil).StatusCode
+		return e.call(id, "POST", "/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, nil).StatusCode
 	}
 	if code := replay(moritz, "c_cut"); code != 409 {
 		t.Errorf("replay of a truncated body = %d, want 409", code)
@@ -183,7 +183,7 @@ func TestReplayRules(t *testing.T) {
 		t.Errorf("replay of an unknown call = %d, want 404", code)
 	}
 	var c CallJSON
-	if resp := e.call(moritz, "POST", "/api/v1/hooks/"+h.ID+"/calls/c_full/replay", nil, &c); resp.StatusCode != 201 ||
+	if resp := e.call(moritz, "POST", "/hooks/"+h.ID+"/calls/c_full/replay", nil, &c); resp.StatusCode != 201 ||
 		c.Kind != inspect.KindReplay || c.ReplayOf != "c_full" || c.Outcome != inspect.OutcomeOK || c.Path != "/done" || c.Query != "token=s3cr3t" {
 		t.Fatalf("replay = %d %+v", resp.StatusCode, c)
 	}
@@ -196,10 +196,10 @@ func TestReplayRules(t *testing.T) {
 func TestTestRequest(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
-	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
 	e.serve(h.ID)
 	var c CallJSON
-	resp := e.call(moritz, "POST", "/api/v1/hooks/"+h.ID+"/test", TestRequest{
+	resp := e.call(moritz, "POST", "/hooks/"+h.ID+"/test", TestRequest{
 		Method: "PUT", Path: "/ping?x=1", Headers: http.Header{"X-A": {"1"}}, Body: "{}",
 	}, &c)
 	if resp.StatusCode != 201 || c.Kind != inspect.KindTest || c.Method != "PUT" || c.Path != "/ping" || c.Query != "x=1" ||
@@ -211,7 +211,7 @@ func TestTestRequest(t *testing.T) {
 	}
 	// Defaults: POST to "/".
 	c = CallJSON{}
-	if resp := e.call(moritz, "POST", "/api/v1/hooks/"+h.ID+"/test", TestRequest{}, &c); resp.StatusCode != 201 || c.Method != "POST" || c.Path != "/" {
+	if resp := e.call(moritz, "POST", "/hooks/"+h.ID+"/test", TestRequest{}, &c); resp.StatusCode != 201 || c.Method != "POST" || c.Path != "/" {
 		t.Fatalf("default test request = %d %+v", resp.StatusCode, c)
 	}
 
@@ -222,11 +222,11 @@ func TestTestRequest(t *testing.T) {
 		"headers.Bad Na": {Headers: http.Header{"Bad Name": {"x"}}},
 	} {
 		var p problem.Problem
-		if resp := e.call(moritz, "POST", "/api/v1/hooks/"+h.ID+"/test", req, &p); resp.StatusCode != 422 || !strings.Contains(p.Detail, strings.TrimSpace(field)) {
+		if resp := e.call(moritz, "POST", "/hooks/"+h.ID+"/test", req, &p); resp.StatusCode != 422 || !strings.Contains(p.Detail, strings.TrimSpace(field)) {
 			t.Errorf("%s: %d %+v, want 422 naming the field", field, resp.StatusCode, p)
 		}
 	}
-	if resp := e.call(admin, "POST", "/api/v1/hooks/"+h.ID+"/test", TestRequest{}, nil); resp.StatusCode != 403 {
+	if resp := e.call(admin, "POST", "/hooks/"+h.ID+"/test", TestRequest{}, nil); resp.StatusCode != 403 {
 		t.Errorf("admin test request = %d, want 403", resp.StatusCode)
 	}
 }

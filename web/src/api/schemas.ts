@@ -156,10 +156,10 @@ export type Hook = z.infer<typeof hook>;
 export type Me = z.infer<typeof me>;
 export type FieldError = z.infer<typeof fieldError>;
 
-/** HookRequest is the body of POST and PATCH /api/v1/hooks (hooks.CreateRequest and UpdateRequest). */
+/** HookRequest is the body of POST and PATCH /hooks (hooks.CreateRequest and UpdateRequest). */
 export type HookRequest = Record<string, unknown>;
 
-/** TestRequest is the body of POST /api/v1/hooks/{id}/test (api.TestRequest). */
+/** TestRequest is the body of POST /hooks/{id}/test (api.TestRequest). */
 export interface TestRequest {
   method: string;
   path: string;

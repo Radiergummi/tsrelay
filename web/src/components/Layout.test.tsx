@@ -18,7 +18,7 @@ function renderAt(path: string) {
   return router;
 }
 const meIs = (me: Record<string, unknown>, status = 200) =>
-  server.use(http.get("/api/v1/me", () => HttpResponse.json(me, { status })));
+  server.use(http.get("/", () => HttpResponse.json(me, { status })));
 
 test("a receiver who is an admin sees both sections and their identity", async () => {
   renderAt("/");

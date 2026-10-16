@@ -41,7 +41,7 @@ test("replay is disabled with the server's reason", async () => {
 
 test("replaying selects the new call", async () => {
   server.use(
-    http.post("/api/v1/hooks/:id/calls/:callId/replay", () =>
+    http.post("/hooks/:id/calls/:callId/replay", () =>
       HttpResponse.json(fixtures.callReplay, { status: 201 }),
     ),
   );
@@ -56,7 +56,7 @@ test("replaying selects the new call", async () => {
 // app's staleTime), and the GET for it would 404 here.
 test("after replaying, the new call can be replayed and copied at once", async () => {
   server.use(
-    http.post("/api/v1/hooks/:id/calls/:callId/replay", () =>
+    http.post("/hooks/:id/calls/:callId/replay", () =>
       HttpResponse.json({ ...fixtures.callReplay, id: "c_new" }, { status: 201 }),
     ),
   );
@@ -88,9 +88,7 @@ test("copy as curl writes the local-target command", async () => {
 });
 
 test("an admin who doesn't own the hook sees metadata only, without actions", async () => {
-  server.use(
-    http.get("/api/v1/hooks/:id/calls/:callId", () => HttpResponse.json(fixtures.callAdmin)),
-  );
+  server.use(http.get("/hooks/:id/calls/:callId", () => HttpResponse.json(fixtures.callAdmin)));
   show("c_json", fixtures.meAdmin);
   expect(
     await screen.findByText(/only the hook's owner sees its query, headers and bodies/),
@@ -119,7 +117,7 @@ test("r replays and c copies", async () => {
   const user = userEvent.setup();
   let replays = 0;
   server.use(
-    http.post("/api/v1/hooks/:id/calls/:callId/replay", () => {
+    http.post("/hooks/:id/calls/:callId/replay", () => {
       replays++;
       return HttpResponse.json(fixtures.callReplay, { status: 201 });
     }),

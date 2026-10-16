@@ -459,12 +459,12 @@ func TestReplayParentedByAPISpan(t *testing.T) {
 	callID := resp.Header.Get("Tsrelay-Call-Id")
 	e.waitFor(func() bool {
 		var c inspect.Call
-		return e.getJSON("/api/v1/hooks/"+h.ID+"/calls/"+callID, &c) == 200 && c.Outcome == inspect.OutcomeOK
+		return e.getJSON("/hooks/"+h.ID+"/calls/"+callID, &c) == 200 && c.Outcome == inspect.OutcomeOK
 	})
-	if code := e.postJSON("/api/v1/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, nil); code != 201 {
+	if code := e.postJSON("/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, nil); code != 201 {
 		t.Fatalf("replay = %d", code)
 	}
-	apiSpan := e.spanNamed(rec, "POST /api/v1/hooks/{id}/calls/{callID}/replay")
+	apiSpan := e.spanNamed(rec, "POST /hooks/{id}/calls/{callID}/replay")
 	var replay sdktrace.ReadOnlySpan
 	e.waitFor(func() bool {
 		for _, s := range rec.Ended() {
@@ -481,7 +481,7 @@ func TestReplayParentedByAPISpan(t *testing.T) {
 	if got, _ := attr(apiSpan, "tsrelay.actor.login"); got != "moritz@example.com" {
 		t.Errorf("tsrelay.actor.login = %q", got)
 	}
-	if got, _ := attr(apiSpan, "http.route"); got != "/api/v1/hooks/{id}/calls/{callID}/replay" {
+	if got, _ := attr(apiSpan, "http.route"); got != "/hooks/{id}/calls/{callID}/replay" {
 		t.Errorf("http.route = %q", got)
 	}
 	if _, ok := e.findSpan(rec, "tsrelay.authorize", replay); ok {
@@ -502,17 +502,18 @@ func (e *env) findSpan(rec *tracetest.SpanRecorder, name string, parent sdktrace
 func TestAPISpansSkipStreams(t *testing.T) {
 	e, rec := tracedEnv(t, Config{})
 	ctx, cancel := context.WithCancel(context.Background())
-	req, _ := http.NewRequestWithContext(ctx, "GET", e.base+"/api/v1/events", nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", e.base+"/hooks", nil)
+	req.Header.Set("Accept", "text/event-stream")
 	resp, err := e.api.HTTP.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	cancel()
 	resp.Body.Close()
-	e.getJSON("/api/v1/me", nil) // a traced request, to know spans are flowing
-	e.spanNamed(rec, "GET /api/v1/me")
+	e.getJSON("/", nil) // a traced request, to know spans are flowing
+	e.spanNamed(rec, "GET /")
 	for _, s := range rec.Started() {
-		if strings.Contains(s.Name(), "/events") {
+		if s.Name() == "GET /hooks" {
 			t.Errorf("event stream got span %q", s.Name())
 		}
 	}
@@ -520,10 +521,10 @@ func TestAPISpansSkipStreams(t *testing.T) {
 	ops.Ready(e.srv)
 	m := httptest.NewRecorder()
 	ops.ServeHTTP(m, httptest.NewRequest("GET", "/metrics", nil))
-	if strings.Contains(m.Body.String(), `route="/api/v1/events"`) {
+	if strings.Contains(m.Body.String(), `method="GET",route="/hooks"`) {
 		t.Error("the event stream is in the API latency histogram")
 	}
-	if !strings.Contains(m.Body.String(), `tsrelay_api_request_duration_seconds_count{method="GET",route="/api/v1/me",status="200"} 1`) {
-		t.Errorf("no API latency for /me:\n%s", m.Body.String())
+	if !strings.Contains(m.Body.String(), `tsrelay_api_request_duration_seconds_count{method="GET",route="/",status="200"} 1`) {
+		t.Errorf("no API latency for /:\n%s", m.Body.String())
 	}
 }

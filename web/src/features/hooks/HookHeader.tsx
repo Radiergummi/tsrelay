@@ -53,7 +53,7 @@ export function HookHeader({
         )}
         <DeleteHookDialog
           hook={hook}
-          onDeleted={() => navigate(owner ? "/" : "/admin")}
+          onDeleted={() => navigate(owner ? "/hooks" : "/admin")}
           trigger={
             <Button size="sm" variant="ghost">
               Delete

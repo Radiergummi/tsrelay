@@ -15,6 +15,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/install"
+	"github.com/Radiergummi/tsrelay/internal/negotiate"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/telemetry"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
@@ -85,21 +86,24 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 		}
 		a.Tracer = s.tel.Tracer.Tracer(telemetry.ScopeName)
 	}
+	u := ui.New(a, web.Dist)
+	a.HTML = u.Index()
 	a.Register(mux)
-	ui.New(a, web.Dist).Register(mux)
+	u.Register(mux)
 	(&install.Handler{Version: version, BaseURL: cfg.BaseURL}).Register(mux)
 
 	// Callbacks bypass the mux, whose path cleaning would rewrite paths
 	// such as "/~m/cb//x" that must reach the local app unchanged. They
 	// also go without the version header: their responses stay exactly
 	// what the receiver's app returned.
+	resources := negotiate.Extensions(mux)
 	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/~") {
 			s.relay.ServeHTTP(w, r)
 			return
 		}
 		w.Header().Set(api.VersionHeader, version)
-		mux.ServeHTTP(w, r)
+		resources.ServeHTTP(w, r)
 	})
 	s.handler = api.Guard(cfg.AllowedHosts, root)
 	return s

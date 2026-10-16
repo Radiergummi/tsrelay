@@ -19,12 +19,12 @@ export function Header({ me }: { me: Me }) {
   return (
     <header className="border-b">
       <div className="mx-auto flex h-12 max-w-[1400px] items-center gap-6 px-4 sm:px-6">
-        <Link to={isReceiver(me) ? "/" : "/admin"} className="font-medium tracking-tight">
+        <Link to={isReceiver(me) ? "/hooks" : "/admin"} className="font-medium tracking-tight">
           tsrelay
         </Link>
         <nav className="flex gap-4">
           {isReceiver(me) && (
-            <NavLink to="/" end className={({ isActive }) => navClass(isActive)}>
+            <NavLink to="/hooks" end className={({ isActive }) => navClass(isActive)}>
               Hooks
             </NavLink>
           )}

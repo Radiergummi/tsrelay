@@ -1,4 +1,4 @@
-import type { RouteObject } from "react-router";
+import { Navigate, type RouteObject } from "react-router";
 import { Layout } from "@/components/Layout";
 
 // Pages are lazy, so the first load carries only the shell (the bundle
@@ -7,8 +7,10 @@ export const routes: RouteObject[] = [
   {
     element: <Layout />,
     children: [
+      // The relay redirects / to /hooks itself; this covers links inside the app.
+      { index: true, element: <Navigate to="/hooks" replace /> },
       {
-        index: true,
+        path: "hooks",
         lazy: async () => ({ Component: (await import("@/pages/HooksPage")).HooksPage }),
       },
       {
@@ -24,7 +26,7 @@ export const routes: RouteObject[] = [
         // a call changes the URL without remounting the hook page.
         path: "hooks/:id",
         lazy: async () => ({ Component: (await import("@/pages/HookPage")).HookPage }),
-        children: [{ path: "calls/:callId" }],
+        children: [{ path: "calls" }, { path: "calls/:callId" }],
       },
       {
         path: "cli",

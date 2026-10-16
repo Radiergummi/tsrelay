@@ -1,0 +1,546 @@
+openapi: 3.1.0
+info:
+  title: tsrelay
+  summary: Deliver HTTP callbacks from your tailnet to apps running locally.
+  description: |
+    Every resource has one URL. A `.json` or `.html` extension on the path
+    picks its representation; otherwise the `Accept` header does, and JSON
+    is the default. `application/vnd.tsrelay.v1+json` is a versioned alias
+    of JSON. Resources marked with an event stream also answer
+    `Accept: text/event-stream` with server-sent events (see the `Event`
+    schema). A representation a resource doesn't have gets `406`.
+
+    Callers are identified by their tailnet identity; there are no tokens.
+    Every response carries `Tsrelay-Version`. Errors are
+    `application/problem+json` and carry `Tsrelay-Error`.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  version: v1
+externalDocs:
+  url: https://github.com/Radiergummi/tsrelay/blob/main/docs/DESIGN.md
+paths:
+  /:
+    get:
+      operationId: getEntry
+      summary: Who you are, what the relay allows, and where its resources are
+      description: Browsers asking for HTML are redirected to `/hooks`.
+      responses:
+        "200":
+          description: The entry document
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "302":
+          description: Redirect to `/hooks`, for HTML
+        "403": { $ref: "#/components/responses/Problem" }
+        "406": { $ref: "#/components/responses/Problem" }
+  /hooks:
+    get:
+      operationId: listHooks
+      summary: Your hooks
+      description: As events, changes to your hooks and their calls.
+      parameters:
+        - name: all
+          in: query
+          description: Admins only; every user's hooks, as metadata.
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: The hooks, or a stream of their changes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Hook" }
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/Event" }
+            text/html: {}
+        "403": { $ref: "#/components/responses/Problem" }
+        "406": { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: createHook
+      summary: Create a hook
+      parameters:
+        - $ref: "#/components/parameters/dryRun"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateRequest" }
+      responses:
+        "201":
+          description: The new hook
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Hook" }
+        "200":
+          description: With `dryRun`, the hook as it would be created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Hook" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+  /hooks/{id}:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    get:
+      operationId: getHook
+      summary: One hook
+      description: As events, changes to this hook and its calls.
+      responses:
+        "200":
+          description: The hook, or a stream of its changes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Hook" }
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/Event" }
+            text/html: {}
+        "404": { $ref: "#/components/responses/Problem" }
+        "406": { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: updateHook
+      summary: Change a hook; only the given fields change
+      parameters:
+        - $ref: "#/components/parameters/dryRun"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateRequest" }
+      responses:
+        "200":
+          description: The changed hook
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Hook" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+    delete:
+      operationId: deleteHook
+      summary: Delete a hook
+      responses:
+        "204":
+          description: Deleted
+        "404": { $ref: "#/components/responses/Problem" }
+  /hooks/{id}/calls:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    get:
+      operationId: listCalls
+      summary: A hook's recent calls, newest first
+      description: As events, this hook's calls as they arrive and complete.
+      responses:
+        "200":
+          description: The calls, or a stream of them
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Summary" }
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/Event" }
+            text/html: {}
+        "404": { $ref: "#/components/responses/Problem" }
+        "406": { $ref: "#/components/responses/Problem" }
+  /hooks/{id}/calls/{callID}:
+    parameters:
+      - $ref: "#/components/parameters/id"
+      - $ref: "#/components/parameters/callID"
+    get:
+      operationId: getCall
+      summary: One call, with its captured headers and bodies
+      description: Admins who don't own the hook get its metadata only.
+      responses:
+        "200":
+          description: The call
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CallDetail" }
+            text/html: {}
+        "404": { $ref: "#/components/responses/Problem" }
+        "406": { $ref: "#/components/responses/Problem" }
+  /hooks/{id}/calls/{callID}/replay:
+    parameters:
+      - $ref: "#/components/parameters/id"
+      - $ref: "#/components/parameters/callID"
+    post:
+      operationId: replayCall
+      summary: Send a captured call through the relay to your app again
+      responses:
+        "201":
+          description: The finished replay
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CallDetail" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /hooks/{id}/test:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    post:
+      operationId: testCall
+      summary: Send a test request through the relay to your app
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TestRequest" }
+      responses:
+        "201":
+          description: The finished test call
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CallDetail" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+  /tunnel:
+    get:
+      operationId: attachTunnel
+      summary: Attach a tunnel serving one or more of your hooks
+      description: |
+        Only answers an HTTP upgrade (`Connection: Upgrade`,
+        `Upgrade: tsrelay-tunnel/1`); the CLI speaks the tunnel protocol.
+      parameters:
+        - name: hook
+          in: query
+          required: true
+          description: A hook to serve; repeat for several.
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: target
+          in: query
+          description: The local target, shown with the hook's tunnel.
+          schema: { type: string }
+        - name: session
+          in: query
+          schema: { type: string }
+        - name: resume
+          in: query
+          schema: { type: string, enum: ["1"] }
+      responses:
+        "101":
+          description: Switching to the tunnel protocol
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /openapi:
+    get:
+      operationId: getOpenAPI
+      summary: This document, as JSON (also at `/openapi.json`)
+      responses:
+        "200":
+          description: The OpenAPI document
+          content:
+            application/json: {}
+  /openapi.yaml:
+    get:
+      operationId: getOpenAPIYAML
+      summary: This document, as YAML
+      responses:
+        "200":
+          description: The OpenAPI document
+          content:
+            application/yaml: {}
+components:
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      description: The hook's ID.
+      schema: { type: string }
+    callID:
+      name: callID
+      in: path
+      required: true
+      schema: { type: string }
+    dryRun:
+      name: dryRun
+      in: query
+      description: Validate only; nothing is saved.
+      schema: { type: boolean }
+  responses:
+    Problem:
+      description: An RFC 9457 problem
+      headers:
+        Tsrelay-Error:
+          description: The problem's code
+          schema: { type: string }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+  schemas:
+    Duration:
+      type: string
+      description: A Go duration, such as `30s` or `2m0s`.
+      examples: ["30s"]
+    Role:
+      type: string
+      enum: [receiver, sender, admin]
+    RateLimit:
+      type: object
+      required: [perSecond, burst]
+      properties:
+        perSecond: { type: number }
+        burst: { type: integer }
+    Settings:
+      type: object
+      description: A hook's overrides of the relay defaults; a missing field uses the default.
+      properties:
+        attachPolicy: { type: string, enum: [takeover, reject] }
+        hostHeader: { type: string, enum: [preserve, rewrite] }
+        holdTimeout: { $ref: "#/components/schemas/Duration" }
+        responseTimeout: { $ref: "#/components/schemas/Duration" }
+        idleTimeout: { $ref: "#/components/schemas/Duration" }
+        maxBodyBytes: { type: integer, description: "0 is unlimited" }
+        rateLimit: { $ref: "#/components/schemas/RateLimit" }
+        capture: { type: boolean }
+    SettingsPatch:
+      type: object
+      description: Settings to change; `null` resets one to the relay default.
+      properties:
+        attachPolicy: { type: [string, "null"], enum: [takeover, reject, null] }
+        hostHeader: { type: [string, "null"], enum: [preserve, rewrite, null] }
+        holdTimeout: { type: [string, "null"] }
+        responseTimeout: { type: [string, "null"] }
+        idleTimeout: { type: [string, "null"] }
+        maxBodyBytes: { type: [integer, "null"] }
+        rateLimit:
+          oneOf:
+            - $ref: "#/components/schemas/RateLimit"
+            - type: "null"
+        capture: { type: [boolean, "null"] }
+    Effective:
+      type: object
+      description: A hook's settings with every default filled in.
+      required: [attachPolicy, hostHeader, holdTimeout, responseTimeout, idleTimeout, maxBodyBytes, rateLimit, capture]
+      properties:
+        attachPolicy: { type: string, enum: [takeover, reject] }
+        hostHeader: { type: string, enum: [preserve, rewrite] }
+        holdTimeout: { $ref: "#/components/schemas/Duration" }
+        responseTimeout: { $ref: "#/components/schemas/Duration" }
+        idleTimeout: { $ref: "#/components/schemas/Duration" }
+        maxBodyBytes: { type: integer }
+        rateLimit: { $ref: "#/components/schemas/RateLimit" }
+        capture: { type: boolean }
+    Me:
+      type: object
+      required: [node, roles, limits, hooks, capName, version, policy, links]
+      properties:
+        login: { type: string, description: "Empty for tagged nodes" }
+        node: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        slug: { type: string, description: "The caller's URL prefix, `~slug`" }
+        roles:
+          type: object
+          description: Each role the caller has, with its channel patterns.
+          propertyNames: { $ref: "#/components/schemas/Role" }
+          additionalProperties:
+            type: array
+            items: { type: string }
+        limits:
+          type: object
+          required: [maxHooks, maxTunnels]
+          properties:
+            maxHooks: { type: integer }
+            maxTunnels: { type: integer }
+            maxHookTTL: { $ref: "#/components/schemas/Duration" }
+        hooks: { type: integer, description: "Hooks the caller owns" }
+        capName: { type: string }
+        version: { type: string }
+        policy:
+          type: object
+          required: [defaults, max, callsPerHook]
+          properties:
+            defaults: { $ref: "#/components/schemas/Effective" }
+            max:
+              type: object
+              properties:
+                holdTimeout: { $ref: "#/components/schemas/Duration" }
+                responseTimeout: { $ref: "#/components/schemas/Duration" }
+                idleTimeout: { $ref: "#/components/schemas/Duration" }
+                maxBodyBytes: { type: integer }
+                rateLimit: { $ref: "#/components/schemas/RateLimit" }
+            callsPerHook: { type: integer }
+        links:
+          type: object
+          required: [hooks, tunnel, openapi]
+          additionalProperties: { type: string }
+    Hook:
+      type: object
+      required: [id, url, owner, path, channel, ephemeral, settings, effective, createdAt]
+      properties:
+        id: { type: string }
+        url: { type: string, format: uri }
+        owner: { type: string }
+        path: { type: string }
+        channel: { type: string }
+        description: { type: string }
+        ephemeral: { type: boolean }
+        expiresAt: { type: string, format: date-time }
+        settings: { $ref: "#/components/schemas/Settings" }
+        effective: { $ref: "#/components/schemas/Effective" }
+        createdAt: { type: string, format: date-time }
+        tunnel:
+          type: object
+          required: [id, node]
+          properties:
+            id: { type: string }
+            node: { type: string }
+            target: { type: string }
+        lastCall: { $ref: "#/components/schemas/Summary" }
+    CreateRequest:
+      type: object
+      properties:
+        path: { type: string, description: "Empty: three random words" }
+        channel: { type: string, description: "Empty: `default`" }
+        description: { type: string }
+        ephemeral: { type: boolean }
+        expiresAt: { type: [string, "null"], format: date-time }
+        settings: { $ref: "#/components/schemas/Settings" }
+    UpdateRequest:
+      type: object
+      properties:
+        path: { type: string }
+        channel: { type: string }
+        description: { type: string }
+        ephemeral: { type: boolean }
+        expiresAt: { type: [string, "null"], format: date-time }
+        settings: { $ref: "#/components/schemas/SettingsPatch" }
+    Sender:
+      type: object
+      properties:
+        node: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        login: { type: string }
+        ip: { type: string }
+    Summary:
+      type: object
+      description: A call without headers and bodies.
+      required: [id, hookId, receivedAt, kind, sender, method, path, outcome, duration]
+      properties:
+        id: { type: string }
+        hookId: { type: string }
+        receivedAt: { type: string, format: date-time }
+        kind: { type: string, enum: [sender, replay, test] }
+        replayOf: { type: string }
+        sender: { $ref: "#/components/schemas/Sender" }
+        method: { type: string }
+        path: { type: string }
+        outcome:
+          type: string
+          description: "`pending`, `ok`, or a `Tsrelay-Error` code"
+        status: { type: integer }
+        duration: { $ref: "#/components/schemas/Duration" }
+    Capture:
+      type: object
+      required: [size, captured]
+      properties:
+        body: { type: string, contentEncoding: base64 }
+        size: { type: integer }
+        truncated: { type: boolean }
+        captured: { type: boolean }
+    Headers:
+      type: object
+      additionalProperties:
+        type: array
+        items: { type: string }
+    Attempt:
+      type: object
+      required: [id, startedAt, waitedFor, ttfb, duration, responseBody, bytesIn, bytesOut]
+      properties:
+        id: { type: string }
+        startedAt: { type: string, format: date-time }
+        tunnelId: { type: string }
+        node: { type: string }
+        waitedFor: { $ref: "#/components/schemas/Duration" }
+        ttfb: { $ref: "#/components/schemas/Duration" }
+        duration: { $ref: "#/components/schemas/Duration" }
+        status: { type: integer }
+        responseHeaders: { $ref: "#/components/schemas/Headers" }
+        redacted:
+          type: array
+          items: { type: string }
+        responseBody: { $ref: "#/components/schemas/Capture" }
+        bytesIn: { type: integer }
+        bytesOut: { type: integer }
+        error: { type: string }
+    CallDetail:
+      allOf:
+        - $ref: "#/components/schemas/Summary"
+        - type: object
+          required: [requestBody, attempts]
+          properties:
+            query: { type: string }
+            queryTruncated: { type: boolean }
+            requestHeaders: { $ref: "#/components/schemas/Headers" }
+            redacted:
+              type: array
+              items: { type: string }
+            requestBody: { $ref: "#/components/schemas/Capture" }
+            attempts:
+              type: array
+              items: { $ref: "#/components/schemas/Attempt" }
+            replay:
+              type: object
+              description: The hook's owner only; whether the call can be replayed.
+              required: [allowed, reason]
+              properties:
+                allowed: { type: boolean }
+                reason: { type: string }
+    TestRequest:
+      type: object
+      properties:
+        method: { type: string, description: "Default POST" }
+        path: { type: string, description: "Below the hook's URL, query allowed; default `/`" }
+        headers: { $ref: "#/components/schemas/Headers" }
+        body: { type: string }
+    Event:
+      description: |
+        A server-sent event. `event: call` carries a call `Summary` when a
+        call arrives and again when it completes; `event: hook` carries the
+        ID of a hook that was created, changed, deleted or expired, or whose
+        tunnel attached or detached. A stream that falls 64 events behind is
+        closed; reconnect and refetch.
+      oneOf:
+        - $ref: "#/components/schemas/Summary"
+        - type: object
+          required: [id]
+          properties:
+            id: { type: string }
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        errors:
+          type: array
+          description: For `422`, one entry per invalid field.
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }

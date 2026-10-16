@@ -7,7 +7,7 @@ import { Toaster } from "@/components/ui/toast";
 /**
  * renderWithProviders renders ui at route (matched against path) with a
  * fresh query client that never retries. context stands in for the outlet
- * context the layout normally provides (e.g. /me), when ui reads it.
+ * context the layout normally provides (e.g. the entry document), when ui reads it.
  */
 export function renderWithProviders(
   ui: ReactElement,
