@@ -58,6 +58,9 @@ func newServeCmd(c *cli) *cobra.Command {
 	revalidate := fs.Duration("revalidate-interval", time.Minute, "how often attached tunnels are re-authorized")
 	opsListen := fs.String("ops-listen", "", "host address for /healthz, /readyz and /metrics, e.g. :9090; never on the tailnet (empty: off)")
 	opsPprof := fs.Bool("ops-pprof", false, "serve /debug/pprof/ on the ops listener")
+	funnel := fs.Bool("funnel", false, "serve hooks their owners made public on the internet, through Tailscale Funnel")
+	funnelPort := fs.Int("funnel-port", 443, "the Funnel port for public hooks: 443, 8443 or 10000")
+	funnelMaxBody := fs.Int64("funnel-max-body-bytes", 25<<20, "largest request body of a call from the internet, in bytes")
 	otlp := fs.Bool("otel", false, "export traces and metrics over OTLP/HTTP, configured by the standard OTEL_* environment variables")
 	propagate := fs.Bool("trace-propagation", true, "with --otel: join senders' traces, and pass the relay's trace context on to apps")
 	holdQueue := fs.Int("hold-queue", relay.DefaultHoldQueue, "calls per hook that may wait for a tunnel at once")
@@ -95,6 +98,15 @@ func newServeCmd(c *cli) *cobra.Command {
 			return usage("--capture-limit and --capture-calls must be at least 1", "The inspector keeps at least one call, and at least one byte of it.",
 				"tsrelay serve --capture-calls 50 --capture-limit 65536", "To keep no bodies: tsrelay serve --capture-bodies=false")
 		}
+		if *funnel && !*useTLS {
+			return usage("--funnel needs --tls", "Funnel only serves HTTPS.", "tsrelay serve --tls --funnel")
+		}
+		if *funnelPort != 443 && *funnelPort != 8443 && *funnelPort != 10000 {
+			return usage("--funnel-port must be 443, 8443 or 10000", "Those are the only ports Funnel serves.", "tsrelay serve --tls --funnel --funnel-port 443")
+		}
+		if *funnelMaxBody < 1 {
+			return usage("--funnel-max-body-bytes must be at least 1", "A call from the internet needs room for its body.", "tsrelay serve --tls --funnel --funnel-max-body-bytes 1048576")
+		}
 		for login, slug := range overrides {
 			if !hooks.ValidSlug(slug) {
 				e := usage(fmt.Sprintf("Invalid slug %q for %s", slug, login), "A slug may only contain a-z, 0-9, '.', '_' and '-'.")
@@ -128,6 +140,7 @@ func newServeCmd(c *cli) *cobra.Command {
 			revalidate: *revalidate,
 			opsListen:  *opsListen,
 			otel:       *otlp, pprof: *opsPprof,
+			funnel: *funnel, funnelPort: *funnelPort, funnelMaxBody: *funnelMaxBody,
 		})
 		if err != nil {
 			logger.Error("relay stopped", "error", err)
@@ -150,6 +163,9 @@ type relayConfig struct {
 	revalidate         time.Duration
 	opsListen          string // host address of the ops listener; empty: off
 	otel, pprof        bool   // --otel, --ops-pprof
+	funnel             bool
+	funnelPort         int
+	funnelMaxBody      int64
 }
 
 func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
@@ -214,6 +230,16 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 	defer ln.Close()
 
 	dnsName := strings.TrimSuffix(st.Self.DNSName, ".")
+	var publicLn net.Listener
+	if cfg.funnel {
+		publicLn, err = listenFunnel(ts, cfg.funnelPort)
+		if err != nil {
+			return err
+		}
+		defer publicLn.Close()
+		cfg.server.PublicBaseURL = publicBaseURL(dnsName, cfg.funnelPort)
+		cfg.server.PublicMaxBody = cfg.funnelMaxBody
+	}
 	al := audit.New(logger)
 	cfg.server.BaseURL = scheme + "://" + cmp.Or(dnsName, cfg.hostname)
 	cfg.server.Version = version
@@ -236,10 +262,23 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 		ReadHeaderTimeout: 10 * time.Second,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
+	var ps *http.Server
+	if publicLn != nil {
+		ps = &http.Server{
+			Handler:           withFunnelSource(srv.PublicHandler(), logger),
+			ConnContext:       funnelConnContext,
+			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       60 * time.Second,
+			ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
+		}
+	}
 	ops.Ready(srv)
-	logger.Info("relay ready", "url", cfg.server.BaseURL, "cap", string(cfg.cap), "stateDir", cfg.stateDir)
-	errc := make(chan error, 1)
+	logger.Info("relay ready", "url", cfg.server.BaseURL, "cap", string(cfg.cap), "stateDir", cfg.stateDir, "publicUrl", cfg.server.PublicBaseURL)
+	errc := make(chan error, 2)
 	go func() { errc <- hs.Serve(ln) }()
+	if ps != nil {
+		go func() { errc <- ps.Serve(publicLn) }()
+	}
 	select {
 	case err := <-errc:
 		return err
@@ -249,8 +288,19 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	srv.Close() // hijacked tunnels are not covered by Shutdown
-	if err := hs.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
-		return err
+	// Both servers drain at once, so one cannot use up the other's time.
+	publicErr := make(chan error, 1)
+	go func() {
+		if ps != nil {
+			publicErr <- ps.Shutdown(shutdownCtx)
+			return
+		}
+		publicErr <- nil
+	}()
+	for _, err := range []error{hs.Shutdown(shutdownCtx), <-publicErr} {
+		if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
 	}
 	return nil
 }

@@ -39,7 +39,7 @@ func TestResourcesAreNegotiated(t *testing.T) {
 	var h Hook
 	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
 	const browser = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-	for _, path := range []string{"/hooks", "/hooks/" + h.ID, "/hooks/" + h.ID + "/calls"} {
+	for _, path := range []string{"/hooks", "/hooks/" + h.ID, "/hooks/" + h.ID + "/calls", "/channels", "/channels/default"} {
 		for _, tc := range []struct {
 			name, path, accept, wantType string
 		}{
@@ -67,6 +67,9 @@ func TestResourcesAreNegotiated(t *testing.T) {
 	if resp, _ := e.get("/hooks/"+h.ID+"/calls/c_1", "text/event-stream"); resp.StatusCode != http.StatusNotAcceptable {
 		t.Errorf("a call's stream = %d, want 406", resp.StatusCode)
 	}
+	if resp, _ := e.get("/channels", "text/event-stream"); resp.StatusCode != http.StatusNotAcceptable {
+		t.Errorf("the channels' stream = %d, want 406", resp.StatusCode)
+	}
 }
 
 func TestEntryDocument(t *testing.T) {
@@ -76,7 +79,7 @@ func TestEntryDocument(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &me); err != nil || resp.StatusCode != 200 {
 		t.Fatalf("GET / = %d %s", resp.StatusCode, body)
 	}
-	if me.Login != "moritz@example.com" || me.Links["hooks"] != "/hooks" || me.Links["tunnel"] != "/tunnel" || me.Links["openapi"] != "/openapi.json" {
+	if me.Login != "moritz@example.com" || me.Links["hooks"] != "/hooks" || me.Links["channels"] != "/channels" || me.Links["tunnel"] != "/tunnel" || me.Links["openapi"] != "/openapi.json" {
 		t.Errorf("entry document = %+v", me)
 	}
 	if resp, _ := e.get("/", "text/html"); resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/hooks" {

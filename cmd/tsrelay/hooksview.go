@@ -23,10 +23,14 @@ func (c *cli) stderrStream() stream { return newStream(c.stderr, c.noColor, c.no
 func (c *cli) stdoutStream() stream { return newStream(c.stdout, c.noColor, c.noLinks) }
 
 func hookKind(h api.Hook) string {
+	kind := "persistent"
 	if h.Ephemeral {
-		return "ephemeral"
+		kind = "ephemeral"
 	}
-	return "persistent"
+	if h.Public {
+		kind += ", public"
+	}
+	return kind
 }
 
 func hookExpiry(h api.Hook) string {
@@ -109,6 +113,7 @@ func writeHookShow(s stream, h api.Hook) {
 	fields := [][2]string{
 		{"id", h.ID},
 		{"url", s.link(h.URL, h.URL)},
+		{"public url", orDash(h.PublicURL)},
 		{"path", h.Path},
 		{"channel", h.Channel},
 		{"kind", hookKind(h)},

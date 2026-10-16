@@ -204,3 +204,28 @@ func TestRevalidateRevokesChangedOwner(t *testing.T) {
 		})
 	}
 }
+
+func TestRevalidateRefreshesPublic(t *testing.T) {
+	e := newEnv(t, Config{})
+	ctx := context.Background()
+	h, _ := e.api.CreateHook(ctx, hooks.CreateRequest{Path: "cb"})
+	e.startClient(h.ID) // dials as receiver, whose grant has no public
+	tun, _ := e.srv.tunnels.Lookup(h.ID)
+	if tun.Public() {
+		t.Fatal("a tunnel of an owner without the public grant must not start public")
+	}
+	// fake.Update re-identifies the connections already dialled, the tunnel's included.
+	e.fake.Update(identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"public":true}`))
+	e.srv.revalidate(ctx)
+	if !tun.Public() {
+		t.Fatal("revalidation did not pick up the public grant")
+	}
+	e.fake.Update(receiver)
+	e.srv.revalidate(ctx)
+	if tun.Public() {
+		t.Fatal("revalidation did not clear the public flag")
+	}
+	if _, ok := e.srv.tunnels.Lookup(h.ID); !ok {
+		t.Fatal("losing public must not detach the hook from the tailnet")
+	}
+}

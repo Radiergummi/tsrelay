@@ -226,3 +226,14 @@ func TestConcurrencyAboveDefault(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicFlag(t *testing.T) {
+	tun, _ := tunneltest.Pair(t, http.NotFoundHandler(), tunnel.Options{}, nil)
+	if tun.Public() {
+		t.Fatal("a tunnel whose owner has no public grant starts public")
+	}
+	tun.SetPublic(true)
+	if !tun.Public() {
+		t.Fatal("SetPublic(true) did not stick")
+	}
+}

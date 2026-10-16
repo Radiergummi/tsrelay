@@ -9,6 +9,7 @@ import callJson from "./fixtures/call-json.json";
 import callPending from "./fixtures/call-pending.json";
 import callRefused from "./fixtures/call-refused.json";
 import callReplay from "./fixtures/call-replay.json";
+import callUncaptured from "./fixtures/call-uncaptured.json";
 import busyCalls from "./fixtures/calls-busy.json";
 import calls from "./fixtures/calls.json";
 import busy from "./fixtures/hook-busy.json";
@@ -44,6 +45,7 @@ export const fixtures = {
   callBin: s.call.parse(callBin),
   callRefused: s.call.parse(callRefused),
   callPending: s.call.parse(callPending),
+  callUncaptured: s.call.parse(callUncaptured),
   callAdmin: s.call.parse(callAdmin),
   hostileHtml: s.call.parse(hostileHtml),
   hostileJson: s.call.parse(hostileJson),

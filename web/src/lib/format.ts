@@ -1,5 +1,5 @@
 import type { Sender } from "@/api/schemas";
-import { reasonPhrase } from "./httpStatus";
+import { reasonPhrase, relayPhrase } from "./httpStatus";
 
 export function formatSize(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -12,10 +12,11 @@ export function absoluteTime(iso: string): string {
   return new Date(iso).toISOString().slice(0, 19).replace("T", " ") + "Z";
 }
 
+/** relativeTime counts seconds up to 30 s, then "less than a minute", then whole minutes, hours, days. */
 export function relativeTime(iso: string, now = Date.now()): string {
-  const s = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
-  if (s < 10) return "just now";
-  if (s < 60) return `${s} s ago`;
+  const s = Math.max(0, Math.floor((now - Date.parse(iso)) / 1000));
+  if (s <= 30) return `${s} s ago`;
+  if (s < 60) return "less than a minute ago";
   if (s < 3600) return `${Math.floor(s / 60)} min ago`;
   if (s < 86_400) return `${Math.floor(s / 3600)} h ago`;
   return `${Math.floor(s / 86_400)} d ago`;
@@ -23,6 +24,7 @@ export function relativeTime(iso: string, now = Date.now()): string {
 
 /** senderLabel names a call's sender: its tags, else its user, else its node or IP. */
 export function senderLabel(s: Sender): string {
+  if (s.public) return `Internet · ${s.ip || "unknown"}`;
   if (s.tags?.length) return s.tags.join(", ");
   return s.login || s.node || s.ip || "unknown";
 }
@@ -46,10 +48,14 @@ export function statusClass(
   return failed(c) ? "failed" : "other";
 }
 
-/** outcomeLabel: "200 OK" for a delivered call, "404 hook_not_found" for a relay error, "pending". */
+/**
+ * outcomeLabel: "200 OK" for a delivered call, "563 Tunnel lost" for a status
+ * of the relay's 56x range, "404 hook_not_found" for another relay error, "pending".
+ */
 export function outcomeLabel(c: Outcome): string {
   if (c.outcome === "pending") return "pending";
   const st = c.status ? String(c.status) : "";
-  const rest = c.outcome === "ok" ? reasonPhrase(c.status ?? 0) : c.outcome;
+  const rest =
+    relayPhrase(c.status ?? 0) || (c.outcome === "ok" ? reasonPhrase(c.status ?? 0) : c.outcome);
   return [st, rest].filter(Boolean).join(" ");
 }

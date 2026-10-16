@@ -23,7 +23,8 @@ const completionTimeout = 2 * time.Second
 const noCompletions = cobra.ShellCompDirectiveNoFileComp
 
 // completing prepares a completion: cobra runs no PersistentPreRunE for
-// __complete, so it applies the TSRELAY_* defaults itself, and it keeps
+// the command completed (and the root's skips __complete itself), so it
+// applies the TSRELAY_* defaults itself, ignoring bad ones, and it keeps
 // the version warning off the terminal. It returns a context that ends
 // after completionTimeout.
 func (c *cli) completing(cmd *cobra.Command) (context.Context, context.CancelFunc) {

@@ -1,9 +1,10 @@
-import { Link } from "react-router";
-import { useHooks } from "@/api/queries";
+import { Link, useSearchParams } from "react-router";
+import { useChannels, useHooks } from "@/api/queries";
 import type { Hook } from "@/api/schemas";
 import { EmptyState, PageError, TableSkeleton } from "@/components/PageState";
 import { buttonVariants } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
   Table,
   TableBody,
@@ -12,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ChannelChip } from "@/features/channels/ChannelChip";
 import { InstallCommand } from "@/features/cli/InstallCommand";
 import { LastCall } from "@/features/hooks/LastCall";
 import { TunnelText } from "@/features/hooks/TunnelText";
@@ -22,12 +24,18 @@ import { useViewer } from "@/lib/useViewer";
 
 export function HooksPage() {
   const me = useViewer();
-  const hooks = useHooks(false);
+  const [search, setSearch] = useSearchParams();
+  const channel = search.get("channel") ?? "";
+  const hooks = useHooks(false, channel);
   return (
     <section>
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="text-lg font-medium">Hooks</h1>
         <div className="flex items-center gap-4 text-muted-foreground">
+          <ChannelFilter
+            value={channel}
+            onChange={(c) => setSearch(c ? { channel: c } : {}, { replace: true })}
+          />
           <span>
             {me.hooks} of {me.limits.maxHooks}
           </span>
@@ -40,6 +48,8 @@ export function HooksPage() {
         <TableSkeleton />
       ) : hooks.isError ? (
         <PageError error={hooks.error} />
+      ) : hooks.data.length === 0 && channel ? (
+        <EmptyState title={`You have no hooks in ${channel}`} />
       ) : hooks.data.length === 0 ? (
         <EmptyState title="You have no hooks yet">
           <div className="mx-auto max-w-xl space-y-3">
@@ -62,6 +72,28 @@ export function HooksPage() {
         <HooksTable hooks={hooks.data} />
       )}
     </section>
+  );
+}
+
+/** ChannelFilter picks one of the channels the viewer's hooks are in, or all of them. */
+function ChannelFilter({ value, onChange }: { value: string; onChange: (c: string) => void }) {
+  const channels = useChannels(false);
+  const names = channels.data?.channels.map((c) => c.name) ?? [];
+  if (value && !names.includes(value)) names.unshift(value);
+  return (
+    <NativeSelect
+      aria-label="Channel"
+      className="w-auto"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">All channels</option>
+      {names.map((n) => (
+        <option key={n} value={n}>
+          {n}
+        </option>
+      ))}
+    </NativeSelect>
   );
 }
 
@@ -96,8 +128,13 @@ function HooksTable({ hooks }: { hooks: Hook[] }) {
                   </div>
                 )}
               </TableCell>
-              <TableCell>{h.channel}</TableCell>
-              <TableCell>{h.ephemeral ? "Ephemeral" : "Persistent"}</TableCell>
+              <TableCell>
+                <ChannelChip name={h.channel} />
+              </TableCell>
+              <TableCell>
+                {h.ephemeral ? "Ephemeral" : "Persistent"}
+                {h.public && " · Public"}
+              </TableCell>
               <TableCell>
                 <TunnelText tunnel={h.tunnel} />
               </TableCell>

@@ -45,10 +45,11 @@ export function applyCallEvent(qc: QueryClient, s: Summary): void {
   void qc.invalidateQueries({ queryKey: keys.call(s.hookId, s.id) });
 }
 
-/** applyHookEvent refetches a hook that changed (or was deleted), the lists and the entry document's hook count. */
+/** applyHookEvent refetches a hook that changed (or was deleted), the lists, the channels and the entry document's hook count. */
 export function applyHookEvent(qc: QueryClient, id: string): void {
   void qc.invalidateQueries({ queryKey: keys.hook(id) });
   void qc.invalidateQueries({ queryKey: keys.allHooks });
+  void qc.invalidateQueries({ queryKey: keys.allChannels });
   void qc.invalidateQueries({ queryKey: keys.me });
 }
 

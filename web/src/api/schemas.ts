@@ -19,13 +19,14 @@ export const sender = z.object({
   tags: z.optional(z.array(z.string())),
   login: z.optional(z.string()),
   ip: z.optional(z.string()),
+  public: z.optional(z.boolean()),
 });
 
 export const summary = z.object({
   id: z.string(),
   hookId: z.string(),
   receivedAt: z.string(),
-  kind: z.string(), // "sender" | "replay" | "test"
+  kind: z.string(), // "sender" | "replay" | "test" | "public"
   replayOf: z.optional(z.string()),
   sender,
   method: z.string(),
@@ -103,6 +104,8 @@ export const hook = z.object({
   channel: z.string(),
   description: z.optional(z.string()),
   ephemeral: z.boolean(),
+  public: z.optional(z.boolean()),
+  publicUrl: z.optional(z.string()),
   expiresAt: z.optional(z.string()),
   settings,
   effective,
@@ -113,6 +116,26 @@ export const hook = z.object({
   lastCall: z.optional(summary),
 });
 export const hooks = z.array(hook);
+
+export const channel = z.object({
+  name: z.string(),
+  hookCount: z.number(),
+  hooks: z.optional(hooks), // the viewer's; left out for an admin's ?all=true
+  receive: z.array(z.string()),
+});
+
+export const channels = z.object({
+  receive: z.array(z.string()),
+  send: z.array(z.string()),
+  channels: z.array(channel),
+});
+
+export const channelDetail = z.object({
+  name: z.string(),
+  canReceive: z.boolean(),
+  canSend: z.boolean(),
+  hooks,
+});
 
 export const me = z.object({
   login: z.optional(z.string()),
@@ -129,6 +152,8 @@ export const me = z.object({
   capName: z.string(),
   version: z.string(),
   policy: z.object({ defaults: effective, max: maxima, callsPerHook: z.number() }),
+  public: z.optional(z.boolean()),
+  funnel: z.optional(z.boolean()),
 });
 
 export const fieldError = z.object({ field: z.string(), message: z.string() });
@@ -153,6 +178,9 @@ export type Effective = z.infer<typeof effective>;
 export type Settings = z.infer<typeof settings>;
 export type Maxima = z.infer<typeof maxima>;
 export type Hook = z.infer<typeof hook>;
+export type Channel = z.infer<typeof channel>;
+export type Channels = z.infer<typeof channels>;
+export type ChannelDetail = z.infer<typeof channelDetail>;
 export type Me = z.infer<typeof me>;
 export type FieldError = z.infer<typeof fieldError>;
 

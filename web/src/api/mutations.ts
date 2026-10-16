@@ -10,6 +10,7 @@ export function useCreateHook() {
     onSuccess: (h) => {
       qc.setQueryData(keys.hook(h.id), h);
       void qc.invalidateQueries({ queryKey: keys.allHooks });
+      void qc.invalidateQueries({ queryKey: keys.allChannels });
       void qc.invalidateQueries({ queryKey: keys.me });
     },
   });
@@ -19,6 +20,19 @@ export function useUpdateHook(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: s.HookRequest) => request(s.hook, "PATCH", paths.hook(id), body),
+    onSuccess: (h) => {
+      qc.setQueryData(keys.hook(h.id), h);
+      void qc.invalidateQueries({ queryKey: keys.allHooks });
+      void qc.invalidateQueries({ queryKey: keys.allChannels });
+    },
+  });
+}
+
+/** useRotatePublicUrl gives a public hook a new public URL; the old one stops working. */
+export function useRotatePublicUrl(hookId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => request(s.hook, "POST", paths.rotatePublicUrl(hookId)),
     onSuccess: (h) => {
       qc.setQueryData(keys.hook(h.id), h);
       void qc.invalidateQueries({ queryKey: keys.allHooks });
@@ -34,6 +48,7 @@ export function useDeleteHook() {
       qc.removeQueries({ queryKey: keys.hook(id) });
       qc.removeQueries({ queryKey: keys.calls(id) });
       void qc.invalidateQueries({ queryKey: keys.allHooks });
+      void qc.invalidateQueries({ queryKey: keys.allChannels });
       void qc.invalidateQueries({ queryKey: keys.me });
     },
   });

@@ -65,6 +65,24 @@ func splitRoute(path string) (slug, rest string, ok bool) {
 	return slug, rest, slug != "" && rest != ""
 }
 
+// splitPublicRoute splits a public call's decoded path "/+{token}/…" and
+// returns the token.
+func splitPublicRoute(path string) (token string, ok bool) {
+	after, found := strings.CutPrefix(path, "/+")
+	if !found {
+		return "", false
+	}
+	token, _, _ = strings.Cut(after, "/")
+	return token, token != ""
+}
+
+// publicLogPath is a public call's path as logs and spans show it: the
+// token works like a password, so a placeholder stands in for it.
+func publicLogPath(u *url.URL) string {
+	rest, _ := remainder(u, 1)
+	return "/+{token}" + rest
+}
+
 // remainder returns u's path after its first n segments, decoded and
 // escaped, always starting with "/". The escaped form is what gets
 // forwarded, so encodings such as %2F survive the relay.
@@ -128,20 +146,30 @@ func (r *recorder) Write(b []byte) (int, error) {
 func (r *recorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 // countingReader counts a request body as it is read and passes it to
-// capture, which may be nil. eof reports whether it was read to the end.
+// capture, which may be nil. A RoundTripper may go on reading the body
+// after it returns, so the counts are read through counts.
 type countingReader struct {
 	io.ReadCloser
-	n       int64
-	eof     bool
 	capture *inspect.Buffer
+
+	mu  sync.Mutex
+	n   int64
+	eof bool // read to the end
 }
 
 func (c *countingReader) Read(p []byte) (int, error) {
 	n, err := c.ReadCloser.Read(p)
-	c.n += int64(n)
 	c.capture.Write(p[:n])
-	if err == io.EOF {
-		c.eof = true
-	}
+	c.mu.Lock()
+	c.n += int64(n)
+	c.eof = c.eof || err == io.EOF
+	c.mu.Unlock()
 	return n, err
+}
+
+// counts returns how many bytes were read so far, and whether to the end.
+func (c *countingReader) counts() (n int64, eof bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.n, c.eof
 }
