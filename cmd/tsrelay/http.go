@@ -117,7 +117,9 @@ func newHTTPCmd(c *cli) *cobra.Command {
 				mu.Lock()
 				old := hook
 				mu.Unlock()
-				h, _, err := ensureHook(ctx, relayAPI, old.Path, "", req)
+				recreate := req
+				recreate.Public = old.Public // as it was last, not as the flags first asked
+				h, _, err := ensureHook(ctx, relayAPI, old.Path, "", recreate)
 				if err != nil {
 					return nil, err
 				}

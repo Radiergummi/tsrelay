@@ -273,13 +273,19 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	srv.Close() // hijacked tunnels are not covered by Shutdown
-	if ps != nil {
-		if err := ps.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+	// Both servers drain at once, so one cannot use up the other's time.
+	publicErr := make(chan error, 1)
+	go func() {
+		if ps != nil {
+			publicErr <- ps.Shutdown(shutdownCtx)
+			return
+		}
+		publicErr <- nil
+	}()
+	for _, err := range []error{hs.Shutdown(shutdownCtx), <-publicErr} {
+		if err != nil && !errors.Is(err, context.DeadlineExceeded) {
 			return err
 		}
-	}
-	if err := hs.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
-		return err
 	}
 	return nil
 }

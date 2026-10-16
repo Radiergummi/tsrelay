@@ -152,7 +152,7 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 			errs = append(errs, FieldError{"public", "cannot be null"})
 		case *req.Public.Value && !cur.Public:
 			errs = append(errs, validatePublic(owner.Grants)...)
-			h.Public, h.PublicToken = true, m.freeTokenLocked()
+			h.Public, h.PublicToken = true, newPublicToken()
 		case !*req.Public.Value:
 			h.Public, h.PublicToken = false, ""
 		}

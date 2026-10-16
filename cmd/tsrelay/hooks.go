@@ -259,7 +259,7 @@ func newHooksRotateURLCmd(c *cli) *cobra.Command {
 			}
 			if h.PublicURL == "" {
 				errStream := c.stderrStream()
-				fmt.Fprintln(errStream.w, errStream.style(styleWarn, "the hook is public, but this relay does not serve hooks on the internet (it runs without --funnel)"))
+				fmt.Fprintln(errStream.w, errStream.style(styleWarn, noFunnel))
 				return nil
 			}
 			fmt.Fprintln(out.w, out.style(styleBold, h.PublicURL))
@@ -315,7 +315,7 @@ func (c *cli) printHook(h api.Hook) error {
 	fmt.Fprintln(out.w, out.style(styleBold, h.URL))
 	if h.PublicURL != "" {
 		errStream := c.stderrStream()
-		fmt.Fprintln(errStream.w, errStream.style(styleWarn, "public (internet): ")+errStream.style(styleBold, h.PublicURL))
+		fmt.Fprintln(errStream.w, publicURLText(errStream, h.PublicURL))
 	}
 	return nil
 }

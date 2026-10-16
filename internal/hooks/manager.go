@@ -213,7 +213,7 @@ func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRe
 		Ephemeral: req.Ephemeral, Public: req.Public, Settings: req.Settings, ExpiresAt: req.ExpiresAt, CreatedAt: m.now().UTC(),
 	}
 	if h.Public {
-		h.PublicToken = m.freeTokenLocked()
+		h.PublicToken = newPublicToken()
 	}
 	if dry {
 		h.ID = ""
