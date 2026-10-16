@@ -1,4 +1,5 @@
 import { lazy, memo, Suspense, useMemo, useState } from "react";
+import { Link } from "react-router";
 import type { Capture } from "@/api/schemas";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -23,11 +24,13 @@ export const BodyViewer = memo(function BodyViewer({
   contentType,
   metadataOnly,
   label,
+  hookId,
 }: {
   capture: Capture;
   contentType: string | undefined;
   metadataOnly: boolean;
   label: string;
+  hookId: string;
 }) {
   if (capture.size === 0 && capture.truncated)
     return <Note>The body was not read: the call was refused before delivery.</Note>;
@@ -39,8 +42,14 @@ export const BodyViewer = memo(function BodyViewer({
   if (!capture.captured)
     return (
       <Note>
-        {formatSize(capture.size)} body, not captured: body capture is off for this hook or the
-        relay.
+        {formatSize(capture.size)} body. Bodies aren't captured for this hook.{" "}
+        <Link
+          to={`/hooks/${encodeURIComponent(hookId)}/edit`}
+          className="text-primary hover:underline"
+        >
+          Edit the hook
+        </Link>{" "}
+        to capture them.
       </Note>
     );
   return (

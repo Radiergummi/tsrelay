@@ -104,7 +104,7 @@ func TestHoldTimeout(t *testing.T) {
 	e := newEnv(t)
 	e.patch(hooks.SettingsPatch{HoldTimeout: hooks.Opt[hooks.Duration]{Set: true, Value: new(hooks.Duration(200 * time.Millisecond))}})
 	resp := e.do(sender, "POST", "/~moritz/cb", nil, nil)
-	wantProblem(t, resp, 503, problem.TunnelUnavailable)
+	wantProblem(t, resp, 561, problem.TunnelUnavailable)
 	if ra := resp.Header.Get("Retry-After"); ra != "5" {
 		t.Fatalf("Retry-After = %q, want at least 5", ra)
 	}
@@ -124,7 +124,7 @@ func TestHoldQueueFull(t *testing.T) {
 	e.waitHeld(2)
 	start := time.Now()
 	resp := e.do(sender, "POST", "/~moritz/cb", nil, nil)
-	wantProblem(t, resp, 503, problem.TunnelUnavailable)
+	wantProblem(t, resp, 561, problem.TunnelUnavailable)
 	if time.Since(start) > 2*time.Second || resp.Header.Get("Retry-After") != "30" {
 		t.Fatalf("a full queue must fail at once with Retry-After 30; took %v, Retry-After %q", time.Since(start), resp.Header.Get("Retry-After"))
 	}

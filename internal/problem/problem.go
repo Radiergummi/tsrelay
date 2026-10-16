@@ -27,6 +27,7 @@ const (
 	UpstreamUnreachable = "upstream_unreachable"
 	TunnelLost          = "tunnel_lost"
 	UpstreamTimeout     = "upstream_timeout"
+	BodyStalled         = "body_stalled"
 
 	Forbidden            = "forbidden"
 	NotFound             = "not_found"
@@ -39,6 +40,38 @@ const (
 	Internal             = "internal"
 )
 
+// Statuses of tunnel and transport failures, in a range of their own so a
+// sender can tell them from the receiving app's 502, 503 or 504. Generic
+// clients treat unknown 5xx codes as 500 (RFC 9110 §15).
+//
+// net/http writes "status code 561" as the HTTP/1.1 reason phrase of codes it
+// doesn't know, and offers no way to set one short of hijacking the
+// connection, so the phrases appear only in problem titles. HTTP/2 carries no
+// reason phrase at all.
+const (
+	StatusTunnelUnavailable   = 561
+	StatusTunnelOverloaded    = 562
+	StatusTunnelLost          = 563
+	StatusUpstreamUnreachable = 564
+	StatusUpstreamTimeout     = 565
+)
+
+var statusText = map[int]string{
+	StatusTunnelUnavailable:   "Tunnel Unavailable",
+	StatusTunnelOverloaded:    "Tunnel Overloaded",
+	StatusTunnelLost:          "Tunnel Lost",
+	StatusUpstreamUnreachable: "Upstream Unreachable",
+	StatusUpstreamTimeout:     "Upstream Timeout",
+}
+
+// StatusText is http.StatusText, extended by the tunnel statuses.
+func StatusText(code int) string {
+	if t, ok := statusText[code]; ok {
+		return t
+	}
+	return http.StatusText(code)
+}
+
 // Problem is an RFC 9457 problem document.
 type Problem struct {
 	Type   string `json:"type"`
@@ -50,7 +83,7 @@ type Problem struct {
 }
 
 func New(status int, code, detail string) *Problem {
-	return &Problem{Type: typeBase + code, Title: http.StatusText(status), Status: status, Detail: detail, Code: code}
+	return &Problem{Type: typeBase + code, Title: StatusText(status), Status: status, Detail: detail, Code: code}
 }
 
 func (p *Problem) Error() string { return p.Code + ": " + p.Detail }

@@ -63,7 +63,13 @@ test.each(bodies)(
   async (_, contentType, body, toggles) => {
     const capture = { body, size: atob(body).length, captured: true };
     const { container, getByRole, queryAllByRole } = render(
-      <BodyViewer capture={capture} contentType={contentType} metadataOnly={false} label="body" />,
+      <BodyViewer
+        capture={capture}
+        contentType={contentType}
+        metadataOnly={false}
+        label="body"
+        hookId="h_1"
+      />,
     );
     await settled(container);
     inert(container);
@@ -91,6 +97,7 @@ test("bidi controls are shown, not obeyed", () => {
       contentType="text/plain"
       metadataOnly={false}
       label="b"
+      hookId="h_1"
     />,
   );
   expect(container.textContent).toContain("abc⟨U+202E⟩def");
@@ -103,6 +110,7 @@ test("adjacent control characters merge into one revealed run", async () => {
       contentType="text/plain"
       metadataOnly={false}
       label="b"
+      hookId="h_1"
     />,
   );
   await userEvent.click(getByRole("button", { name: "Show as text" }));
@@ -117,6 +125,7 @@ test("a very long single line stays plain text and renders", () => {
       contentType="application/json"
       metadataOnly={false}
       label="b"
+      hookId="h_1"
     />,
   );
   expect(container.textContent).toContain(long.slice(0, 1000));
