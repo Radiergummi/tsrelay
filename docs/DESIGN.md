@@ -375,7 +375,7 @@ The UI is a React single-page app in `web/`, built with Vite and styled with Tai
 - **Create / edit hook:** the settings in §8. Every change is checked with a dry run, and the relay's errors appear under their fields. Each setting shows the relay default and maximum from the entry document; the channel picker is fed by the receiver patterns.
 - **Hook:** a split pane. The call list (live, newest first, filtered in the browser by status class, method, path and sender, with the filters in the URL) is on the left, and the inspector is on the right: the request and the response (headers with redacted ones marked, bodies as a JSON tree, highlighted text or hex), the attempts, a diff of a replay against its original, and replay and copy-as-curl. Below about 900px the panes stack. Keyboard: `j`/`k`, `Enter`/`Esc`, `/`, `r`, `c`, `t`, `?`.
 - **Channels:** your receive and send patterns and the channels your hooks are in; admins can switch to every channel in use (`?all=true`).
-- **Channel:** one channel's hooks, and whether you may receive and send on it. Channel names everywhere else (the hook list, the hook, the admin table) link here.
+- **Channel:** one channel's hooks, and whether you may receive and send on it. Channel names everywhere else (the hook list, the hook, the admin table) link here; from the admin table and another user's hook, with `?all=true`.
 - **No access:** what the caller is missing, with an example grant.
 - **Admin:** all hooks and tunnels (metadata only), with delete.
 

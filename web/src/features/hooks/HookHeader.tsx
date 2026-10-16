@@ -25,7 +25,7 @@ export function HookHeader({
         </h1>
         <p className="text-muted-foreground">
           {hook.ephemeral ? "Ephemeral" : "Persistent"} · channel{" "}
-          <ChannelChip name={hook.channel} /> · <TunnelText tunnel={hook.tunnel} />
+          <ChannelChip name={hook.channel} all={!owner} /> · <TunnelText tunnel={hook.tunnel} />
           {!owner && ` · owned by ${hook.owner}`}
         </p>
         {hook.description && (
