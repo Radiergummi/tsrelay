@@ -74,7 +74,7 @@ func TestIdleTimeoutWhileReceiving(t *testing.T) {
 	defer pw.Close()
 	go pw.Write([]byte("partial"))
 	start := time.Now()
-	wantProblem(t, e.do(sender, "POST", "/~moritz/cb", pr, nil), 504, problem.UpstreamTimeout)
+	wantProblem(t, e.do(sender, "POST", "/~moritz/cb", pr, nil), 408, problem.BodyStalled)
 	if d := time.Since(start); d > 3*time.Second {
 		t.Fatalf("idle sender answered after %v", d)
 	}

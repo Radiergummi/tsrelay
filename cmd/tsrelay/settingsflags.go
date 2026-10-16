@@ -86,7 +86,7 @@ func registerPolicyFlags(fs *pflag.FlagSet) func() (hooks.Policy, error) {
 	fs.Var(rateMax, "hook-rate-limit-max", `largest rate limit a hook may set, as "perSecond/burst" (default: no maximum)`)
 	attach := fs.String("hook-attach-policy-default", string(d.AttachPolicy), `what a second tunnel for a hook does: "takeover" or "reject"`)
 	host := fs.String("hook-host-header-default", string(d.HostHeader), `the Host header the local app sees: "preserve" or "rewrite"`)
-	capture := fs.Bool("hook-capture-default", d.Capture, "keep request and response bodies for the inspector (metadata is always recorded)")
+	capture := fs.Bool("hook-capture-default", d.Capture, "keep request and response bodies for the inspector for hooks that don't set capture; off by default (metadata is always recorded)")
 
 	return func() (hooks.Policy, error) {
 		err := checkDurations([]durationFlag{
@@ -200,7 +200,7 @@ func registerHookSettingFlags(fs *pflag.FlagSet, forUpdate bool) func() (hooks.S
 	fs.Var(&rate, "rate-limit", fmt.Sprintf(`calls per second and burst, as "perSecond/burst" (default: %s)`, unsetDefault))
 	attach := fs.String("attach-policy", "", fmt.Sprintf(`what a second tunnel does: "takeover" or "reject" (default: %s)`, unsetDefault))
 	host := fs.String("host-header", "", fmt.Sprintf(`the Host header the local app sees: "preserve" or "rewrite" (default: %s)`, unsetDefault))
-	capture := fs.Bool("capture", true, fmt.Sprintf("keep bodies for the inspector; --capture=false records metadata only (default: %s)", unsetDefault))
+	capture := fs.Bool("capture", true, fmt.Sprintf("keep request and response bodies for the inspector, which relays don't by default; --capture=false records metadata only (default: %s)", unsetDefault))
 	for _, name := range hookSettingFlagNames {
 		fs.Lookup(name).DefValue = "" // help already states the one true default above
 	}
