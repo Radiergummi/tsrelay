@@ -41,6 +41,7 @@ type API struct {
 	BaseURL    string // e.g. "https://tsrelay.example.ts.net", no trailing slash
 	CapName    string // the capability carrying relay grants; GET / names it for the no-access page
 	Version    string // the relay's version ("v0.3.0", or "dev"); GET / names it next to the CLI's download
+	Commit     string // the revision the relay was built from; empty when unknown
 	Tunnel     tunnel.Options
 	HTML       http.Handler // the web UI, for resources asked for as HTML; nil: JSON and streams only
 	Tracer     trace.Tracer // nil: no spans
@@ -72,12 +73,13 @@ type Me struct {
 	Hooks   int                     `json:"hooks"`
 	CapName string                  `json:"capName"`
 	Version string                  `json:"version"`
+	Commit  string                  `json:"commit,omitempty"`
 	Policy  Policy                  `json:"policy"`
 	Links   map[string]string       `json:"links"`
 }
 
 // links point from the entry document to the relay's resources.
-var links = map[string]string{"hooks": "/hooks", "tunnel": "/tunnel", "openapi": "/openapi.json"}
+var links = map[string]string{"hooks": "/hooks", "tunnel": "/tunnel", "openapi": "/openapi.json", "licenses": "/licenses"}
 
 // Policy is the relay-wide setting defaults and maxima (DESIGN.md §8), which
 // the UI shows next to each setting, and how many calls the relay keeps per
@@ -143,6 +145,10 @@ func (a *API) Register(mux *http.ServeMux) {
 	handle("GET /tunnel", a.authed(a.tunnel))
 	handle("GET /openapi", http.HandlerFunc(serveOpenAPI))
 	handle("GET /openapi.yaml", http.HandlerFunc(serveOpenAPIYAML))
+	resource("GET /licenses", a.licenses, nil)
+	route("GET /licenses/{textId}", a.licenseText)
+	route("GET /notices.txt", a.notices)
+	route("GET /sbom.cdx.json", a.sbomDocument)
 }
 
 // negotiated serves a resource as JSON from h, as events from stream (if
@@ -235,7 +241,7 @@ func (a *API) MeOf(id authz.Identity) Me {
 		me.Hooks = len(a.Hooks.List(id.UserID))
 	}
 	p := a.Hooks.Policy()
-	me.CapName, me.Version, me.Policy = a.CapName, a.Version, Policy{Defaults: p.Defaults, Max: p.Max, CallsPerHook: a.Inspect.CallsPerHook()}
+	me.CapName, me.Version, me.Commit, me.Policy = a.CapName, a.Version, a.Commit, Policy{Defaults: p.Defaults, Max: p.Max, CallsPerHook: a.Inspect.CallsPerHook()}
 	me.Links = links
 	return me
 }
