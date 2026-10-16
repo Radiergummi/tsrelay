@@ -174,6 +174,8 @@ func TestHeaders(t *testing.T) {
 		"Tsrelay-Anything":    {"spoofed"},
 		"X-Forwarded-For":     {"6.6.6.6"},
 		"X-Forwarded-Prefix":  {"/spoofed"},
+		"X-Forwarded-Uri":     {"/admin"},
+		"X-Forwarded-Server":  {"spoofed"},
 		"Stripe-Signature":    {"t=1,v1=abc"},
 	})
 	h := <-seen
@@ -188,6 +190,8 @@ func TestHeaders(t *testing.T) {
 		"X-Forwarded-Host":     strings.TrimPrefix(e.srv.URL, "http://"),
 		"X-Forwarded-Proto":    "http",
 		"X-Forwarded-Prefix":   "/~moritz/cb",
+		"X-Forwarded-Uri":      "",
+		"X-Forwarded-Server":   "",
 		"Stripe-Signature":     "t=1,v1=abc",
 	}
 	for k, want := range checks {

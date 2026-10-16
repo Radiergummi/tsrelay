@@ -3,6 +3,7 @@ package api
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -27,19 +28,20 @@ import (
 )
 
 type API struct {
-	Identifier identify.Identifier
-	Hooks      *hooks.Manager
-	Tunnels    *tunnel.Registry
-	Inspect    *inspect.Inspector
-	Relay      *relay.Handler // delivers replays and test requests
-	Events     *events.Hub    // receives hook changes; the event stream reads it
-	Audit      *audit.Logger
-	BaseURL    string // e.g. "https://tsrelay.example.ts.net", no trailing slash
-	CapName    string // the capability carrying relay grants; GET /me names it for the no-access page
-	Version    string // the relay's version ("v0.3.0", or "dev"); GET /me names it next to the CLI's download
-	Tunnel     tunnel.Options
-	Tracer     trace.Tracer // nil: no spans
-	Meter      metric.Meter // nil: no API latency histogram
+	Identifier    identify.Identifier
+	Hooks         *hooks.Manager
+	Tunnels       *tunnel.Registry
+	Inspect       *inspect.Inspector
+	Relay         *relay.Handler // delivers replays and test requests
+	Events        *events.Hub    // receives hook changes; the event stream reads it
+	Audit         *audit.Logger
+	BaseURL       string // e.g. "https://tsrelay.example.ts.net", no trailing slash
+	PublicBaseURL string // the relay's URL on the internet, through Funnel; empty: Funnel is off
+	CapName       string // the capability carrying relay grants; GET /me names it for the no-access page
+	Version       string // the relay's version ("v0.3.0", or "dev"); GET /me names it next to the CLI's download
+	Tunnel        tunnel.Options
+	Tracer        trace.Tracer // nil: no spans
+	Meter         metric.Meter // nil: no API latency histogram
 
 	// attachLocks holds one *sync.Mutex per user (tailcfg.UserID). It
 	// serializes that user's attaches from the checks through registration.
@@ -64,6 +66,8 @@ type Me struct {
 	CapName string                  `json:"capName"`
 	Version string                  `json:"version"`
 	Policy  Policy                  `json:"policy"`
+	Public  bool                    `json:"public"` // the caller may make hooks public
+	Funnel  bool                    `json:"funnel"` // the relay serves public hooks
 }
 
 // Policy is the relay-wide setting defaults and maxima (DESIGN.md §8), which
@@ -89,6 +93,8 @@ type Hook struct {
 	Channel     string           `json:"channel"`
 	Description string           `json:"description,omitempty"`
 	Ephemeral   bool             `json:"ephemeral"`
+	Public      bool             `json:"public"`
+	PublicURL   string           `json:"publicUrl,omitempty"` // owner only, and only while the relay serves Funnel
 	ExpiresAt   *time.Time       `json:"expiresAt,omitempty"`
 	Settings    hooks.Settings   `json:"settings"`
 	Effective   hooks.Effective  `json:"effective"`
@@ -113,6 +119,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	route("POST /api/v1/hooks", a.createHook)
 	route("GET /api/v1/hooks/{id}", a.getHook)
 	route("PATCH /api/v1/hooks/{id}", a.updateHook)
+	route("POST /api/v1/hooks/{id}/rotate-public-url", a.rotatePublicURL)
 	route("DELETE /api/v1/hooks/{id}", a.deleteHook)
 	route("GET /api/v1/hooks/{id}/calls", a.listCalls)
 	route("GET /api/v1/hooks/{id}/calls/{callID}", a.getCall)
@@ -163,6 +170,8 @@ func (a *API) MeOf(id authz.Identity) Me {
 	}
 	p := a.Hooks.Policy()
 	me.CapName, me.Version, me.Policy = a.CapName, a.Version, Policy{Defaults: p.Defaults, Max: p.Max, CallsPerHook: a.Inspect.CallsPerHook()}
+	me.Public = id.Grants.Public
+	me.Funnel = a.PublicBaseURL != ""
 	return me
 }
 
@@ -180,7 +189,7 @@ func (a *API) listHooks(w http.ResponseWriter, r *http.Request, id authz.Identit
 	}
 	out := make([]Hook, len(list))
 	for i, h := range list {
-		out[i] = a.HookJSON(h)
+		out[i] = a.HookJSON(h, id)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -216,13 +225,13 @@ func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		return
 	}
 	if dry {
-		writeJSON(w, http.StatusOK, a.HookJSON(h))
+		writeJSON(w, http.StatusOK, a.HookJSON(h, id))
 		return
 	}
 	a.Audit.Log(r.Context(), audit.HookCreate, audit.Actor(id), audit.Hook(h), slog.Bool("ephemeral", h.Ephemeral))
 	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
 	w.Header().Set("Location", "/api/v1/hooks/"+string(h.ID))
-	writeJSON(w, http.StatusCreated, a.HookJSON(h))
+	writeJSON(w, http.StatusCreated, a.HookJSON(h, id))
 }
 
 func (a *API) getHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
@@ -231,7 +240,7 @@ func (a *API) getHook(w http.ResponseWriter, r *http.Request, id authz.Identity)
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, a.HookJSON(h))
+	writeJSON(w, http.StatusOK, a.HookJSON(h, id))
 }
 
 func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
@@ -264,13 +273,50 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		return
 	}
 	if dry {
-		writeJSON(w, http.StatusOK, a.HookJSON(h))
+		writeJSON(w, http.StatusOK, a.HookJSON(h, id))
 		return
 	}
 	a.Audit.Log(r.Context(), audit.HookUpdate, audit.Actor(id), audit.Hook(h), slog.Any("changed", changed))
 	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
 	a.notifyUpdated(h.ID)
-	writeJSON(w, http.StatusOK, a.HookJSON(h))
+	if h.Public {
+		a.refreshTunnelPublic(r.Context(), h.ID)
+	}
+	writeJSON(w, http.StatusOK, a.HookJSON(h, id))
+}
+
+// refreshTunnelPublic identifies the node of the tunnel serving a public
+// hook again, so a public grant added since it attached applies now rather
+// than at the next revalidation. The tunnel's own node decides, not the
+// caller's. It only raises the flag; the revalidator lowers it.
+func (a *API) refreshTunnelPublic(ctx context.Context, hookID hooks.ID) {
+	t, ok := a.Tunnels.Lookup(string(hookID))
+	if !ok || t.Public() {
+		return
+	}
+	if id, err := a.Identifier.Identify(ctx, t.RemoteAddr); err == nil && id.IsUser() && id.UserID == t.Owner.UserID && id.Grants.Public {
+		t.SetPublic(true)
+	}
+}
+
+func (a *API) rotatePublicURL(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	h, err := a.Hooks.RotatePublicToken(r.Context(), id, hooks.ID(r.PathValue("id")))
+	switch {
+	case errors.Is(err, hooks.ErrNotFound):
+		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
+		return
+	case errors.Is(err, hooks.ErrNotPublic):
+		problem.New(http.StatusConflict, problem.Conflict, "the hook is not public; make it public first").Write(w)
+		return
+	case err != nil:
+		a.Audit.Slog().Error("hook.update failed", "error", err)
+		problem.New(http.StatusInternalServerError, problem.Internal, "could not save the hook").Write(w)
+		return
+	}
+	a.Audit.Log(r.Context(), audit.HookUpdate, audit.Actor(id), audit.Hook(h), slog.Any("changed", []string{"publicUrl"}))
+	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
+	a.notifyUpdated(h.ID)
+	writeJSON(w, http.StatusOK, a.HookJSON(h, id))
 }
 
 // notifyUpdated tells the tunnel serving the hook its current URL. Messages
@@ -288,7 +334,7 @@ func (a *API) notifyUpdated(id hooks.ID) {
 	}
 	if t, ok := a.Tunnels.Lookup(string(id)); ok {
 		t.Notify(tunnel.Control{Type: tunnel.ControlHookUpdated, Seq: seq,
-			Hooks: []tunnel.HookInfo{{ID: string(id), URL: a.BaseURL + h.Route()}}}, false)
+			Hooks: []tunnel.HookInfo{{ID: string(id), URL: a.BaseURL + h.Route(), Public: h.Public, PublicURL: a.publicURL(h)}}}, false)
 	}
 }
 
@@ -324,12 +370,16 @@ func (a *API) VisibleHook(id hooks.ID, who authz.Identity) (hooks.Hook, bool) {
 	return h, true
 }
 
-// HookJSON is h as the API shows it: URL, effective settings and attached tunnel.
-func (a *API) HookJSON(h hooks.Hook) Hook {
+// HookJSON is h as the API shows it to viewer: URL, effective settings,
+// attached tunnel, and (for the owner only) the public URL.
+func (a *API) HookJSON(h hooks.Hook, viewer authz.Identity) Hook {
 	out := Hook{
 		ID: string(h.ID), URL: a.BaseURL + h.Route(), Owner: h.OwnerLogin, Path: h.Path,
-		Channel: h.Channel, Description: h.Description, Ephemeral: h.Ephemeral, ExpiresAt: h.ExpiresAt,
+		Channel: h.Channel, Description: h.Description, Ephemeral: h.Ephemeral, Public: h.Public, ExpiresAt: h.ExpiresAt,
 		Settings: h.Settings, Effective: a.Hooks.Effective(h), CreatedAt: h.CreatedAt,
+	}
+	if viewer.IsUser() && viewer.UserID == h.Owner { // the URL works like a password
+		out.PublicURL = a.publicURL(h)
 	}
 	if t, ok := a.Tunnels.Lookup(string(h.ID)); ok {
 		out.Tunnel = &TunnelInfo{ID: t.ID, Node: t.Owner.NodeName, Target: t.Target}
@@ -338,6 +388,15 @@ func (a *API) HookJSON(h hooks.Hook) Hook {
 		out.LastCall = &last
 	}
 	return out
+}
+
+// publicURL is h's URL on the internet, or "" if h is not public or the
+// relay serves no Funnel.
+func (a *API) publicURL(h hooks.Hook) string {
+	if !h.Public || a.PublicBaseURL == "" {
+		return ""
+	}
+	return a.PublicBaseURL + h.PublicRoute()
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
