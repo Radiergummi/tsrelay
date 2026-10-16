@@ -194,3 +194,35 @@ func TestTailnetSenderCannotUsePublicPath(t *testing.T) {
 	// On the tailnet handler, /+… is no hook route at all.
 	wantProblem(t, e.do(sender, "POST", e.hook.PublicRoute()+"/x", nil, nil), 404, "hook_not_found")
 }
+
+// A replayed public call reaches the app as a public call again, under the
+// hook's public route, and is recorded as coming from the internet.
+func TestPublicReplayHeaders(t *testing.T) {
+	e := newPublicEnv(t)
+	seen := make(chan http.Header, 1)
+	e.attachPublic(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { seen <- r.Header.Clone() }))
+	from := httptest.NewRequest("POST", "http://relay.test/api/v1/hooks/x/calls/c/replay", nil)
+	c, err := e.h.Inject(context.Background(), Injection{
+		Hook: e.hook, Kind: inspect.KindReplay, ReplayOf: "c_orig", Public: true,
+		Method: "POST", Path: "/stripe", Header: http.Header{"Traceparent": {"00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"}},
+		From: from,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := <-seen
+	checks := map[string]string{
+		"Tsrelay-Sender-Public": "true",
+		"Tsrelay-Sender-Node":   "",
+		"X-Forwarded-Prefix":    e.hook.PublicRoute(),
+		"Traceparent":           "",
+	}
+	for k, want := range checks {
+		if got := strings.Join(h.Values(k), ","); got != want {
+			t.Errorf("%s = %q, want %q", k, got, want)
+		}
+	}
+	if !c.Sender.Public || c.Kind != inspect.KindReplay {
+		t.Errorf("call = %+v, want a replay from a public sender", c)
+	}
+}

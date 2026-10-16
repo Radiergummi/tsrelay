@@ -92,6 +92,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(HeaderCallID, callID)
 	inj, _ := r.Context().Value(injectKey{}).(*injection) // nil for sender calls
 	public := r.Context().Value(publicKey{}) != nil       // through ServePublic
+	internet := public || inj != nil && inj.public        // the sender, or the replayed call's, is on the internet
 	logPath := r.URL.Path
 	if public {
 		logPath = publicLogPath(r.URL)
@@ -222,7 +223,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// them (DESIGN.md §9.2). The sender cannot tell: it gets the same
 		// 404 as for a missing hook.
 		eff = h.Hooks.Effective(hook)
-		record = h.startRecord(r, callID, start, kind, replayOf, hook, sender, 1+segs, eff.Capture)
+		record = h.startRecord(r, callID, start, kind, replayOf, hook, sender, internet, 1+segs, eff.Capture)
 		ct.event("routed")
 		if record != nil {
 			body.capture, rec.capture = record.reqBuf, record.respBuf
@@ -311,7 +312,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Body = &callBody{ReadCloser: r.Body, max: eff.MaxBodyBytes, idle: idle, cancel: cancel}
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			h.rewrite(pr, hook, eff, sender, callID, 1+segs, public)
+			h.rewrite(pr, hook, eff, sender, callID, 1+segs, internet)
 		},
 		// The relay's call ID replaces any the local app set. A Tsrelay-Error
 		// the app set is dropped, so its own answers are never taken for the
@@ -388,17 +389,17 @@ func (h *Handler) hookExists(id hooks.ID) bool {
 	return ok
 }
 
-func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.Effective, sender authz.Identity, callID string, segments int, public bool) {
+func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.Effective, sender authz.Identity, callID string, segments int, internet bool) {
 	// Not pr.SetXForwarded: it appends to a sender-supplied X-Forwarded-For,
 	// which would let senders spoof it. These come from the connection only.
 	out := pr.Out
-	if public {
-		// An internet client may not supply forwarding or trace headers.
-		for k := range out.Header {
-			if strings.HasPrefix(k, "X-Forwarded-") {
-				delete(out.Header, k)
-			}
+	for k := range out.Header {
+		if strings.HasPrefix(k, "X-Forwarded-") {
+			delete(out.Header, k)
 		}
+	}
+	if internet {
+		// An internet client may not supply trace headers either.
 		out.Header.Del("Traceparent")
 		out.Header.Del("Tracestate")
 	}
@@ -411,12 +412,9 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.
 		proto = "https"
 	}
 	out.Header.Set("X-Forwarded-Proto", proto)
-	// Only the connection may say where a call came from. (httputil.ReverseProxy
-	// already removes Forwarded and X-Forwarded-* before Rewrite runs, since
-	// Out is built with Rewrite rather than Director; this is kept explicit
-	// so it does not depend on that.)
+	// Only the connection may say where a call came from: every
+	// X-Forwarded-* a sender supplied is gone above.
 	out.Header.Del("X-Real-Ip")
-	out.Header.Del("X-Forwarded-Port")
 	out.Header.Del("Forwarded")
 	stripTsrelay(out.Header)
 	stripTsrelay(out.Trailer)
@@ -424,11 +422,13 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.
 		out.Header.Set(tunnel.HeaderTunnelHost, "rewrite")
 	}
 	prefix := hook.Route()
-	if public {
+	if internet && hook.Public {
+		// A replayed public call names the public route while the hook
+		// has one, as the original did.
 		prefix = hook.PublicRoute()
 	}
 	out.Header.Set("X-Forwarded-Prefix", prefix)
-	if public {
+	if internet {
 		out.Header.Set(HeaderSenderPublic, "true")
 	} else {
 		out.Header.Set(HeaderSenderNode, sender.NodeName)
