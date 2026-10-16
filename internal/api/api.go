@@ -27,19 +27,20 @@ import (
 )
 
 type API struct {
-	Identifier identify.Identifier
-	Hooks      *hooks.Manager
-	Tunnels    *tunnel.Registry
-	Inspect    *inspect.Inspector
-	Relay      *relay.Handler // delivers replays and test requests
-	Events     *events.Hub    // receives hook changes; the event stream reads it
-	Audit      *audit.Logger
-	BaseURL    string // e.g. "https://tsrelay.example.ts.net", no trailing slash
-	CapName    string // the capability carrying relay grants; GET /me names it for the no-access page
-	Version    string // the relay's version ("v0.3.0", or "dev"); GET /me names it next to the CLI's download
-	Tunnel     tunnel.Options
-	Tracer     trace.Tracer // nil: no spans
-	Meter      metric.Meter // nil: no API latency histogram
+	Identifier    identify.Identifier
+	Hooks         *hooks.Manager
+	Tunnels       *tunnel.Registry
+	Inspect       *inspect.Inspector
+	Relay         *relay.Handler // delivers replays and test requests
+	Events        *events.Hub    // receives hook changes; the event stream reads it
+	Audit         *audit.Logger
+	BaseURL       string // e.g. "https://tsrelay.example.ts.net", no trailing slash
+	PublicBaseURL string // the relay's URL on the internet, through Funnel; empty: Funnel is off
+	CapName       string // the capability carrying relay grants; GET /me names it for the no-access page
+	Version       string // the relay's version ("v0.3.0", or "dev"); GET /me names it next to the CLI's download
+	Tunnel        tunnel.Options
+	Tracer        trace.Tracer // nil: no spans
+	Meter         metric.Meter // nil: no API latency histogram
 
 	// attachLocks holds one *sync.Mutex per user (tailcfg.UserID). It
 	// serializes that user's attaches from the checks through registration.
