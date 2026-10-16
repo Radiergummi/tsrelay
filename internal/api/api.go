@@ -3,6 +3,7 @@ package api
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -278,7 +279,24 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 	a.Audit.Log(r.Context(), audit.HookUpdate, audit.Actor(id), audit.Hook(h), slog.Any("changed", changed))
 	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
 	a.notifyUpdated(h.ID)
+	if h.Public {
+		a.refreshTunnelPublic(r.Context(), h.ID)
+	}
 	writeJSON(w, http.StatusOK, a.HookJSON(h, id))
+}
+
+// refreshTunnelPublic identifies the node of the tunnel serving a public
+// hook again, so a public grant added since it attached applies now rather
+// than at the next revalidation. The tunnel's own node decides, not the
+// caller's. It only raises the flag; the revalidator lowers it.
+func (a *API) refreshTunnelPublic(ctx context.Context, hookID hooks.ID) {
+	t, ok := a.Tunnels.Lookup(string(hookID))
+	if !ok || t.Public() {
+		return
+	}
+	if id, err := a.Identifier.Identify(ctx, t.RemoteAddr); err == nil && id.IsUser() && id.UserID == t.Owner.UserID && id.Grants.Public {
+		t.SetPublic(true)
+	}
 }
 
 func (a *API) rotatePublicURL(w http.ResponseWriter, r *http.Request, id authz.Identity) {

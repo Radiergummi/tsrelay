@@ -1,7 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"net"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -9,6 +12,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"github.com/Radiergummi/tsrelay/internal/tunnel/tunneltest"
 )
 
 var (
@@ -107,5 +111,39 @@ func TestTunnelGetsPublicURL(t *testing.T) {
 	e.call(publicMoritz, "POST", "/api/v1/hooks/"+h.ID+"/rotate-public-url", nil, &r)
 	if c := next(t, controls); c.Type != tunnel.ControlHookUpdated || c.Hooks[0].PublicURL != r.PublicURL {
 		t.Fatalf("after rotation = %+v", c)
+	}
+}
+
+// Making a hook public picks up a public grant its tunnel's node gained
+// since it attached, without waiting for the revalidator.
+func TestPublicRefreshesTunnelGrant(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/api/v1/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+
+	// The tunnel's connection, identified as moritz before the grant.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	conn, err := e.fake.Dial(moritz)(context.Background(), "tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	tun, _ := tunneltest.Pair(t, http.NotFoundHandler(), tunnel.Options{}, nil)
+	tun.Owner, tun.RemoteAddr = moritz, conn.LocalAddr().String()
+	e.reg.Attach(tun, []string{h.ID})
+	if tun.Public() {
+		t.Fatal("the tunnel may receive public calls before the grant")
+	}
+
+	e.fake.Update(publicMoritz) // an admin adds "public": true
+	if resp := e.call(publicMoritz, "PATCH", "/api/v1/hooks/"+h.ID, map[string]any{"public": true}, nil); resp.StatusCode != 200 {
+		t.Fatalf("update: %d", resp.StatusCode)
+	}
+	if !tun.Public() {
+		t.Fatal("the tunnel still may not receive public calls")
 	}
 }
