@@ -48,13 +48,24 @@ const id = encodeURIComponent;
  */
 export const paths = {
   me: "/",
-  hooks: (all = false) => (all ? "/hooks?all=true" : "/hooks"),
+  hooks: (all = false, channel?: string) => "/hooks" + query({ all, channel }),
   hook: (hookId: string) => `/hooks/${id(hookId)}`,
   calls: (hookId: string) => `/hooks/${id(hookId)}/calls`,
   call: (hookId: string, callId: string) => `/hooks/${id(hookId)}/calls/${id(callId)}`,
   replay: (hookId: string, callId: string) => `/hooks/${id(hookId)}/calls/${id(callId)}/replay`,
   test: (hookId: string) => `/hooks/${id(hookId)}/test`,
+  channels: (all = false) => "/channels" + query({ all }),
+  channel: (name: string, all = false) => `/channels/${id(name)}` + query({ all }),
 };
+
+/** query is "?all=true&channel=…" for the options that are set, or "". */
+function query({ all, channel }: { all: boolean; channel?: string | undefined }): string {
+  const q = new URLSearchParams();
+  if (all) q.set("all", "true");
+  if (channel) q.set("channel", channel);
+  const s = q.toString();
+  return s ? `?${s}` : "";
+}
 
 async function send(
   method: string,

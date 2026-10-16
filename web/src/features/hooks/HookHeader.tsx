@@ -2,6 +2,7 @@ import { Link, useNavigate } from "react-router";
 import type { Hook } from "@/api/schemas";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
+import { ChannelChip } from "@/features/channels/ChannelChip";
 import { Reveal } from "@/features/inspector/Reveal";
 import { DeleteHookDialog } from "./DeleteHookDialog";
 import { TunnelText } from "./TunnelText";
@@ -23,8 +24,8 @@ export function HookHeader({
           <Reveal text={hook.path} />
         </h1>
         <p className="text-muted-foreground">
-          {hook.ephemeral ? "Ephemeral" : "Persistent"} · channel {hook.channel} ·{" "}
-          <TunnelText tunnel={hook.tunnel} />
+          {hook.ephemeral ? "Ephemeral" : "Persistent"} · channel{" "}
+          <ChannelChip name={hook.channel} /> · <TunnelText tunnel={hook.tunnel} />
           {!owner && ` · owned by ${hook.owner}`}
         </p>
         {hook.description && (

@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ChannelChip } from "@/features/channels/ChannelChip";
 import { DeleteHookDialog } from "@/features/hooks/DeleteHookDialog";
 import { LastCall } from "@/features/hooks/LastCall";
 import { TunnelText } from "@/features/hooks/TunnelText";
@@ -69,7 +70,9 @@ export function AdminPage() {
                     <Reveal text={h.path} />
                   </Link>
                 </TableCell>
-                <TableCell>{h.channel}</TableCell>
+                <TableCell>
+                  <ChannelChip name={h.channel} />
+                </TableCell>
                 <TableCell>
                   <TunnelText tunnel={h.tunnel} />
                 </TableCell>

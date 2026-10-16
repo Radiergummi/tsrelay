@@ -77,7 +77,7 @@ type Me struct {
 }
 
 // links point from the entry document to the relay's resources.
-var links = map[string]string{"hooks": "/hooks", "tunnel": "/tunnel", "openapi": "/openapi.json"}
+var links = map[string]string{"hooks": "/hooks", "channels": "/channels", "tunnel": "/tunnel", "openapi": "/openapi.json"}
 
 // Policy is the relay-wide setting defaults and maxima (DESIGN.md §8), which
 // the UI shows next to each setting, and how many calls the relay keeps per
@@ -139,6 +139,8 @@ func (a *API) Register(mux *http.ServeMux) {
 	resource("GET /hooks/{id}/calls/{callID}", a.getCall, nil)
 	route("POST /hooks/{id}/calls/{callID}/replay", a.replayCall)
 	route("POST /hooks/{id}/test", a.testCall)
+	resource("GET /channels", a.listChannels, nil)
+	resource("GET /channels/{name}", a.getChannel, nil)
 	// Long-lived: not observed (the tunnel traces its own attach and detach).
 	handle("GET /tunnel", a.authed(a.tunnel))
 	handle("GET /openapi", http.HandlerFunc(serveOpenAPI))
@@ -245,16 +247,13 @@ func (a *API) me(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 }
 
 func (a *API) listHooks(w http.ResponseWriter, r *http.Request, id authz.Identity) {
-	var list []hooks.Hook
-	switch {
-	case r.URL.Query().Get("all") == "true" && id.Grants.Has(authz.RoleAdmin):
-		list = a.Hooks.ListAll()
-	case id.IsUser():
-		list = a.Hooks.List(id.UserID)
-	}
-	out := make([]Hook, len(list))
-	for i, h := range list {
-		out[i] = a.HookJSON(h)
+	list, _ := a.scopedHooks(r, id)
+	channel := r.URL.Query().Get("channel")
+	out := make([]Hook, 0, len(list))
+	for _, h := range list {
+		if channel == "" || h.Channel == channel {
+			out = append(out, a.HookJSON(h))
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

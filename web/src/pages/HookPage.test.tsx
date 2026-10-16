@@ -35,6 +35,10 @@ test("shows the hook, its settings, and its calls newest first", async () => {
     "href",
     `/hooks/${fixtures.hook.id}/edit`,
   );
+  expect(screen.getByRole("link", { name: "default" })).toHaveAttribute(
+    "href",
+    "/channels/default",
+  );
 });
 
 test("another user's hook path and description are shown with control characters revealed", async () => {

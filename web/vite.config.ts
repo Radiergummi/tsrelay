@@ -22,7 +22,7 @@ export default defineConfig({
     // inspect links. Resources share their URLs with the app's pages, so a
     // page load (Accept: text/html) gets Vite's index.html instead.
     proxy: {
-      "^/(hooks(/.*)?|openapi(\\..*)?)?$": {
+      "^/((hooks|channels)(/.*)?|openapi(\\..*)?)?$": {
         target: "http://127.0.0.1:8099",
         bypass: (req) => (req.headers.accept?.includes("text/html") ? "/index.html" : undefined),
       },

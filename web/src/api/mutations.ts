@@ -10,6 +10,7 @@ export function useCreateHook() {
     onSuccess: (h) => {
       qc.setQueryData(keys.hook(h.id), h);
       void qc.invalidateQueries({ queryKey: keys.allHooks });
+      void qc.invalidateQueries({ queryKey: keys.allChannels });
       void qc.invalidateQueries({ queryKey: keys.me });
     },
   });
@@ -22,6 +23,7 @@ export function useUpdateHook(id: string) {
     onSuccess: (h) => {
       qc.setQueryData(keys.hook(h.id), h);
       void qc.invalidateQueries({ queryKey: keys.allHooks });
+      void qc.invalidateQueries({ queryKey: keys.allChannels });
     },
   });
 }
@@ -34,6 +36,7 @@ export function useDeleteHook() {
       qc.removeQueries({ queryKey: keys.hook(id) });
       qc.removeQueries({ queryKey: keys.calls(id) });
       void qc.invalidateQueries({ queryKey: keys.allHooks });
+      void qc.invalidateQueries({ queryKey: keys.allChannels });
       void qc.invalidateQueries({ queryKey: keys.me });
     },
   });
