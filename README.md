@@ -151,7 +151,7 @@ Replays and test requests go through the whole relay to your app. The answer is 
 
 ## The API
 
-Every page of the web UI is also an API resource at the same URL: ask for JSON and you get the data the page shows. A `.json` or `.html` extension picks the representation; otherwise the `Accept` header does, and JSON is the default. So the URL in your browser's address bar is the one to script against:
+The web UI's hook pages are also API resources at the same URLs: ask for JSON and you get the data the page shows. A `.json` or `.html` extension picks the representation; otherwise the `Accept` header does, and JSON is the default. So the URL in your browser's address bar is the one to script against:
 
 ```bash
 curl https://tsrelay.<your tailnet>/hooks                               # your hooks, as JSON

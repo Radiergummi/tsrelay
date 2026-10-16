@@ -29,7 +29,7 @@ const DefaultEphemeralGrace = 10 * time.Minute
 type Config struct {
 	BaseURL        string   // public URL of the relay on the tailnet, no trailing slash
 	AllowedHosts   []string // Host header values the relay answers to
-	CapName        string   // the capability carrying relay grants; GET /me names it
+	CapName        string   // the capability carrying relay grants; GET / names it
 	Version        string   // the relay's version, sent as api.VersionHeader; "" means "dev"
 	EphemeralGrace time.Duration
 	HoldQueue      int // calls per hook that may wait for a tunnel; 0 means relay.DefaultHoldQueue
