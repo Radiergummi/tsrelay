@@ -136,12 +136,12 @@ func newHTTPCmd(c *cli) *cobra.Command {
 				seqs.observe(ctl)
 				if ctl.Type == tunnel.ControlHookUpdated {
 					for _, h := range ctl.Hooks {
-						if h.ID != hook.ID || !seqs.fresh(h.ID, ctl.Seq) || (h.URL == hook.URL && h.PublicURL == hook.PublicURL) {
+						if h.ID != hook.ID || !seqs.fresh(h.ID, ctl.Seq) || (h.URL == hook.URL && h.Public == hook.Public && h.PublicURL == hook.PublicURL) {
 							continue
 						}
 						// Only the path can change the URL; the prefix before it stays.
 						hook.Path = strings.TrimPrefix(h.URL, strings.TrimSuffix(hook.URL, hook.Path))
-						hook.URL, hook.PublicURL, hook.Public = h.URL, h.PublicURL, h.PublicURL != ""
+						hook.URL, hook.PublicURL, hook.Public = h.URL, h.PublicURL, h.Public
 						if err := state.Remember(key, hook.Path, hook.URL); err != nil {
 							out.status(styleWarn, "could not remember the hook path: "+err.Error())
 						}

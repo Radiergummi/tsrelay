@@ -658,6 +658,25 @@ func TestHTTPPublic(t *testing.T) {
 	}
 }
 
+func TestHTTPFollowsPublicTurnedOff(t *testing.T) {
+	e := newCLIEnv(t)
+	r := e.start("--public")
+	u := e.url(r)
+	waitOutput(t, r.stderr, "public (internet): ")
+	ctx := context.Background()
+	hs, err := e.api().ListHooks(ctx)
+	if err != nil || len(hs) != 1 {
+		t.Fatalf("hooks = %+v, %v", hs, err)
+	}
+	if _, err := e.api().UpdateHook(ctx, hs[0].ID, hooks.UpdateRequest{Public: hooks.Opt[bool]{Set: true, Value: new(false)}}); err != nil {
+		t.Fatal(err)
+	}
+	waitOutput(t, r.stdout, u+"\n"+u+"\n") // the update is reported again
+	if errOut := r.stderr.String(); strings.Contains(errOut, "does not serve hooks on the internet") {
+		t.Fatalf("stderr = %q, want no Funnel warning for a hook that is no longer public", errOut)
+	}
+}
+
 func TestHTTPPublicOnRemembered(t *testing.T) {
 	e := newCLIEnv(t)
 	r1 := e.start()

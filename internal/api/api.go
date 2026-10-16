@@ -316,7 +316,7 @@ func (a *API) notifyUpdated(id hooks.ID) {
 	}
 	if t, ok := a.Tunnels.Lookup(string(id)); ok {
 		t.Notify(tunnel.Control{Type: tunnel.ControlHookUpdated, Seq: seq,
-			Hooks: []tunnel.HookInfo{{ID: string(id), URL: a.BaseURL + h.Route(), PublicURL: a.publicURL(h)}}}, false)
+			Hooks: []tunnel.HookInfo{{ID: string(id), URL: a.BaseURL + h.Route(), Public: h.Public, PublicURL: a.publicURL(h)}}}, false)
 	}
 }
 
