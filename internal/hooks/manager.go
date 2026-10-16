@@ -45,6 +45,7 @@ type CreateRequest struct {
 	Channel     string     `json:"channel"`
 	Description string     `json:"description"`
 	Ephemeral   bool       `json:"ephemeral"`
+	Public      bool       `json:"public"`
 	Settings    Settings   `json:"settings"`
 	ExpiresAt   *time.Time `json:"expiresAt"`
 }
@@ -185,6 +186,9 @@ func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRe
 	errs = append(errs, validateDescription(req.Description)...)
 	errs = append(errs, m.policy.Validate(req.Settings)...)
 	errs = append(errs, validateExpiry(req.ExpiresAt, req.Ephemeral, m.now(), owner.Grants.Limits.MaxHookTTL)...)
+	if req.Public {
+		errs = append(errs, validatePublic(owner.Grants)...)
+	}
 	if len(owned) >= owner.Grants.Limits.MaxHooks {
 		errs = append(errs, FieldError{"", fmt.Sprintf("you already own %d hooks, the maximum your grants allow", len(owned))})
 	}
@@ -206,7 +210,10 @@ func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRe
 	h := Hook{
 		ID: NewID(), Owner: owner.UserID, OwnerLogin: owner.Login, Slug: slug,
 		Path: req.Path, Channel: req.Channel, Description: req.Description,
-		Ephemeral: req.Ephemeral, Settings: req.Settings, ExpiresAt: req.ExpiresAt, CreatedAt: m.now().UTC(),
+		Ephemeral: req.Ephemeral, Public: req.Public, Settings: req.Settings, ExpiresAt: req.ExpiresAt, CreatedAt: m.now().UTC(),
+	}
+	if h.Public {
+		h.PublicToken = m.freeTokenLocked()
 	}
 	if dry {
 		h.ID = ""

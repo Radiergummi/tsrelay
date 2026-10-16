@@ -23,10 +23,18 @@ type Hook struct {
 	Channel     string         `json:"channel"`
 	Description string         `json:"description,omitempty"`
 	Ephemeral   bool           `json:"ephemeral"`
-	Settings    Settings       `json:"settings,omitzero"`
-	ExpiresAt   *time.Time     `json:"expiresAt,omitempty"`
-	CreatedAt   time.Time      `json:"createdAt"`
+	// Public hooks are also served on the internet, through Funnel, at
+	// PublicRoute. PublicToken is set exactly when Public is.
+	Public      bool       `json:"public,omitempty"`
+	PublicToken string     `json:"publicToken,omitempty"`
+	Settings    Settings   `json:"settings,omitzero"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
 }
 
 // Route is the URL path the hook is served at, e.g. "/~moritz/amber-otter-lamp".
 func (h Hook) Route() string { return "/~" + h.Slug + "/" + h.Path }
+
+// PublicRoute is the path the hook is served at on the internet, e.g.
+// "/+Xq3…". The token works like a password.
+func (h Hook) PublicRoute() string { return "/+" + h.PublicToken }

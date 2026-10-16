@@ -51,6 +51,7 @@ type UpdateRequest struct {
 	Channel     Opt[string]    `json:"channel,omitzero"`
 	Description Opt[string]    `json:"description,omitzero"`
 	Ephemeral   Opt[bool]      `json:"ephemeral,omitzero"`
+	Public      Opt[bool]      `json:"public,omitzero"`
 	ExpiresAt   Opt[time.Time] `json:"expiresAt,omitzero"`
 	Settings    SettingsPatch  `json:"settings"`
 }
@@ -142,6 +143,18 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 			errs = append(errs, FieldError{"ephemeral", "cannot be null"})
 		} else {
 			h.Ephemeral = *req.Ephemeral.Value
+		}
+	}
+	if req.Public.Set {
+		touch("public", true)
+		switch {
+		case req.Public.Value == nil:
+			errs = append(errs, FieldError{"public", "cannot be null"})
+		case *req.Public.Value && !cur.Public:
+			errs = append(errs, validatePublic(owner.Grants)...)
+			h.Public, h.PublicToken = true, m.freeTokenLocked()
+		case !*req.Public.Value:
+			h.Public, h.PublicToken = false, ""
 		}
 	}
 	if touch("expiresAt", apply(&h.ExpiresAt, req.ExpiresAt)); req.ExpiresAt.Set || req.Ephemeral.Set {
