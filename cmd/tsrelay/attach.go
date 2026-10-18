@@ -87,6 +87,7 @@ func newAttachCmd(c *cli) *cobra.Command {
 					for _, h := range ctl.Hooks {
 						if cur, ok := infoOf[h.ID]; ok && seqs.fresh(h.ID, ctl.Seq) && cur != h {
 							infoOf[h.ID] = h
+							c.bg.hookChanged(h.ID, h.ID, h.URL)
 							out.url(api.Hook{ID: h.ID, URL: h.URL, Public: h.Public, PublicURL: h.PublicURL}, false)
 						}
 					}

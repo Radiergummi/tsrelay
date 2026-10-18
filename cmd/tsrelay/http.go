@@ -150,6 +150,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 				mu.Lock()
 				hook = h
 				mu.Unlock()
+				c.bg.hookChanged(old.ID, h.ID, h.URL)
 				out.url(h, true)
 				return tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, h.ID))
 			},
@@ -167,6 +168,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 						// Only the path can change the URL; the prefix before it stays.
 						hook.Path = strings.TrimPrefix(h.URL, strings.TrimSuffix(hook.URL, hook.Path))
 						hook.URL, hook.PublicURL, hook.Public = h.URL, h.PublicURL, h.Public
+						c.bg.hookChanged(hook.ID, hook.ID, hook.URL)
 						if err := state.Remember(key, hook.Path, hook.URL); err != nil {
 							out.status(styleWarn, "could not remember the hook path: "+err.Error())
 						}

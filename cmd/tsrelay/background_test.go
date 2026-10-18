@@ -204,6 +204,35 @@ func TestBackgroundAttach(t *testing.T) {
 	e.assertGone(r)
 }
 
+// A hook renamed while a background tunnel serves it is found by its new
+// path, and ps shows its new URL.
+func TestBackgroundFollowsRename(t *testing.T) {
+	e := newBackgroundEnv(t)
+	ctx := context.Background()
+	a, err := e.api().CreateHook(ctx, hooks.CreateRequest{Path: "pay"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := e.background("attach", "pay", "--to", e.local.URL)
+	e.waitLog(r.ID, "connected")
+	moved, err := e.api().UpdateHook(ctx, a.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new("billing")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.waitLog(r.ID, moved.URL)
+	want := []runHook{{ID: a.ID, Path: "billing", URL: moved.URL}}
+	deadline := time.Now().Add(5 * time.Second)
+	for !slices.Equal(e.record(r.ID).Hooks, want) {
+		if time.Now().After(deadline) {
+			t.Fatalf("record hooks = %+v, want %+v", e.record(r.ID).Hooks, want)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if code, _, errOut := e.tsrelay("stop", "billing"); code != 0 || !strings.Contains(errOut, "stopped "+r.ID) {
+		t.Fatalf("stop by the new path: exit %d\n%s", code, errOut)
+	}
+}
+
 func TestBackgroundStop(t *testing.T) {
 	e := newBackgroundEnv(t)
 	ctx := context.Background()
