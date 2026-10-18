@@ -70,9 +70,9 @@ func (c *Client) Run(ctx context.Context) error {
 			backoff = min(backoff*2, maxB)
 			continue
 		}
-		backoff = minB
 		attach.Resume = true
 		c.state(true, nil)
+		served := time.Now()
 		Serve(ctx, conn, c.Handler, c.handleControl)
 		if ctx.Err() != nil {
 			return nil
@@ -81,6 +81,16 @@ func (c *Client) Run(ctx context.Context) error {
 			return ErrNoHooks
 		}
 		c.state(false, errTunnelLost)
+		// A tunnel that held for a while redials promptly; one lost right
+		// after attaching backs off like a failed dial, so a relay that
+		// accepts and then drops does not get a tight redial loop.
+		if time.Since(served) >= maxB {
+			backoff = minB
+		}
+		if !sleep(ctx, rand.N(backoff)+1) {
+			return nil
+		}
+		backoff = min(backoff*2, maxB)
 	}
 }
 
