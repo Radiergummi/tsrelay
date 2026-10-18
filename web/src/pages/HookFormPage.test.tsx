@@ -187,12 +187,15 @@ test("a form-level error goes away once the next change fails local validation",
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
-test("editing prefills the hook and resets cleared fields to the default", async () => {
+test("editing prefills the hook and sends only what changed, resetting cleared fields", async () => {
   let patch: unknown;
+  let dryRun: unknown;
   server.use(
     http.patch("/hooks/:id", async ({ request }) => {
-      if (new URL(request.url).searchParams.get("dryRun") === "true")
+      if (new URL(request.url).searchParams.get("dryRun") === "true") {
+        dryRun = await request.json();
         return HttpResponse.json(fixtures.hook);
+      }
       patch = await request.json();
       return HttpResponse.json(fixtures.hook);
     }),
@@ -205,8 +208,9 @@ test("editing prefills the hook and resets cleared fields to the default", async
   const desc = await screen.findByLabelText("Description");
   expect(desc).toHaveValue("has a tunnel");
   await userEvent.clear(desc);
+  await waitFor(() => expect(dryRun).toEqual({ description: null }));
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
-  await waitFor(() => expect(patch).toMatchObject({ path: "payments/done", description: null }));
+  await waitFor(() => expect(patch).toEqual({ description: null }));
 });
 
 test("a failed refetch of the hook being edited keeps the unsaved edits", async () => {

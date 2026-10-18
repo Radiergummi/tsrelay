@@ -27,7 +27,8 @@ const dryRunDelay = 400;
  */
 export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   const editing = hook !== undefined;
-  const [values, setValues] = useState(() => initialValues(hook));
+  const [initial] = useState(() => initialValues(hook));
+  const [values, setValues] = useState(initial);
   const [errors, setErrors] = useState<FieldError[]>([]);
   const [formError, setFormError] = useState("");
   // The last dry run that passed, keyed by the body it validated.
@@ -66,7 +67,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   const build = () => {
     const r = formRequest(
       Object.entries(fieldTypes).map(([n, t]) => [n, values[n] ?? "", t]),
-      editing,
+      editing ? initial : undefined,
     );
     if (!validChannel(channel))
       r.errors.push({
