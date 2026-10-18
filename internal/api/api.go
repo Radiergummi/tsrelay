@@ -159,7 +159,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	resource("GET /channels/{name}", a.getChannel, nil)
 	// Long-lived: not observed (the tunnel traces its own attach and detach).
 	handle("GET /tunnel", a.authed(a.tunnel))
-	handle("GET /openapi", http.HandlerFunc(serveOpenAPI))
+	handle("GET /openapi.json", http.HandlerFunc(serveOpenAPI))
 	handle("GET /openapi.yaml", http.HandlerFunc(serveOpenAPIYAML))
 	resource("GET /licenses", a.licenses, nil)
 	route("GET /licenses/{textId}", a.licenseText)

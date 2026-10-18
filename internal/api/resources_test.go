@@ -89,10 +89,11 @@ func TestEntryDocument(t *testing.T) {
 
 func TestOpenAPIDocument(t *testing.T) {
 	e := newEnv(t)
-	resp, body := e.get("/openapi", "")
+	// Even asked for HTML: the URL names the format.
+	resp, body := e.get("/openapi.json", "text/html")
 	var doc map[string]any
 	if err := json.Unmarshal([]byte(body), &doc); err != nil || resp.Header.Get("Content-Type") != "application/json" || doc["openapi"] != "3.1.0" {
-		t.Fatalf("GET /openapi = %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+		t.Fatalf("GET /openapi.json = %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
 	resp, body = e.get("/openapi.yaml", "")
 	if resp.Header.Get("Content-Type") != "application/yaml" || !strings.HasPrefix(body, "openapi: 3.1.0") {
