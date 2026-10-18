@@ -32,7 +32,7 @@ export function AdminPage() {
   const hooks = useHooks(true);
   if (!admin) return <EmptyState title="Only relay admins can see this page." />;
   if (hooks.isPending) return <TableSkeleton />;
-  if (hooks.isError) return <PageError error={hooks.error} />;
+  if (hooks.data === undefined) return <PageError error={hooks.error} />;
   const list = [...hooks.data].sort(
     (a, b) => a.owner.localeCompare(b.owner) || a.path.localeCompare(b.path),
   );

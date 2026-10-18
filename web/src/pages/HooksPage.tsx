@@ -46,7 +46,7 @@ export function HooksPage() {
       </div>
       {hooks.isPending ? (
         <TableSkeleton />
-      ) : hooks.isError ? (
+      ) : hooks.data === undefined ? (
         <PageError error={hooks.error} />
       ) : hooks.data.length === 0 && channel ? (
         <EmptyState title={`You have no hooks in ${channel}`} />

@@ -31,11 +31,10 @@ export function HookPage() {
   const owner = hook.data ? owns(me, hook.data) : true;
   useAllEvents(hook.data !== undefined && !owner);
   if (hook.isPending) return <TableSkeleton />;
-  if (hook.isError) {
-    if (hook.error instanceof ApiError && hook.error.status === 404)
-      return <EmptyState title="There is no hook with this ID, or it is not yours." />;
-    return <PageError error={hook.error} />;
-  }
+  // A failed refetch keeps showing the hook, unless it is gone.
+  if (hook.error instanceof ApiError && hook.error.status === 404)
+    return <EmptyState title="There is no hook with this ID, or it is not yours." />;
+  if (hook.data === undefined) return <PageError error={hook.error} />;
   return <Loaded hook={hook.data} me={me} owner={owner} callId={callId} />;
 }
 
@@ -102,7 +101,7 @@ function Loaded({
           />
           {calls.isPending ? (
             <TableSkeleton />
-          ) : calls.isError ? (
+          ) : calls.data === undefined ? (
             <PageError error={calls.error} />
           ) : calls.data.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">
