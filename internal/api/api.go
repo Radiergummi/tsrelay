@@ -98,6 +98,7 @@ type Policy struct {
 	Defaults     hooks.Effective `json:"defaults"`
 	Max          hooks.Maxima    `json:"max"`
 	CallsPerHook int             `json:"callsPerHook"`
+	NoBodies     bool            `json:"noBodies,omitempty"` // the relay keeps no bodies, whatever hooks set
 }
 
 type Limits struct {
@@ -158,7 +159,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	resource("GET /channels/{name}", a.getChannel, nil)
 	// Long-lived: not observed (the tunnel traces its own attach and detach).
 	handle("GET /tunnel", a.authed(a.tunnel))
-	handle("GET /openapi", http.HandlerFunc(serveOpenAPI))
+	handle("GET /openapi.json", http.HandlerFunc(serveOpenAPI))
 	handle("GET /openapi.yaml", http.HandlerFunc(serveOpenAPIYAML))
 	resource("GET /licenses", a.licenses, nil)
 	route("GET /licenses/{textId}", a.licenseText)
@@ -260,7 +261,7 @@ func (a *API) MeOf(id authz.Identity) Me {
 		me.Hooks = len(a.Hooks.List(id.UserID))
 	}
 	p := a.Hooks.Policy()
-	me.CapName, me.Version, me.Commit, me.Policy = a.CapName, a.Version, a.Commit, Policy{Defaults: p.Defaults, Max: p.Max, CallsPerHook: a.Inspect.CallsPerHook()}
+	me.CapName, me.Version, me.Commit, me.Policy = a.CapName, a.Version, a.Commit, Policy{Defaults: p.Defaults, Max: p.Max, CallsPerHook: a.Inspect.CallsPerHook(), NoBodies: a.Inspect.NoBodies()}
 	me.Public = id.Grants.Public
 	me.Funnel = a.PublicBaseURL != ""
 	me.Links = links

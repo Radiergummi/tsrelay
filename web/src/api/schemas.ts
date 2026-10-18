@@ -152,7 +152,12 @@ export const me = z.object({
   capName: z.string(),
   version: z.string(),
   commit: z.optional(z.string()),
-  policy: z.object({ defaults: effective, max: maxima, callsPerHook: z.number() }),
+  policy: z.object({
+    defaults: effective,
+    max: maxima,
+    callsPerHook: z.number(),
+    noBodies: z.optional(z.boolean()),
+  }),
   public: z.optional(z.boolean()),
   funnel: z.optional(z.boolean()),
 });

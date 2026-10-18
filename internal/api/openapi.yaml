@@ -302,7 +302,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
-  /openapi:
+  /openapi.json:
     get:
       operationId: getOpenAPI
       summary: This document, as JSON (also at `/openapi.json`)
@@ -500,6 +500,7 @@ components:
                 maxBodyBytes: { type: integer }
                 rateLimit: { $ref: "#/components/schemas/RateLimit" }
             callsPerHook: { type: integer }
+            noBodies: { type: boolean, description: "The relay keeps no bodies, whatever hooks set (--capture-bodies=false)" }
         public: { type: boolean, description: "The caller may make hooks public" }
         funnel: { type: boolean, description: "The relay serves public hooks on the internet" }
         links:

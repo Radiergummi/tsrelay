@@ -129,6 +129,21 @@ func TestMeNamesCapAndPolicy(t *testing.T) {
 	if me.Policy.CallsPerHook != inspect.DefaultCallsPerHook {
 		t.Errorf("policy.callsPerHook = %d, want %d", me.Policy.CallsPerHook, inspect.DefaultCallsPerHook)
 	}
+	if me.Policy.NoBodies {
+		t.Error("policy.noBodies set on a relay that keeps bodies")
+	}
+}
+
+func TestMeSaysWhenTheRelayKeepsNoBodies(t *testing.T) {
+	e := newEnv(t)
+	e.api.Inspect = inspect.New(inspect.Config{NoBodies: true})
+	var me Me
+	if resp := e.call(moritz, "GET", "/", nil, &me); resp.StatusCode != 200 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if !me.Policy.NoBodies {
+		t.Error("policy.noBodies not set with --capture-bodies=false")
+	}
 }
 
 func TestMeNamesNewerReleaseToAdmins(t *testing.T) {
