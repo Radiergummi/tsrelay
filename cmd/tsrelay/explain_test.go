@@ -220,7 +220,7 @@ func TestRelayErrorSites(t *testing.T) {
 
 	t.Run("several targets", func(t *testing.T) {
 		d := deps{HTTP: d.HTTP, StatePath: filepath.Join(t.TempDir(), "hooks.json")}
-		st, _ := client.LoadState(d.StatePath, "")
+		st, _ := client.LoadState(d.StatePath)
 		cwd, _ := os.Getwd()
 		for _, port := range []string{"3000", "4000"} {
 			target, _ := client.ParseTarget(port)

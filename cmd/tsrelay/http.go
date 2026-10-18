@@ -376,18 +376,16 @@ func callHandler(target *url.URL, insecure bool, out *output) http.Handler {
 }
 
 // openState loads the CLI's state: d.StatePath in tests, else
-// client.DefaultStatePath, falling back to the pre-§15 location until the
-// next write moves it.
+// client.DefaultStatePath.
 func openState(d deps) (*client.State, error) {
-	path, legacy := d.StatePath, ""
+	path := d.StatePath
 	if path == "" {
 		var err error
 		if path, err = client.DefaultStatePath(); err != nil {
 			return nil, err
 		}
-		legacy, _ = client.LegacyStatePath()
 	}
-	s, err := client.LoadState(path, legacy)
+	s, err := client.LoadState(path)
 	if err != nil {
 		return nil, &cliError{Title: "Can't read tsrelay's remembered hooks", Code: "state_unreadable", err: err,
 			Reason: fmt.Sprintf("tsrelay remembers hooks per directory in %s: %s", path, sentence(err.Error())),

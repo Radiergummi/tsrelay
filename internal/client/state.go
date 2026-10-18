@@ -16,10 +16,9 @@ import (
 // State remembers which hook the CLI used per relay, working directory and
 // target, so URLs pasted into .env files survive restarts (DESIGN.md §15).
 type State struct {
-	Paths  map[string]string `json:"paths"`
-	URLs   map[string]string `json:"urls,omitempty"`
-	file   string
-	legacy string // the file this state was read from instead; removed on the next write
+	Paths map[string]string `json:"paths"`
+	URLs  map[string]string `json:"urls,omitempty"`
+	file  string
 }
 
 // DefaultStatePath is $XDG_STATE_HOME/tsrelay/hooks.json, or
@@ -45,27 +44,10 @@ func DefaultRunDir() (string, error) {
 	return filepath.Join(filepath.Dir(p), "run"), nil
 }
 
-// LegacyStatePath is where tsrelay kept its state before DefaultStatePath:
-// <user config dir>/tsrelay/state.json.
-func LegacyStatePath() (string, error) {
-	d, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(d, "tsrelay", "state.json"), nil
-}
-
-// LoadState reads the state at path. If path does not exist yet and legacy
-// is not empty, it reads legacy instead; the next write then moves the
-// state to path.
-func LoadState(path, legacy string) (*State, error) {
+// LoadState reads the state at path; a missing file is an empty state.
+func LoadState(path string) (*State, error) {
 	s := &State{file: path}
 	err := s.read(path)
-	if errors.Is(err, fs.ErrNotExist) && legacy != "" {
-		if err = s.read(legacy); err == nil {
-			s.legacy = legacy
-		}
-	}
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
@@ -104,14 +86,7 @@ func (s *State) Remember(key, hookPath, hookURL string) error {
 	}
 	// The write does not merge: when two CLIs write concurrently, the last
 	// rename wins and the other's entry is lost.
-	if err := atomicfile.WriteFile(s.file, b, 0o600); err != nil {
-		return err
-	}
-	if s.legacy != "" {
-		_ = os.Remove(s.legacy) // migrated; a leftover copy is harmless
-		s.legacy = ""
-	}
-	return nil
+	return atomicfile.WriteFile(s.file, b, 0o600)
 }
 
 func StateKey(relayURL, dir string, target *url.URL) string {

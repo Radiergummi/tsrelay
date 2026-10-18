@@ -439,7 +439,7 @@ func TestHTTPFollowsHookUpdate(t *testing.T) {
 	if out := r.stdout.String(); out != oldURL+"\n"+h.URL+"\n" {
 		t.Fatalf("stdout = %q, want the old and then the new URL", out)
 	}
-	st, err := client.LoadState(e.statePath, "")
+	st, err := client.LoadState(e.statePath)
 	if err != nil {
 		t.Fatal(err)
 	}

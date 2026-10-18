@@ -113,7 +113,7 @@ func TestCompleteChannels(t *testing.T) {
 func TestCompleteTargets(t *testing.T) {
 	e := newCLIEnv(t)
 	d := deps{HTTP: tunnel.NewHTTPClient(e.fake.Dial(receiver)), StatePath: e.statePath}
-	st, _ := client.LoadState(e.statePath, "")
+	st, _ := client.LoadState(e.statePath)
 	cwd, _ := os.Getwd()
 	for _, tc := range []struct{ target, url string }{{"3000", e.relayURL + "/~moritz/a"}, {"https://localhost:8443", e.relayURL + "/~moritz/b"}} {
 		u, _ := client.ParseTarget(tc.target)
