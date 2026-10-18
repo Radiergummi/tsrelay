@@ -610,7 +610,7 @@ components:
         id: { type: string }
         hookId: { type: string }
         receivedAt: { type: string, format: date-time }
-        kind: { type: string, enum: [sender, replay, test] }
+        kind: { type: string, enum: [sender, public, replay, test] }
         replayOf: { type: string }
         sender: { $ref: "#/components/schemas/Sender" }
         method: { type: string }

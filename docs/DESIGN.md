@@ -524,12 +524,14 @@ tsrelay hooks show <hook>                         one hook in detail
 tsrelay hooks create [<path>] [flags]
 tsrelay hooks update <hook> [flags]
 tsrelay hooks delete <hook>... (alias rm)
+tsrelay hooks rotate-url <hook>                   give a public hook a new public URL
 tsrelay url [<port|url>]                          print the URL `http` would use
 tsrelay ps                                        list background tunnels
 tsrelay logs <id|hook> [-f]                       print or follow a background tunnel's log
 tsrelay stop <id|hook>... | --all                 stop background tunnels
 tsrelay update [--check] [-y/--yes]               replace this CLI with the relay's version
 tsrelay serve [flags]                             run the relay
+tsrelay licenses                                  the open-source components' licenses
 tsrelay completion bash|zsh|fish|powershell       cobra's generated completion
 tsrelay --version                                 fang; there is no `version` subcommand
 ```
