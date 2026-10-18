@@ -39,20 +39,19 @@ export function Inspector({
 }) {
   const call = useCall(hook.id, callId);
   if (call.isPending) return <Skeleton className="h-64 w-full" />;
-  if (call.isError) {
-    if (call.error instanceof ApiError && call.error.status === 404) {
-      return (
-        <div className="py-12 text-center">
-          <p className="mb-2 font-medium">This call has expired from the inspector</p>
-          <p className="text-muted-foreground">
-            The relay keeps only the most recent calls of each hook, in memory, and forgets them
-            when it restarts.
-          </p>
-        </div>
-      );
-    }
-    return <PageError error={call.error} />;
+  // A failed refetch keeps showing the call, unless it has expired.
+  if (call.error instanceof ApiError && call.error.status === 404) {
+    return (
+      <div className="py-12 text-center">
+        <p className="mb-2 font-medium">This call has expired from the inspector</p>
+        <p className="text-muted-foreground">
+          The relay keeps only the most recent calls of each hook, in memory, and forgets them when
+          it restarts.
+        </p>
+      </div>
+    );
   }
+  if (call.data === undefined) return <PageError error={call.error} />;
   return (
     <CallView
       key={call.data.id}

@@ -1,9 +1,10 @@
 import { QueryClient } from "@tanstack/react-query";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { useState } from "react";
 import { expect, test, vi } from "vitest";
+import { keys } from "@/api/queries";
 import { fixtures } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";
 import { server } from "@/test/server";
@@ -11,8 +12,10 @@ import { Inspector } from "./Inspector";
 
 const show = (callId: string, me = fixtures.me, hook = fixtures.hook) => {
   const onSelect = vi.fn<(callId: string) => void>();
-  renderWithProviders(<Inspector hook={hook} me={me} callId={callId} onSelect={onSelect} />);
-  return onSelect;
+  const { client } = renderWithProviders(
+    <Inspector hook={hook} me={me} callId={callId} onSelect={onSelect} />,
+  );
+  return Object.assign(onSelect, { client });
 };
 
 test("the owner sees the request, the response and the actions", async () => {
@@ -121,6 +124,36 @@ test("a replay can be compared with its original", async () => {
   await userEvent.click(await screen.findByRole("tab", { name: "Diff" }));
   expect(await screen.findByText(/201 Created/, { selector: "[data-op=add]" })).toBeInTheDocument();
   expect(screen.getByText(/200 OK/, { selector: "[data-op=del]" })).toBeInTheDocument();
+});
+
+test("a failed refetch keeps showing the call and its diff", async () => {
+  const { client } = show("c_replay");
+  await userEvent.click(await screen.findByRole("tab", { name: "Diff" }));
+  await screen.findByText(/201 Created/, { selector: "[data-op=add]" });
+  server.use(
+    http.get("/hooks/:id/calls/:callId", () =>
+      HttpResponse.json({ status: 500, code: "internal", detail: "boom" }, { status: 500 }),
+    ),
+  );
+  await act(() => client.refetchQueries({ queryKey: ["call"] }));
+  expect(client.getQueryState(keys.call(fixtures.hook.id, "c_replay"))?.status).toBe("error");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.queryByText(/has expired/)).not.toBeInTheDocument();
+  expect(screen.getByText(/201 Created/, { selector: "[data-op=add]" })).toBeInTheDocument();
+});
+
+test("an original that fails to load is not called expired", async () => {
+  server.use(
+    http.get("/hooks/:id/calls/:callId", ({ params }) =>
+      params.callId === fixtures.callReplay.replayOf
+        ? HttpResponse.json({ status: 500, code: "internal", detail: "boom" }, { status: 500 })
+        : HttpResponse.json(fixtures.callReplay),
+    ),
+  );
+  show("c_replay");
+  await userEvent.click(await screen.findByRole("tab", { name: "Diff" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("boom");
+  expect(screen.queryByText(/has expired/)).not.toBeInTheDocument();
 });
 
 test("an expired call says so", async () => {

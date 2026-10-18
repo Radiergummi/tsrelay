@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { expect, test } from "vitest";
@@ -7,8 +7,10 @@ import { routes } from "@/routes";
 import { fixtures } from "@/test/fixtures";
 import { server } from "@/test/server";
 
-function renderAt(path: string) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderAt(
+  path: string,
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   render(
     <QueryClientProvider client={client}>
@@ -94,6 +96,17 @@ test("an unidentified viewer gets one message and a reload button", async () => 
   expect(await screen.findByText(/could not identify your device/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Reload" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Licenses" })).toBeInTheDocument();
+});
+
+test("a failed refetch of the entry document keeps the app", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  renderAt("/hooks", client);
+  expect(await screen.findByRole("link", { name: "Hooks" })).toBeInTheDocument();
+  meIs({ status: 500, code: "internal", detail: "boom" }, 500);
+  await act(() => client.refetchQueries({ queryKey: ["me"] }));
+  expect(client.getQueryState(["me"])?.status).toBe("error");
+  expect(screen.queryByText("The relay is not reachable")).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Hooks" })).toBeInTheDocument();
 });
 
 test("unknown pages and expired inspect links", async () => {

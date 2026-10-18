@@ -30,7 +30,8 @@ export function Layout() {
       </Page>
     );
   }
-  if (me.isError)
+  // A failed refetch keeps the app on the last entry document.
+  if (me.data === undefined)
     return (
       <Page>
         <NotIdentified error={me.error} />
