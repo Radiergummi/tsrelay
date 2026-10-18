@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -318,12 +319,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// The relay's call ID replaces any the local app set. A Tsrelay-Error
 		// the app set is dropped, so its own answers are never taken for the
 		// relay's; the one problem the CLI forwarder writes, when the app is
-		// unreachable, is kept.
+		// unreachable, is kept. Tsrelay- trailers are dropped too, both as
+		// announced and once they arrive, which the proxy reads after
+		// closing the body.
 		ModifyResponse: func(resp *http.Response) error {
 			resp.Header.Del(HeaderCallID)
 			if resp.StatusCode != problem.StatusUpstreamUnreachable || resp.Header.Get(problem.HeaderError) != problem.UpstreamUnreachable {
 				resp.Header.Del(problem.HeaderError)
 			}
+			stripTsrelay(resp.Trailer)
+			resp.Body = trailerStripper{resp.Body, resp}
 			return nil
 		},
 		Transport: forwardTransport{
@@ -455,6 +460,19 @@ func stripTsrelay(h http.Header) {
 			delete(h, k)
 		}
 	}
+}
+
+// trailerStripper drops the Tsrelay- trailers of resp when its body is
+// closed, after the transport has filled them in.
+type trailerStripper struct {
+	io.ReadCloser
+	resp *http.Response
+}
+
+func (b trailerStripper) Close() error {
+	err := b.ReadCloser.Close()
+	stripTsrelay(b.resp.Trailer)
+	return err
 }
 
 func proxyError(w http.ResponseWriter, r *http.Request, err error) {
