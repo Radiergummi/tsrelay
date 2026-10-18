@@ -106,10 +106,16 @@ func newStopCmd(c *cli) *cobra.Command {
 		}
 		results := []stopped{}
 		out, errStream := c.streams()
+		// A tunnel that won't stop doesn't keep the others running, nor
+		// hides the results of those stopped already.
+		var failed error
 		for _, r := range rs {
 			result, err := stopRun(r)
 			if err != nil {
-				return err
+				if failed == nil {
+					failed = err
+				}
+				continue
 			}
 			removeRun(dir, r.ID)
 			results = append(results, stopped{r.ID, result})
@@ -125,9 +131,11 @@ func newStopCmd(c *cli) *cobra.Command {
 			}
 		}
 		if c.json {
-			return writeJSON(out, results)
+			if err := writeJSON(out, results); err != nil {
+				return err
+			}
 		}
-		return nil
+		return failed
 	}
 	return cmd
 }
