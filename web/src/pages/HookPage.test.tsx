@@ -3,6 +3,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
+import { keys } from "@/api/queries";
 import { LiveProvider } from "@/lib/live";
 import { FakeEventSource } from "@/test/eventSource";
 import { fixtures } from "@/test/fixtures";
@@ -17,12 +18,13 @@ function open(hookId: string, route = `/hooks/${hookId}`, me = fixtures.me) {
       <HookPage />
     </LiveProvider>
   );
-  return renderWithProviders(ui, {
+  const rendered = renderWithProviders(ui, {
     route,
     path: "/hooks/:id/calls?/:callId?",
     context: me,
     client,
   });
+  return { ...rendered, client };
 }
 
 test("shows the hook, its settings, and its calls newest first", async () => {
@@ -157,6 +159,24 @@ test("a hook deleted while open says so", async () => {
   expect(
     await screen.findByText("There is no hook with this ID, or it is not yours."),
   ).toBeInTheDocument();
+});
+
+test("a failed refetch keeps showing the hook and its calls", async () => {
+  const { client } = open(fixtures.hook.id);
+  await screen.findAllByRole("link", { name: /POST \/payments\/done/ });
+  server.use(
+    http.get("/hooks/:id", () =>
+      HttpResponse.json({ status: 500, code: "internal", detail: "boom" }, { status: 500 }),
+    ),
+    http.get("/hooks/:id/calls", () =>
+      HttpResponse.json({ status: 500, code: "internal", detail: "boom" }, { status: 500 }),
+    ),
+  );
+  await act(() => client.refetchQueries({ type: "active" }));
+  expect(client.getQueryState(keys.hook(fixtures.hook.id))?.status).toBe("error");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "payments/done" })).toBeInTheDocument();
+  expect(screen.getAllByRole("link", { name: /POST \/payments\/done/ }).length).toBeGreaterThan(3);
 });
 
 test("t opens the test request dialog, which shuts on send and toasts the outcome", async () => {

@@ -39,7 +39,7 @@ export function ChannelPage() {
       </div>
       {channel.isPending ? (
         <TableSkeleton />
-      ) : channel.isError ? (
+      ) : channel.data === undefined ? (
         <PageError error={channel.error} />
       ) : (
         <>
