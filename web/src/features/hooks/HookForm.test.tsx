@@ -101,6 +101,7 @@ test("body size takes a unit, and rate limit fills in the other half from the de
   await openDelivery();
   await userEvent.type(screen.getByLabelText("Size"), "10");
   await userEvent.type(screen.getByLabelText("per second"), "20");
+  expect(screen.getByLabelText("per second")).toHaveAccessibleName("Rate limit per second");
   expect(screen.getByRole("button", { name: "unlimited" })).toHaveAttribute(
     "aria-pressed",
     "false",
