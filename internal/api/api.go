@@ -98,6 +98,7 @@ type Policy struct {
 	Defaults     hooks.Effective `json:"defaults"`
 	Max          hooks.Maxima    `json:"max"`
 	CallsPerHook int             `json:"callsPerHook"`
+	NoBodies     bool            `json:"noBodies,omitempty"` // the relay keeps no bodies, whatever hooks set
 }
 
 type Limits struct {
@@ -260,7 +261,7 @@ func (a *API) MeOf(id authz.Identity) Me {
 		me.Hooks = len(a.Hooks.List(id.UserID))
 	}
 	p := a.Hooks.Policy()
-	me.CapName, me.Version, me.Commit, me.Policy = a.CapName, a.Version, a.Commit, Policy{Defaults: p.Defaults, Max: p.Max, CallsPerHook: a.Inspect.CallsPerHook()}
+	me.CapName, me.Version, me.Commit, me.Policy = a.CapName, a.Version, a.Commit, Policy{Defaults: p.Defaults, Max: p.Max, CallsPerHook: a.Inspect.CallsPerHook(), NoBodies: a.Inspect.NoBodies()}
 	me.Public = id.Grants.Public
 	me.Funnel = a.PublicBaseURL != ""
 	me.Links = links

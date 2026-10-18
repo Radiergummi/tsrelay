@@ -23,12 +23,15 @@ export const BodyViewer = memo(function BodyViewer({
   capture,
   contentType,
   metadataOnly,
+  relayNoBodies = false,
   label,
   hookId,
 }: {
   capture: Capture;
   contentType: string | undefined;
   metadataOnly: boolean;
+  /** The relay keeps no bodies at all (--capture-bodies=false), so the hook's settings can't help. */
+  relayNoBodies?: boolean;
   label: string;
   hookId: string;
 }) {
@@ -39,6 +42,8 @@ export const BodyViewer = memo(function BodyViewer({
     return (
       <Note>{formatSize(capture.size)} body, not shown: only the hook's owner sees bodies.</Note>
     );
+  if (!capture.captured && relayNoBodies)
+    return <Note>{formatSize(capture.size)} body. This relay doesn't capture bodies.</Note>;
   if (!capture.captured)
     return (
       <Note>

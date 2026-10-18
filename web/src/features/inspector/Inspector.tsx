@@ -59,6 +59,7 @@ export function Inspector({
       hook={hook}
       call={call.data}
       owner={owns(me, hook)}
+      relayNoBodies={me.policy.noBodies === true}
       onSelect={onSelect}
     />
   );
@@ -68,11 +69,13 @@ function CallView({
   hook,
   call,
   owner,
+  relayNoBodies,
   onSelect,
 }: {
   hook: Hook;
   call: Call;
   owner: boolean;
+  relayNoBodies: boolean;
   onSelect: (callId: string) => void;
 }) {
   // CallView is remounted by its key (call.id) whenever the call changes, so
@@ -211,6 +214,7 @@ function CallView({
             capture={call.requestBody}
             contentType={headerValue(call.requestHeaders, "Content-Type")}
             metadataOnly={!owner}
+            relayNoBodies={relayNoBodies}
             label="request body"
             hookId={hook.id}
           />
@@ -227,6 +231,7 @@ function CallView({
                 capture={last.responseBody}
                 contentType={headerValue(last.responseHeaders, "Content-Type")}
                 metadataOnly={!owner}
+                relayNoBodies={relayNoBodies}
                 label="response body"
                 hookId={hook.id}
               />

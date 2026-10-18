@@ -124,6 +124,21 @@ test("states without a body to show", () => {
   expect(screen.getByText(/only the hook's owner sees bodies/)).toBeInTheDocument();
 });
 
+test("a body not captured relay-wide doesn't point at the hook's settings", () => {
+  renderWithProviders(
+    <BodyViewer
+      capture={{ size: 10, captured: false }}
+      contentType={undefined}
+      metadataOnly={false}
+      relayNoBodies
+      label="b"
+      hookId="h_1"
+    />,
+  );
+  expect(screen.getByText(/10 B body\. This relay doesn't capture bodies\./)).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Edit the hook" })).not.toBeInTheDocument();
+});
+
 test("a body not captured links to the hook's settings", () => {
   renderWithProviders(
     <BodyViewer

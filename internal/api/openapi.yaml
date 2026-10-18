@@ -500,6 +500,7 @@ components:
                 maxBodyBytes: { type: integer }
                 rateLimit: { $ref: "#/components/schemas/RateLimit" }
             callsPerHook: { type: integer }
+            noBodies: { type: boolean, description: "The relay keeps no bodies, whatever hooks set (--capture-bodies=false)" }
         public: { type: boolean, description: "The caller may make hooks public" }
         funnel: { type: boolean, description: "The relay serves public hooks on the internet" }
         links:

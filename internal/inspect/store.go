@@ -50,6 +50,9 @@ func New(cfg Config) *Inspector {
 // CallsPerHook is how many calls the inspector keeps per hook.
 func (in *Inspector) CallsPerHook() int { return in.cfg.CallsPerHook }
 
+// NoBodies reports whether body capture is off relay-wide.
+func (in *Inspector) NoBodies() bool { return in.cfg.NoBodies }
+
 // Redact returns h without the redacted headers and those left out to keep
 // the set within the capture limit, and the sorted names of every header it
 // left out, for either reason.
