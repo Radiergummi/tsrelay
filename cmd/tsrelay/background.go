@@ -85,11 +85,14 @@ func openRunDir() (string, error) {
 
 func recordPath(dir, id string) string { return filepath.Join(dir, id+".json") }
 func logPath(dir, id string) string    { return filepath.Join(dir, id+".log") }
+func lockPath(dir, id string) string   { return filepath.Join(dir, id+".lock") }
 
-// removeRun forgets the background tunnel id: its record and its log.
+// removeRun forgets the background tunnel id: its record, its log and its
+// lock.
 func removeRun(dir, id string) {
 	_ = os.Remove(recordPath(dir, id))
 	_ = os.Remove(logPath(dir, id))
+	_ = os.Remove(lockPath(dir, id))
 }
 
 // readRecords returns the records in dir, oldest first. Files that are no

@@ -43,6 +43,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 		if err := watchStop(id, cancel); err != nil {
 			fmt.Fprintln(stderr, "tsrelay stop can only kill this tunnel:", err)
 		}
+		dir, err := openRunDir()
+		if err == nil {
+			err = markRunning(dir, id)
+		}
+		if err != nil {
+			fmt.Fprintln(stderr, "tsrelay ps and stop won't see this tunnel running:", err)
+		}
 	}
 	if runtime.GOOS == "windows" {
 		if exe, err := executablePath(d); err == nil {

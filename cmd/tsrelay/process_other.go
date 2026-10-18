@@ -12,7 +12,9 @@ import (
 
 func detach(*exec.Cmd) {}
 
-func processAlive(int) bool { return false }
+func markRunning(string, string) error { return nil }
+
+func runAlive(string, runRecord) bool { return false }
 
 func terminate(pid int, _ string) error {
 	p, err := os.FindProcess(pid)

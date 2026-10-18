@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"syscall"
 )
@@ -12,11 +13,35 @@ import (
 // a controlling terminal, so closing the terminal does not end it.
 func detach(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} }
 
-// processAlive reports whether a process with this pid exists. A pid the
-// system has given to another process since counts as alive.
-func processAlive(pid int) bool {
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
+// runLock is the background tunnel's lock on run/<id>.lock, held until it
+// exits. Kept here so the file is never closed.
+var runLock *os.File
+
+// markRunning locks run/<id>.lock for the life of this process, so
+// runAlive can tell the tunnel from a process that got its pid since.
+func markRunning(dir, id string) error {
+	f, err := os.OpenFile(lockPath(dir, id), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		return err
+	}
+	runLock = f
+	return nil
+}
+
+// runAlive reports whether the background tunnel r is still running: its
+// lock is held. A pid alone can't tell, since the system reuses them.
+func runAlive(dir string, r runRecord) bool {
+	f, err := os.Open(lockPath(dir, r.ID))
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	return errors.Is(err, syscall.EWOULDBLOCK)
 }
 
 // terminate asks the background tunnel id, running as pid, to stop. On
