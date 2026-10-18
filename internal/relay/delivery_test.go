@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
@@ -175,6 +176,34 @@ func TestLocalCallIDIsReplaced(t *testing.T) {
 	resp := e.do(sender, "GET", "/~moritz/cb", nil, nil)
 	if ids := resp.Header.Values(HeaderCallID); len(ids) != 1 || ids[0] == "c_local" {
 		t.Fatalf("Tsrelay-Call-Id = %q, want only the relay's", ids)
+	}
+}
+
+// The local app cannot pass relay headers off as trailers: neither the
+// call's outcome nor the sender sees them, announced or not.
+func TestStripsAppTrailers(t *testing.T) {
+	e := newEnv(t)
+	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Trailer", "Tsrelay-Error, X-Checksum")
+		io.WriteString(w, "body")
+		w.(http.Flusher).Flush() // streamed, so the trailers can follow
+		w.Header().Set("Tsrelay-Error", "forged")
+		w.Header().Set("X-Checksum", "abc")
+		w.Header().Set(http.TrailerPrefix+"Tsrelay-Call-Id", "c_local")
+	}), tunnel.Options{})
+	resp := e.do(sender, "GET", "/~moritz/cb", nil, nil)
+	io.ReadAll(resp.Body)
+	resp.Body.Close()
+	for k := range resp.Trailer {
+		if strings.HasPrefix(k, "Tsrelay-") {
+			t.Errorf("trailer %s reached the sender: %v", k, resp.Trailer)
+		}
+	}
+	if resp.Trailer.Get("X-Checksum") != "abc" {
+		t.Errorf("other trailers must still arrive: %v", resp.Trailer)
+	}
+	if c := e.finished(resp); c.Outcome != inspect.OutcomeOK {
+		t.Errorf("outcome = %q, want %q", c.Outcome, inspect.OutcomeOK)
 	}
 }
 

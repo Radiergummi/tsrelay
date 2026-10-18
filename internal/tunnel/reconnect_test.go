@@ -102,6 +102,31 @@ func TestClientReconnects(t *testing.T) {
 	resp.Body.Close()
 }
 
+// A relay that accepts each attach and then drops it at once is redialled
+// with backoff, not in a tight loop.
+func TestClientBacksOffAfterInstantDrops(t *testing.T) {
+	var dials atomic.Int32
+	c := &tunnel.Client{
+		Hooks: []string{"h1"},
+		Dial: func(context.Context, []string, tunnel.Attach) (net.Conn, error) {
+			dials.Add(1)
+			conn, relay := net.Pipe()
+			relay.Close()
+			return conn, nil
+		},
+		Handler:    http.NotFoundHandler(),
+		MinBackoff: 20 * time.Millisecond,
+		MaxBackoff: time.Second,
+	}
+	cancel, done := run(t, c)
+	time.Sleep(300 * time.Millisecond)
+	cancel()
+	recv(t, done)
+	if n := dials.Load(); n > 8 {
+		t.Fatalf("%d dials in 300ms, want backoff", n)
+	}
+}
+
 func TestClientRetriesServerErrors(t *testing.T) {
 	f := newFakeRelay(t, http.StatusServiceUnavailable, 2)
 	run(t, f.client(make(chan bool, 16)))

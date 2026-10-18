@@ -20,7 +20,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: gh release create "${GITHUB_REF_NAME}" --draft --verify-tag --title "${GITHUB_REF_NAME}" --generate-notes
+        # A pre-release tag (v1.0.0-rc.1) is marked as one, so neither GitHub's
+        # latest release nor the installers and update check pick it up.
+        run: gh release create "${GITHUB_REF_NAME}" --draft --verify-tag --title "${GITHUB_REF_NAME}" --generate-notes ${{ contains(github.ref_name, '-') && '--prerelease' || '' }}
 
   web:
     runs-on: ubuntu-latest
@@ -305,4 +307,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: gh release edit "${GITHUB_REF_NAME}" --draft=false --latest
+        run: gh release edit "${GITHUB_REF_NAME}" --draft=false ${{ !contains(github.ref_name, '-') && '--latest' || '--latest=false' }}

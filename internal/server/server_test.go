@@ -257,6 +257,37 @@ func TestRootAndUnknownPaths(t *testing.T) {
 	}
 }
 
+// The entry document's links resolve through the whole server, extension
+// stripping included, so the OpenAPI link is served as JSON.
+func TestEntryLinksResolve(t *testing.T) {
+	e := newEnv(t, Config{})
+	c := e.fake.Client(receiver)
+	var entry struct{ Links map[string]string }
+	if code := e.getJSON("/", &entry); code != 200 {
+		t.Fatalf("GET / = %d", code)
+	}
+	for name, path := range entry.Links {
+		if name == "tunnel" {
+			continue // an upgrade, not a document
+		}
+		resp, err := c.Get(e.base + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json") {
+			t.Errorf("links.%s %s = %d %s", name, path, resp.StatusCode, resp.Header.Get("Content-Type"))
+		}
+	}
+	for _, path := range []string{"/openapi.json", "/openapi.yaml"} {
+		resp, _ := c.Get(e.base + path)
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Errorf("GET %s = %d", path, resp.StatusCode)
+		}
+	}
+}
+
 // An expiring hook is removed by the reaper even while a tunnel serves it,
 // and the CLI is told so.
 func TestPersistentHookExpires(t *testing.T) {
