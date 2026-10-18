@@ -68,6 +68,7 @@ func TestPublicCallHeaders(t *testing.T) {
 		"Forwarded":             {"for=6.6.6.6;proto=http;host=evil.example"},
 		"Traceparent":           {"00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"},
 		"Tracestate":            {"vendor=spoofed"},
+		"Baggage":               {"tenant=spoofed"},
 		"Stripe-Signature":      {"t=1,v1=abc"},
 	})
 	if resp.StatusCode != 200 {
@@ -89,6 +90,7 @@ func TestPublicCallHeaders(t *testing.T) {
 		"Forwarded":             "",
 		"Traceparent":           "",
 		"Tracestate":            "",
+		"Baggage":               "",
 		"Stripe-Signature":      "t=1,v1=abc",
 	}
 	for k, want := range checks {

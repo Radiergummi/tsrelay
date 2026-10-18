@@ -405,9 +405,10 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.
 		}
 	}
 	if internet {
-		// An internet client may not supply trace headers either.
+		// An internet client may not supply trace context either.
 		out.Header.Del("Traceparent")
 		out.Header.Del("Tracestate")
+		out.Header.Del("Baggage")
 	}
 	if ip, _, err := net.SplitHostPort(pr.In.RemoteAddr); err == nil {
 		out.Header.Set("X-Forwarded-For", ip)
