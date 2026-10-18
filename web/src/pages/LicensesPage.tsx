@@ -82,7 +82,7 @@ export function LicensesPage() {
   );
 
   if (licenses.isPending) return <TableSkeleton />;
-  if (licenses.isError) return <PageError error={licenses.error} />;
+  if (licenses.data === undefined) return <PageError error={licenses.error} />;
 
   // Which chips exist depends on the inventory, not the filters: a chip
   // that vanished while typing would take its selection with it.
