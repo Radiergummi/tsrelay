@@ -192,6 +192,20 @@ func TestCallLineNoInspectLink(t *testing.T) {
 	}
 }
 
+func TestOutputMarksAbortedCalls(t *testing.T) {
+	t.Setenv("TTY_FORCE", "0")
+	o, _, stderr := testOutput(t, false)
+	o.call(client.Call{Method: "GET", Path: "/stream", Status: 200, Aborted: true})
+	if !strings.Contains(stderr.String(), "→ 200 aborted") {
+		t.Fatalf("plain line = %q, want the status marked aborted", stderr.String())
+	}
+	j, stdout, _ := testOutput(t, true)
+	j.call(client.Call{Method: "GET", Path: "/stream", Status: 200, Aborted: true})
+	if !strings.Contains(stdout.String(), `"aborted":true`) {
+		t.Fatalf("JSON event = %q, want aborted", stdout.String())
+	}
+}
+
 func TestOutputCallLinks(t *testing.T) {
 	t.Setenv("TTY_FORCE", "0")
 	o, _, stderr := testOutput(t, false)

@@ -219,6 +219,25 @@ func TestLogCalls(t *testing.T) {
 	}
 }
 
+func TestLogCallsReportsAbortedCalls(t *testing.T) {
+	var got []Call
+	h := LogCalls(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		panic(http.ErrAbortHandler) // as ReverseProxy does when the response breaks off
+	}), func(c Call) { got = append(got, c) })
+	func() {
+		defer func() {
+			if p := recover(); p != http.ErrAbortHandler {
+				t.Errorf("panic = %v, want it passed on", p)
+			}
+		}()
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/stream", nil))
+	}()
+	if len(got) != 1 || !got[0].Aborted || got[0].Status != 200 {
+		t.Fatalf("calls = %+v, want one aborted call", got)
+	}
+}
+
 func TestAPIClientDecodesProblems(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Content-Type") != "application/json" {
