@@ -27,14 +27,19 @@ func visitTyped(fs *pflag.FlagSet, fn func(*pflag.Flag)) {
 	})
 }
 
+// actionFlags are the flags that act rather than configure. A variable
+// left in the environment must not make tsrelay update without asking,
+// stop every tunnel, or detach, so they have no TSRELAY_* twin.
+var actionFlags = map[string]bool{"all": true, "yes": true, "check": true, "follow": true, "background": true}
+
 // envDefaults sets every flag of fs not given on the command line from
 // TSRELAY_<NAME>, with dashes turned into underscores (e.g.
-// --ephemeral-grace ← TSRELAY_EPHEMERAL_GRACE). Variables that match no
-// flag are ignored.
+// --ephemeral-grace ← TSRELAY_EPHEMERAL_GRACE), except actionFlags.
+// Variables that match no flag are ignored.
 func envDefaults(fs *pflag.FlagSet) error {
 	var errs, fixes []string
 	fs.VisitAll(func(f *pflag.Flag) {
-		if f.Changed {
+		if f.Changed || actionFlags[f.Name] {
 			return
 		}
 		name := "TSRELAY_" + strings.ToUpper(strings.ReplaceAll(f.Name, "-", "_"))

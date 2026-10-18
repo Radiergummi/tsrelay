@@ -540,7 +540,7 @@ tsrelay --version                                 fang; there is no `version` su
 
 - **`tsrelay http 8080`** creates or reclaims an ephemeral hook, attaches a tunnel, prints the URL, and then prints one line per call. On a terminal, a call line has the time, method, path, status, duration and sender in aligned columns, and ends in the call ID as an OSC 8 hyperlink to `<relay>/inspect/<callID>`. Plain output prints the full link. With `--json`, call events carry `callId` and `inspect`.
 - **Flags** are GNU style, with shorthands where they read naturally: `-n`, `-c`, `-p`, `-k` on `http`; `-t`, `-k` on `attach`; `-j` everywhere. `serve` has none.
-- **The environment:** every flag `--foo-bar` can be set as `TSRELAY_FOO_BAR`, and the command line wins.
+- **The environment:** every flag `--foo-bar` can be set as `TSRELAY_FOO_BAR`, and the command line wins. Flags that act rather than configure (`--all`, `--yes`, `--check`, `--follow`, `--background`) are excluded, so a variable left in the environment can't update, stop or detach anything.
 - **Targets:** a bare port means `http://localhost:<port>`. A full URL is also accepted, including a path prefix and `https://` (with `--insecure` for self-signed local certificates).
 - **Stable URLs:** the CLI remembers the hook path it used for each working directory and target, in `$XDG_STATE_HOME/tsrelay/hooks.json`, and asks for the same path next time. The URL put into `.env` therefore keeps working across restarts, including after the ephemeral grace period has passed.
 - **`-- cmd args...`** starts the local application with `TSRELAY_URL` set in its environment, and stops it when the tunnel command exits.

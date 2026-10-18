@@ -33,6 +33,20 @@ func TestEnvDefaults(t *testing.T) {
 	}
 }
 
+func TestEnvDefaultsSkipActionFlags(t *testing.T) {
+	fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
+	yes := fs.Bool("yes", false, "")
+	all := fs.Bool("all", false, "")
+	t.Setenv("TSRELAY_YES", "true")
+	t.Setenv("TSRELAY_ALL", "true")
+	if err := envDefaults(fs); err != nil {
+		t.Fatal(err)
+	}
+	if *yes || *all {
+		t.Fatal("an action flag was set from the environment")
+	}
+}
+
 func TestEnvDefaultsInvalid(t *testing.T) {
 	fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
 	fs.Bool("persistent", false, "")
