@@ -46,6 +46,7 @@ type jsonEvent struct {
 	Method     string    `json:"method,omitempty"`
 	Path       string    `json:"path,omitempty"`
 	Status     int       `json:"status,omitempty"`
+	Aborted    bool      `json:"aborted,omitempty"` // the call's response broke off midway
 	DurationMS float64   `json:"durationMs,omitempty"`
 	Sender     string    `json:"sender,omitempty"`
 	CallID     string    `json:"callId,omitempty"`
@@ -171,7 +172,7 @@ func (o *output) call(c client.Call) {
 		link = o.inspectBase + "/inspect/" + url.PathEscape(c.CallID)
 	}
 	if o.json {
-		o.emit(jsonEvent{Event: "call", Hook: c.Hook, Method: c.Method, Path: c.Path, Status: c.Status,
+		o.emit(jsonEvent{Event: "call", Hook: c.Hook, Method: c.Method, Path: c.Path, Status: c.Status, Aborted: c.Aborted,
 			DurationMS: float64(c.Duration.Microseconds()) / 1000, Sender: c.Sender, CallID: c.CallID, Inspect: link})
 		return
 	}
@@ -180,13 +181,16 @@ func (o *output) call(c client.Call) {
 
 // callLine renders one call: today's format when plain, aligned columns
 // with a clickable call ID when fancy. A status from the relay's 56x range
-// is followed by its name.
+// is followed by its name, and a response that broke off by "aborted".
 func (o *output) callLine(s stream, c client.Call, link string) string {
 	ts := o.now().Format("15:04:05")
 	dur := c.Duration.Round(time.Millisecond).String()
 	status := fmt.Sprintf("%3d", c.Status)
 	if name := relayStatus(c.Status); name != "" {
 		status += " " + name
+	}
+	if c.Aborted {
+		status += " aborted"
 	}
 	if !s.fancy {
 		line := fmt.Sprintf("%s %s %s → %s  %s  %s", ts, c.Method, c.Path, strings.TrimSpace(status), dur, c.Sender)

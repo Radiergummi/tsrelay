@@ -150,6 +150,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 				mu.Lock()
 				hook = h
 				mu.Unlock()
+				c.bg.hookChanged(old.ID, h.ID, h.URL)
 				out.url(h, true)
 				return tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, h.ID))
 			},
@@ -167,6 +168,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 						// Only the path can change the URL; the prefix before it stays.
 						hook.Path = strings.TrimPrefix(h.URL, strings.TrimSuffix(hook.URL, hook.Path))
 						hook.URL, hook.PublicURL, hook.Public = h.URL, h.PublicURL, h.Public
+						c.bg.hookChanged(hook.ID, hook.ID, hook.URL)
 						if err := state.Remember(key, hook.Path, hook.URL); err != nil {
 							out.status(styleWarn, "could not remember the hook path: "+err.Error())
 						}
@@ -374,18 +376,16 @@ func callHandler(target *url.URL, insecure bool, out *output) http.Handler {
 }
 
 // openState loads the CLI's state: d.StatePath in tests, else
-// client.DefaultStatePath, falling back to the pre-§15 location until the
-// next write moves it.
+// client.DefaultStatePath.
 func openState(d deps) (*client.State, error) {
-	path, legacy := d.StatePath, ""
+	path := d.StatePath
 	if path == "" {
 		var err error
 		if path, err = client.DefaultStatePath(); err != nil {
 			return nil, err
 		}
-		legacy, _ = client.LegacyStatePath()
 	}
-	s, err := client.LoadState(path, legacy)
+	s, err := client.LoadState(path)
 	if err != nil {
 		return nil, &cliError{Title: "Can't read tsrelay's remembered hooks", Code: "state_unreadable", err: err,
 			Reason: fmt.Sprintf("tsrelay remembers hooks per directory in %s: %s", path, sentence(err.Error())),

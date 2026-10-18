@@ -33,7 +33,7 @@ func newPsCmd(c *cli) *cobra.Command {
 		entries := []psEntry{}
 		for _, r := range readRecords(dir) {
 			e := psEntry{runRecord: r, State: "running"}
-			if !processAlive(r.PID) {
+			if !runAlive(dir, r) {
 				e.State = "exited"
 				removeRun(dir, r.ID)
 			}
@@ -110,7 +110,7 @@ func newStopCmd(c *cli) *cobra.Command {
 		// hides the results of those stopped already.
 		var failed error
 		for _, r := range rs {
-			result, err := stopRun(r)
+			result, err := stopRun(dir, r)
 			if err != nil {
 				if failed == nil {
 					failed = err
@@ -144,30 +144,34 @@ func newStopCmd(c *cli) *cobra.Command {
 // terminate), and kills it if it is still running after
 // backgroundStopTimeout. The result is "stopped", "killed", or "exited" if
 // it was gone already.
-func stopRun(r runRecord) (string, error) {
-	if !processAlive(r.PID) {
+func stopRun(dir string, r runRecord) (string, error) {
+	if !runAlive(dir, r) {
 		return "exited", nil
 	}
-	if terminate(r.PID, r.ID) == nil && waitGone(r.PID, backgroundStopTimeout) {
+	if terminate(r.PID, r.ID) == nil && waitGone(dir, r, backgroundStopTimeout) {
 		return "stopped", nil
+	}
+	if !runAlive(dir, r) {
+		return "stopped", nil // it exited just now
 	}
 	p, err := os.FindProcess(r.PID)
 	if err == nil {
 		err = p.Kill()
 	}
-	if err != nil && processAlive(r.PID) {
+	if err != nil && runAlive(dir, r) {
 		return "", &cliError{Title: "Couldn't stop " + r.ID, Code: "stop_failed", err: err,
 			Reason: fmt.Sprintf("It didn't detach, and killing process %d failed: %s", r.PID, sentence(err.Error())),
 			Fixes:  []string{fmt.Sprintf("Kill process %d yourself", r.PID)}}
 	}
-	waitGone(r.PID, time.Second)
+	waitGone(dir, r, time.Second)
 	return "killed", nil
 }
 
-// waitGone waits up to timeout for pid to exit and reports whether it did.
-func waitGone(pid int, timeout time.Duration) bool {
+// waitGone waits up to timeout for the background tunnel r to exit and
+// reports whether it did.
+func waitGone(dir string, r runRecord, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
-	for processAlive(pid) {
+	for runAlive(dir, r) {
 		if time.Now().After(deadline) {
 			return false
 		}

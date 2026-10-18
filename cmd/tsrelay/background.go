@@ -85,11 +85,14 @@ func openRunDir() (string, error) {
 
 func recordPath(dir, id string) string { return filepath.Join(dir, id+".json") }
 func logPath(dir, id string) string    { return filepath.Join(dir, id+".log") }
+func lockPath(dir, id string) string   { return filepath.Join(dir, id+".lock") }
 
-// removeRun forgets the background tunnel id: its record and its log.
+// removeRun forgets the background tunnel id: its record, its log and its
+// lock.
 func removeRun(dir, id string) {
 	_ = os.Remove(recordPath(dir, id))
 	_ = os.Remove(logPath(dir, id))
+	_ = os.Remove(lockPath(dir, id))
 }
 
 // readRecords returns the records in dir, oldest first. Files that are no
@@ -240,6 +243,9 @@ type bgChild struct {
 	id   string
 	pipe io.Writer // this process's stdout
 	once sync.Once
+
+	mu  sync.Mutex
+	rec *runRecord // as written to run/<id>.json, once ready
 }
 
 // ready records the tunnel in run/<id>.json and reports it attached.
@@ -248,18 +254,49 @@ func (b *bgChild) ready(r runRecord) {
 		return
 	}
 	b.once.Do(func() {
-		data, err := json.MarshalIndent(r, "", "  ")
-		dir, derr := openRunDir()
-		err = cmp.Or(err, derr)
+		b.mu.Lock()
+		err := b.write(r)
 		if err == nil {
-			err = atomicfile.WriteFile(recordPath(dir, b.id), data, 0o600)
+			b.rec = &r
 		}
+		b.mu.Unlock()
 		if err != nil {
 			b.send(backgroundMessage{jsonError: newJSONError(&cliError{Title: "Can't record the background tunnel", Reason: sentence(err.Error()), Code: "run_dir_unusable"})})
 			return
 		}
 		b.send(backgroundMessage{Ready: &r})
 	})
+}
+
+// hookChanged updates the recorded hook id, after it was renamed or
+// recreated as newID at url, so ps, stop and logs find it by its new path.
+func (b *bgChild) hookChanged(id, newID, url string) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.rec == nil {
+		return
+	}
+	for i, h := range b.rec.Hooks {
+		if h.ID == id {
+			// Only the path can change the URL; the prefix before it stays.
+			path := strings.TrimPrefix(url, strings.TrimSuffix(h.URL, h.Path))
+			b.rec.Hooks[i] = runHook{ID: newID, Path: path, URL: url}
+		}
+	}
+	_ = b.write(*b.rec) // best effort: the tunnel keeps running either way
+}
+
+// write writes r to run/<id>.json. The caller holds mu.
+func (b *bgChild) write(r runRecord) error {
+	data, err := json.MarshalIndent(r, "", "  ")
+	dir, derr := openRunDir()
+	if err = cmp.Or(err, derr); err != nil {
+		return err
+	}
+	return atomicfile.WriteFile(recordPath(dir, b.id), data, 0o600)
 }
 
 // fail reports e as the reason the tunnel ends, unless it was reported

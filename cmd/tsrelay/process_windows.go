@@ -15,20 +15,19 @@ func detach(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.DETACHED_PROCESS | windows.CREATE_NEW_PROCESS_GROUP}
 }
 
-// stillActive is the exit code GetExitCodeProcess reports for a process
-// that is still running.
-const stillActive = 259
+// markRunning has nothing to do on Windows: watchStop's stop event exists
+// exactly as long as the tunnel runs.
+func markRunning(string, string) error { return nil }
 
-// processAlive reports whether a process with this pid is running. A pid
-// the system has given to another process since counts as alive.
-func processAlive(pid int) bool {
-	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+// runAlive reports whether the background tunnel r is still running: its
+// stop event exists. A pid alone can't tell, since the system reuses them.
+func runAlive(_ string, r runRecord) bool {
+	h, err := windows.OpenEvent(windows.SYNCHRONIZE, false, stopEvent(r.ID))
 	if err != nil {
 		return false
 	}
-	defer windows.CloseHandle(h)
-	var code uint32
-	return windows.GetExitCodeProcess(h, &code) == nil && code == stillActive
+	windows.CloseHandle(h)
+	return true
 }
 
 // stopEvent names the event a background tunnel waits on. A detached

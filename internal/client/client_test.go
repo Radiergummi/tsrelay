@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -219,6 +218,25 @@ func TestLogCalls(t *testing.T) {
 	}
 }
 
+func TestLogCallsReportsAbortedCalls(t *testing.T) {
+	var got []Call
+	h := LogCalls(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		panic(http.ErrAbortHandler) // as ReverseProxy does when the response breaks off
+	}), func(c Call) { got = append(got, c) })
+	func() {
+		defer func() {
+			if p := recover(); p != http.ErrAbortHandler {
+				t.Errorf("panic = %v, want it passed on", p)
+			}
+		}()
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/stream", nil))
+	}()
+	if len(got) != 1 || !got[0].Aborted || got[0].Status != 200 {
+		t.Fatalf("calls = %+v, want one aborted call", got)
+	}
+}
+
 func TestAPIClientDecodesProblems(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Content-Type") != "application/json" {
@@ -276,14 +294,14 @@ func TestRelayURL(t *testing.T) {
 
 func TestState(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sub", "hooks.json")
-	s, err := LoadState(path, "")
+	s, err := LoadState(path)
 	if err != nil || s.Path("k") != "" || s.URL("k") != "" {
 		t.Fatalf("empty state: %v %q %q", err, s.Path("k"), s.URL("k"))
 	}
 	if err := s.Remember("k", "amber-otter-lamp", "https://r/~m/amber-otter-lamp"); err != nil {
 		t.Fatal(err)
 	}
-	s2, _ := LoadState(path, "")
+	s2, _ := LoadState(path)
 	if s2.Path("k") != "amber-otter-lamp" || s2.URL("k") != "https://r/~m/amber-otter-lamp" {
 		t.Fatalf("reloaded = %q %q", s2.Path("k"), s2.URL("k"))
 	}
@@ -310,40 +328,6 @@ func TestDefaultStatePath(t *testing.T) {
 }
 
 // Minor 10: the old state file is read once and moved on the next write.
-func TestStateMigratesLegacyFile(t *testing.T) {
-	dir := t.TempDir()
-	legacy := filepath.Join(dir, "config", "state.json")
-	if err := os.MkdirAll(filepath.Dir(legacy), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(legacy, []byte(`{"paths":{"k":"old-path"}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "state", "hooks.json")
-	s, err := LoadState(path, legacy)
-	if err != nil || s.Path("k") != "old-path" {
-		t.Fatalf("legacy state not read: %v %q", err, s.Path("k"))
-	}
-	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("loading must not write the new file: %v", err)
-	}
-	if err := s.Remember("k2", "p2", "u2"); err != nil {
-		t.Fatal(err)
-	}
-	moved, _ := LoadState(path, "")
-	if moved.Path("k") != "old-path" || moved.Path("k2") != "p2" {
-		t.Fatalf("migrated state = %v", moved.Paths)
-	}
-	if _, err := os.Stat(legacy); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("legacy file should be gone after the migration: %v", err)
-	}
-	// Once the new file exists, a legacy file is ignored.
-	os.WriteFile(legacy, []byte(`{"paths":{"k":"stale"}}`), 0o600)
-	if again, _ := LoadState(path, legacy); again.Path("k") != "old-path" {
-		t.Fatalf("legacy file won over the new one: %q", again.Path("k"))
-	}
-}
-
 // Minor 11: the temporary file has a unique name, so a stray or concurrent
 // one cannot break a save.
 func TestStateTempFile(t *testing.T) {
@@ -352,7 +336,7 @@ func TestStateTempFile(t *testing.T) {
 	if err := os.Mkdir(path+".tmp", 0o700); err != nil { // where a fixed name would write
 		t.Fatal(err)
 	}
-	s, _ := LoadState(path, "")
+	s, _ := LoadState(path)
 	if err := s.Remember("k", "p", "u"); err != nil {
 		t.Fatalf("save next to a stray %s.tmp: %v", path, err)
 	}
@@ -362,7 +346,7 @@ func TestStateTempFile(t *testing.T) {
 }
 
 func TestStateTargets(t *testing.T) {
-	s, _ := LoadState(filepath.Join(t.TempDir(), "hooks.json"), "")
+	s, _ := LoadState(filepath.Join(t.TempDir(), "hooks.json"))
 	a, _ := url.Parse("http://localhost:8080")
 	b, _ := url.Parse("https://app.test/x")
 	s.Remember(StateKey("https://r", "/proj", b), "p2", "u2")

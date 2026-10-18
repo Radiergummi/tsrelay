@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -23,6 +24,10 @@ import (
 func TestMain(m *testing.M) {
 	if os.Getenv(backgroundIDEnv) != "" {
 		main()
+	}
+	if os.Getenv("TSRELAY_TEST_SLEEP") != "" { // a stranger for TestStaleRecordSparesReusedPID
+		time.Sleep(time.Minute)
+		os.Exit(0)
 	}
 	os.Exit(m.Run())
 }
@@ -51,9 +56,9 @@ func newBackgroundEnv(t *testing.T) *cliEnv {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	t.Cleanup(func() {
 		for _, r := range readRecords(e.runDir()) {
-			if p, err := os.FindProcess(r.PID); err == nil && processAlive(r.PID) {
+			if p, err := os.FindProcess(r.PID); err == nil && runAlive(e.runDir(), r) {
 				_ = p.Kill()
-				waitGone(r.PID, 5*time.Second) // Windows won't remove the log while it is open
+				waitGone(e.runDir(), r, 5*time.Second) // Windows won't remove the log while it is open
 			}
 		}
 	})
@@ -62,6 +67,34 @@ func newBackgroundEnv(t *testing.T) *cliEnv {
 
 func (e *cliEnv) runDir() string {
 	return filepath.Join(os.Getenv("XDG_STATE_HOME"), "tsrelay", "run")
+}
+
+// A record left behind by a tunnel that is gone, whose pid now belongs to
+// another process (a reboot, a reused pid), is exited: ps forgets it, and
+// stop leaves that process alone.
+func TestStaleRecordSparesReusedPID(t *testing.T) {
+	e := newBackgroundEnv(t)
+	if err := os.MkdirAll(e.runDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stranger := exec.Command(os.Args[0], "-test.run=^$")
+	stranger.Env = append(os.Environ(), "TSRELAY_TEST_SLEEP=1")
+	if err := stranger.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stranger.Process.Kill(); stranger.Wait() })
+	r := runRecord{ID: "stale1", PID: stranger.Process.Pid, Started: time.Now()}
+	b, _ := json.Marshal(r)
+	if err := os.WriteFile(recordPath(e.runDir(), r.ID), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := e.tsrelay("stop", "--all", "--json")
+	if code != 0 || !strings.Contains(out, `"exited"`) {
+		t.Fatalf("stop: exit %d\n%s%s", code, out, errOut)
+	}
+	if stranger.ProcessState != nil || stranger.Process.Signal(syscall.Signal(0)) != nil {
+		t.Fatal("stop killed a process that isn't the tunnel")
+	}
 }
 
 var backgroundID = regexp.MustCompile(`running in the background as (\w+)`)
@@ -110,10 +143,10 @@ func (e *cliEnv) waitLog(id, want string) {
 // record or log.
 func (e *cliEnv) assertGone(r runRecord) {
 	e.t.Helper()
-	if processAlive(r.PID) {
+	if runAlive(e.runDir(), r) {
 		e.t.Errorf("process %d of %s still runs", r.PID, r.ID)
 	}
-	for _, p := range []string{recordPath(e.runDir(), r.ID), logPath(e.runDir(), r.ID)} {
+	for _, p := range []string{recordPath(e.runDir(), r.ID), logPath(e.runDir(), r.ID), lockPath(e.runDir(), r.ID)} {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			e.t.Errorf("%s is left behind (%v)", p, err)
 		}
@@ -142,7 +175,7 @@ func TestBackgroundAttach(t *testing.T) {
 		t.Fatalf("stderr should name the background ID and how to stop it:\n%s", errOut)
 	}
 	r := e.record(m[1])
-	if r.PID == os.Getpid() || !processAlive(r.PID) {
+	if r.PID == os.Getpid() || !runAlive(e.runDir(), r) {
 		t.Fatalf("pid %d should be a running process of its own", r.PID)
 	}
 	want := []runHook{{ID: a.ID, Path: a.Path, URL: a.URL}}
@@ -169,6 +202,35 @@ func TestBackgroundAttach(t *testing.T) {
 		t.Fatalf("stop: exit %d\n%s", code, errOut)
 	}
 	e.assertGone(r)
+}
+
+// A hook renamed while a background tunnel serves it is found by its new
+// path, and ps shows its new URL.
+func TestBackgroundFollowsRename(t *testing.T) {
+	e := newBackgroundEnv(t)
+	ctx := context.Background()
+	a, err := e.api().CreateHook(ctx, hooks.CreateRequest{Path: "pay"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := e.background("attach", "pay", "--to", e.local.URL)
+	e.waitLog(r.ID, "connected")
+	moved, err := e.api().UpdateHook(ctx, a.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new("billing")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.waitLog(r.ID, moved.URL)
+	want := []runHook{{ID: a.ID, Path: "billing", URL: moved.URL}}
+	deadline := time.Now().Add(5 * time.Second)
+	for !slices.Equal(e.record(r.ID).Hooks, want) {
+		if time.Now().After(deadline) {
+			t.Fatalf("record hooks = %+v, want %+v", e.record(r.ID).Hooks, want)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if code, _, errOut := e.tsrelay("stop", "billing"); code != 0 || !strings.Contains(errOut, "stopped "+r.ID) {
+		t.Fatalf("stop by the new path: exit %d\n%s", code, errOut)
+	}
 }
 
 func TestBackgroundStop(t *testing.T) {
@@ -208,7 +270,7 @@ func TestBackgroundStop(t *testing.T) {
 		t.Fatalf("stop by hook: exit %d\n%s", code, errOut)
 	}
 	e.assertGone(one)
-	if !processAlive(two.PID) || !processAlive(three.PID) {
+	if !runAlive(e.runDir(), two) || !runAlive(e.runDir(), three) {
 		t.Fatal("stopping one tunnel stopped others")
 	}
 	// By ID.

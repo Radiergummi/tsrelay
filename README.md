@@ -238,7 +238,7 @@ Errors produced by the relay itself are `application/problem+json` responses and
 
 `tsrelay completion bash|zsh|fish|powershell` prints a completion script; for example `tsrelay completion fish > ~/.config/fish/completions/tsrelay.fish`. Besides commands and flags, it completes your hooks (by path and ID, for `attach` and `hooks show|update|delete`), channels for `--channel` (those your grants name, and those your hooks use), the targets `tsrelay http` remembered in this directory for `--to` and `<port|url>`, and background tunnels by ID and hook for `stop` and `logs`. Hooks and channels are asked of the relay live, giving up after 2 seconds; targets and background tunnels come from this machine. When anything fails, completion offers nothing and prints nothing.
 
-Every flag can also be set in the environment as `TSRELAY_<FLAG>`, with dashes as underscores (`--relay` ← `TSRELAY_RELAY`, `--hold-timeout` ← `TSRELAY_HOLD_TIMEOUT`); the command line wins.
+Every flag can also be set in the environment as `TSRELAY_<FLAG>`, with dashes as underscores (`--relay` ← `TSRELAY_RELAY`, `--hold-timeout` ← `TSRELAY_HOLD_TIMEOUT`); the command line wins. Flags that act rather than configure (`--all`, `--yes`, `--check`, `--follow`, `--background`) have no such variable.
 
 On a terminal, output is colored, call lines are aligned, and each call ends with its ID as a clickable link to the inspector. Output that isn't a terminal is plain text, as is output with `NO_COLOR` set or `--no-color` given. If your terminal doesn't support hyperlinks, `--no-hyperlinks` (or `TSRELAY_NO_HYPERLINKS=1`) prints the full inspector URL instead.
 

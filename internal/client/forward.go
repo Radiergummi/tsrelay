@@ -75,20 +75,27 @@ type Call struct {
 	Duration time.Duration
 	Sender   string // tags if the sender is tagged, else its node name
 	CallID   string // the relay's ID of the call, which names it in the inspector
+	Aborted  bool   // the response broke off midway, as the app or the relay went away
 }
 
-// LogCalls reports every call handled by next once it completes.
+// LogCalls reports every call handled by next once it completes, or once
+// it is aborted: the proxy panics with http.ErrAbortHandler when a
+// response breaks off, and the call is reported on the way out.
 func LogCalls(next http.Handler, log func(Call)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w}
+		completed := false
+		defer func() {
+			sender := r.Header.Get("Tsrelay-Sender-Tags")
+			if sender == "" {
+				sender = r.Header.Get("Tsrelay-Sender-Node")
+			}
+			log(Call{Hook: r.Header.Get(tunnel.HeaderHook), Method: r.Method, Path: r.URL.Path, Status: sw.status,
+				Duration: time.Since(start), Sender: sender, CallID: r.Header.Get("Tsrelay-Call-Id"), Aborted: !completed})
+		}()
 		next.ServeHTTP(sw, r)
-		sender := r.Header.Get("Tsrelay-Sender-Tags")
-		if sender == "" {
-			sender = r.Header.Get("Tsrelay-Sender-Node")
-		}
-		log(Call{Hook: r.Header.Get(tunnel.HeaderHook), Method: r.Method, Path: r.URL.Path, Status: sw.status,
-			Duration: time.Since(start), Sender: sender, CallID: r.Header.Get("Tsrelay-Call-Id")})
+		completed = true
 	})
 }
 
