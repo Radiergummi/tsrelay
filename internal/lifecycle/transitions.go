@@ -85,7 +85,7 @@ func (l *Lifecycle) Revoke(ctx context.Context, t *tunnel.Tunnel, ids []hooks.ID
 
 // Update applies req to the hook id on behalf of actor, as
 // hooks.Manager.Update does, and announces the change: in the audit log, as
-// a hook event, and to the tunnel serving the hook. A request that touches
+// a hook event, and to the tunnel serving the hook. An update that changes
 // no field is not announced.
 func (l *Lifecycle) Update(ctx context.Context, actor authz.Identity, id hooks.ID, req hooks.UpdateRequest) (hooks.Hook, []string, error) {
 	h, changed, err := l.cfg.Hooks.Update(ctx, actor, id, req)

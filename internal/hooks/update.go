@@ -56,35 +56,58 @@ type UpdateRequest struct {
 	Settings    SettingsPatch  `json:"settings"`
 }
 
-// apply sets dst from o if o was given; it reports whether it did.
-func apply[T any](dst **T, o Opt[T]) bool {
+// apply sets dst from o if o was given.
+func apply[T any](dst **T, o Opt[T]) {
 	if o.Set {
 		*dst = o.Value
 	}
-	return o.Set
 }
 
-// apply sets the fields of s that p gives and returns their names.
-func (p SettingsPatch) apply(s *Settings) []string {
+// apply sets the fields of s that p gives.
+func (p SettingsPatch) apply(s *Settings) {
+	apply(&s.AttachPolicy, p.AttachPolicy)
+	apply(&s.HostHeader, p.HostHeader)
+	apply(&s.HoldTimeout, p.HoldTimeout)
+	apply(&s.ResponseTimeout, p.ResponseTimeout)
+	apply(&s.IdleTimeout, p.IdleTimeout)
+	apply(&s.MaxBodyBytes, p.MaxBodyBytes)
+	apply(&s.RateLimit, p.RateLimit)
+	apply(&s.Capture, p.Capture)
+}
+
+// samePtr reports whether a and b are both nil or point to equal values.
+func samePtr[T comparable](a, b *T) bool {
+	return a == b || a != nil && b != nil && *a == *b
+}
+
+// changedFields names the fields an update changed from cur to h.
+func changedFields(cur, h Hook) []string {
 	var changed []string
-	touch := func(name string, set bool) {
-		if set {
-			changed = append(changed, "settings."+name)
+	differ := func(name string, differs bool) {
+		if differs {
+			changed = append(changed, name)
 		}
 	}
-	touch("attachPolicy", apply(&s.AttachPolicy, p.AttachPolicy))
-	touch("hostHeader", apply(&s.HostHeader, p.HostHeader))
-	touch("holdTimeout", apply(&s.HoldTimeout, p.HoldTimeout))
-	touch("responseTimeout", apply(&s.ResponseTimeout, p.ResponseTimeout))
-	touch("idleTimeout", apply(&s.IdleTimeout, p.IdleTimeout))
-	touch("maxBodyBytes", apply(&s.MaxBodyBytes, p.MaxBodyBytes))
-	touch("rateLimit", apply(&s.RateLimit, p.RateLimit))
-	touch("capture", apply(&s.Capture, p.Capture))
+	differ("path", h.Path != cur.Path)
+	differ("channel", h.Channel != cur.Channel)
+	differ("description", h.Description != cur.Description)
+	differ("ephemeral", h.Ephemeral != cur.Ephemeral)
+	differ("public", h.Public != cur.Public)
+	differ("expiresAt", !(h.ExpiresAt == cur.ExpiresAt || h.ExpiresAt != nil && cur.ExpiresAt != nil && h.ExpiresAt.Equal(*cur.ExpiresAt)))
+	s, c := h.Settings, cur.Settings
+	differ("settings.attachPolicy", !samePtr(s.AttachPolicy, c.AttachPolicy))
+	differ("settings.hostHeader", !samePtr(s.HostHeader, c.HostHeader))
+	differ("settings.holdTimeout", !samePtr(s.HoldTimeout, c.HoldTimeout))
+	differ("settings.responseTimeout", !samePtr(s.ResponseTimeout, c.ResponseTimeout))
+	differ("settings.idleTimeout", !samePtr(s.IdleTimeout, c.IdleTimeout))
+	differ("settings.maxBodyBytes", !samePtr(s.MaxBodyBytes, c.MaxBodyBytes))
+	differ("settings.rateLimit", !samePtr(s.RateLimit, c.RateLimit))
+	differ("settings.capture", !samePtr(s.Capture, c.Capture))
 	return changed
 }
 
 // Update applies req to the hook id owned by owner. It returns the updated
-// hook and the names of the fields the request touched. Hooks of other
+// hook and the names of the fields whose value changed. Hooks of other
 // users are reported as ErrNotFound, so their existence is not revealed.
 func (m *Manager) Update(ctx context.Context, owner authz.Identity, id ID, req UpdateRequest) (Hook, []string, error) {
 	return m.update(ctx, owner, id, req, false)
@@ -105,15 +128,8 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 	}
 	h := cur
 	var errs ValidationError
-	var changed []string
-	touch := func(name string, set bool) {
-		if set {
-			changed = append(changed, name)
-		}
-	}
 
 	if req.Path.Set {
-		touch("path", true)
 		if req.Path.Value == nil {
 			errs = append(errs, FieldError{"path", "cannot be null"})
 		} else {
@@ -122,7 +138,6 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 		}
 	}
 	if req.Channel.Set {
-		touch("channel", true)
 		h.Channel = authz.DefaultChannel
 		if req.Channel.Value != nil {
 			h.Channel = *req.Channel.Value
@@ -130,7 +145,6 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 		errs = append(errs, validateChannel(h.Channel, owner.Grants)...)
 	}
 	if req.Description.Set {
-		touch("description", true)
 		h.Description = ""
 		if req.Description.Value != nil {
 			h.Description = *req.Description.Value
@@ -138,7 +152,6 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 		errs = append(errs, validateDescription(h.Description)...)
 	}
 	if req.Ephemeral.Set {
-		touch("ephemeral", true)
 		if req.Ephemeral.Value == nil {
 			errs = append(errs, FieldError{"ephemeral", "cannot be null"})
 		} else {
@@ -146,7 +159,6 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 		}
 	}
 	if req.Public.Set {
-		touch("public", true)
 		switch {
 		case req.Public.Value == nil:
 			errs = append(errs, FieldError{"public", "cannot be null"})
@@ -157,11 +169,11 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 			h.Public, h.PublicToken = false, ""
 		}
 	}
-	if touch("expiresAt", apply(&h.ExpiresAt, req.ExpiresAt)); req.ExpiresAt.Set || req.Ephemeral.Set {
+	if apply(&h.ExpiresAt, req.ExpiresAt); req.ExpiresAt.Set || req.Ephemeral.Set {
 		errs = append(errs, validateExpiry(h.ExpiresAt, h.Ephemeral, m.now(), owner.Grants.Limits.MaxHookTTL)...)
 	}
 
-	changed = append(changed, req.Settings.apply(&h.Settings)...)
+	req.Settings.apply(&h.Settings)
 	// Only the settings this request sets are validated: a stored value over
 	// a since-lowered maximum must not block unrelated edits (Resolve clamps it).
 	var touched Settings
@@ -171,6 +183,7 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 	if len(errs) > 0 {
 		return Hook{}, nil, errs
 	}
+	changed := changedFields(cur, h)
 	if dry {
 		return h, changed, nil
 	}
