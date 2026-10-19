@@ -83,11 +83,41 @@ func (l *Lifecycle) Revoke(ctx context.Context, t *tunnel.Tunnel, ids []hooks.ID
 	t.Notify(tunnel.Control{Type: tunnel.ControlRevoked, Hooks: idInfos(detached)}, orphaned)
 }
 
-// NotifyUpdated tells the tunnel serving the hook its current URL. Messages
+// Update applies req to the hook id on behalf of actor, as
+// hooks.Manager.Update does, and announces the change: in the audit log, as
+// a hook event, and to the tunnel serving the hook.
+func (l *Lifecycle) Update(ctx context.Context, actor authz.Identity, id hooks.ID, req hooks.UpdateRequest) (hooks.Hook, []string, error) {
+	h, changed, err := l.cfg.Hooks.Update(ctx, actor, id, req)
+	if err != nil {
+		return h, changed, err
+	}
+	l.updated(ctx, actor, h, changed)
+	return h, changed, nil
+}
+
+// RotatePublicToken gives the public hook id a new token on behalf of
+// actor, as hooks.Manager.RotatePublicToken does, and announces the change
+// as Update does.
+func (l *Lifecycle) RotatePublicToken(ctx context.Context, actor authz.Identity, id hooks.ID) (hooks.Hook, error) {
+	h, err := l.cfg.Hooks.RotatePublicToken(ctx, actor, id)
+	if err != nil {
+		return h, err
+	}
+	l.updated(ctx, actor, h, []string{"publicUrl"})
+	return h, nil
+}
+
+func (l *Lifecycle) updated(ctx context.Context, actor authz.Identity, h hooks.Hook, changed []string) {
+	l.cfg.Audit.Log(ctx, audit.HookUpdate, audit.Actor(actor), audit.Hook(h), slog.Any("changed", changed))
+	l.cfg.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
+	l.notifyUpdated(h.ID)
+}
+
+// notifyUpdated tells the tunnel serving the hook its current URL. Messages
 // are sent in the background and can overtake each other, so each carries
 // a sequence number. The number and the hook are taken under one lock, so a
 // higher number never carries an older URL.
-func (l *Lifecycle) NotifyUpdated(id hooks.ID) {
+func (l *Lifecycle) notifyUpdated(id hooks.ID) {
 	l.mu.Lock()
 	h, ok := l.cfg.Hooks.Get(id)
 	l.updateSeq++

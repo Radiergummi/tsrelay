@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/events"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
@@ -225,8 +227,8 @@ func TestNotifyUpdatedSequence(t *testing.T) {
 	tun, _, controls := controlPair(t)
 	admitAttach(t, l, receiver, tun, id)
 	next(t, controls) // attached
-	l.NotifyUpdated(id)
-	l.NotifyUpdated(id)
+	l.notifyUpdated(id)
+	l.notifyUpdated(id)
 	c1, c2 := next(t, controls), next(t, controls)
 	for _, c := range []tunnel.Control{c1, c2} {
 		if c.Type != tunnel.ControlHookUpdated || len(c.Hooks) != 1 || c.Hooks[0].URL != "https://relay"+hookOf(t, mgr, id).Route() {
@@ -245,10 +247,71 @@ func TestNotifyUpdatedSequence(t *testing.T) {
 		t.Fatal(err)
 	}
 	next(t, controls) // hook-deleted
-	l.NotifyUpdated(id)
+	l.notifyUpdated(id)
 	select {
 	case c := <-controls:
 		t.Fatalf("notice for a deleted hook: %+v", c)
 	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// An update is audited and published, and the tunnel serving the hook
+// learns its new URL.
+func TestUpdateNotifies(t *testing.T) {
+	l, mgr := newLifecycle(t)
+	logs, evs := observe(l)
+	id := createHooks(t, mgr, 1, hooks.CreateRequest{})[0]
+	tun, _, controls := controlPair(t)
+	admitAttach(t, l, receiver, tun, id)
+	next(t, controls) // attached
+	next(t, evs)      // the attach's hook event
+
+	path := "renamed"
+	h, changed, err := l.Update(context.Background(), receiver, id, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: &path}})
+	if err != nil || !slices.Equal(changed, []string{"path"}) {
+		t.Fatalf("Update = %v, %v", changed, err)
+	}
+	if c := next(t, controls); c.Type != tunnel.ControlHookUpdated || c.Hooks[0].URL != "https://relay"+h.Route() {
+		t.Fatalf("control = %+v, want hook-updated with %s", c, h.Route())
+	}
+	if !strings.Contains(logs.String(), `"msg":"hook.update"`) || !strings.Contains(logs.String(), `"changed":["path"]`) {
+		t.Fatalf("no hook.update audit line: %s", logs.String())
+	}
+	if e := next(t, evs); e.Type != events.TypeHook || e.HookID != string(id) {
+		t.Fatalf("event = %+v", e)
+	}
+
+	// A refused update has no effects.
+	if _, _, err := l.Update(context.Background(), receiver, "h_missing", hooks.UpdateRequest{}); !errors.Is(err, hooks.ErrNotFound) {
+		t.Fatalf("Update of a missing hook = %v", err)
+	}
+	if n := strings.Count(logs.String(), `"msg":"hook.update"`); n != 1 {
+		t.Fatalf("hook.update audit lines = %d", n)
+	}
+}
+
+// Rotating a public hook's token tells the tunnel its new public URL.
+func TestRotatePublicTokenNotifies(t *testing.T) {
+	l, mgr := newLifecycle(t)
+	logs, _ := observe(l)
+	owner := identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"public":true}`)
+	created, err := mgr.Create(context.Background(), owner, hooks.CreateRequest{Public: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, old := created.ID, created.PublicToken
+	tun, _, controls := controlPair(t)
+	admitAttach(t, l, owner, tun, id)
+	next(t, controls) // attached
+
+	h, err := l.RotatePublicToken(context.Background(), owner, id)
+	if err != nil || h.PublicToken == old {
+		t.Fatalf("RotatePublicToken = %v, %v", h.PublicToken, err)
+	}
+	if c := next(t, controls); c.Type != tunnel.ControlHookUpdated || c.Hooks[0].PublicURL != "https://public/+"+h.PublicToken {
+		t.Fatalf("control = %+v, want hook-updated with the new token", c)
+	}
+	if !strings.Contains(logs.String(), `"changed":["publicUrl"]`) {
+		t.Fatalf("no hook.update audit line: %s", logs.String())
 	}
 }
