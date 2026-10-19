@@ -91,8 +91,9 @@ export function DeliveryFields({
               className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2"
             >
               <span className="flex items-center gap-2 text-sm">
+                {/* The rate takes the field's id, so the field's label points at it. */}
                 <Input
-                  id={`${c.id}-rate`}
+                  id={c.id}
                   type="number"
                   min={0}
                   step="any"
@@ -102,7 +103,7 @@ export function DeliveryFields({
                   placeholder={String(dp)}
                   onChange={(e) => put(e.target.value, burst || String(db))}
                 />
-                <label htmlFor={`${c.id}-rate`}>per second</label>
+                <label htmlFor={c.id}>per second</label>
               </span>
               <span className="flex items-center gap-2 text-sm">
                 <Input

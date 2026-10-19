@@ -23,25 +23,40 @@ test("field values by type", () => {
   expect(fieldValue("false", "bool")).toEqual({ value: false });
 });
 
-test("creating leaves empty fields out; editing resets them with null", () => {
+test("creating leaves empty fields out", () => {
   const fields: [string, string, "text" | "duration"][] = [
     ["path", "cb", "text"],
     ["description", "", "text"],
     ["settings.holdTimeout", "45s", "duration"],
     ["settings.idleTimeout", "", "duration"],
   ];
-  expect(formRequest(fields, false)).toEqual({
+  expect(formRequest(fields)).toEqual({
     body: { path: "cb", settings: { holdTimeout: "45s" } },
     errors: [],
   });
-  expect(formRequest(fields, true).body).toEqual({
-    path: "cb",
-    description: null,
-    settings: { holdTimeout: "45s", idleTimeout: null },
-  });
-  expect(formRequest([["settings.holdTimeout", "soon", "duration"]], false).errors).toEqual([
+  expect(formRequest([["settings.holdTimeout", "soon", "duration"]]).errors).toEqual([
     { field: "settings.holdTimeout", message: "must be a duration like 30s, 2m or 1h30m" },
   ]);
+});
+
+test("editing sends only the changed fields, and null for a cleared one", () => {
+  const initial = {
+    path: "cb",
+    description: "old",
+    "settings.holdTimeout": "10m",
+    "settings.idleTimeout": "",
+  };
+  const fields: [string, string, "text" | "duration"][] = [
+    ["path", "cb", "text"],
+    ["description", "", "text"],
+    ["settings.holdTimeout", "10m", "duration"],
+    ["settings.idleTimeout", "45s", "duration"],
+  ];
+  expect(formRequest(fields, initial)).toEqual({
+    body: { description: null, settings: { idleTimeout: "45s" } },
+    errors: [],
+  });
+  expect(formRequest([["path", " cb ", "text"]], initial).body).toEqual({});
 });
 
 test("initial values come from the hook, with relay defaults left empty", () => {
@@ -68,7 +83,7 @@ test("public is a bool field that starts false and follows the hook", () => {
   expect(
     initialValues({ ...fixtures.hook, public: true, publicUrl: "https://x/+t" })["public"],
   ).toBe("true");
-  const { body } = formRequest([["public", "true", fieldTypes["public"]!]], false);
+  const { body } = formRequest([["public", "true", fieldTypes["public"]!]]);
   expect(body).toEqual({ public: true });
 });
 

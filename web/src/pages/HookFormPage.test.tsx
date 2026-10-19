@@ -1,7 +1,8 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
+import { keys } from "@/api/queries";
 import { makeQueryClient } from "@/api/queryClient";
 import { fixtures } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";
@@ -186,12 +187,15 @@ test("a form-level error goes away once the next change fails local validation",
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
-test("editing prefills the hook and resets cleared fields to the default", async () => {
+test("editing prefills the hook and sends only what changed, resetting cleared fields", async () => {
   let patch: unknown;
+  let dryRun: unknown;
   server.use(
     http.patch("/hooks/:id", async ({ request }) => {
-      if (new URL(request.url).searchParams.get("dryRun") === "true")
+      if (new URL(request.url).searchParams.get("dryRun") === "true") {
+        dryRun = await request.json();
         return HttpResponse.json(fixtures.hook);
+      }
       patch = await request.json();
       return HttpResponse.json(fixtures.hook);
     }),
@@ -204,8 +208,30 @@ test("editing prefills the hook and resets cleared fields to the default", async
   const desc = await screen.findByLabelText("Description");
   expect(desc).toHaveValue("has a tunnel");
   await userEvent.clear(desc);
+  await waitFor(() => expect(dryRun).toEqual({ description: null }));
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
-  await waitFor(() => expect(patch).toMatchObject({ path: "payments/done", description: null }));
+  await waitFor(() => expect(patch).toEqual({ description: null }));
+});
+
+test("a failed refetch of the hook being edited keeps the unsaved edits", async () => {
+  const { client } = renderWithProviders(<HookFormPage />, {
+    route: `/hooks/${fixtures.hook.id}/edit`,
+    path: "/hooks/:id/edit",
+    context: fixtures.me,
+  });
+  const desc = await screen.findByLabelText("Description");
+  await userEvent.type(desc, " and more");
+  server.use(
+    http.get("/hooks/:id", () =>
+      HttpResponse.json({ status: 500, code: "internal", detail: "boom" }, { status: 500 }),
+    ),
+  );
+  await act(() => client.refetchQueries({ queryKey: keys.hook(fixtures.hook.id) }));
+  expect(client.getQueryState(keys.hook(fixtures.hook.id))?.status).toBe("error");
+  // The query notifies the page on the next tick, after the refetch settles.
+  await act(() => new Promise((r) => setTimeout(r, 0)));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Description")).toHaveValue("has a tunnel and more");
 });
 
 test("the internet choice is disabled without the grant or without Funnel", async () => {

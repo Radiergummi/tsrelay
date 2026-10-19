@@ -49,15 +49,18 @@ export function fieldValue(raw: string, type: FieldType): { value?: unknown; err
 /**
  * formRequest builds the API body from [name, text, type] triples. Dotted
  * names nest. An empty field is left out when creating, so the relay
- * default applies, and sent as null when editing, which resets it.
+ * default applies. Editing (initial holds the form's starting texts) sends
+ * only the fields that changed, as the PATCH is partial: a cleared one as
+ * null, which resets it.
  */
 export function formRequest(
   fields: [string, string, FieldType][],
-  editing: boolean,
+  initial?: Record<string, string>,
 ): { body: Record<string, unknown>; errors: FieldError[] } {
   const body: Record<string, unknown> = {};
   const errors: FieldError[] = [];
   for (const [name, raw, type] of fields) {
+    if (initial && raw.trim() === initial[name]?.trim()) continue;
     const r = fieldValue(raw, type);
     if (r.error) {
       errors.push({ field: name, message: r.error });
@@ -65,7 +68,7 @@ export function formRequest(
     }
     let value = r.value;
     if (value === undefined) {
-      if (!editing) continue;
+      if (!initial) continue;
       value = null;
     }
     const keys = name.split(".");

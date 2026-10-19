@@ -30,9 +30,10 @@ function Edit({ id }: { id: string }) {
   const me = useViewer();
   const hook = useHook(id);
   if (hook.isPending) return <TableSkeleton />;
-  if (hook.isError && !(hook.error instanceof ApiError && hook.error.status === 404))
-    return <PageError error={hook.error} />;
-  if (hook.isError || !owns(me, hook.data))
+  // A failed refetch keeps the form and its edits, unless the hook is gone.
+  const gone = hook.error instanceof ApiError && hook.error.status === 404;
+  if (gone || (hook.data !== undefined && !owns(me, hook.data)))
     return <EmptyState title="There is no hook with this ID, or it is not yours." />;
+  if (hook.data === undefined) return <PageError error={hook.error} />;
   return <HookForm me={me} hook={hook.data} />;
 }
