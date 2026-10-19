@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"github.com/Radiergummi/tsrelay/internal/tunnel/tunneltest"
@@ -209,4 +210,57 @@ func TestSenderCanceledWhileHeld(t *testing.T) {
 		t.Fatal("the canceled request succeeded")
 	}
 	e.waitLog(`"error":"sender_canceled"`)
+}
+
+// A held call is authorized again once a tunnel attaches: a call to a
+// rotated public URL, or from a sender the hook's new channel shuts out,
+// gets the 404 it would get if it arrived now, and reaches nobody.
+func TestHeldCallReauthorized(t *testing.T) {
+	refused := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("the held call was delivered")
+	})
+	t.Run("rotated public URL", func(t *testing.T) {
+		e := newPublicEnv(t)
+		got := make(chan *http.Response, 1)
+		go func() {
+			resp, err := http.Post(e.pub.URL+e.hook.PublicRoute()+"/x", "application/json", strings.NewReader("{}"))
+			if err != nil {
+				t.Error(err)
+			}
+			got <- resp
+		}()
+		e.waitHeld(1)
+		if _, err := e.mgr.RotatePublicToken(context.Background(), publicReceiver, e.hook.ID); err != nil {
+			t.Fatal(err)
+		}
+		e.attachPublic(refused)
+		resp := <-got
+		defer resp.Body.Close()
+		wantProblem(t, resp, 404, problem.HookNotFound)
+	})
+	t.Run("channel changed", func(t *testing.T) {
+		e := newEnv(t)
+		channel := func(c string) {
+			if _, _, err := e.mgr.Update(context.Background(), receiver, e.hook.ID,
+				hooks.UpdateRequest{Channel: hooks.Opt[string]{Set: true, Value: new(c)}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		channel("staging")
+		staging := identify.Tagged("w2", []string{"tag:staging"}, `{"roles":["sender"],"channels":["staging"]}`)
+		got := make(chan *http.Response, 1)
+		go func() {
+			resp, err := e.fake.Client(staging).Post(e.srv.URL+"/~moritz/cb", "text/plain", strings.NewReader("x"))
+			if err != nil {
+				t.Error(err)
+			}
+			got <- resp
+		}()
+		e.waitHeld(1)
+		channel("prod")
+		e.attach(refused, tunnel.Options{})
+		resp := <-got
+		defer resp.Body.Close()
+		wantProblem(t, resp, 404, problem.HookNotFound)
+	})
 }
