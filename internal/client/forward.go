@@ -31,6 +31,7 @@ type Options struct {
 func NewForwarder(target *url.URL, opts Options) http.Handler {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.DisableCompression = true
+	tr.Proxy = nil // calls go straight to the user's own app, never through HTTP_PROXY
 	// Keep a connection for every call in flight. With the default of 2,
 	// each further concurrent call opens a new connection and closes it
 	// afterwards, which soon runs out of local ports. The relay's

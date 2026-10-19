@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 
@@ -133,5 +134,23 @@ func TestOpenAPIMatchesRoutes(t *testing.T) {
 		if !slices.Contains(registered, d) {
 			t.Errorf("openapi.yaml documents %s, which is not registered", d)
 		}
+	}
+}
+
+// A stream ends after eventMaxAge, so that EventSource reconnects and the
+// caller is authorized again.
+func TestEventStreamEndsAfterMaxAge(t *testing.T) {
+	defer func(d time.Duration) { eventMaxAge = d }(eventMaxAge)
+	eventMaxAge = 100 * time.Millisecond
+	e := newEnv(t)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		e.get("/hooks", "text/event-stream") // reads until the stream ends
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stream outlived eventMaxAge")
 	}
 }

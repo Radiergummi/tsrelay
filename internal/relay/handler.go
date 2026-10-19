@@ -183,10 +183,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var segs int
 	var found bool
+	var token string // a public call's token
 	if public {
 		// An internet client has no tailnet identity: sender stays empty,
 		// and the hook's token is all that routes the call.
-		token, ok := splitPublicRoute(r.URL.Path)
+		var ok bool
+		token, ok = splitPublicRoute(r.URL.Path)
 		if !ok {
 			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 			return
@@ -292,6 +294,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			problem.New(problem.StatusTunnelUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook").Write(rec)
 			return
 		}
+		if !h.stillRoutes(hook.ID, token, sender, inj == nil && !public) {
+			// The hook's public token or channel changed while the call
+			// waited: it gets the answer it would get if it arrived now.
+			delivery = time.Time{}
+			h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender), audit.Hook(hook),
+				slog.String("action", "call"), slog.String("reason", "the hook changed while the call was held"))
+			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
+			return
+		}
 	}
 
 	if public && !tun.Public() {
@@ -389,6 +400,18 @@ func (h *Handler) dequeue(id hooks.ID) {
 // holdRetryAfter is the Retry-After of tunnel_unavailable: the hold
 // timeout rounded up to seconds, but at least 5 seconds.
 func holdRetryAfter(hold time.Duration) string { return retryAfter(max(5*time.Second, hold)) }
+
+// stillRoutes reports whether a call routed to hook id before it was held
+// still is: a public call's token must still name the hook, and if
+// checkChannel, the sender's grants must still allow the hook's channel.
+func (h *Handler) stillRoutes(id hooks.ID, token string, sender authz.Identity, checkChannel bool) bool {
+	if token != "" {
+		now, ok := h.Hooks.RoutePublic(token)
+		return ok && now.ID == id
+	}
+	now, ok := h.Hooks.Get(id)
+	return ok && (!checkChannel || sender.Grants.Allows(authz.RoleSender, now.Channel))
+}
 
 func (h *Handler) hookExists(id hooks.ID) bool {
 	_, ok := h.Hooks.Get(id)

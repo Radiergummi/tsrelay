@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -183,6 +184,15 @@ func TestForwarderHostRewrite(t *testing.T) {
 	}
 	if got := <-hosts; got != target.Host {
 		t.Errorf("rewrite: local app saw Host %q, want %q", got, target.Host)
+	}
+}
+
+// The target is the user's own app: HTTP_PROXY and friends must not send
+// its calls, headers and all, through a proxy.
+func TestForwarderIgnoresProxyEnvironment(t *testing.T) {
+	fwd := NewForwarder(&url.URL{Scheme: "http", Host: "app.internal:3000"}, Options{}).(*httputil.ReverseProxy)
+	if fwd.Transport.(*http.Transport).Proxy != nil {
+		t.Fatal("the forwarder uses a proxy")
 	}
 }
 

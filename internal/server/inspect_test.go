@@ -227,6 +227,37 @@ func TestEventStream(t *testing.T) {
 	}
 }
 
+// Deleting a hook ends its streams, for its owner and for an admin.
+func TestEventStreamEndsWhenHookGone(t *testing.T) {
+	e := newEnv(t, Config{})
+	operator := identify.User("ops-box", "ops@example.com", 3, `{"roles":["admin"]}`)
+	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	streams := map[string]<-chan sseEvent{
+		"hook": e.sse(receiver, "/hooks/"+h.ID), "admin's hook": e.sse(operator, "/hooks/"+h.ID),
+		"calls": e.sse(receiver, "/hooks/"+h.ID+"/calls"),
+	}
+	if err := e.api.DeleteHook(context.Background(), h.ID); err != nil {
+		t.Fatal(err)
+	}
+	for name, stream := range streams {
+		timeout := time.After(5 * time.Second)
+	drain:
+		for {
+			select {
+			case _, ok := <-stream:
+				if !ok {
+					break drain
+				}
+			case <-timeout:
+				t.Fatalf("the %s stream outlived the hook", name)
+			}
+		}
+	}
+}
+
 // Closing the server ends open streams, so a graceful shutdown does not
 // wait for them.
 func TestEventStreamEndsOnClose(t *testing.T) {
