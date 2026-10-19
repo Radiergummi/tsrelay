@@ -336,3 +336,72 @@ func TestRotatePublicTokenNotifies(t *testing.T) {
 		t.Fatalf("event = %+v", e)
 	}
 }
+
+// A delete that races an update is announced after it, so the audit log and
+// the hook events never show an update of a deleted hook.
+func TestDeleteWaitsForUpdateAnnouncement(t *testing.T) {
+	l, mgr := newLifecycle(t)
+	logs, _ := observe(l)
+	id := createHooks(t, mgr, 1, hooks.CreateRequest{})[0]
+	announcing, release := make(chan struct{}), make(chan struct{})
+	l.cfg.Audit.Observer = func(event string, _ []slog.Attr) {
+		if event == audit.HookUpdate {
+			close(announcing)
+			<-release
+		}
+	}
+
+	path := "renamed"
+	updated := make(chan error)
+	go func() {
+		_, _, err := l.Update(context.Background(), receiver, id, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: &path}})
+		updated <- err
+	}()
+	<-announcing
+	deleted := make(chan error)
+	go func() { deleted <- l.Delete(context.Background(), receiver, id) }()
+	select {
+	case err := <-deleted:
+		t.Fatalf("Delete returned (%v) while the update was still being announced", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	if err := <-updated; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-deleted; err != nil {
+		t.Fatal(err)
+	}
+	if u, d := strings.Index(logs.String(), `"msg":"hook.update"`), strings.Index(logs.String(), `"msg":"hook.delete"`); u < 0 || d < u {
+		t.Fatalf("audit order wrong: %s", logs.String())
+	}
+}
+
+// Creating a hook is audited and published; a refused create is not.
+func TestCreateAnnounces(t *testing.T) {
+	l, _ := newLifecycle(t)
+	logs, evs := observe(l)
+	h, err := l.Create(context.Background(), receiver, hooks.CreateRequest{Ephemeral: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logs.String(), `"msg":"hook.create"`) || !strings.Contains(logs.String(), `"ephemeral":true`) {
+		t.Fatalf("no hook.create audit line: %s", logs.String())
+	}
+	if e := next(t, evs); e.Type != events.TypeHook || e.HookID != string(h.ID) {
+		t.Fatalf("event = %+v", e)
+	}
+
+	tagged := identify.Tagged("ci", []string{"tag:ci"}, `{"roles":["receiver"]}`)
+	if _, err := l.Create(context.Background(), tagged, hooks.CreateRequest{}); !errors.Is(err, hooks.ErrForbidden) {
+		t.Fatalf("Create by a tagged node = %v", err)
+	}
+	if n := strings.Count(logs.String(), `"msg":"hook.create"`); n != 1 {
+		t.Fatalf("hook.create audit lines = %d", n)
+	}
+	select {
+	case e := <-evs:
+		t.Fatalf("event for a refused create: %+v", e)
+	default:
+	}
+}
