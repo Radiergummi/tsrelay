@@ -65,6 +65,35 @@ func TestUpdate(t *testing.T) {
 	}
 }
 
+// Fields set to the value they already have are not reported as changed.
+func TestUpdateUnchanged(t *testing.T) {
+	m := newManager(t, t.TempDir())
+	exp := time.Now().Add(time.Hour)
+	h, _ := m.Create(ctx, receiver, CreateRequest{Path: "a", ExpiresAt: &exp, Settings: Settings{HoldTimeout: new(Duration(time.Second))}})
+
+	_, changed, err := m.Update(ctx, receiver, h.ID, UpdateRequest{
+		Path:        Opt[string]{Set: true, Value: new("a")},
+		Channel:     Opt[string]{Set: true}, // null: the default it already has
+		Description: Opt[string]{Set: true},
+		Public:      Opt[bool]{Set: true, Value: new(false)},
+		ExpiresAt:   Opt[time.Time]{Set: true, Value: new(exp.In(time.FixedZone("x", 3600)))},
+		Settings: SettingsPatch{
+			HoldTimeout: Opt[Duration]{Set: true, Value: new(Duration(time.Second))},
+			IdleTimeout: Opt[Duration]{Set: true}, // null: already the relay default
+		},
+	})
+	if err != nil || len(changed) != 0 {
+		t.Fatalf("changed = %v, %v; want none", changed, err)
+	}
+	_, changed, err = m.Update(ctx, receiver, h.ID, UpdateRequest{
+		Path:     Opt[string]{Set: true, Value: new("a")},
+		Settings: SettingsPatch{HoldTimeout: Opt[Duration]{Set: true, Value: new(Duration(2 * time.Second))}},
+	})
+	if err != nil || !slices.Equal(changed, []string{"settings.holdTimeout"}) {
+		t.Fatalf("changed = %v, %v", changed, err)
+	}
+}
+
 func TestUpdateRejections(t *testing.T) {
 	m := newManager(t, t.TempDir())
 	h, _ := m.Create(ctx, receiver, CreateRequest{Path: "a"})

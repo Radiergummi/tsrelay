@@ -331,11 +331,11 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		return
 	}
 	dry := r.URL.Query().Get("dryRun") == "true"
-	update := a.Hooks.Update
+	update := a.Tunnels.Update
 	if dry {
 		update = a.Hooks.CheckUpdate
 	}
-	h, changed, err := update(r.Context(), id, hooks.ID(r.PathValue("id")), req)
+	h, _, err := update(r.Context(), id, hooks.ID(r.PathValue("id")), req)
 	var ve hooks.ValidationError
 	switch {
 	case errors.Is(err, hooks.ErrNotFound):
@@ -355,9 +355,6 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		writeJSON(w, http.StatusOK, a.HookJSON(h, id))
 		return
 	}
-	a.Audit.Log(r.Context(), audit.HookUpdate, audit.Actor(id), audit.Hook(h), slog.Any("changed", changed))
-	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
-	a.Tunnels.NotifyUpdated(h.ID)
 	if h.Public {
 		a.refreshTunnelPublic(r.Context(), h.ID)
 	}
@@ -379,7 +376,7 @@ func (a *API) refreshTunnelPublic(ctx context.Context, hookID hooks.ID) {
 }
 
 func (a *API) rotatePublicURL(w http.ResponseWriter, r *http.Request, id authz.Identity) {
-	h, err := a.Hooks.RotatePublicToken(r.Context(), id, hooks.ID(r.PathValue("id")))
+	h, err := a.Tunnels.RotatePublicToken(r.Context(), id, hooks.ID(r.PathValue("id")))
 	switch {
 	case errors.Is(err, hooks.ErrNotFound):
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
@@ -392,9 +389,6 @@ func (a *API) rotatePublicURL(w http.ResponseWriter, r *http.Request, id authz.I
 		problem.New(http.StatusInternalServerError, problem.Internal, "could not save the hook").Write(w)
 		return
 	}
-	a.Audit.Log(r.Context(), audit.HookUpdate, audit.Actor(id), audit.Hook(h), slog.Any("changed", []string{"publicUrl"}))
-	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
-	a.Tunnels.NotifyUpdated(h.ID)
 	writeJSON(w, http.StatusOK, a.HookJSON(h, id))
 }
 

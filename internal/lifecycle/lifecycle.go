@@ -1,6 +1,6 @@
 // Package lifecycle owns every transition between hooks and the tunnels that
 // serve them: attach (with takeover), detach when a tunnel ends, delete,
-// expire (Reap), revoke, the hook-updated notice, and shutdown. It is the
+// expire (Reap), revoke, update, and shutdown. It is the
 // only writer of which tunnel serves which hook and since when a hook has
 // had none.
 package lifecycle
@@ -46,7 +46,7 @@ type Lifecycle struct {
 	waits     map[hooks.ID]*waiters
 	detached  map[hooks.ID]time.Time // when each hook's last tunnel ended
 	started   time.Time
-	updateSeq uint64 // numbers hook-updated notices, see NotifyUpdated
+	updateSeq uint64 // numbers hook-updated notices, see notifyUpdated
 	now       func() time.Time
 	cfg       Config
 
