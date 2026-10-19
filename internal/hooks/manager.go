@@ -284,17 +284,33 @@ func sortHooks(hs []Hook) []Hook {
 	return hs
 }
 
+// Delete deletes the hook id. Only the lifecycle's Delete and Reap may call
+// it: they keep the tunnels serving the hook and the calls waiting for it
+// consistent with the store.
 func (m *Manager) Delete(ctx context.Context, id ID) error {
+	_, _, err := m.DeleteIf(ctx, id, func(Hook) bool { return true })
+	return err
+}
+
+// DeleteIf deletes the hook id if cond holds for it as stored, deciding
+// and deleting under one lock so a concurrent update cannot slip between
+// the two. It returns the stored hook and whether it was deleted. The same
+// callers as for Delete apply.
+func (m *Manager) DeleteIf(ctx context.Context, id ID, cond func(Hook) bool) (Hook, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.hooks[id]; !ok {
-		return ErrNotFound
+	h, ok := m.hooks[id]
+	if !ok {
+		return Hook{}, false, ErrNotFound
+	}
+	if !cond(h) {
+		return h, false, nil
 	}
 	if err := m.store.DeleteHook(ctx, id); err != nil {
-		return err
+		return h, false, err
 	}
 	delete(m.hooks, id)
-	return nil
+	return h, true, nil
 }
 
 // Route finds the hook serving rest, the decoded request path below

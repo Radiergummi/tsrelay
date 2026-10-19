@@ -20,15 +20,18 @@ func (l *Lifecycle) Reap(ctx context.Context, grace time.Duration) error {
 	now := l.now()
 	var removed []removal
 	var err error
+	// Decide on the hook as stored, not on the listed copy: updates don't
+	// take l.mu, and one made since the listing may keep the hook.
+	reapable := func(h hooks.Hook) bool { return h.Expired(now) || l.idleLocked(h, now, grace) }
 	for _, h := range l.cfg.Hooks.ListAll() {
-		if !h.Expired(now) && !l.idleLocked(h, now, grace) {
-			continue
+		var cur hooks.Hook
+		var ok bool
+		if cur, ok, err = l.cfg.Hooks.DeleteIf(ctx, h.ID, reapable); err != nil {
+			break // never ErrNotFound: deletes hold l.mu
 		}
-		var r removal
-		if r, err = l.removeLocked(ctx, h); err != nil {
-			break
+		if ok {
+			removed = append(removed, l.forgetLocked(cur))
 		}
-		removed = append(removed, r)
 	}
 	l.mu.Unlock()
 

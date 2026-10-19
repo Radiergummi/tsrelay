@@ -166,6 +166,29 @@ func TestDelete(t *testing.T) {
 	}
 }
 
+// DeleteIf decides on the hook as stored, and keeps it when cond fails.
+func TestDeleteIf(t *testing.T) {
+	m := newManager(t, t.TempDir())
+	h, _ := m.Create(ctx, receiver, CreateRequest{Ephemeral: true})
+	no := false
+	if _, _, err := m.Update(ctx, receiver, h.ID, UpdateRequest{Ephemeral: Opt[bool]{Set: true, Value: &no}}); err != nil {
+		t.Fatal(err)
+	}
+	ephemeral := func(h Hook) bool { return h.Ephemeral }
+	if cur, ok, err := m.DeleteIf(ctx, h.ID, ephemeral); err != nil || ok || cur.Ephemeral {
+		t.Fatalf("DeleteIf on a persistent hook = %+v, %v, %v", cur, ok, err)
+	}
+	if _, ok := m.Get(h.ID); !ok {
+		t.Fatal("DeleteIf removed a hook cond rejected")
+	}
+	if cur, ok, err := m.DeleteIf(ctx, h.ID, func(Hook) bool { return true }); err != nil || !ok || cur.ID != h.ID {
+		t.Fatalf("DeleteIf = %+v, %v, %v", cur, ok, err)
+	}
+	if _, ok, err := m.DeleteIf(ctx, h.ID, func(Hook) bool { return true }); ok || !errors.Is(err, ErrNotFound) {
+		t.Fatalf("DeleteIf on a missing hook = %v, %v", ok, err)
+	}
+}
+
 func TestCreateWithSettingsAndExpiry(t *testing.T) {
 	dir := t.TempDir()
 	m := newManager(t, dir)

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
@@ -116,13 +117,17 @@ func TestReapSkipsTakenOverHook(t *testing.T) {
 	at(l, t0, 0)
 	dropA()
 	<-a.Done()
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
-		l.mu.Lock()
-		_, serving := l.served[a] // a's detach has run once it serves nothing
-		l.mu.Unlock()
-		if !serving {
-			break
+	// a serves nothing since b's attach orphaned it, so only its audit line
+	// shows that its detach has run.
+	detachedA := func() bool {
+		for line := range strings.Lines(logs.String()) {
+			if strings.Contains(line, `"msg":"tunnel.detach"`) && strings.Contains(line, `"tunnel":"`+a.ID+`"`) {
+				return true
+			}
 		}
+		return false
+	}
+	for deadline := time.Now().Add(5 * time.Second); !detachedA(); time.Sleep(5 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatal("a's detach never ran")
 		}
@@ -209,5 +214,43 @@ func TestReapAfterBecomingEphemeral(t *testing.T) {
 	}
 	if stored(mgr, id) {
 		t.Fatal("the hook should be reaped on the next pass")
+	}
+}
+
+// A PATCH that makes a hook persistent while a pass is under way keeps it:
+// Reap decides on the stored hook, not on the list it started from.
+func TestReapKeepsHookMadePersistent(t *testing.T) {
+	l, mgr := newLifecycle(t)
+	owner := identify.User("laptop", "bulk@example.com", 2, `{"roles":["receiver"],"maxHooks":100}`)
+	var hs []hooks.Hook
+	for range 100 {
+		h, err := mgr.Create(context.Background(), owner, hooks.CreateRequest{Ephemeral: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		hs = append(hs, h)
+	}
+	first, last := hs[0], hs[len(hs)-1]
+	l.started = first.CreatedAt
+	at(l, first.CreatedAt, 2*grace)
+
+	done := make(chan error, 1)
+	go func() { done <- l.Reap(context.Background(), grace) }()
+	for stored(mgr, first.ID) { // the pass has listed the hooks once it removes the first
+		time.Sleep(100 * time.Microsecond)
+	}
+	no := false
+	_, _, err := mgr.Update(context.Background(), owner, last.ID, hooks.UpdateRequest{Ephemeral: hooks.Opt[bool]{Set: true, Value: &no}})
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if errors.Is(err, hooks.ErrNotFound) {
+		t.Skip("the pass removed the last hook before the update")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stored(mgr, last.ID) {
+		t.Fatal("reaped a hook a successful update made persistent")
 	}
 }

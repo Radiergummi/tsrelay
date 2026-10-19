@@ -40,10 +40,16 @@ func (l *Lifecycle) removeLocked(ctx context.Context, h hooks.Hook) (removal, er
 	if err := l.cfg.Hooks.Delete(ctx, h.ID); err != nil && !errors.Is(err, hooks.ErrNotFound) {
 		return removal{}, err
 	}
+	return l.forgetLocked(h), nil
+}
+
+// forgetLocked fails the calls waiting for the removed hook h and detaches
+// it.
+func (l *Lifecycle) forgetLocked(h hooks.Hook) removal {
 	l.wakeLocked(h.ID, true)
 	t, orphaned, _ := l.detachHookLocked(h.ID)
 	delete(l.detached, h.ID)
-	return removal{hook: h, tunnel: t, orphaned: orphaned}, nil
+	return removal{hook: h, tunnel: t, orphaned: orphaned}
 }
 
 // finishRemoval tells the tunnel that served the hook, forgets its captured

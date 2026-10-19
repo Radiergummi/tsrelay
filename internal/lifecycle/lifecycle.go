@@ -1,5 +1,8 @@
 // Package lifecycle owns every transition between hooks and the tunnels that
-// serve them: attaching, taking over, detaching, deleting and expiring.
+// serve them: attach (with takeover), detach when a tunnel ends, delete,
+// expire (Reap), revoke, the hook-updated notice, and shutdown. It is the
+// only writer of which tunnel serves which hook and since when a hook has
+// had none.
 package lifecycle
 
 import (
@@ -30,8 +33,12 @@ type Config struct {
 
 // Lifecycle tracks which tunnel serves each hook. A hook is served by at
 // most one tunnel; attaching a newer tunnel replaces the older one
-// ("takeover"). mu guards the registry state and detached-since; it is
-// taken before the hook manager's lock, never after.
+// ("takeover"). mu guards the registry state and detached-since.
+//
+// Locks are taken in the order owner attach lock → mu → hooks.Manager.mu;
+// nothing is sent, logged or published while mu is held. Under mu:
+//   - byHook only names stored hooks, because hooks are deleted under mu;
+//   - detached only names stored hooks that no tunnel serves.
 type Lifecycle struct {
 	mu        sync.Mutex
 	byHook    map[hooks.ID]*tunnel.Tunnel
@@ -46,6 +53,8 @@ type Lifecycle struct {
 	attachLocks sync.Map // tailcfg.UserID → *sync.Mutex, see Admit
 }
 
+// New returns a Lifecycle with no tunnels attached. Ephemeral hooks get
+// their grace period counted from now at the earliest, see Reap.
 func New(cfg Config) *Lifecycle {
 	l := &Lifecycle{
 		byHook:   map[hooks.ID]*tunnel.Tunnel{},

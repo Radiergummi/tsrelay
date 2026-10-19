@@ -17,7 +17,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
-// hookOf returns the stored hook id.
+// hookOf returns the stored hook with the given id; a missing one fails t.
 func hookOf(t *testing.T, mgr *hooks.Manager, id hooks.ID) hooks.Hook {
 	t.Helper()
 	h, ok := mgr.Get(id)
@@ -149,11 +149,23 @@ func TestDeleteRacesTunnelEnd(t *testing.T) {
 		admitAttach(t, l, receiver, tun, id)
 		var wg sync.WaitGroup
 		wg.Add(2)
-		go func() { defer wg.Done(); l.Delete(context.Background(), receiver, h) }()
+		var err error
+		go func() { defer wg.Done(); err = l.Delete(context.Background(), receiver, h) }()
 		go func() { defer wg.Done(); drop() }()
 		wg.Wait()
+		if err != nil {
+			t.Fatal(err)
+		}
 		if _, ok := l.Lookup(id); ok {
 			t.Fatal("hook still attached")
+		}
+		// The tunnel's detach may still be pending; it stamps only hooks the
+		// tunnel serves, and the delete took this one.
+		l.mu.Lock()
+		n := len(l.detached)
+		l.mu.Unlock()
+		if n != 0 {
+			t.Fatalf("detached names %d hooks after the delete", n)
 		}
 	}
 }

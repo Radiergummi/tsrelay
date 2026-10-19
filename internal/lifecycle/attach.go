@@ -133,14 +133,8 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 
 	// A hook deleted since Admit must not be attached. One that another
 	// tunnel took over meanwhile is taken from it.
-	type deleted struct {
-		tunnel   *tunnel.Tunnel
-		id       hooks.ID
-		orphaned bool
-	}
 	var live []hooks.ID
 	var infos, gone []tunnel.HookInfo
-	var elsewhere []deleted
 	l.mu.Lock()
 	for _, h := range tk.requested {
 		if _, ok := l.cfg.Hooks.Get(h.ID); ok {
@@ -149,10 +143,8 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 			delete(l.detached, h.ID)
 			continue
 		}
+		// Delete and Reap detach under l.mu, so a deleted hook is served by no tunnel.
 		gone = append(gone, tunnel.HookInfo{ID: string(h.ID)})
-		if dt, o, ok := l.detachHookLocked(h.ID); ok {
-			elsewhere = append(elsewhere, deleted{dt, h.ID, o})
-		}
 	}
 	reps := l.attachLocked(t, live)
 	l.mu.Unlock()
@@ -164,9 +156,6 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 			lost[i] = tunnel.HookInfo{ID: string(id)}
 		}
 		rep.tunnel.Notify(tunnel.Control{Type: tunnel.ControlReplaced, Hooks: lost}, rep.orphaned)
-	}
-	for _, d := range elsewhere {
-		d.tunnel.Notify(tunnel.Control{Type: tunnel.ControlHookDeleted, Hooks: []tunnel.HookInfo{{ID: string(d.id)}}}, d.orphaned)
 	}
 	for _, id := range live {
 		l.cfg.Events.Publish(events.HookChanged(tk.owner.UserID, string(id)))

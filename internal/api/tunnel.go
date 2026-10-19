@@ -23,8 +23,8 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 	ctx, span := a.startTunnelSpan(r)
 	r = r.WithContext(ctx)
 	attached := false
-	var validatedHookIDs []string // set once the requested hooks pass their ownership checks
-	defer func() { a.endAttach(span, id, attached, validatedHookIDs) }()
+	var admittedHookIDs []string // set once Admit accepts the requested hooks
+	defer func() { a.endAttach(span, id, attached, admittedHookIDs) }()
 	if !tunnel.IsUpgrade(r) {
 		problem.New(http.StatusBadRequest, problem.BadRequest, "expected Connection: Upgrade and Upgrade: "+tunnel.UpgradeToken).Write(w)
 		return
@@ -46,14 +46,19 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 		requested[i] = hooks.ID(hid)
 	}
 	tk, err := a.Tunnels.Admit(ctx, id, requested, session, resume)
-	var ae *lifecycle.AdmitError
-	if errors.As(err, &ae) { // Admit fails with nothing else
-		attachRefused(ae).Write(w)
+	if err != nil {
+		var ae *lifecycle.AdmitError
+		if errors.As(err, &ae) {
+			attachRefused(ae).Write(w)
+			return
+		}
+		a.Audit.Slog().Error("tunnel.attach failed", "error", err)
+		problem.New(http.StatusInternalServerError, problem.Internal, "could not attach the tunnel").Write(w)
 		return
 	}
 	defer tk.Close()
 	for _, hid := range tk.HookIDs() {
-		validatedHookIDs = append(validatedHookIDs, string(hid))
+		admittedHookIDs = append(admittedHookIDs, string(hid))
 	}
 
 	conn, err := tunnel.Accept(w, r)
