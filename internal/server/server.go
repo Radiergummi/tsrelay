@@ -17,6 +17,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/install"
+	"github.com/Radiergummi/tsrelay/internal/lifecycle"
 	"github.com/Radiergummi/tsrelay/internal/negotiate"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/release"
@@ -50,7 +51,7 @@ type Config struct {
 type Server struct {
 	cfg     Config
 	hooks   *hooks.Manager
-	tunnels *tunnel.Registry
+	tunnels *lifecycle.Lifecycle
 	audit   *audit.Logger
 	relay   *relay.Handler // serves callbacks; its Held() feeds the held-calls gauge
 	handler http.Handler
@@ -70,7 +71,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	if cfg.EphemeralGrace <= 0 {
 		cfg.EphemeralGrace = DefaultEphemeralGrace
 	}
-	s := &Server{cfg: cfg, hooks: mgr, tunnels: tunnel.NewRegistry(), audit: al}
+	s := &Server{cfg: cfg, hooks: mgr, audit: al}
 	s.identifier = id
 	s.tel = cfg.Telemetry
 	if s.tel == nil {
@@ -82,6 +83,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	s.inspect.OnChange = func(owner tailcfg.UserID, sum inspect.Summary) {
 		s.events.Publish(events.Event{Type: events.TypeCall, Owner: owner, HookID: string(sum.HookID), Data: sum})
 	}
+	s.tunnels = lifecycle.New(lifecycle.Config{Hooks: mgr, Inspect: s.inspect, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, PublicBaseURL: cfg.PublicBaseURL})
 	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect, PublicMaxBody: cfg.PublicMaxBody}
 
 	version := cmp.Or(cfg.Version, "dev")
@@ -156,18 +158,8 @@ func commit() string {
 // RunReaper deletes expired ephemeral hooks every interval until ctx is done.
 func (s *Server) RunReaper(ctx context.Context, interval time.Duration) {
 	runEvery(ctx, interval, func() {
-		reaped, err := s.hooks.Reap(ctx, s.cfg.EphemeralGrace, func(id hooks.ID) bool {
-			_, ok := s.tunnels.Lookup(string(id))
-			return ok
-		})
-		if err != nil {
+		if err := s.tunnels.Reap(ctx, s.cfg.EphemeralGrace); err != nil {
 			s.audit.Slog().Error("reaping ephemeral hooks failed", "error", err)
-		}
-		for _, h := range reaped {
-			s.audit.Log(ctx, audit.HookExpire, audit.Hook(h))
-			s.tunnels.RemoveHook(string(h.ID))
-			s.inspect.Forget(h.ID)
-			s.events.Publish(events.HookChanged(h.Owner, string(h.ID)))
 		}
 	})
 }
@@ -190,5 +182,5 @@ func runEvery(ctx context.Context, interval time.Duration, f func()) {
 // tunnel connections nor open streams are covered by http.Server.Shutdown.
 func (s *Server) Close() {
 	s.events.Close()
-	s.tunnels.CloseAll()
+	s.tunnels.Close()
 }

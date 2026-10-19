@@ -2,12 +2,9 @@ package server
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
-	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
-	"github.com/Radiergummi/tsrelay/internal/events"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
@@ -39,13 +36,13 @@ func (s *Server) revalidate(ctx context.Context) {
 			return
 		}
 		if revoked, reason := s.check(ctx, t, hookIDs); len(revoked) > 0 {
-			s.revoke(ctx, t, revoked, reason)
+			s.tunnels.Revoke(ctx, t, revoked, reason)
 		}
 	}
 }
 
 // check returns those of hookIDs that t's owner may no longer serve, and why.
-func (s *Server) check(ctx context.Context, t *tunnel.Tunnel, hookIDs []string) ([]string, string) {
+func (s *Server) check(ctx context.Context, t *tunnel.Tunnel, hookIDs []hooks.ID) ([]hooks.ID, string) {
 	ictx, cancel := context.WithTimeout(ctx, identifyTimeout)
 	defer cancel()
 	id, err := s.identifier.Identify(ictx, t.RemoteAddr)
@@ -74,31 +71,12 @@ func (s *Server) check(ctx context.Context, t *tunnel.Tunnel, hookIDs []string) 
 		return hookIDs, "the receiver role was revoked"
 	}
 	t.SetPublic(id.Grants.Public)
-	var revoked []string
+	var revoked []hooks.ID
 	for _, hid := range hookIDs {
 		// A deleted hook is skipped: its deletion detaches it.
-		if h, ok := s.hooks.Get(hooks.ID(hid)); ok && !id.Grants.Allows(authz.RoleReceiver, h.Channel) {
+		if h, ok := s.hooks.Get(hid); ok && !id.Grants.Allows(authz.RoleReceiver, h.Channel) {
 			revoked = append(revoked, hid)
 		}
 	}
 	return revoked, "the grants no longer cover the hook's channel"
-}
-
-// revoke detaches hookIDs from t, tells its client, and closes t if it
-// serves nothing else. Only hooks t still serves are detached: one that a
-// newer tunnel took over since the check stays with that tunnel.
-func (s *Server) revoke(ctx context.Context, t *tunnel.Tunnel, hookIDs []string, reason string) {
-	detached, orphaned := s.tunnels.DetachFrom(t, hookIDs)
-	if len(detached) == 0 {
-		return
-	}
-	infos := make([]tunnel.HookInfo, len(detached))
-	for i, hid := range detached {
-		s.hooks.SetAttached(hooks.ID(hid), false)
-		s.events.Publish(events.HookChanged(t.Owner.UserID, hid))
-		infos[i] = tunnel.HookInfo{ID: hid}
-	}
-	s.audit.Log(ctx, audit.TunnelRevoked, audit.Actor(t.Owner), slog.String("tunnel", t.ID),
-		slog.Any("hooks", detached), slog.String("reason", reason))
-	t.Notify(tunnel.Control{Type: tunnel.ControlRevoked, Hooks: infos}, orphaned)
 }

@@ -119,14 +119,9 @@ func TestExpiry(t *testing.T) {
 	now := time.Unix(1000, 0).UTC()
 	m.now = func() time.Time { return now }
 	exp := now.Add(time.Minute)
-	h, _ := m.Create(ctx, receiver, CreateRequest{Path: "x", ExpiresAt: &exp})
-	m.SetAttached(h.ID, true)
+	m.Create(ctx, receiver, CreateRequest{Path: "x", ExpiresAt: &exp})
 	now = now.Add(2 * time.Minute)
 	if _, _, ok := m.Route("moritz", "x"); ok {
 		t.Fatal("expired hook still routes before the reaper ran")
-	}
-	reaped, err := m.Reap(ctx, time.Hour, func(ID) bool { return true })
-	if err != nil || len(reaped) != 1 || reaped[0].ID != h.ID {
-		t.Fatalf("Reap = %v, %v; expired hooks go even while served", reaped, err)
 	}
 }

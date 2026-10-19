@@ -137,7 +137,7 @@ func (e *env) serve(hookID string) {
 		io.ReadAll(r.Body)
 		io.WriteString(w, "pong")
 	}), tunnel.Options{}, nil)
-	e.reg.Attach(tun, []string{hookID})
+	e.attach(moritz, tun, hookID)
 }
 
 func TestReplayRules(t *testing.T) {

@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -24,19 +23,19 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
+	"github.com/Radiergummi/tsrelay/internal/lifecycle"
 	"github.com/Radiergummi/tsrelay/internal/negotiate"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/release"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"golang.org/x/mod/semver"
-	"tailscale.com/tailcfg"
 )
 
 type API struct {
 	Identifier    identify.Identifier
 	Hooks         *hooks.Manager
-	Tunnels       *tunnel.Registry
+	Tunnels       *lifecycle.Lifecycle
 	Inspect       *inspect.Inspector
 	Relay         *relay.Handler // delivers replays and test requests
 	Events        *events.Hub    // receives hook changes; the event stream reads it
@@ -51,13 +50,6 @@ type API struct {
 	HTML          http.Handler // the web UI, for resources asked for as HTML; nil: JSON and streams only
 	Tracer        trace.Tracer // nil: no spans
 	Meter         metric.Meter // nil: no API latency histogram
-
-	// attachLocks holds one *sync.Mutex per user (tailcfg.UserID). It
-	// serializes that user's attaches from the checks through registration.
-	attachLocks sync.Map
-
-	notifyMu  sync.Mutex // orders updateSeq with the URL read for it
-	updateSeq uint64
 
 	routes []string // the patterns Register mounted
 }
@@ -239,14 +231,6 @@ func (a *API) authed(f func(http.ResponseWriter, *http.Request, authz.Identity))
 	})
 }
 
-// lockAttaches locks user's attaches and returns the unlock function.
-func (a *API) lockAttaches(user tailcfg.UserID) (unlock func()) {
-	v, _ := a.attachLocks.LoadOrStore(user, &sync.Mutex{})
-	mu := v.(*sync.Mutex)
-	mu.Lock()
-	return mu.Unlock
-}
-
 // MeOf describes id as GET / does.
 func (a *API) MeOf(id authz.Identity) Me {
 	me := Me{
@@ -373,7 +357,7 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 	}
 	a.Audit.Log(r.Context(), audit.HookUpdate, audit.Actor(id), audit.Hook(h), slog.Any("changed", changed))
 	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
-	a.notifyUpdated(h.ID)
+	a.Tunnels.NotifyUpdated(h.ID)
 	if h.Public {
 		a.refreshTunnelPublic(r.Context(), h.ID)
 	}
@@ -385,7 +369,7 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 // than at the next revalidation. The tunnel's own node decides, not the
 // caller's. It only raises the flag; the revalidator lowers it.
 func (a *API) refreshTunnelPublic(ctx context.Context, hookID hooks.ID) {
-	t, ok := a.Tunnels.Lookup(string(hookID))
+	t, ok := a.Tunnels.Lookup(hookID)
 	if !ok || t.Public() {
 		return
 	}
@@ -410,27 +394,8 @@ func (a *API) rotatePublicURL(w http.ResponseWriter, r *http.Request, id authz.I
 	}
 	a.Audit.Log(r.Context(), audit.HookUpdate, audit.Actor(id), audit.Hook(h), slog.Any("changed", []string{"publicUrl"}))
 	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
-	a.notifyUpdated(h.ID)
+	a.Tunnels.NotifyUpdated(h.ID)
 	writeJSON(w, http.StatusOK, a.HookJSON(h, id))
-}
-
-// notifyUpdated tells the tunnel serving the hook its current URL. Messages
-// are sent in the background and can overtake each other, so each carries
-// a sequence number. The number and the URL are taken under one lock, so a
-// higher number never carries an older URL.
-func (a *API) notifyUpdated(id hooks.ID) {
-	a.notifyMu.Lock()
-	h, ok := a.Hooks.Get(id)
-	a.updateSeq++
-	seq := a.updateSeq
-	a.notifyMu.Unlock()
-	if !ok {
-		return // deleted meanwhile; the delete sends hook-deleted
-	}
-	if t, ok := a.Tunnels.Lookup(string(id)); ok {
-		t.Notify(tunnel.Control{Type: tunnel.ControlHookUpdated, Seq: seq,
-			Hooks: []tunnel.HookInfo{{ID: string(id), URL: a.BaseURL + h.Route(), Public: h.Public, PublicURL: a.publicURL(h)}}}, false)
-	}
 }
 
 func (a *API) deleteHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
@@ -439,15 +404,11 @@ func (a *API) deleteHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 		return
 	}
-	if err := a.Hooks.Delete(r.Context(), h.ID); err != nil && !errors.Is(err, hooks.ErrNotFound) {
+	if err := a.Tunnels.Delete(r.Context(), id, h.ID); err != nil {
 		a.Audit.Slog().Error("hook.delete failed", "error", err)
 		problem.New(http.StatusInternalServerError, problem.Internal, "could not delete the hook").Write(w)
 		return
 	}
-	a.Tunnels.RemoveHook(string(h.ID))
-	a.Inspect.Forget(h.ID)
-	a.Audit.Log(r.Context(), audit.HookDelete, audit.Actor(id), audit.Hook(h))
-	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -474,24 +435,15 @@ func (a *API) HookJSON(h hooks.Hook, viewer authz.Identity) Hook {
 		Settings: h.Settings, Effective: a.Hooks.Effective(h), CreatedAt: h.CreatedAt,
 	}
 	if viewer.IsUser() && viewer.UserID == h.Owner { // the URL works like a password
-		out.PublicURL = a.publicURL(h)
+		out.PublicURL = h.PublicURL(a.PublicBaseURL)
 	}
-	if t, ok := a.Tunnels.Lookup(string(h.ID)); ok {
+	if t, ok := a.Tunnels.Lookup(h.ID); ok {
 		out.Tunnel = &TunnelInfo{ID: t.ID, Node: t.Owner.NodeName, Target: t.Target}
 	}
 	if last, ok := a.Inspect.Latest(h.ID); ok {
 		out.LastCall = &last
 	}
 	return out
-}
-
-// publicURL is h's URL on the internet, or "" if h is not public or the
-// relay serves no Funnel.
-func (a *API) publicURL(h hooks.Hook) string {
-	if !h.Public || a.PublicBaseURL == "" {
-		return ""
-	}
-	return a.PublicBaseURL + h.PublicRoute()
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

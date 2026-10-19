@@ -134,7 +134,7 @@ func TestPublicRefreshesTunnelGrant(t *testing.T) {
 	t.Cleanup(func() { conn.Close() })
 	tun, _ := tunneltest.Pair(t, http.NotFoundHandler(), tunnel.Options{}, nil)
 	tun.Owner, tun.RemoteAddr = moritz, conn.LocalAddr().String()
-	e.reg.Attach(tun, []string{h.ID})
+	e.attach(moritz, tun, h.ID)
 	if tun.Public() {
 		t.Fatal("the tunnel may receive public calls before the grant")
 	}

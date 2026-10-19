@@ -23,6 +23,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/ids"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
+	"github.com/Radiergummi/tsrelay/internal/lifecycle"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"go.opentelemetry.io/otel/attribute"
@@ -59,7 +60,7 @@ var (
 type Handler struct {
 	Identifier identify.Identifier
 	Hooks      *hooks.Manager
-	Tunnels    *tunnel.Registry
+	Tunnels    *lifecycle.Lifecycle
 	Audit      *audit.Logger
 	HoldQueue  int                // calls per hook that may wait for a tunnel; 0 means DefaultHoldQueue
 	Inspect    *inspect.Inspector // records calls for the inspector; nil records nothing
@@ -260,7 +261,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	delivery = time.Now()
-	tun, attached := h.Tunnels.Lookup(string(hook.ID))
+	tun, attached := h.Tunnels.Lookup(hook.ID)
 	if !attached {
 		// Nothing has been read from the body yet, so holding is safe.
 		holdStart := time.Now()
@@ -271,7 +272,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case err != nil && ctx.Err() != nil:
 			result = "canceled"
-		case errors.Is(err, tunnel.ErrHookGone), errors.Is(err, errHookExpired):
+		case errors.Is(err, lifecycle.ErrHookGone), errors.Is(err, errHookExpired):
 			result = "hook_gone"
 		case errors.Is(err, errHoldQueueFull):
 			result = "queue_full"
@@ -371,7 +372,7 @@ func (h *Handler) hold(ctx context.Context, hook hooks.Hook, timeout time.Durati
 	}
 	ctx, cancel := context.WithTimeoutCause(ctx, timeout, cause)
 	defer cancel()
-	return h.Tunnels.Wait(ctx, string(hook.ID), func() bool { return h.hookExists(hook.ID) })
+	return h.Tunnels.Wait(ctx, hook.ID)
 }
 
 func (h *Handler) enqueue(id hooks.ID) bool {

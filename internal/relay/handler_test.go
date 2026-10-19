@@ -21,6 +21,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
+	"github.com/Radiergummi/tsrelay/internal/lifecycle"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"github.com/Radiergummi/tsrelay/internal/tunnel/tunneltest"
@@ -34,7 +35,7 @@ var (
 type env struct {
 	t      *testing.T
 	fake   *identify.Fake
-	reg    *tunnel.Registry
+	reg    *lifecycle.Lifecycle
 	mgr    *hooks.Manager
 	in     *inspect.Inspector
 	h      *Handler
@@ -54,7 +55,7 @@ func (e *env) log() string { e.logMu.Lock(); defer e.logMu.Unlock(); return e.lo
 
 func newEnvWith(t *testing.T, cfg inspect.Config) *env {
 	t.Helper()
-	e := &env{t: t, fake: &identify.Fake{}, reg: tunnel.NewRegistry()}
+	e := &env{t: t, fake: &identify.Fake{}}
 	store, err := hooks.OpenJSON(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -66,11 +67,13 @@ func newEnvWith(t *testing.T, cfg inspect.Config) *env {
 		t.Fatal(err)
 	}
 	e.in = inspect.New(cfg)
+	al := audit.New(slog.New(slog.NewJSONHandler(e, nil)))
+	e.reg = lifecycle.New(lifecycle.Config{Hooks: e.mgr, Inspect: e.in, Audit: al})
 	e.h = &Handler{
 		Identifier: e.fake,
 		Hooks:      e.mgr,
 		Tunnels:    e.reg,
-		Audit:      audit.New(slog.New(slog.NewJSONHandler(e, nil))),
+		Audit:      al,
 		HoldQueue:  2, // small, so TestHoldQueueFull can fill it
 		Inspect:    e.in,
 	}
@@ -92,8 +95,18 @@ func (e *env) patch(p hooks.SettingsPatch) {
 // attach serves the hook through an in-process tunnel to local.
 func (e *env) attach(local http.Handler, opts tunnel.Options) (*tunnel.Tunnel, func()) {
 	tun, drop := tunneltest.Pair(e.t, local, opts, nil)
-	e.reg.Attach(tun, []string{string(e.hook.ID)})
+	e.attachHook(tun, e.hook.ID)
 	return tun, drop
+}
+
+// attachHook makes tun serve id, as the hook's owner would.
+func (e *env) attachHook(tun *tunnel.Tunnel, id hooks.ID) {
+	e.t.Helper()
+	tk, err := e.reg.Admit(context.Background(), receiver, []hooks.ID{id}, "", false)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	tk.Attach(context.Background(), tun, nil)
 }
 
 func (e *env) do(id authz.Identity, method, path string, body io.Reader, hdr http.Header) *http.Response {

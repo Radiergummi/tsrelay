@@ -21,11 +21,11 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
+	"github.com/Radiergummi/tsrelay/internal/lifecycle"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/release"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
-	"github.com/Radiergummi/tsrelay/internal/tunnel/tunneltest"
 )
 
 var (
@@ -39,19 +39,22 @@ type env struct {
 	t    *testing.T
 	fake *identify.Fake
 	mgr  *hooks.Manager
-	reg  *tunnel.Registry
+	reg  *lifecycle.Lifecycle
 	in   *inspect.Inspector
 	srv  *httptest.Server
 	api  *API
 }
 
 func newEnv(t *testing.T) *env {
-	e := &env{t: t, fake: &identify.Fake{}, reg: tunnel.NewRegistry()}
+	e := &env{t: t, fake: &identify.Fake{}}
 	store, _ := hooks.OpenJSON(t.TempDir())
 	t.Cleanup(func() { store.Close() })
 	e.mgr, _ = hooks.NewManager(context.Background(), store, hooks.SlugConfig{})
 	e.in = inspect.New(inspect.Config{})
 	al := audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	// Tunnels are told public URLs as if Funnel were on; the tests that turn
+	// it on for the API set e.api.PublicBaseURL to the same base.
+	e.reg = lifecycle.New(lifecycle.Config{Hooks: e.mgr, Inspect: e.in, Audit: al, BaseURL: "https://tsrelay.example.ts.net", PublicBaseURL: publicBase})
 	rh := &relay.Handler{Identifier: e.fake, Hooks: e.mgr, Tunnels: e.reg, Audit: al, Inspect: e.in}
 	a := &API{
 		Identifier: e.fake, Hooks: e.mgr, Tunnels: e.reg, Inspect: e.in,
@@ -314,6 +317,16 @@ func (e *env) openTunnelQ(id authz.Identity, extra string, hookIDs ...string) (c
 	return controls, served, nil
 }
 
+// attach makes tun serve hookID, as the hook's owner would.
+func (e *env) attach(owner authz.Identity, tun *tunnel.Tunnel, hookID string) {
+	e.t.Helper()
+	tk, err := e.reg.Admit(context.Background(), owner, []hooks.ID{hooks.ID(hookID)}, "", false)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	tk.Attach(context.Background(), tun, nil)
+}
+
 func next[T any](t *testing.T, ch <-chan T) T {
 	t.Helper()
 	select {
@@ -464,17 +477,14 @@ func TestPatchNotifiesServingTunnel(t *testing.T) {
 	}
 }
 
-// Deleting a hook fails the calls held for it at once (tunnel.ErrHookGone).
+// Deleting a hook fails the calls held for it at once (lifecycle.ErrHookGone).
 func TestDeleteReleasesHeldCalls(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
 	e.call(moritz, "POST", "/hooks", map[string]any{"path": "held"}, &h)
 	waited := make(chan error, 1)
 	go func() {
-		_, err := e.reg.Wait(context.Background(), h.ID, func() bool {
-			_, ok := e.mgr.Get(hooks.ID(h.ID))
-			return ok
-		})
+		_, err := e.reg.Wait(context.Background(), hooks.ID(h.ID))
 		waited <- err
 	}()
 	if resp := e.call(moritz, "DELETE", "/hooks/"+h.ID, nil, nil); resp.StatusCode != 204 {
@@ -482,7 +492,7 @@ func TestDeleteReleasesHeldCalls(t *testing.T) {
 	}
 	select {
 	case err := <-waited:
-		if !errors.Is(err, tunnel.ErrHookGone) {
+		if !errors.Is(err, lifecycle.ErrHookGone) {
 			t.Fatalf("Wait = %v, want ErrHookGone", err)
 		}
 	case <-time.After(5 * time.Second):
@@ -541,55 +551,6 @@ func TestMaxTunnels(t *testing.T) {
 	e.call(other, "POST", "/hooks", hooks.CreateRequest{Path: "o"}, &o)
 	if _, _, err := e.openTunnel(other, o.ID); err != nil {
 		t.Fatalf("another user's attach: %v", err)
-	}
-}
-
-// A hook deleted while its tunnel attaches must not stay in the registry
-// (plan 1 minor 8). register runs after the attach checks. Here the hook is
-// deleted between the two, so its deletion found no tunnel to detach.
-func TestAttachRechecksDeletedHooks(t *testing.T) {
-	e := newEnv(t)
-	a := &API{Hooks: e.mgr, Tunnels: e.reg, Audit: audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil))), BaseURL: "https://r"}
-	var keep, gone Hook
-	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "keep"}, &keep)
-	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "gone"}, &gone)
-	hk, _ := e.mgr.Get(hooks.ID(keep.ID))
-	hg, _ := e.mgr.Get(hooks.ID(gone.ID))
-	if err := e.mgr.Delete(context.Background(), hg.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	controls := make(chan tunnel.Control, 4)
-	tun, _ := tunneltest.Pair(t, http.NotFoundHandler(), tunnel.Options{}, func(c tunnel.Control) { controls <- c })
-	a.register(context.Background(), tun, moritz, []hooks.Hook{hk, hg})
-	if _, ok := e.reg.Lookup(gone.ID); ok {
-		t.Fatal("the deleted hook stayed attached")
-	}
-	if cur, ok := e.reg.Lookup(keep.ID); !ok || cur != tun {
-		t.Fatal("the remaining hook was not attached")
-	}
-	got := map[tunnel.ControlType][]tunnel.HookInfo{}
-	for range 2 {
-		c := next(t, controls)
-		got[c.Type] = c.Hooks
-	}
-	if hs := got[tunnel.ControlAttached]; len(hs) != 1 || hs[0].ID != keep.ID {
-		t.Errorf("attached = %+v, want only the remaining hook", hs)
-	}
-	if hs := got[tunnel.ControlHookDeleted]; len(hs) != 1 || hs[0].ID != gone.ID {
-		t.Errorf("hook-deleted = %+v, want the deleted hook", hs)
-	}
-
-	// A tunnel left with no hooks at all is closed.
-	tun2, _ := tunneltest.Pair(t, http.NotFoundHandler(), tunnel.Options{}, nil)
-	a.register(context.Background(), tun2, moritz, []hooks.Hook{hg})
-	select {
-	case <-tun2.Done():
-	case <-time.After(5 * time.Second):
-		t.Fatal("a tunnel whose only hook was deleted was not closed")
-	}
-	if _, ok := e.reg.Lookup(gone.ID); ok {
-		t.Fatal("the deleted hook stayed attached")
 	}
 }
 

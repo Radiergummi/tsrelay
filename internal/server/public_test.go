@@ -68,8 +68,8 @@ func newPublicHook(t *testing.T, e *env) hooks.Hook {
 	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusAccepted) }))
 	t.Cleanup(local.Close)
 	t.Cleanup(e.cli(string(h.ID), local.URL))
-	e.waitFor(func() bool { _, ok := e.srv.tunnels.Lookup(string(h.ID)); return ok })
-	tun, _ := e.srv.tunnels.Lookup(string(h.ID))
+	e.waitFor(func() bool { _, ok := e.srv.tunnels.Lookup(h.ID); return ok })
+	tun, _ := e.srv.tunnels.Lookup(h.ID)
 	tun.SetPublic(true)
 	return h
 }

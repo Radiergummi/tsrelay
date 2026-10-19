@@ -86,7 +86,7 @@ func TestHeldCallIgnoresOtherHooks(t *testing.T) {
 	otherTun, _ := tunneltest.Pair(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("the held call was delivered to another hook's tunnel")
 	}), tunnel.Options{}, nil)
-	e.reg.Attach(otherTun, []string{string(other.ID)})
+	e.attachHook(otherTun, other.ID)
 	select {
 	case res := <-got:
 		t.Fatalf("held call ended on another hook's attach: %+v", res)
@@ -166,13 +166,12 @@ func TestHeldCallCanceledBySender(t *testing.T) {
 func TestHeldCallsReleasedOnDelete(t *testing.T) {
 	e := newEnv(t)
 	got := e.call("/~moritz/cb", "")
-	// Held counts the call before its Wait registers, so Release may run
-	// first; Wait's existence re-check fails the call all the same.
+	// Held counts the call before its Wait registers, so the delete may run
+	// first; Wait's existence check fails the call all the same.
 	e.waitHeld(1)
-	if err := e.mgr.Delete(context.Background(), e.hook.ID); err != nil {
+	if err := e.reg.Delete(context.Background(), receiver, e.hook.ID); err != nil { // what DELETE /hooks/{id} does
 		t.Fatal(err)
 	}
-	e.reg.Release(string(e.hook.ID)) // what DELETE /hooks/{id} and the reaper do
 	res := <-got
 	if res.status != 404 || res.code != problem.HookNotFound || res.took > 5*time.Second {
 		t.Fatalf("held call after delete = %+v", res)

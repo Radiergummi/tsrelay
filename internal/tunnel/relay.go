@@ -119,8 +119,8 @@ func (t *Tunnel) Public() bool { return t.public.Load() }
 // SetPublic records whether the owner may receive public calls.
 func (t *Tunnel) SetPublic(v bool) { t.public.Store(v) }
 
-// closeWith closes the tunnel, recording reason unless one was recorded first.
-func (t *Tunnel) closeWith(reason string) {
+// CloseWith closes the tunnel, recording reason unless one was recorded first.
+func (t *Tunnel) CloseWith(reason string) {
 	t.closeReason.CompareAndSwap(nil, &reason)
 	t.Close()
 }
@@ -191,7 +191,7 @@ func (t *Tunnel) Notify(c Control, closeAfter bool) {
 			if c.Type == ControlRevoked {
 				reason = "revoked"
 			}
-			t.closeWith(reason)
+			t.CloseWith(reason)
 		}
 	}()
 }

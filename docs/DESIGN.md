@@ -72,7 +72,8 @@ cmd/tsrelay/            main, subcommand wiring
 internal/authz/         capability parsing, merging, channel matching, Identity
 internal/identify/      Identifier interface; tsnet WhoIs implementation; test fake
 internal/hooks/         Hook model, validation, name generation, Store interface + JSON store
-internal/tunnel/        tunnel protocol: relay side (registry, round-tripper) and client side
+internal/tunnel/        tunnel protocol: relay side (round-tripper) and client side
+internal/lifecycle/     hook–tunnel transitions: attach, detach, delete, expire, revoke
 internal/relay/         callback handler, forwarding, hold-for-reconnect, limits
 internal/inspect/       call/attempt capture, ring buffers, replay, event fan-out
 internal/api/           JSON API handlers, problem responses, CSRF/host checks
