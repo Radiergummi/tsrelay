@@ -3,7 +3,6 @@ package lifecycle
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -97,10 +96,9 @@ func TestAdmitChecks(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			tk, err := l.Admit(ctx, c.owner, c.ids, c.session, c.resume)
-			var ae *AdmitError
-			if !errors.As(err, &ae) || *ae != c.want {
-				t.Fatalf("Admit = %v, %v; want %+v", tk, err, c.want)
+			tk, ae := l.Admit(ctx, c.owner, c.ids, c.session, c.resume)
+			if ae == nil || *ae != c.want {
+				t.Fatalf("Admit = %v, %v; want %+v", tk, ae, c.want)
 			}
 		})
 	}
@@ -109,9 +107,9 @@ func TestAdmitChecks(t *testing.T) {
 	}
 
 	// The serving session may replace its own tunnel, even under "reject".
-	tk, err := l.Admit(ctx, receiver, []hooks.ID{rejecting.ID, mine[0]}, "s1", true)
-	if err != nil {
-		t.Fatalf("Admit by the serving session = %v", err)
+	tk, ae := l.Admit(ctx, receiver, []hooks.ID{rejecting.ID, mine[0]}, "s1", true)
+	if ae != nil {
+		t.Fatalf("Admit by the serving session = %v", ae)
 	}
 	tk.Close()
 }
@@ -251,9 +249,9 @@ func TestAttachRechecksDeletedHooks(t *testing.T) {
 
 	// A tunnel left with no hooks at all is closed.
 	other := createHooks(t, mgr, 1, hooks.CreateRequest{})[0]
-	tk, err = l.Admit(context.Background(), receiver, []hooks.ID{other}, "", false)
-	if err != nil {
-		t.Fatal(err)
+	tk, ae := l.Admit(context.Background(), receiver, []hooks.ID{other}, "", false)
+	if ae != nil {
+		t.Fatal(ae)
 	}
 	if err := l.Delete(context.Background(), receiver, other); err != nil {
 		t.Fatal(err)

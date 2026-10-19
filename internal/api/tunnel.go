@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -45,15 +44,9 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 	for i, hid := range hookIDs {
 		requested[i] = hooks.ID(hid)
 	}
-	tk, err := a.Tunnels.Admit(ctx, id, requested, session, resume)
-	if err != nil {
-		var ae *lifecycle.AdmitError
-		if errors.As(err, &ae) {
-			attachRefused(ae).Write(w)
-			return
-		}
-		a.Audit.Slog().Error("tunnel.attach failed", "error", err)
-		problem.New(http.StatusInternalServerError, problem.Internal, "could not attach the tunnel").Write(w)
+	tk, ae := a.Tunnels.Admit(ctx, id, requested, session, resume)
+	if ae != nil {
+		attachRefused(ae).Write(w)
 		return
 	}
 	defer tk.Close()

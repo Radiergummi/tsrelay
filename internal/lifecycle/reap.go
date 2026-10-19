@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
@@ -16,21 +17,32 @@ import (
 // period. A store error stops the pass and is returned; hooks removed
 // before it keep their effects.
 func (l *Lifecycle) Reap(ctx context.Context, grace time.Duration) error {
-	l.mu.Lock()
 	now := l.now()
+	// List outside l.mu, so callbacks don't wait on the copy and sort. A hook
+	// an update makes reapable since is reaped on a later pass.
+	var candidates []hooks.ID
+	for _, h := range l.cfg.Hooks.ListAll() {
+		if h.Ephemeral || h.Expired(now) {
+			candidates = append(candidates, h.ID)
+		}
+	}
+
+	l.mu.Lock()
 	var removed []removal
 	var err error
 	// Decide on the hook as stored, not on the listed copy: updates don't
 	// take l.mu, and one made since the listing may keep the hook.
 	reapable := func(h hooks.Hook) bool { return h.Expired(now) || l.idleLocked(h, now, grace) }
-	for _, h := range l.cfg.Hooks.ListAll() {
-		if !h.Ephemeral && !h.Expired(now) {
-			continue // can only be reaped once an update makes it so, on a later pass
-		}
+	for _, id := range candidates {
 		var cur hooks.Hook
 		var ok bool
-		if cur, ok, err = l.cfg.Hooks.DeleteIf(ctx, h.ID, reapable); err != nil {
-			break // never ErrNotFound: deletes hold l.mu
+		cur, ok, err = l.cfg.Hooks.DeleteIf(ctx, id, reapable)
+		if errors.Is(err, hooks.ErrNotFound) {
+			err = nil // deleted since the listing
+			continue
+		}
+		if err != nil {
+			break
 		}
 		if ok {
 			removed = append(removed, l.forgetLocked(cur))

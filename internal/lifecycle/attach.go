@@ -62,8 +62,8 @@ type Ticket struct {
 // Admit checks that owner may attach a tunnel to ids. On success it keeps
 // the owner's attach lock, which the returned Ticket releases: checks and
 // attach must not interleave with the owner's other attaches, or two of
-// them could both pass maxTunnels or "reject". Errors are *AdmitError.
-func (l *Lifecycle) Admit(ctx context.Context, owner authz.Identity, ids []hooks.ID, session string, resume bool) (*Ticket, error) {
+// them could both pass maxTunnels or "reject".
+func (l *Lifecycle) Admit(ctx context.Context, owner authz.Identity, ids []hooks.ID, session string, resume bool) (*Ticket, *AdmitError) {
 	v, _ := l.attachLocks.LoadOrStore(owner.UserID, &sync.Mutex{})
 	mu := v.(*sync.Mutex)
 	mu.Lock()
