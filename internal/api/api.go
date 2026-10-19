@@ -404,7 +404,7 @@ func (a *API) deleteHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 		return
 	}
-	if err := a.Tunnels.Delete(r.Context(), id, h); err != nil {
+	if err := a.Tunnels.Delete(r.Context(), id, h.ID); err != nil {
 		a.Audit.Slog().Error("hook.delete failed", "error", err)
 		problem.New(http.StatusInternalServerError, problem.Internal, "could not delete the hook").Write(w)
 		return
@@ -435,7 +435,7 @@ func (a *API) HookJSON(h hooks.Hook, viewer authz.Identity) Hook {
 		Settings: h.Settings, Effective: a.Hooks.Effective(h), CreatedAt: h.CreatedAt,
 	}
 	if viewer.IsUser() && viewer.UserID == h.Owner { // the URL works like a password
-		out.PublicURL = a.publicURL(h)
+		out.PublicURL = h.PublicURL(a.PublicBaseURL)
 	}
 	if t, ok := a.Tunnels.Lookup(h.ID); ok {
 		out.Tunnel = &TunnelInfo{ID: t.ID, Node: t.Owner.NodeName, Target: t.Target}
@@ -444,15 +444,6 @@ func (a *API) HookJSON(h hooks.Hook, viewer authz.Identity) Hook {
 		out.LastCall = &last
 	}
 	return out
-}
-
-// publicURL is h's URL on the internet, or "" if h is not public or the
-// relay serves no Funnel.
-func (a *API) publicURL(h hooks.Hook) string {
-	if !h.Public || a.PublicBaseURL == "" {
-		return ""
-	}
-	return a.PublicBaseURL + h.PublicRoute()
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

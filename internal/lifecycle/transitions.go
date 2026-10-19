@@ -12,14 +12,22 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
-// Delete deletes h on behalf of actor, fails the calls waiting for it,
-// tells the tunnel serving it, and forgets its captured calls. A hook a
-// concurrent delete already removed is not an error. The store deletes
-// under l.mu, so a Wait cannot register for a hook that is already gone.
-func (l *Lifecycle) Delete(ctx context.Context, actor authz.Identity, h hooks.Hook) error {
+// Delete deletes the hook id on behalf of actor, fails the calls waiting
+// for it, tells the tunnel serving it, and forgets its captured calls. A
+// hook a concurrent delete or the reaper already removed is not an error,
+// and that removal has already had these effects. The store deletes under
+// l.mu, so a Wait cannot register for a hook that is already gone.
+func (l *Lifecycle) Delete(ctx context.Context, actor authz.Identity, id hooks.ID) error {
 	l.mu.Lock()
-	r, err := l.removeLocked(ctx, h)
+	h, _, err := l.cfg.Hooks.DeleteIf(ctx, id, func(hooks.Hook) bool { return true })
+	var r removal
+	if err == nil {
+		r = l.forgetLocked(h)
+	}
 	l.mu.Unlock()
+	if errors.Is(err, hooks.ErrNotFound) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -32,15 +40,6 @@ type removal struct {
 	hook     hooks.Hook
 	tunnel   *tunnel.Tunnel // the tunnel that served the hook, if any
 	orphaned bool           // tunnel serves nothing else now
-}
-
-// removeLocked deletes h from the store, fails the calls waiting for it and
-// detaches it. A hook already gone is not an error.
-func (l *Lifecycle) removeLocked(ctx context.Context, h hooks.Hook) (removal, error) {
-	if _, _, err := l.cfg.Hooks.DeleteIf(ctx, h.ID, func(hooks.Hook) bool { return true }); err != nil && !errors.Is(err, hooks.ErrNotFound) {
-		return removal{}, err
-	}
-	return l.forgetLocked(h), nil
 }
 
 // forgetLocked fails the calls waiting for the removed hook h and detaches

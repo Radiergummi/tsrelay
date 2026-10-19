@@ -169,7 +169,7 @@ func TestHeldCallsReleasedOnDelete(t *testing.T) {
 	// Held counts the call before its Wait registers, so the delete may run
 	// first; Wait's existence check fails the call all the same.
 	e.waitHeld(1)
-	if err := e.reg.Delete(context.Background(), receiver, e.hook); err != nil { // what DELETE /hooks/{id} does
+	if err := e.reg.Delete(context.Background(), receiver, e.hook.ID); err != nil { // what DELETE /hooks/{id} does
 		t.Fatal(err)
 	}
 	res := <-got

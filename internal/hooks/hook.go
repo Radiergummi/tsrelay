@@ -43,3 +43,12 @@ func (h Hook) Route() string { return "/~" + h.Slug + "/" + h.Path }
 // PublicRoute is the path the hook is served at on the internet, e.g.
 // "/+Xq3…". The token works like a password.
 func (h Hook) PublicRoute() string { return "/+" + h.PublicToken }
+
+// PublicURL is h's URL on the internet below base, the relay's Funnel URL,
+// or "" if h is not public or base is empty (the relay serves no Funnel).
+func (h Hook) PublicURL(base string) string {
+	if !h.Public || base == "" {
+		return ""
+	}
+	return base + h.PublicRoute()
+}

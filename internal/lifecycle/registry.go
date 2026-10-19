@@ -34,6 +34,7 @@ func (l *Lifecycle) attachLocked(t *tunnel.Tunnel, ids []hooks.ID) []replacement
 	lost := map[*tunnel.Tunnel][]hooks.ID{}
 	for _, id := range ids {
 		l.wakeLocked(id, false)
+		delete(l.detached, id)
 		if old, ok := l.byHook[id]; ok && old != t {
 			lost[old] = append(lost[old], id)
 			l.unserveLocked(old, id)

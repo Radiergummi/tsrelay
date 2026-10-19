@@ -129,10 +129,9 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 	var infos []tunnel.HookInfo
 	l.mu.Lock()
 	for _, h := range tk.requested {
-		if _, ok := l.cfg.Hooks.Get(h.ID); ok {
+		if cur, ok := l.cfg.Hooks.Get(h.ID); ok {
 			live = append(live, h.ID)
-			infos = append(infos, l.hookInfo(h))
-			delete(l.detached, h.ID)
+			infos = append(infos, l.hookInfo(cur))
 			continue
 		}
 		// Delete and Reap detach under l.mu, so a deleted hook is served by no tunnel.

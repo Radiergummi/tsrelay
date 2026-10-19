@@ -71,7 +71,7 @@ func TestDeleteDetachesAndReleases(t *testing.T) {
 	// A call held for a hook that has no tunnel is released by the delete.
 	held := startWait(context.Background(), l, waited)
 	time.Sleep(20 * time.Millisecond) // let it block
-	if err := l.Delete(context.Background(), receiver, hookOf(t, mgr, waited)); err != nil {
+	if err := l.Delete(context.Background(), receiver, waited); err != nil {
 		t.Fatal(err)
 	}
 	if res := <-held; !errors.Is(res.err, ErrHookGone) {
@@ -79,7 +79,7 @@ func TestDeleteDetachesAndReleases(t *testing.T) {
 	}
 	next(t, evs)
 
-	if err := l.Delete(context.Background(), receiver, hookOf(t, mgr, id)); err != nil {
+	if err := l.Delete(context.Background(), receiver, id); err != nil {
 		t.Fatal(err)
 	}
 	if c := next(t, controls); c.Type != tunnel.ControlHookDeleted || len(c.Hooks) != 1 || c.Hooks[0].ID != string(id) {
@@ -118,15 +118,17 @@ func TestDeleteDetachesAndReleases(t *testing.T) {
 	}
 }
 
+// A second delete finds the hook gone: not an error, and it has no effects
+// of its own, e.g. no second audit record.
 func TestDeleteTwice(t *testing.T) {
 	l, mgr := newLifecycle(t)
+	logs, _ := observe(l)
 	id := createHooks(t, mgr, 1, hooks.CreateRequest{})[0]
-	h := hookOf(t, mgr, id)
 	tun, _, controls := controlPair(t)
 	admitAttach(t, l, receiver, tun, id)
 	next(t, controls) // attached
 	for range 2 {
-		if err := l.Delete(context.Background(), receiver, h); err != nil {
+		if err := l.Delete(context.Background(), receiver, id); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -137,6 +139,9 @@ func TestDeleteTwice(t *testing.T) {
 	case c := <-controls:
 		t.Fatalf("a second notice was sent: %+v", c)
 	case <-time.After(100 * time.Millisecond):
+	}
+	if n := strings.Count(logs.String(), `"msg":"hook.delete"`); n != 1 {
+		t.Fatalf("hook.delete audit lines = %d in %s", n, logs.String())
 	}
 }
 
@@ -150,7 +155,7 @@ func TestDeleteRacesTunnelEnd(t *testing.T) {
 		var wg sync.WaitGroup
 		wg.Add(2)
 		var err error
-		go func() { defer wg.Done(); err = l.Delete(context.Background(), receiver, h) }()
+		go func() { defer wg.Done(); err = l.Delete(context.Background(), receiver, h.ID) }()
 		go func() { defer wg.Done(); drop() }()
 		wg.Wait()
 		if err != nil {
@@ -236,7 +241,7 @@ func TestNotifyUpdatedSequence(t *testing.T) {
 		t.Fatalf("seqs = %d, %d, want consecutive", c1.Seq, c2.Seq)
 	}
 
-	if err := l.Delete(context.Background(), receiver, hookOf(t, mgr, id)); err != nil {
+	if err := l.Delete(context.Background(), receiver, id); err != nil {
 		t.Fatal(err)
 	}
 	next(t, controls) // hook-deleted
