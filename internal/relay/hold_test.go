@@ -316,3 +316,28 @@ func TestHeldCallReidentifiesSender(t *testing.T) {
 		})
 	}
 }
+
+// A held call whose hook's path changes while still routing it is forwarded
+// below the hook's current path: /~moritz/a/b/x after a/b became a reaches
+// the app as /b/x.
+func TestHeldCallUsesCurrentPath(t *testing.T) {
+	e := newEnv(t)
+	rename := func(p string) {
+		if _, _, err := e.mgr.Update(context.Background(), receiver, e.hook.ID,
+			hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new(p)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rename("a/b")
+	got := e.call("/~moritz/a/b/x", "")
+	e.waitHeld(1)
+	rename("a")
+	seen := make(chan string, 1)
+	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { seen <- r.URL.Path }), tunnel.Options{})
+	if res := <-got; res.status != 200 {
+		t.Fatalf("held call = %+v", res)
+	}
+	if p := <-seen; p != "/b/x" {
+		t.Fatalf("the app saw %q, want /b/x", p)
+	}
+}

@@ -186,7 +186,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	var err error
-	var segs int
 	var token string // a public call's token
 	if public {
 		// An internet client has no tailnet identity: sender stays empty,
@@ -216,10 +215,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	hook, found := h.reroute(r, token)
-	if found && !public {
-		segs = strings.Count(hook.Path, "/") + 1
-	}
+	hook, segs, found := h.reroute(r, token)
 	if inj != nil && found && hook.ID != inj.hook {
 		found = false // the path now belongs to another hook
 	}
@@ -228,7 +224,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Calls refused by channel are recorded too, so the owner can see
 		// them (DESIGN.md §9.2). The sender cannot tell: it gets the same
 		// 404 as for a missing hook.
-		eff = h.Hooks.Effective(hook)
+		eff = h.effective(hook, public)
 		record = h.startRecord(r, callID, start, kind, replayOf, hook, sender, internet, 1+segs, eff.Capture)
 		ct.event("routed")
 		if record != nil {
@@ -244,9 +240,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 		return
-	}
-	if public && h.PublicMaxBody > 0 && (eff.MaxBodyBytes == 0 || eff.MaxBodyBytes > h.PublicMaxBody) {
-		eff.MaxBodyBytes = h.PublicMaxBody
 	}
 	if eff.MaxBodyBytes > 0 && r.ContentLength > eff.MaxBodyBytes {
 		ct.event("body_too_large")
@@ -299,7 +292,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// The call gets the answer it would get if it arrived now: its
 		// address must still route to the same hook, and its sender, as
 		// identified again, must still be allowed the hook's channel.
-		now, ok := h.reroute(r, token)
+		now, nowSegs, ok := h.reroute(r, token)
 		reason := "the hook changed while the call was held"
 		if ok && now.ID == hook.ID && inj == nil && !public {
 			ictx, cancel := context.WithTimeout(ctx, reidentifyTimeout)
@@ -318,7 +311,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 			return
 		}
-		hook = now
+		// The hook may have changed while still routing the call: forward
+		// it with the hook's current path and settings.
+		hook, segs, eff = now, nowSegs, h.effective(now, public)
 	}
 
 	if tun.Owner.UserID != hook.Owner {
@@ -427,19 +422,30 @@ func (h *Handler) dequeue(id hooks.ID) {
 func holdRetryAfter(hold time.Duration) string { return retryAfter(max(5*time.Second, hold)) }
 
 // reroute routes r's original address: a public call's token, or a
-// tailnet call's slug and path. A path whose escaped form would split into
-// other segments than its decoded one routes nowhere.
-func (h *Handler) reroute(r *http.Request, token string) (hooks.Hook, bool) {
+// tailnet call's slug and path. It returns the hook and how many path
+// segments below the route's first belong to it. A path whose escaped form
+// would split into other segments than its decoded one routes nowhere.
+func (h *Handler) reroute(r *http.Request, token string) (hooks.Hook, int, bool) {
 	if token != "" {
 		hook, ok := h.Hooks.RoutePublic(token)
-		return hook, ok && !encodedSlashIn(r.URL, 1)
+		return hook, 0, ok && !encodedSlashIn(r.URL, 1)
 	}
 	slug, rest, ok := splitRoute(r.URL.Path)
 	if !ok {
-		return hooks.Hook{}, false
+		return hooks.Hook{}, 0, false
 	}
 	hook, segs, ok := h.Hooks.Route(slug, rest)
-	return hook, ok && !encodedSlashIn(r.URL, 1+segs)
+	return hook, segs, ok && !encodedSlashIn(r.URL, 1+segs)
+}
+
+// effective is hook's effective settings for a call, with a public call's
+// body capped at PublicMaxBody.
+func (h *Handler) effective(hook hooks.Hook, public bool) hooks.Effective {
+	eff := h.Hooks.Effective(hook)
+	if public && h.PublicMaxBody > 0 && (eff.MaxBodyBytes == 0 || eff.MaxBodyBytes > h.PublicMaxBody) {
+		eff.MaxBodyBytes = h.PublicMaxBody
+	}
+	return eff
 }
 
 func (h *Handler) hookExists(id hooks.ID) bool {
