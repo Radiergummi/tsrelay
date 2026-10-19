@@ -73,8 +73,8 @@ func TestCancelAndClose(t *testing.T) {
 }
 
 func TestHookChanged(t *testing.T) {
-	e := HookChanged(7, "h_x")
-	if e.Type != TypeHook || e.Owner != 7 || e.HookID != "h_x" {
+	e := HookChanged(7, "prod", "h_x")
+	if e.Type != TypeHook || e.Owner != 7 || e.Channel != "prod" || e.HookID != "h_x" {
 		t.Fatalf("event = %+v", e)
 	}
 	if d, ok := e.Data.(map[string]string); !ok || d["id"] != "h_x" {

@@ -141,13 +141,15 @@ func TestStoreRetention(t *testing.T) {
 func TestStoreUpdateAndOnChange(t *testing.T) {
 	in := New(Config{})
 	var seen []Summary
-	in.OnChange = func(owner tailcfg.UserID, s Summary) {
-		if owner != 1 {
-			t.Errorf("owner = %d", owner)
+	in.OnChange = func(owner tailcfg.UserID, channel string, s Summary) {
+		if owner != 1 || channel != "prod" {
+			t.Errorf("owner = %d, channel = %q", owner, channel)
 		}
 		seen = append(seen, s)
 	}
-	in.Add(call("c1", "h_a"))
+	c := call("c1", "h_a")
+	c.Channel = "prod"
+	in.Add(c)
 	in.Update("c1", func(c *Call) { c.Outcome, c.Status = OutcomeOK, 200 })
 	in.Update("gone", func(*Call) { t.Error("Update ran for an unknown call") })
 	if len(seen) != 2 || seen[0].Outcome != OutcomePending || seen[1].Outcome != OutcomeOK || seen[1].Status != 200 {

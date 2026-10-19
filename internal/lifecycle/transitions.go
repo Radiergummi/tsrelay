@@ -64,7 +64,7 @@ func (l *Lifecycle) finishRemoval(ctx context.Context, r removal, msg string, at
 		l.cfg.Inspect.Forget(h.ID)
 	}
 	l.cfg.Audit.Log(ctx, msg, append(attrs, audit.Hook(h))...)
-	l.cfg.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
+	l.cfg.Events.Publish(events.HookChanged(h.Owner, h.Channel, string(h.ID)))
 }
 
 // Revoke detaches ids from t, tells its client, and closes t if it serves
@@ -78,7 +78,7 @@ func (l *Lifecycle) Revoke(ctx context.Context, t *tunnel.Tunnel, ids []hooks.ID
 		return
 	}
 	for _, id := range detached {
-		l.cfg.Events.Publish(events.HookChanged(t.Owner.UserID, string(id)))
+		l.publishTunnelChange(t.Owner.UserID, id)
 	}
 	l.cfg.Audit.Log(ctx, audit.TunnelRevoked, audit.Actor(t.Owner), slog.String("tunnel", t.ID),
 		slog.Any("hooks", detached), slog.String("reason", reason))
@@ -95,7 +95,7 @@ func (l *Lifecycle) Create(ctx context.Context, actor authz.Identity, req hooks.
 		return h, err
 	}
 	l.cfg.Audit.Log(ctx, audit.HookCreate, audit.Actor(actor), audit.Hook(h), slog.Bool("ephemeral", h.Ephemeral))
-	l.cfg.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
+	l.cfg.Events.Publish(events.HookChanged(h.Owner, h.Channel, string(h.ID)))
 	return h, nil
 }
 
@@ -130,7 +130,7 @@ func (l *Lifecycle) RotatePublicToken(ctx context.Context, actor authz.Identity,
 
 func (l *Lifecycle) updated(ctx context.Context, actor authz.Identity, h hooks.Hook, changed []string) {
 	l.cfg.Audit.Log(ctx, audit.HookUpdate, audit.Actor(actor), audit.Hook(h), slog.Any("changed", changed))
-	l.cfg.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
+	l.cfg.Events.Publish(events.HookChanged(h.Owner, h.Channel, string(h.ID)))
 	l.notifyUpdated(h.ID)
 }
 

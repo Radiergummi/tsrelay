@@ -39,11 +39,11 @@ paths:
     get:
       operationId: listHooks
       summary: Your hooks
-      description: As events, changes to your hooks and their calls.
+      description: As events, changes to your hooks and their calls. Event streams need a role; a node may hold 8 open, and each is authorized again while open.
       parameters:
         - name: all
           in: query
-          description: Admins only; every user's hooks, as metadata.
+          description: Admins only; every user's hooks in the admin's channels, as metadata.
           schema: { type: boolean }
         - name: channel
           in: query
@@ -62,6 +62,7 @@ paths:
             text/html: {}
         "403": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
     post:
       operationId: createHook
       summary: Create a hook
@@ -105,8 +106,10 @@ paths:
             text/event-stream:
               schema: { $ref: "#/components/schemas/Event" }
             text/html: {}
+        "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
     patch:
       operationId: updateHook
       summary: Change a hook; only the given fields change
@@ -167,8 +170,10 @@ paths:
             text/event-stream:
               schema: { $ref: "#/components/schemas/Event" }
             text/html: {}
+        "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
   /hooks/{id}/calls/{callID}:
     parameters:
       - $ref: "#/components/parameters/id"

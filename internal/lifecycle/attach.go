@@ -12,6 +12,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/events"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"tailscale.com/tailcfg"
 )
 
 // AdmitErrorKind says which attach check failed.
@@ -145,7 +146,7 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 		rep.tunnel.Notify(tunnel.Control{Type: tunnel.ControlReplaced, Hooks: idInfos(rep.hooks)}, rep.orphaned)
 	}
 	for _, id := range live {
-		l.cfg.Events.Publish(events.HookChanged(tk.owner.UserID, string(id)))
+		l.publishTunnelChange(tk.owner.UserID, id)
 	}
 	l.cfg.Audit.Log(ctx, audit.TunnelAttach, audit.Actor(tk.owner), slog.String("tunnel", t.ID), slog.Any("hooks", live))
 	if len(infos) > 0 {
@@ -163,11 +164,19 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 		hs := l.detachLocked(t)
 		l.mu.Unlock()
 		for _, id := range hs {
-			l.cfg.Events.Publish(events.HookChanged(owner.UserID, string(id)))
+			l.publishTunnelChange(owner.UserID, id)
 		}
 		l.cfg.Audit.Log(ctx, audit.TunnelDetach, audit.Actor(owner), slog.String("tunnel", t.ID))
 		if onEnd != nil {
 			onEnd(time.Since(attachedAt))
 		}
 	}()
+}
+
+// publishTunnelChange announces that the hook id's tunnel attached or
+// detached. A hook deleted meanwhile has no channel any more; its deletion
+// was announced with one.
+func (l *Lifecycle) publishTunnelChange(owner tailcfg.UserID, id hooks.ID) {
+	h, _ := l.cfg.Hooks.Get(id)
+	l.cfg.Events.Publish(events.HookChanged(owner, h.Channel, string(id)))
 }

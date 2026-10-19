@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -31,6 +32,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/release"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"golang.org/x/mod/semver"
+	"tailscale.com/tailcfg"
 )
 
 type API struct {
@@ -51,8 +53,16 @@ type API struct {
 	HTML          http.Handler // the web UI, for resources asked for as HTML; nil: JSON and streams only
 	Tracer        trace.Tracer // nil: no spans
 	Meter         metric.Meter // nil: no API latency histogram
+	// StreamsPerNode caps the event streams one node may hold open; 0 means 8.
+	StreamsPerNode int
+	// ReidentifyEvery is how often an open event stream identifies its
+	// viewer again; 0 means never.
+	ReidentifyEvery time.Duration
 
 	routes []string // the patterns Register mounted
+
+	streamsMu sync.Mutex
+	streams   map[tailcfg.StableNodeID]int // open event streams per node
 }
 
 // VersionHeader names the relay's version ("v0.3.0", or "dev") on every

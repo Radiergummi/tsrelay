@@ -83,12 +83,12 @@ func TestRevalidateRevokesLostChannels(t *testing.T) {
 }
 
 func TestRevalidateRevokesTunnel(t *testing.T) {
-	e := newEnv(t, Config{})
+	e := newEnv(t, Config{Revalidate: 10 * time.Millisecond})
 	hook, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
 	controls, done := e.startClient(hook.ID)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go e.srv.RunRevalidator(ctx, 10*time.Millisecond)
+	go e.srv.RunRevalidator(ctx)
 
 	e.fake.Update(identify.User("laptop", "moritz@example.com", 1, `{"roles":["sender"]}`))
 	if c := receive(t, controls); c.Type != tunnel.ControlRevoked || len(c.Hooks) != 1 || c.Hooks[0].ID != hook.ID {

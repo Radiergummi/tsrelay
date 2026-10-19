@@ -16,10 +16,13 @@ const identifyTimeout = 10 * time.Second
 // a tunnel's node before its hooks are revoked.
 const maxIdentifyFailures = 3
 
-// RunRevalidator re-authorizes every attached tunnel every interval until
-// ctx is done (DESIGN.md §5.5).
-func (s *Server) RunRevalidator(ctx context.Context, interval time.Duration) {
-	runEvery(ctx, interval, func() { s.revalidate(ctx) })
+// RunRevalidator re-authorizes every attached tunnel every Config.Revalidate
+// until ctx is done (DESIGN.md §5.5). Event streams re-authorize themselves
+// at the same interval.
+func (s *Server) RunRevalidator(ctx context.Context) {
+	if s.cfg.Revalidate > 0 {
+		runEvery(ctx, s.cfg.Revalidate, func() { s.revalidate(ctx) })
+	}
 }
 
 // revalidate identifies each tunnel's client again and revokes the hooks

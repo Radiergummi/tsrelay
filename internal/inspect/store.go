@@ -31,7 +31,7 @@ type Inspector struct {
 	// OnChange, if set, is called after a call was added or changed. It
 	// runs with the store's lock held, so changes are reported in order; it
 	// must not block or call the Inspector. Set it before first use.
-	OnChange func(owner tailcfg.UserID, s Summary)
+	OnChange func(owner tailcfg.UserID, channel string, s Summary)
 
 	mu     sync.Mutex
 	byHook map[hooks.ID][]*Call // oldest first
@@ -147,7 +147,7 @@ func (in *Inspector) Update(id string, f func(*Call)) {
 
 func (in *Inspector) changedLocked(c *Call) {
 	if in.OnChange != nil {
-		in.OnChange(c.Owner, c.Summary())
+		in.OnChange(c.Owner, c.Channel, c.Summary())
 	}
 }
 

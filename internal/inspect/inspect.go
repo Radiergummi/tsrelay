@@ -78,6 +78,7 @@ type Call struct {
 	ID         string         `json:"id"`
 	HookID     hooks.ID       `json:"hookId"`
 	Owner      tailcfg.UserID `json:"-"`
+	Channel    string         `json:"-"` // the hook's, when the call arrived
 	ReceivedAt time.Time      `json:"receivedAt"`
 	Kind       Kind           `json:"kind"`
 	ReplayOf   string         `json:"replayOf,omitempty"`

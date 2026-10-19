@@ -39,7 +39,8 @@ type Config struct {
 	Version        string   // the relay's version, sent as api.VersionHeader; "" means "dev"
 	Commit         string   // the revision the relay was built from; "" means the one Go stamped, if any
 	EphemeralGrace time.Duration
-	HoldQueue      int // calls per hook that may wait for a tunnel; 0 means relay.DefaultHoldQueue
+	Revalidate     time.Duration // how often tunnels and event streams are authorized again; 0: never
+	HoldQueue      int           // calls per hook that may wait for a tunnel; 0 means relay.DefaultHoldQueue
 	Tunnel         tunnel.Options
 	Inspect        inspect.Config
 	Telemetry      *telemetry.Telemetry // nil: Prometheus metrics only, no tracing
@@ -80,15 +81,15 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	al.Observer = s.newMetrics(s.tel.Meter)
 	s.inspect = inspect.New(cfg.Inspect)
 	s.events = &events.Hub{}
-	s.inspect.OnChange = func(owner tailcfg.UserID, sum inspect.Summary) {
-		s.events.Publish(events.Event{Type: events.TypeCall, Owner: owner, HookID: string(sum.HookID), Data: sum})
+	s.inspect.OnChange = func(owner tailcfg.UserID, channel string, sum inspect.Summary) {
+		s.events.Publish(events.Event{Type: events.TypeCall, Owner: owner, Channel: channel, HookID: string(sum.HookID), Data: sum})
 	}
 	s.tunnels = lifecycle.New(lifecycle.Config{Hooks: mgr, Inspect: s.inspect, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, PublicBaseURL: cfg.PublicBaseURL})
 	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect, PublicMaxBody: cfg.PublicMaxBody}
 
 	version := cmp.Or(cfg.Version, "dev")
 	mux := http.NewServeMux()
-	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, PublicBaseURL: cfg.PublicBaseURL, CapName: cfg.CapName, Version: version, Commit: cmp.Or(cfg.Commit, commit()), Releases: cfg.Releases, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName)}
+	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, PublicBaseURL: cfg.PublicBaseURL, CapName: cfg.CapName, Version: version, Commit: cmp.Or(cfg.Commit, commit()), Releases: cfg.Releases, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName), ReidentifyEvery: cfg.Revalidate}
 	if s.tel.Tracing {
 		s.relay.Tracer = s.tel.Tracer.Tracer(telemetry.ScopeName)
 		if !cfg.NoTracePropagation {
