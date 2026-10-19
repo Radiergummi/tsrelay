@@ -82,6 +82,7 @@ type Call struct {
 	ReceivedAt time.Time      `json:"receivedAt"`
 	Kind       Kind           `json:"kind"`
 	ReplayOf   string         `json:"replayOf,omitempty"`
+	Refused    bool           `json:"refused,omitempty"` // the sender may not use the hook's channel; it got "no hook"
 	Sender     Sender         `json:"sender"`
 	Method     string         `json:"method"`
 	// Path is the escaped path below the hook's route, as the local app
@@ -106,6 +107,7 @@ type Summary struct {
 	ReceivedAt time.Time      `json:"receivedAt"`
 	Kind       Kind           `json:"kind"`
 	ReplayOf   string         `json:"replayOf,omitempty"`
+	Refused    bool           `json:"refused,omitempty"`
 	Sender     Sender         `json:"sender"`
 	Method     string         `json:"method"`
 	Path       string         `json:"path"`
@@ -116,7 +118,7 @@ type Summary struct {
 
 func (c *Call) Summary() Summary {
 	return Summary{
-		ID: c.ID, HookID: c.HookID, ReceivedAt: c.ReceivedAt, Kind: c.Kind, ReplayOf: c.ReplayOf,
+		ID: c.ID, HookID: c.HookID, ReceivedAt: c.ReceivedAt, Kind: c.Kind, ReplayOf: c.ReplayOf, Refused: c.Refused,
 		Sender: Sender{Node: c.Sender.Node, Tags: slices.Clone(c.Sender.Tags), Login: c.Sender.Login, IP: c.Sender.IP, Public: c.Sender.Public},
 		Method: c.Method, Path: c.Path, Outcome: c.Outcome, Status: c.Status, Duration: c.Duration,
 	}

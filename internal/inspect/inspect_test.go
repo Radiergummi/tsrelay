@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"tailscale.com/tailcfg"
@@ -135,6 +136,53 @@ func TestStoreRetention(t *testing.T) {
 	}
 	if _, ok := in.Get("b1"); !ok {
 		t.Fatal("Forget removed another hook's call")
+	}
+}
+
+// Refused calls have their own smaller ring: they are listed with the
+// others, newest first, but never evict delivered calls, are not the
+// hook's latest call and publish no changes.
+func TestStoreRefusedRing(t *testing.T) {
+	in := New(Config{CallsPerHook: 2})
+	changes := 0
+	in.OnChange = func(tailcfg.UserID, string, Summary) { changes++ }
+	at := func(c Call, sec int) Call { c.ReceivedAt = time.Unix(int64(sec), 0); return c }
+	in.Add(at(call("c1", "h_a"), 1))
+	in.Add(at(call("c2", "h_a"), 2))
+	for i := range refusedPerHook + 3 {
+		r := at(call(fmt.Sprintf("r%d", i), "h_a"), 10+i)
+		r.Refused = true
+		in.Add(r)
+	}
+	in.Update("r12", func(c *Call) { c.Outcome = "hook_not_found" })
+	in.Add(at(call("c3", "h_a"), 100))
+	if changes != 3 {
+		t.Fatalf("%d changes published, want only the 3 delivered calls'", changes)
+	}
+	var ids []string
+	for _, s := range in.List("h_a") {
+		ids = append(ids, s.ID)
+	}
+	want := []string{"c3", "r12", "r11", "r10", "r9", "r8", "r7", "r6", "r5", "r4", "r3", "c2"}
+	if !slices.Equal(ids, want) {
+		t.Fatalf("list = %v, want %v", ids, want)
+	}
+	if c, ok := in.Get("r12"); !ok || !c.Refused || c.Outcome != "hook_not_found" {
+		t.Fatalf("Get(r12) = %+v, %v", c, ok)
+	}
+	if _, ok := in.Get("r0"); ok {
+		t.Fatal("an evicted refused call is still found by ID")
+	}
+	in.Add(at(func() Call { r := call("r13", "h_a"); r.Refused = true; return r }(), 200))
+	if s, _ := in.Latest("h_a"); s.ID != "c3" {
+		t.Fatalf("latest = %s, want the newest delivered call", s.ID)
+	}
+	in.Forget("h_a")
+	if len(in.List("h_a")) != 0 {
+		t.Fatal("Forget left calls in the list")
+	}
+	if _, ok := in.Get("r13"); ok {
+		t.Fatal("Forget left refused calls findable by ID")
 	}
 }
 

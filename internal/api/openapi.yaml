@@ -538,7 +538,9 @@ components:
             id: { type: string }
             node: { type: string }
             target: { type: string }
-        lastCall: { $ref: "#/components/schemas/Summary" }
+        lastCall:
+          $ref: "#/components/schemas/Summary"
+          description: The newest call that was not refused.
     Channels:
       type: object
       required: [receive, send, channels]
@@ -619,6 +621,12 @@ components:
         receivedAt: { type: string, format: date-time }
         kind: { type: string, enum: [sender, public, replay, test] }
         replayOf: { type: string }
+        refused:
+          type: boolean
+          description: >-
+            The sender may not use the hook's channel and was answered as if
+            there were no hook. Refused calls are kept apart (the last 10 per
+            hook), never evict delivered calls, and publish no events.
         sender: { $ref: "#/components/schemas/Sender" }
         method: { type: string }
         path: { type: string }
@@ -693,9 +701,9 @@ components:
     Event:
       description: |
         A server-sent event. `event: call` carries a call `Summary` when a
-        call arrives and again when it completes; `event: hook` carries the
-        ID of a hook that was created, changed, deleted or expired, or whose
-        tunnel attached or detached. A stream that falls 64 events behind is
+        call arrives and again when it completes, except for refused calls;
+        `event: hook` carries the ID of a hook that was created, changed,
+        deleted or expired, or whose tunnel attached or detached. A stream that falls 64 events behind is
         closed; reconnect and refetch.
       oneOf:
         - $ref: "#/components/schemas/Summary"

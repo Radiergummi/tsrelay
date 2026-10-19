@@ -220,19 +220,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		found = false // the path now belongs to another hook
 	}
 	var eff hooks.Effective
+	refused := found && inj == nil && !public && !access.Send(sender, hook.Access())
 	if found {
 		// Calls refused by channel are recorded too, so the owner can see
-		// them (DESIGN.md §9.2). The sender cannot tell: it gets the same
-		// 404 as for a missing hook.
+		// them (DESIGN.md §9.2), but marked, so they cannot crowd out
+		// delivered ones. The sender cannot tell: it gets the same 404 as
+		// for a missing hook.
 		eff = h.effective(hook, public)
-		record = h.startRecord(r, callID, start, kind, replayOf, hook, sender, internet, 1+segs, eff.Capture)
+		record = h.startRecord(r, callID, start, kind, replayOf, hook, sender, refused, internet, 1+segs, eff.Capture)
 		ct.event("routed")
 		if record != nil {
 			body.capture, rec.capture = record.reqBuf, record.respBuf
 		}
 	}
-	if !found || (inj == nil && !public && !access.Send(sender, hook.Access())) {
-		if found {
+	if !found || refused {
+		if refused {
 			ct.event("channel_denied")
 			h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender), audit.Hook(hook),
 				slog.String("action", "call"), slog.String("reason", "channel not allowed"))

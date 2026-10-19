@@ -22,11 +22,12 @@ type callRecord struct {
 }
 
 // startRecord adds a call routed to hook to the inspector, with its
-// redacted request headers. internet marks a sender on the internet. segments is how many path segments belong to
+// redacted request headers. refused marks a call the sender may not make
+// on the hook's channel. internet marks a sender on the internet. segments is how many path segments belong to
 // the route, as for remainder. capture is the hook's capture setting. It
 // returns nil when the handler has no inspector.
 func (h *Handler) startRecord(r *http.Request, callID string, start time.Time, kind inspect.Kind, replayOf string,
-	hook hooks.Hook, sender authz.Identity, internet bool, segments int, capture bool) *callRecord {
+	hook hooks.Hook, sender authz.Identity, refused, internet bool, segments int, capture bool) *callRecord {
 	if h.Inspect == nil {
 		return nil
 	}
@@ -35,7 +36,7 @@ func (h *Handler) startRecord(r *http.Request, callID string, start time.Time, k
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	query, queryCut := h.Inspect.TruncateQuery(r.URL.RawQuery)
 	h.Inspect.Add(inspect.Call{
-		ID: callID, HookID: hook.ID, Owner: hook.Owner, Channel: hook.Channel, ReceivedAt: start, Kind: kind, ReplayOf: replayOf,
+		ID: callID, HookID: hook.ID, Owner: hook.Owner, Channel: hook.Channel, ReceivedAt: start, Kind: kind, ReplayOf: replayOf, Refused: refused,
 		Sender: inspect.Sender{Node: sender.NodeName, Tags: sender.Tags, Login: sender.Login, IP: ip, Public: internet},
 		Method: r.Method, Path: cmp.Or(rawPath, path), Query: query, QueryTruncated: queryCut,
 		RequestHeaders: headers, Redacted: redacted,
