@@ -180,7 +180,7 @@ func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRe
 	errs = append(errs, m.policy.Validate(req.Settings)...)
 	errs = append(errs, validateExpiry(req.ExpiresAt, req.Ephemeral, m.now(), owner.Grants.Limits.MaxHookTTL)...)
 	if req.Public {
-		errs = append(errs, validatePublic(owner.Grants)...)
+		errs = append(errs, validatePublic(owner.Grants, req.Channel)...)
 	}
 	if len(owned) >= owner.Grants.Limits.MaxHooks {
 		errs = append(errs, FieldError{"", fmt.Sprintf("you already own %d hooks, the maximum your grants allow", len(owned))})

@@ -158,7 +158,7 @@ export const me = z.object({
     callsPerHook: z.number(),
     noBodies: z.optional(z.boolean()),
   }),
-  public: z.optional(z.boolean()),
+  public: z.array(z.string()),
   funnel: z.optional(z.boolean()),
 });
 

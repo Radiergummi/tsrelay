@@ -501,7 +501,7 @@ components:
                 rateLimit: { $ref: "#/components/schemas/RateLimit" }
             callsPerHook: { type: integer }
             noBodies: { type: boolean, description: "The relay keeps no bodies, whatever hooks set (--capture-bodies=false)" }
-        public: { type: boolean, description: "The caller may make hooks public" }
+        public: { type: array, items: { type: string }, description: "Channel patterns in which the caller may make hooks public; empty when none" }
         funnel: { type: boolean, description: "The relay serves public hooks on the internet" }
         links:
           type: object

@@ -72,7 +72,7 @@ type Me struct {
 	Version string                  `json:"version"`
 	Commit  string                  `json:"commit,omitempty"`
 	Policy  Policy                  `json:"policy"`
-	Public  bool                    `json:"public"` // the caller may make hooks public
+	Public  []string                `json:"public"` // channel patterns in which the caller may make hooks public
 	Funnel  bool                    `json:"funnel"` // the relay serves public hooks
 	Links   map[string]string       `json:"links"`
 	// For admins, a release newer than Version, and its release notes.
@@ -246,7 +246,7 @@ func (a *API) MeOf(id authz.Identity) Me {
 	}
 	p := a.Hooks.Policy()
 	me.CapName, me.Version, me.Commit, me.Policy = a.CapName, a.Version, a.Commit, Policy{Defaults: p.Defaults, Max: p.Max, CallsPerHook: a.Inspect.CallsPerHook(), NoBodies: a.Inspect.NoBodies()}
-	me.Public = id.Grants.Public
+	me.Public = append([]string{}, id.Grants.PublicPatterns...)
 	me.Funnel = a.PublicBaseURL != ""
 	me.Links = links
 	if a.Releases != nil && id.Grants.Has(authz.RoleAdmin) {
@@ -368,7 +368,7 @@ func (a *API) refreshTunnelPublic(ctx context.Context, hookID hooks.ID) {
 	if !ok || t.Public() {
 		return
 	}
-	if id, err := a.Identifier.Identify(ctx, t.RemoteAddr); err == nil && id.IsUser() && id.UserID == t.Owner.UserID && id.Grants.Public {
+	if id, err := a.Identifier.Identify(ctx, t.RemoteAddr); err == nil && id.IsUser() && id.UserID == t.Owner.UserID && len(id.Grants.PublicPatterns) > 0 {
 		t.SetPublic(true)
 	}
 }

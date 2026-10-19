@@ -90,7 +90,7 @@ func NewTunnel(conn net.Conn, id string, owner authz.Identity, opts Options) (*T
 		return nil, err
 	}
 	t := &Tunnel{ID: id, Owner: owner, cc: cc, conn: wc, sem: make(chan struct{}, opts.Concurrency)}
-	t.public.Store(owner.Grants.Public)
+	t.public.Store(len(owner.Grants.PublicPatterns) > 0)
 	return t, nil
 }
 

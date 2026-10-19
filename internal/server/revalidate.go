@@ -70,7 +70,7 @@ func (s *Server) check(ctx context.Context, t *tunnel.Tunnel, hookIDs []hooks.ID
 	case !id.Grants.Has(authz.RoleReceiver):
 		return hookIDs, "the receiver role was revoked"
 	}
-	t.SetPublic(id.Grants.Public)
+	t.SetPublic(len(id.Grants.PublicPatterns) > 0)
 	var revoked []hooks.ID
 	for _, hid := range hookIDs {
 		// A deleted hook is skipped: its deletion detaches it.
