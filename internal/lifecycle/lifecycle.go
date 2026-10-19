@@ -33,14 +33,15 @@ type Config struct {
 // ("takeover"). mu guards the registry state and detached-since; it is
 // taken before the hook manager's lock, never after.
 type Lifecycle struct {
-	mu       sync.Mutex
-	byHook   map[hooks.ID]*tunnel.Tunnel
-	served   map[*tunnel.Tunnel][]hooks.ID
-	waits    map[hooks.ID]*waiters
-	detached map[hooks.ID]time.Time // when each hook's last tunnel ended
-	started  time.Time
-	now      func() time.Time
-	cfg      Config
+	mu        sync.Mutex
+	byHook    map[hooks.ID]*tunnel.Tunnel
+	served    map[*tunnel.Tunnel][]hooks.ID
+	waits     map[hooks.ID]*waiters
+	detached  map[hooks.ID]time.Time // when each hook's last tunnel ended
+	started   time.Time
+	updateSeq uint64 // numbers hook-updated notices, see NotifyUpdated
+	now       func() time.Time
+	cfg       Config
 
 	attachLocks sync.Map // tailcfg.UserID → *sync.Mutex, see Admit
 }

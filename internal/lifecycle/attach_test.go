@@ -232,7 +232,7 @@ func TestAttachRechecksDeletedHooks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := mgr.Delete(context.Background(), gone); err != nil {
+	if err := l.Delete(context.Background(), receiver, hookOf(t, mgr, gone)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -262,7 +262,7 @@ func TestAttachRechecksDeletedHooks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := mgr.Delete(context.Background(), other); err != nil {
+	if err := l.Delete(context.Background(), receiver, hookOf(t, mgr, other)); err != nil {
 		t.Fatal(err)
 	}
 	tun2, _ := tunneltest.Pair(t, http.NotFoundHandler(), tunnel.Options{}, nil)
