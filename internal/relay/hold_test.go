@@ -190,8 +190,10 @@ func TestHeldCallsReleasedOnExpiry(t *testing.T) {
 	if res.status != 404 || res.code != problem.HookNotFound {
 		t.Fatalf("held call on expiry = %+v", res)
 	}
-	if res.took < 200*time.Millisecond || res.took > 5*time.Second {
-		t.Fatalf("released after %v; want about 300ms (the expiry), not the 30s hold timeout", res.took)
+	// Measured against the expiry itself: creating the hook and starting the
+	// call can take a while under -race.
+	if late := time.Since(exp); late < -50*time.Millisecond || late > 5*time.Second {
+		t.Fatalf("released %v after the expiry; want at the expiry, not at the 30s hold timeout", late)
 	}
 }
 
