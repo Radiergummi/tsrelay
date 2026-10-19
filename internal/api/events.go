@@ -41,10 +41,6 @@ const defaultStreamsPerNode = 8
 // more.
 func (a *API) hooksStream(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 	all := r.URL.Query().Get("all") == "true" && access.IsAdmin(id)
-	if !all && !id.IsUser() {
-		problem.New(http.StatusForbidden, problem.Forbidden, "only users own hooks, so tagged nodes have no events").Write(w)
-		return
-	}
 	a.stream(w, r, id, "", func(v authz.Identity, e events.Event) bool {
 		lvl := access.View(v, access.Hook{Owner: e.Owner, Channel: e.Channel})
 		if all {

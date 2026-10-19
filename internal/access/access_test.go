@@ -78,7 +78,8 @@ func TestRules(t *testing.T) {
 		{"Send other", Send(other, devHook), false},
 		{"Send owner prod", Send(owner, Hook{Owner: 1, Channel: "prod"}), false},
 		{"MayStream noRole", MayStream(noRole), false},
-		{"MayStream taggedAdmin", MayStream(taggedAdmin), true},
+		{"MayStream taggedAdmin", MayStream(taggedAdmin), false},
+		{"MayStream taggedSender", MayStream(ident(0, []string{"tag:ci"}, map[authz.Role][]string{authz.RoleSender: {"*"}})), true},
 		{"MayStream owner", MayStream(owner), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

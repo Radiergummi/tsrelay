@@ -91,7 +91,7 @@ func TestAccessMatrix(t *testing.T) {
 	// One delivered call per hook, carrying data only the owner may see.
 	secret := http.Header{"X-Secret": {"s3cr3t-header"}}
 	call := func(as string, h api.Hook) string {
-		req, _ := http.NewRequest("POST", h.URL+"/done", strings.NewReader(secretBody))
+		req, _ := http.NewRequest("POST", h.URL+"/done?token=s3cr3t-query", strings.NewReader(secretBody))
 		req.Header = secret.Clone()
 		resp, err := e.fake.Client(matrixIDs[as]).Do(req)
 		if err != nil {
@@ -114,8 +114,9 @@ func TestAccessMatrix(t *testing.T) {
 		// ?all=true is an admin's view of their channels; anyone else gets their own.
 		{route: "GET /hooks", path: "/hooks?all=true", want: statuses{"": 200},
 			see: map[string][]string{"owner": {"dev", "prod"}, "ownerNoRoles": {"dev", "prod"}, "adminAll": {"dev", "prod"}, "adminProd": {"prod"}}},
-		{route: "GET /hooks", path: "/hooks", kind: asEvents, want: statuses{"": 403, "owner": 200, "other": 200, "adminAll": 200, "adminProd": 200}},
-		{route: "GET /hooks", path: "/hooks?all=true", kind: asEvents, want: statuses{"": 403, "owner": 200, "other": 200, "adminAll": 200, "adminProd": 200}},
+		// Any role opens a stream; what it carries is filtered by what the viewer may see.
+		{route: "GET /hooks", path: "/hooks", kind: asEvents, want: statuses{"": 200, "taggedAdmin": 403, "noRole": 403, "ownerNoRoles": 403}},
+		{route: "GET /hooks", path: "/hooks?all=true", kind: asEvents, want: statuses{"": 200, "taggedAdmin": 403, "noRole": 403, "ownerNoRoles": 403}},
 
 		{route: "POST /hooks", path: "/hooks", body: `{"channel":"dev"}`, want: statuses{"": 403, "owner": 201, "other": 201}},
 		{route: "POST /hooks", path: "/hooks", body: `{"channel":"prod"}`, want: statuses{"other": 422}},
@@ -201,7 +202,7 @@ func TestAccessMatrix(t *testing.T) {
 	m := &matrix{e: e, dev: dev.ID, prod: prod.ID, devCall: devCall, prodCall: prodCall, textID: doc.Components[0].TextID, public: publicServer(t, e)}
 	// The owner sees what the rows below must show nobody else.
 	for path, want := range map[string][]string{
-		"/hooks/" + dev.ID + "/calls/" + devCall: {secretBodyJSON, "s3cr3t-header"},
+		"/hooks/" + dev.ID + "/calls/" + devCall: {secretBodyJSON, "s3cr3t-header", "s3cr3t-query"},
 		"/hooks/" + prod.ID:                      {`"publicUrl":"`},
 	} {
 		_, body := m.ask(t, owner, matrixRow{route: "GET"}, path)
@@ -260,7 +261,7 @@ func (m *matrix) check(t *testing.T, row matrixRow, who string, want int) {
 	}
 	if !slices.Contains(mayHoldOwnerData, who) {
 		prod, _ := m.e.srv.hooks.Get(hooks.ID(m.prod))
-		for _, s := range []string{secretBodyJSON, "s3cr3t", `"publicUrl":"`, prod.PublicToken} {
+		for _, s := range []string{secretBodyJSON, "s3cr3t", "s3cr3t-query", `"publicUrl":"`, prod.PublicToken} {
 			if strings.Contains(body, s) {
 				t.Errorf("%s carries owner-only data %q: %s", name, s, body)
 			}

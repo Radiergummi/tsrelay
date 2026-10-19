@@ -139,8 +139,9 @@ func Send(sender authz.Identity, h Hook) bool {
 func MaySend(sender authz.Identity) bool { return sender.Grants.Has(authz.RoleSender) }
 
 // MayStream reports whether id holds any role that can watch events; what it
-// sees is still filtered by View.
+// sees is still filtered by View. Only people are admins, so a tagged node's
+// admin role does not count.
 func MayStream(id authz.Identity) bool {
 	g := id.Grants
-	return g.Has(authz.RoleReceiver) || g.Has(authz.RoleSender) || g.Has(authz.RoleAdmin)
+	return g.Has(authz.RoleReceiver) || g.Has(authz.RoleSender) || IsAdmin(id)
 }
