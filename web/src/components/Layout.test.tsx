@@ -82,6 +82,13 @@ test("a tagged node is told it cannot own hooks", async () => {
   expect(screen.getByText(/tag:ci/)).toBeInTheDocument();
 });
 
+test("a tagged node with the admin role gets no admin section", async () => {
+  meIs({ ...fixtures.meAdmin, login: undefined, tags: ["tag:ops"] });
+  renderAt("/admin");
+  expect(await screen.findByText(/Tagged nodes cannot own hooks/)).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
+});
+
 test("an unidentified viewer gets one message and a reload button", async () => {
   meIs(
     {
