@@ -42,9 +42,7 @@ func (e *env) postJSON(path string, in, out any) int {
 		body = bytes.NewReader(b)
 	}
 	req, _ := http.NewRequest("POST", e.base+path, body)
-	if in != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := e.api.HTTP.Do(req)
 	if err != nil {
 		e.t.Fatal(err)

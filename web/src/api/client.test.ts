@@ -66,3 +66,15 @@ test("formMessage is the message only when some field error has no slot of its o
   expect(formMessage(unprocessable(["path", "ttl"]), slots)).toBe("it went wrong");
   expect(formMessage(unprocessable([]), slots)).toBe("it went wrong");
 });
+
+test("a bodyless write still declares JSON", async () => {
+  let type: string | null = null;
+  server.use(
+    http.post("/hooks/h_1/rotate-public-url", ({ request: r }) => {
+      type = r.headers.get("Content-Type");
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  await requestVoid("POST", paths.rotatePublicUrl("h_1"));
+  expect(type).toBe("application/json");
+});

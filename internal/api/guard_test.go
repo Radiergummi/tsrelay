@@ -25,7 +25,11 @@ func TestGuard(t *testing.T) {
 		{"form write", "POST", "tsrelay", "/hooks", "application/x-www-form-urlencoded", "", "a=b", 415},
 		{"cross-site write", "POST", "tsrelay", "/hooks", "application/json", "cross-site", "{}", 403},
 		{"cross-site delete", "DELETE", "tsrelay", "/hooks/h_1", "", "same-site", "", 403},
-		{"bodyless delete", "DELETE", "tsrelay", "/hooks/h_1", "", "", "", 299},
+		{"bodyless delete", "DELETE", "tsrelay", "/hooks/h_1", "application/json", "", "", 299},
+		{"bodyless delete without type", "DELETE", "tsrelay", "/hooks/h_1", "", "", "", 415},
+		{"bodyless delete same-origin", "DELETE", "tsrelay", "/hooks/h_1", "", "same-origin", "", 299},
+		{"bodyless rotate without type", "POST", "tsrelay", "/hooks/x/rotate-public-url", "", "", "", 415},
+		{"bodyless rotate with type", "POST", "tsrelay", "/hooks/x/rotate-public-url", "application/json", "", "", 299},
 		{"cross-site replay", "POST", "tsrelay", "/hooks/h_1/calls/c_1/replay", "", "cross-site", "", 403},
 		{"cross-site write anywhere", "POST", "tsrelay", "/whatever", "application/json", "same-site", "{}", 403},
 		{"callbacks accept any type", "POST", "tsrelay", "/~m/x", "text/plain", "cross-site", "x", 299},
@@ -45,6 +49,18 @@ func TestGuard(t *testing.T) {
 			g.ServeHTTP(rec, req)
 			if rec.Code != c.want {
 				t.Fatalf("status = %d, want %d (%s)", rec.Code, c.want, rec.Body)
+			}
+		})
+	}
+}
+
+func TestNoStore(t *testing.T) {
+	e := newEnv(t)
+	for _, c := range []struct{ name, path string }{{"json", "/hooks"}, {"problem", "/hooks/nope"}} {
+		t.Run(c.name, func(t *testing.T) {
+			resp := e.call(moritz, "GET", c.path, nil, nil)
+			if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+				t.Fatalf("status %d, Cache-Control = %q", resp.StatusCode, got)
 			}
 		})
 	}

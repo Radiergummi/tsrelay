@@ -85,7 +85,7 @@ func (e *env) call(id authz.Identity, method, path string, in any, out any) *htt
 		body = bytes.NewReader(b)
 	}
 	req, _ := http.NewRequest(method, e.srv.URL+path, body)
-	if in != nil {
+	if method != "GET" {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := e.fake.Client(id).Do(req)
