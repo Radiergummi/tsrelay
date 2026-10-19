@@ -370,7 +370,7 @@ Negotiated responses carry `Vary: Accept`. A representation a resource doesn't h
 
 The relay can't say who else may send on a channel: grants arrive per request through WhoIs (§5.1), so it only ever knows the caller's own patterns. The rest is in the tailnet policy.
 
-Events are server-sent: `call` (a call summary, on arrival and on completion) and `hook` (`{"id"}` of a hook that was created, changed, deleted or expired, or whose tunnel attached or detached). A stream that falls 64 events behind is closed; clients reconnect and refetch.
+Events are server-sent: `call` (a call summary, on arrival and on completion) and `hook` (`{"id"}` of a hook that was created, changed, deleted or expired, or whose tunnel attached or detached). A stream that falls 64 events behind is closed; clients reconnect and refetch. Since the caller is authorized only when a stream opens, every stream also ends after 5 minutes, and the stream of one hook (or its calls) ends once that hook is deleted or expires.
 
 - **Hook IDs** are short, opaque and random, with a prefix (`h_`), so they never collide with the UI's `/hooks/new`. Hook paths contain slashes, so they can't serve as IDs.
 - **Validation errors** are `422` problem responses with a per-field `errors` list. A field error that comes from a grant names the limiting rule, for example "channel `billing` is not matched by your receiver patterns `prod`, `staging.*`".
