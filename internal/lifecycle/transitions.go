@@ -18,22 +18,29 @@ import (
 // for it, tells the tunnel serving it, and forgets its captured calls. A
 // hook a concurrent delete or the reaper already removed is not an error,
 // and that removal has already had these effects. The store deletes under
-// l.mu, so a Wait cannot register for a hook that is already gone.
+// l.mu, so a Wait cannot register for a hook that is already gone. Whether
+// actor may delete the hook is decided on the stored hook, under the store's
+// lock: one that moved out of actor's sight since the caller's check is
+// hooks.ErrNotFound.
 func (l *Lifecycle) Delete(ctx context.Context, actor authz.Identity, id hooks.ID) error {
 	l.announce.Lock()
 	defer l.announce.Unlock()
 	l.mu.Lock()
-	h, _, err := l.cfg.Hooks.DeleteIf(ctx, id, func(hooks.Hook) bool { return true })
+	h, deleted, err := l.cfg.Hooks.DeleteIf(ctx, id, func(h hooks.Hook) bool {
+		return access.Delete(actor, h.Access()) == nil
+	})
 	var r removal
-	if err == nil {
+	if deleted {
 		r = l.forgetLocked(h)
 	}
 	l.mu.Unlock()
-	if errors.Is(err, hooks.ErrNotFound) {
+	switch {
+	case errors.Is(err, hooks.ErrNotFound):
 		return nil
-	}
-	if err != nil {
+	case err != nil:
 		return err
+	case !deleted:
+		return hooks.ErrNotFound
 	}
 	l.finishRemoval(ctx, r, audit.HookDelete, audit.Actor(actor))
 	return nil
@@ -117,11 +124,17 @@ func (l *Lifecycle) Update(ctx context.Context, actor authz.Identity, id hooks.I
 func (l *Lifecycle) update(ctx context.Context, actor authz.Identity, id hooks.ID, req hooks.UpdateRequest) (hooks.Hook, []string, error) {
 	l.announce.Lock()
 	defer l.announce.Unlock()
+	old, _ := l.cfg.Hooks.Get(id) // every update holds announce, so this is the hook updated
 	h, changed, err := l.cfg.Hooks.Update(ctx, actor, id, req)
 	if err != nil || len(changed) == 0 {
 		return h, changed, err
 	}
 	l.updated(ctx, actor, h, changed)
+	if old.Channel != h.Channel {
+		// Viewers of the old channel only, such as an admin scoped to it,
+		// must learn that the hook left it.
+		l.cfg.Events.Publish(events.HookChanged(h.Owner, old.Channel, string(h.ID)))
+	}
 	return h, changed, nil
 }
 

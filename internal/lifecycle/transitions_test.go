@@ -516,3 +516,40 @@ func TestPublicLossKeepsTunnel(t *testing.T) {
 		t.Fatal("the hook was detached")
 	}
 }
+
+// Delete decides on the stored hook: an admin scoped to prod whose check
+// passed while the hook was in prod cannot delete it once it moved to dev,
+// and is told it is not found.
+func TestDeleteRechecksStoredHook(t *testing.T) {
+	l, mgr := newLifecycle(t)
+	prodAdmin := identify.User("ops", "ops@example.com", 2, `{"roles":["admin"],"channels":["prod"]}`)
+	id := createHooks(t, mgr, 1, hooks.CreateRequest{Channel: "dev"})[0]
+	if err := l.Delete(context.Background(), prodAdmin, id); !errors.Is(err, hooks.ErrNotFound) {
+		t.Fatalf("Delete = %v, want ErrNotFound", err)
+	}
+	hookOf(t, mgr, id)
+}
+
+// A channel change is announced in both channels, so admins scoped to the
+// old one learn the hook left it.
+func TestUpdateAnnouncesOldChannel(t *testing.T) {
+	l, mgr := newLifecycle(t)
+	_, evs := observe(l)
+	id := createHooks(t, mgr, 1, hooks.CreateRequest{Channel: "dev"})[0]
+	prod := "prod"
+	if _, _, err := l.Update(context.Background(), receiver, id, hooks.UpdateRequest{Channel: hooks.Opt[string]{Set: true, Value: &prod}}); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for range 2 {
+		e := next(t, evs)
+		if e.Type != events.TypeHook || e.HookID != string(id) {
+			t.Fatalf("event = %+v", e)
+		}
+		got = append(got, e.Channel)
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"dev", "prod"}) {
+		t.Fatalf("hook events in channels %v, want dev and prod", got)
+	}
+}

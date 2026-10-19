@@ -400,7 +400,12 @@ func (a *API) deleteHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		writeAccessError(w, err, "")
 		return
 	}
-	if err := a.Tunnels.Delete(r.Context(), id, h.ID); err != nil {
+	err = a.Tunnels.Delete(r.Context(), id, h.ID)
+	if errors.Is(err, hooks.ErrNotFound) {
+		writeAccessError(w, access.ErrHidden, "") // it moved out of id's sight since the check
+		return
+	}
+	if err != nil {
 		a.Audit.Slog().Error("hook.delete failed", "error", err)
 		problem.New(http.StatusInternalServerError, problem.Internal, "could not delete the hook").Write(w)
 		return
