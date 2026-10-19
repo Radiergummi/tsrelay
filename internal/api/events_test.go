@@ -12,6 +12,7 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/events"
+	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
@@ -231,5 +232,30 @@ func TestStreamSurvivesHangingIdentify(t *testing.T) {
 	hub.Publish(hookEvent(moritz, "default", "h_others"))
 	if d := nextData(t, lines); !strings.Contains(d, "h_others") {
 		t.Fatalf("event = %s", d)
+	}
+}
+
+// A stream of one hook carries only the events its viewer may see now: an
+// admin scoped to prod does not get a call the hook took in another channel.
+func TestHookStreamsFilterByChannel(t *testing.T) {
+	prodAdmin := identify.User("prod-admin", "padmin@example.com", 5, `{"roles":["admin"],"channels":["prod.*"]}`)
+	for _, path := range []string{"", "/calls"} {
+		t.Run("events"+path, func(t *testing.T) {
+			e := newEnv(t)
+			hub := withHub(e)
+			h, err := e.mgr.Create(context.Background(), moritz, hooks.CreateRequest{Path: "cb", Channel: "prod.api"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, lines := e.openStream(e.fake.Client(prodAdmin), "/hooks/"+string(h.ID)+path)
+			call := func(channel, data string) events.Event {
+				return events.Event{Type: events.TypeCall, Owner: moritz.UserID, Channel: channel, HookID: string(h.ID), Data: data}
+			}
+			hub.Publish(call("default", "in default"))
+			hub.Publish(call("prod.api", "in prod"))
+			if d := nextData(t, lines); d != `"in prod"` {
+				t.Fatalf("first event = %s, want the prod call's", d)
+			}
+		})
 	}
 }

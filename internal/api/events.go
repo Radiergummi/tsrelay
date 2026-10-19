@@ -57,7 +57,13 @@ func (a *API) hookStream(w http.ResponseWriter, r *http.Request, id authz.Identi
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 		return
 	}
-	a.stream(w, r, id, h.ID, func(_ authz.Identity, e events.Event) bool { return e.HookID == string(h.ID) })
+	a.stream(w, r, id, h.ID, func(v authz.Identity, e events.Event) bool { return e.HookID == string(h.ID) && sees(v, e) })
+}
+
+// sees reports whether viewer v may see the hook e is about, as e describes
+// it: the hook may have been in another channel when e was published.
+func sees(v authz.Identity, e events.Event) bool {
+	return access.View(v, access.Hook{Owner: e.Owner, Channel: e.Channel}) != access.None
 }
 
 // callsStream streams one hook's calls.
@@ -67,8 +73,8 @@ func (a *API) callsStream(w http.ResponseWriter, r *http.Request, id authz.Ident
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 		return
 	}
-	a.stream(w, r, id, h.ID, func(_ authz.Identity, e events.Event) bool {
-		return e.Type == events.TypeCall && e.HookID == string(h.ID)
+	a.stream(w, r, id, h.ID, func(v authz.Identity, e events.Event) bool {
+		return e.Type == events.TypeCall && e.HookID == string(h.ID) && sees(v, e)
 	})
 }
 
