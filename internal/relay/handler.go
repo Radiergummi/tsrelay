@@ -292,15 +292,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// The call gets the answer it would get if it arrived now: its
-		// address must still route to the same hook, and its sender, as
-		// identified again, must still be allowed the hook's channel.
+		// sender is identified again, and its address must still route to
+		// the same hook, whose channel that sender must still be allowed.
+		// The hook is routed after the identification, which may be slow.
+		again, idErr := sender, error(nil)
+		if inj == nil && !public {
+			ictx, cancel := context.WithTimeout(ctx, reidentifyTimeout)
+			again, idErr = h.Identifier.Identify(ictx, r.RemoteAddr)
+			cancel()
+			if idErr != nil && ctx.Err() != nil {
+				return // the sender went away, as in the hold's canceled case
+			}
+		}
 		now, nowSegs, ok := h.reroute(r, token)
 		reason := "the hook changed while the call was held"
 		if ok && now.ID == hook.ID && inj == nil && !public {
-			ictx, cancel := context.WithTimeout(ctx, reidentifyTimeout)
-			again, err := h.Identifier.Identify(ictx, r.RemoteAddr)
-			cancel()
-			if err != nil || !access.Send(again, now.Access()) {
+			if idErr != nil || !access.Send(again, now.Access()) {
 				ok, reason = false, "the sender lost access while the call was held"
 			} else {
 				sender = again
@@ -316,13 +323,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// The hook may have changed while still routing the call: forward
 		// it with the hook's current path and settings.
 		hook, segs, eff = now, nowSegs, h.effective(now, public)
+		// The tunnel may have been revoked or replaced meanwhile.
+		if tun, attached = h.Tunnels.Lookup(hook.ID); !attached {
+			rec.Header().Set("Retry-After", holdRetryAfter(eff.HoldTimeout.Std()))
+			problem.New(problem.StatusTunnelUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook").Write(rec)
+			return
+		}
 	}
 
-	if access.View(tun.Owner, hook.Access()) != access.Owner {
-		// The lifecycle attaches only the owner's tunnels; never deliver a
-		// call to another user's if that invariant is ever broken.
+	if err := access.Serve(tun.Identity(), hook.Access()); err != nil {
+		// A channel the node may not receive is a revocation in progress.
+		// The lifecycle attaches only the owner's tunnels, so another
+		// user's is a broken invariant; neither gets the call.
 		delivery = time.Time{}
-		h.Audit.Slog().Error("tunnel owner does not own the hook", "hookID", string(hook.ID), "tunnel", tun.ID)
+		if errors.Is(err, access.ErrNotUser) || errors.Is(err, access.ErrOtherUser) {
+			h.Audit.Slog().Error("tunnel owner does not own the hook", "hookID", string(hook.ID), "tunnel", tun.ID)
+		}
 		problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 		return
 	}
