@@ -4,6 +4,7 @@ package hooks
 import (
 	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/ids"
 	"tailscale.com/tailcfg"
 )
@@ -52,3 +53,6 @@ func (h Hook) PublicURL(base string) string {
 	}
 	return base + h.PublicRoute()
 }
+
+// Access is the part of the hook the authorization rules look at.
+func (h Hook) Access() access.Hook { return access.Hook{Owner: h.Owner, Channel: h.Channel} }
