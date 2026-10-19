@@ -124,6 +124,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Hook" }
         "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "422": { $ref: "#/components/responses/Problem" }
     delete:
@@ -145,6 +146,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Hook" }
+        "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
   /hooks/{id}/calls:

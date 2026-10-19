@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/events"
@@ -249,7 +250,7 @@ func (a *API) MeOf(id authz.Identity) Me {
 	me.Public = append([]string{}, id.Grants.PublicPatterns...)
 	me.Funnel = a.PublicBaseURL != ""
 	me.Links = links
-	if a.Releases != nil && id.Grants.Has(authz.RoleAdmin) {
+	if a.Releases != nil && access.IsAdmin(id) {
 		if r := a.Releases.Latest(); semver.Compare(r.Version, a.Version) > 0 {
 			me.LatestVersion, me.ReleaseURL = r.Version, r.URL
 		}
@@ -312,7 +313,7 @@ func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 }
 
 func (a *API) getHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
-	h, ok := a.visibleHook(r, id)
+	h, _, ok := a.visibleHook(r, id)
 	if !ok {
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 		return
@@ -326,6 +327,12 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
 		problem.New(http.StatusBadRequest, problem.BadRequest, "invalid JSON: "+err.Error()).Write(w)
+		return
+	}
+	// The store answers not found to anyone but the owner, so decide 404
+	// against 403 here first.
+	if _, err := a.decide(r, id, access.Edit); err != nil {
+		writeAccessError(w, err, "only the hook's owner, with the receiver role, can edit it")
 		return
 	}
 	dry := r.URL.Query().Get("dryRun") == "true"
@@ -374,7 +381,12 @@ func (a *API) refreshTunnelPublic(ctx context.Context, hookID hooks.ID) {
 }
 
 func (a *API) rotatePublicURL(w http.ResponseWriter, r *http.Request, id authz.Identity) {
-	h, err := a.Tunnels.RotatePublicToken(r.Context(), id, hooks.ID(r.PathValue("id")))
+	cur, err := a.decide(r, id, access.Act)
+	if err != nil {
+		writeAccessError(w, err, "only the hook's owner, with the receiver role for its channel, can rotate its public URL")
+		return
+	}
+	h, err := a.Tunnels.RotatePublicToken(r.Context(), id, cur.ID)
 	switch {
 	case errors.Is(err, hooks.ErrNotFound):
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
@@ -391,9 +403,9 @@ func (a *API) rotatePublicURL(w http.ResponseWriter, r *http.Request, id authz.I
 }
 
 func (a *API) deleteHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
-	h, ok := a.visibleHook(r, id)
-	if !ok {
-		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
+	h, err := a.decide(r, id, access.Delete)
+	if err != nil {
+		writeAccessError(w, err, "")
 		return
 	}
 	if err := a.Tunnels.Delete(r.Context(), id, h.ID); err != nil {
@@ -405,17 +417,42 @@ func (a *API) deleteHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 }
 
 // visibleHook returns the hook named in the path if id may see it.
-func (a *API) visibleHook(r *http.Request, id authz.Identity) (hooks.Hook, bool) {
+func (a *API) visibleHook(r *http.Request, id authz.Identity) (hooks.Hook, access.Level, bool) {
 	return a.VisibleHook(hooks.ID(r.PathValue("id")), id)
 }
 
-// VisibleHook returns the hook with the given ID if who may see it (Visible).
-func (a *API) VisibleHook(id hooks.ID, who authz.Identity) (hooks.Hook, bool) {
+// VisibleHook returns the hook with the given ID, and who's view of it, if
+// who may see it.
+func (a *API) VisibleHook(id hooks.ID, who authz.Identity) (hooks.Hook, access.Level, bool) {
 	h, ok := a.Hooks.Get(id)
-	if !ok || !Visible(who, h) {
-		return hooks.Hook{}, false
+	if !ok {
+		return hooks.Hook{}, access.None, false
 	}
-	return h, true
+	lvl := access.View(who, h.Access())
+	if lvl == access.None {
+		return hooks.Hook{}, access.None, false
+	}
+	return h, lvl, true
+}
+
+// decide applies rule to the hook named in the path. A hook that does not
+// exist is hidden, whoever asks.
+func (a *API) decide(r *http.Request, id authz.Identity, rule func(authz.Identity, access.Hook) error) (hooks.Hook, error) {
+	h, ok := a.Hooks.Get(hooks.ID(r.PathValue("id")))
+	if !ok {
+		return hooks.Hook{}, access.ErrHidden
+	}
+	return h, rule(id, h.Access())
+}
+
+// writeAccessError answers an access decision: a hook the caller may not see
+// is not found, one they may see but not act on is forbidden, for what.
+func writeAccessError(w http.ResponseWriter, err error, what string) {
+	if errors.Is(err, access.ErrForbidden) {
+		problem.New(http.StatusForbidden, problem.Forbidden, what).Write(w)
+		return
+	}
+	problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 }
 
 // HookJSON is h as the API shows it to viewer: URL, effective settings,
@@ -426,7 +463,7 @@ func (a *API) HookJSON(h hooks.Hook, viewer authz.Identity) Hook {
 		Channel: h.Channel, Description: h.Description, Ephemeral: h.Ephemeral, Public: h.Public, ExpiresAt: h.ExpiresAt,
 		Settings: h.Settings, Effective: a.Hooks.Effective(h), CreatedAt: h.CreatedAt,
 	}
-	if viewer.IsUser() && viewer.UserID == h.Owner { // the URL works like a password
+	if access.View(viewer, h.Access()) == access.Owner { // the URL works like a password
 		out.PublicURL = h.PublicURL(a.PublicBaseURL)
 	}
 	if t, ok := a.Tunnels.Lookup(h.ID); ok {

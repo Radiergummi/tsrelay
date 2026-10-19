@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
@@ -17,18 +18,10 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-// Owns reports whether id owns h.
-func Owns(id authz.Identity, h hooks.Hook) bool { return id.IsUser() && h.Owner == id.UserID }
-
-// Visible reports whether id may see h: its owner always, admins as metadata.
-func Visible(id authz.Identity, h hooks.Hook) bool {
-	return Owns(id, h) || id.Grants.Has(authz.RoleAdmin)
-}
-
 // listCalls returns the hook's call summaries, newest first. Summaries are
 // metadata only, so owners and admins get the same list.
 func (a *API) listCalls(w http.ResponseWriter, r *http.Request, id authz.Identity) {
-	h, ok := a.visibleHook(r, id)
+	h, _, ok := a.visibleHook(r, id)
 	if !ok {
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 		return
@@ -40,7 +33,7 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request, id authz.Identit
 // hook get its metadata only (DESIGN.md §9.2), and only owners learn
 // whether it can be replayed.
 func (a *API) getCall(w http.ResponseWriter, r *http.Request, id authz.Identity) {
-	h, ok := a.visibleHook(r, id)
+	h, lvl, ok := a.visibleHook(r, id)
 	if !ok {
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 		return
@@ -51,7 +44,7 @@ func (a *API) getCall(w http.ResponseWriter, r *http.Request, id authz.Identity)
 		return
 	}
 	out := CallJSON{Call: c}
-	if Owns(id, h) {
+	if lvl == access.Owner {
 		out.Replay = replayOf(c)
 	} else {
 		out.Call = c.Metadata()
@@ -90,20 +83,17 @@ type TestRequest struct {
 	Body    string      `json:"body"`
 }
 
-// ownedHook returns the hook named in the path if id owns it. It answers
-// 404 for hooks id cannot see, and 403 when an admin names another user's
-// hook: admins see metadata only and cannot act on calls (DESIGN.md §5.2).
+// ownedHook returns the hook named in the path if id may act on it. It
+// answers 404 for hooks id cannot see, and 403 when an admin names another
+// user's hook (admins see metadata only and cannot act on calls, DESIGN.md
+// §5.2) or the owner no longer receives on its channel.
 func (a *API) ownedHook(w http.ResponseWriter, r *http.Request, id authz.Identity) (hooks.Hook, bool) {
-	h, ok := a.visibleHook(r, id)
-	switch {
-	case !ok:
-		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
-	case !Owns(id, h):
-		problem.New(http.StatusForbidden, problem.Forbidden, "only the hook's owner can replay calls or send test requests").Write(w)
-	default:
-		return h, true
+	h, err := a.decide(r, id, access.Act)
+	if err != nil {
+		writeAccessError(w, err, "only the hook's owner, with the receiver role for its channel, can replay calls or send test requests")
+		return hooks.Hook{}, false
 	}
-	return hooks.Hook{}, false
+	return h, true
 }
 
 // ReplayRefusal says why c cannot be replayed (DESIGN.md §9.3), or returns

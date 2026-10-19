@@ -36,7 +36,7 @@ func (a *API) hooksStream(w http.ResponseWriter, r *http.Request, id authz.Ident
 
 // hookStream streams changes to one hook and its calls.
 func (a *API) hookStream(w http.ResponseWriter, r *http.Request, id authz.Identity) {
-	h, ok := a.visibleHook(r, id)
+	h, _, ok := a.visibleHook(r, id)
 	if !ok {
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 		return
@@ -46,7 +46,7 @@ func (a *API) hookStream(w http.ResponseWriter, r *http.Request, id authz.Identi
 
 // callsStream streams one hook's calls.
 func (a *API) callsStream(w http.ResponseWriter, r *http.Request, id authz.Identity) {
-	h, ok := a.visibleHook(r, id)
+	h, _, ok := a.visibleHook(r, id)
 	if !ok {
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 		return
@@ -84,7 +84,7 @@ func (a *API) stream(w http.ResponseWriter, r *http.Request, id authz.Identity, 
 				return // fell behind, or the relay is stopping
 			}
 			if hook != "" && e.Type == events.TypeHook && e.HookID == string(hook) {
-				if _, ok := a.VisibleHook(hook, id); !ok {
+				if _, _, ok := a.VisibleHook(hook, id); !ok {
 					return
 				}
 			}

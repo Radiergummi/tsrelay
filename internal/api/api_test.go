@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -448,7 +449,7 @@ func TestPatchHook(t *testing.T) {
 	if resp := e.call(other, "PATCH", "/hooks/"+h.ID, map[string]any{"description": "x"}, nil); resp.StatusCode != 404 {
 		t.Fatalf("other user patch = %d", resp.StatusCode)
 	}
-	if resp := e.call(admin, "PATCH", "/hooks/"+h.ID, map[string]any{"description": "x"}, nil); resp.StatusCode != 404 {
+	if resp := e.call(admin, "PATCH", "/hooks/"+h.ID, map[string]any{"description": "x"}, nil); resp.StatusCode != 403 {
 		t.Fatalf("admins may delete but not edit others' hooks: %d", resp.StatusCode)
 	}
 }
@@ -699,6 +700,97 @@ func TestTunnelTarget(t *testing.T) {
 		e.call(moritz, "GET", "/hooks/"+h.ID, nil, &got)
 		if got.Tunnel == nil || got.Tunnel.Target != want {
 			t.Errorf("target %q: tunnel = %+v, want target %q", target, got.Tunnel, want)
+		}
+	}
+}
+
+// A tagged node holds no user identity, so even an admin grant shows it no hooks.
+func TestTaggedAdminSeesNothing(t *testing.T) {
+	e := newEnv(t)
+	ci := identify.Tagged("ci", []string{"tag:ci"}, `{"roles":["admin"]}`)
+	var h Hook
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	var list []Hook
+	if resp := e.call(ci, "GET", "/hooks?all=true", nil, &list); resp.StatusCode != 200 || len(list) != 0 {
+		t.Errorf("tagged admin's list = %d %+v, want []", resp.StatusCode, list)
+	}
+	if resp := e.call(ci, "GET", "/hooks/"+h.ID, nil, nil); resp.StatusCode != 404 {
+		t.Errorf("tagged admin's GET = %d, want 404", resp.StatusCode)
+	}
+	if resp := e.call(ci, "DELETE", "/hooks/"+h.ID, nil, nil); resp.StatusCode != 404 {
+		t.Errorf("tagged admin's DELETE = %d, want 404", resp.StatusCode)
+	}
+}
+
+// An admin grant covers only its channels.
+func TestAdminScopedByChannel(t *testing.T) {
+	e := newEnv(t)
+	prodAdmin := identify.User("ops-box", "ops@example.com", 4, `{"roles":["admin"],"channels":["prod"]}`)
+	var prod, dev Hook
+	e.call(other, "POST", "/hooks", hooks.CreateRequest{Path: "p", Channel: "prod"}, &prod)
+	e.call(other, "POST", "/hooks", hooks.CreateRequest{Path: "d", Channel: "dev"}, &dev)
+	var list []Hook
+	if e.call(prodAdmin, "GET", "/hooks?all=true", nil, &list); len(list) != 1 || list[0].ID != prod.ID {
+		t.Errorf("prod admin's list = %+v, want only the prod hook", list)
+	}
+	var cs Channels
+	if e.call(prodAdmin, "GET", "/channels?all=true", nil, &cs); !slices.Equal(channelNames(cs.Channels), []string{"prod"}) {
+		t.Errorf("prod admin's channels = %+v, want only prod", cs)
+	}
+	if resp := e.call(prodAdmin, "GET", "/hooks/"+dev.ID, nil, nil); resp.StatusCode != 404 {
+		t.Errorf("prod admin's GET of a dev hook = %d, want 404", resp.StatusCode)
+	}
+	if resp := e.call(prodAdmin, "DELETE", "/hooks/"+prod.ID, nil, nil); resp.StatusCode != 204 {
+		t.Errorf("prod admin's DELETE of a prod hook = %d, want 204", resp.StatusCode)
+	}
+}
+
+// An owner who lost the receiver role still sees and deletes their hooks,
+// but may no longer act on them.
+func TestOwnerActionsNeedReceiver(t *testing.T) {
+	e := newEnv(t)
+	e.api.PublicBaseURL = publicBase
+	var h Hook
+	e.call(publicMoritz, "POST", "/hooks", map[string]any{"path": "cb", "public": true}, &h)
+	e.seedCall("c_1", h.ID, completeBody(`{}`))
+	bare := identify.User("laptop", "moritz@example.com", 1)
+	for _, c := range []struct {
+		name, method, path string
+		body               any
+	}{
+		{"PATCH", "PATCH", "/hooks/" + h.ID, map[string]any{"description": "x"}},
+		{"rotate", "POST", "/hooks/" + h.ID + "/rotate-public-url", nil},
+		{"replay", "POST", "/hooks/" + h.ID + "/calls/c_1/replay", nil},
+		{"test", "POST", "/hooks/" + h.ID + "/test", TestRequest{}},
+	} {
+		if resp := e.call(bare, c.method, c.path, c.body, nil); resp.StatusCode != 403 {
+			t.Errorf("%s without the receiver role = %d, want 403", c.name, resp.StatusCode)
+		}
+	}
+	if resp := e.call(bare, "DELETE", "/hooks/"+h.ID, nil, nil); resp.StatusCode != 204 {
+		t.Errorf("DELETE without the receiver role = %d, want 204", resp.StatusCode)
+	}
+}
+
+// Admins see other users' hooks but may not act on them: 403, not 404.
+func TestAdminOwnerActions403(t *testing.T) {
+	e := newEnv(t)
+	e.api.PublicBaseURL = publicBase
+	var h Hook
+	e.call(publicMoritz, "POST", "/hooks", map[string]any{"path": "cb", "public": true}, &h)
+	e.seedCall("c_1", h.ID, completeBody(`{}`))
+	for _, c := range []struct {
+		name, method, path string
+		body               any
+	}{
+		{"PATCH", "PATCH", "/hooks/" + h.ID, map[string]any{"description": "x"}},
+		{"PATCH dry run", "PATCH", "/hooks/" + h.ID + "?dryRun=true", map[string]any{"description": "x"}},
+		{"rotate", "POST", "/hooks/" + h.ID + "/rotate-public-url", nil},
+		{"replay", "POST", "/hooks/" + h.ID + "/calls/c_1/replay", nil},
+		{"test", "POST", "/hooks/" + h.ID + "/test", TestRequest{}},
+	} {
+		if resp := e.call(admin, c.method, c.path, c.body, nil); resp.StatusCode != 403 {
+			t.Errorf("admin %s = %d, want 403", c.name, resp.StatusCode)
 		}
 	}
 }
