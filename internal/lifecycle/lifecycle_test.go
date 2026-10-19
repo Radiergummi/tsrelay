@@ -37,18 +37,30 @@ func newLifecycle(t *testing.T) (*Lifecycle, *hooks.Manager) {
 	return New(Config{Hooks: mgr, Audit: al, BaseURL: "https://relay", PublicBaseURL: "https://public"}), mgr
 }
 
-// createHooks creates n hooks and returns their IDs.
-func createHooks(t *testing.T, mgr *hooks.Manager, n int) []hooks.ID {
+// createHooks creates n hooks from req and returns their IDs.
+func createHooks(t *testing.T, mgr *hooks.Manager, n int, req hooks.CreateRequest) []hooks.ID {
 	t.Helper()
 	var out []hooks.ID
 	for range n {
-		h, err := mgr.Create(context.Background(), receiver, hooks.CreateRequest{})
+		h, err := mgr.Create(context.Background(), receiver, req)
 		if err != nil {
 			t.Fatal(err)
 		}
 		out = append(out, h.ID)
 	}
 	return out
+}
+
+// waitFor waits for cond to hold; tunnel goroutines settle asynchronously.
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not met in time")
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 func (l *Lifecycle) attach(t *tunnel.Tunnel, ids ...hooks.ID) []replacement {
@@ -136,7 +148,7 @@ func (l *Lifecycle) release(id hooks.ID) {
 
 func TestWait(t *testing.T) {
 	l, mgr := newLifecycle(t)
-	ids := createHooks(t, mgr, 2)
+	ids := createHooks(t, mgr, 2, hooks.CreateRequest{})
 	h1, h2 := ids[0], ids[1]
 	a, b := &tunnel.Tunnel{ID: "a"}, &tunnel.Tunnel{ID: "b"}
 	got := startWait(context.Background(), l, h1)
@@ -171,7 +183,7 @@ func TestWaitFailsForMissingHook(t *testing.T) {
 
 func TestWaitEnds(t *testing.T) {
 	l, mgr := newLifecycle(t)
-	ids := createHooks(t, mgr, 2)
+	ids := createHooks(t, mgr, 2, hooks.CreateRequest{})
 	h1, h2 := ids[0], ids[1]
 	stop := errors.New("hold timeout")
 	ctx, cancel := context.WithTimeoutCause(context.Background(), 20*time.Millisecond, stop)
@@ -202,7 +214,7 @@ func TestWaitEnds(t *testing.T) {
 // waiter giving up must not strand another waiting for the same hook.
 func TestWaitLeavesNoEntries(t *testing.T) {
 	l, mgr := newLifecycle(t)
-	ids := createHooks(t, mgr, 2)
+	ids := createHooks(t, mgr, 2, hooks.CreateRequest{})
 	timeout, shared := ids[0], ids[1]
 	short, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()

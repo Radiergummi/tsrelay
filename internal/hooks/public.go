@@ -40,7 +40,7 @@ func (m *Manager) RoutePublic(token string) (Hook, bool) {
 	for _, h := range m.hooks {
 		// The token works like a password: compare it in constant time.
 		if h.Public && subtle.ConstantTimeCompare([]byte(h.PublicToken), []byte(token)) == 1 {
-			if m.expiredLocked(h, m.now()) {
+			if h.Expired(m.now()) {
 				return Hook{}, false
 			}
 			return h, true

@@ -36,7 +36,7 @@ func (l *Lifecycle) attachLocked(t *tunnel.Tunnel, ids []hooks.ID) []replacement
 		l.wakeLocked(id, false)
 		if old, ok := l.byHook[id]; ok && old != t {
 			lost[old] = append(lost[old], id)
-			l.served[old] = slices.DeleteFunc(l.served[old], func(x hooks.ID) bool { return x == id })
+			l.unserveLocked(old, id)
 		}
 		l.byHook[id] = t
 		if !slices.Contains(l.served[t], id) {
@@ -45,24 +45,40 @@ func (l *Lifecycle) attachLocked(t *tunnel.Tunnel, ids []hooks.ID) []replacement
 	}
 	var out []replacement
 	for old, hs := range lost {
-		orphaned := len(l.served[old]) == 0
-		if orphaned {
-			delete(l.served, old)
-		}
-		out = append(out, replacement{tunnel: old, hooks: hs, orphaned: orphaned})
+		_, serving := l.served[old]
+		out = append(out, replacement{tunnel: old, hooks: hs, orphaned: !serving})
 	}
 	return out
 }
 
-// detachLocked removes t and returns the hooks it was still serving.
-func (l *Lifecycle) detachLocked(t *tunnel.Tunnel) []hooks.ID {
-	hs := l.served[t]
-	delete(l.served, t)
-	for _, id := range hs {
-		if l.byHook[id] == t {
-			delete(l.byHook, id)
-		}
+// unserveLocked stops t serving id, and reports whether t now serves no
+// hooks, in which case it is forgotten.
+func (l *Lifecycle) unserveLocked(t *tunnel.Tunnel, id hooks.ID) (orphaned bool) {
+	delete(l.byHook, id)
+	l.served[t] = slices.DeleteFunc(l.served[t], func(x hooks.ID) bool { return x == id })
+	if len(l.served[t]) == 0 {
+		delete(l.served, t)
+		return true
 	}
+	return false
+}
+
+// stampLocked records that id has just lost its tunnel.
+func (l *Lifecycle) stampLocked(ids []hooks.ID) {
+	now := l.now()
+	for _, id := range ids {
+		l.detached[id] = now
+	}
+}
+
+// detachLocked removes t, which has ended, and returns the hooks it was
+// still serving. They count as without a tunnel from now on.
+func (l *Lifecycle) detachLocked(t *tunnel.Tunnel) []hooks.ID {
+	hs := slices.Clone(l.served[t])
+	for _, id := range hs {
+		l.unserveLocked(t, id)
+	}
+	l.stampLocked(hs)
 	return hs
 }
 
@@ -72,31 +88,22 @@ func (l *Lifecycle) detachHookLocked(id hooks.ID) (t *tunnel.Tunnel, orphaned, o
 	if !ok {
 		return nil, false, false
 	}
-	delete(l.byHook, id)
-	l.served[t] = slices.DeleteFunc(l.served[t], func(x hooks.ID) bool { return x == id })
-	if len(l.served[t]) == 0 {
-		delete(l.served, t)
-		orphaned = true
-	}
-	return t, orphaned, true
+	return t, l.unserveLocked(t, id), true
 }
 
 // detachFromLocked stops t serving those of ids it still serves, and returns
 // them. Hooks another tunnel has taken over meanwhile stay with that
-// tunnel. orphaned reports whether t now serves no hooks.
+// tunnel. orphaned reports whether t now serves no hooks. The detached
+// hooks count as without a tunnel from now on.
 func (l *Lifecycle) detachFromLocked(t *tunnel.Tunnel, ids []hooks.ID) (detached []hooks.ID, orphaned bool) {
 	for _, id := range ids {
 		if l.byHook[id] != t {
 			continue
 		}
-		delete(l.byHook, id)
-		l.served[t] = slices.DeleteFunc(l.served[t], func(x hooks.ID) bool { return x == id })
+		orphaned = l.unserveLocked(t, id)
 		detached = append(detached, id)
 	}
-	if len(detached) > 0 && len(l.served[t]) == 0 {
-		delete(l.served, t)
-		orphaned = true
-	}
+	l.stampLocked(detached)
 	return detached, orphaned
 }
 

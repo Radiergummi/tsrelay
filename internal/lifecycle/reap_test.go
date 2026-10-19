@@ -22,68 +22,47 @@ func at(l *Lifecycle, t0 time.Time, d time.Duration) {
 	l.now = func() time.Time { return t0.Add(d) }
 }
 
-func createEphemeral(t *testing.T, mgr *hooks.Manager, n int) []hooks.Hook {
-	t.Helper()
-	var out []hooks.Hook
-	for range n {
-		h, err := mgr.Create(context.Background(), receiver, hooks.CreateRequest{Ephemeral: true})
-		if err != nil {
-			t.Fatal(err)
-		}
-		out = append(out, h)
-	}
-	return out
-}
-
-func stored(mgr *hooks.Manager, id hooks.ID) bool {
-	_, ok := mgr.Get(id)
-	return ok
-}
-
 // waitDetached waits for the end of a tunnel to detach its hook.
 func waitDetached(t *testing.T, l *Lifecycle, id hooks.ID) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if _, ok := l.Lookup(id); !ok {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the hook stayed attached")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	waitFor(t, func() bool { _, ok := l.Lookup(id); return !ok })
 }
 
 func TestReap(t *testing.T) {
 	l, mgr := newLifecycle(t)
-	eph := createEphemeral(t, mgr, 2)
-	per := createHooks(t, mgr, 1)[0]
-	t0 := eph[0].CreatedAt
+	eph := createHooks(t, mgr, 2, hooks.CreateRequest{Ephemeral: true})
+	per := createHooks(t, mgr, 1, hooks.CreateRequest{})[0]
+	t0 := hookOf(t, mgr, eph[0]).CreatedAt
 	l.started = t0
 	att, loose := eph[0], eph[1]
 	tun, drop, _ := controlPair(t)
-	admitAttach(t, l, receiver, tun, att.ID)
+	admitAttach(t, l, receiver, tun, att)
 
 	at(l, t0, 9*time.Minute)
-	if err := l.Reap(context.Background(), grace); err != nil || !stored(mgr, loose.ID) {
-		t.Fatalf("Reap before grace elapsed = %v, loose hook stored = %v", err, stored(mgr, loose.ID))
+	err := l.Reap(context.Background(), grace)
+	if _, ok := mgr.Get(loose); err != nil || !ok {
+		t.Fatalf("Reap before grace elapsed = %v, loose hook stored = %v", err, ok)
 	}
 	at(l, t0, 11*time.Minute)
 	if err := l.Reap(context.Background(), grace); err != nil {
 		t.Fatal(err)
 	}
-	if stored(mgr, loose.ID) || !stored(mgr, att.ID) || !stored(mgr, per) {
+	_, looseOK := mgr.Get(loose)
+	_, attOK := mgr.Get(att)
+	_, perOK := mgr.Get(per)
+	if looseOK || !attOK || !perOK {
 		t.Fatal("only the unattached ephemeral hook should be reaped")
 	}
 
 	drop()
-	waitDetached(t, l, att.ID)
+	waitDetached(t, l, att)
 	at(l, t0, 22*time.Minute)
 	if err := l.Reap(context.Background(), grace); err != nil {
 		t.Fatal(err)
 	}
-	if stored(mgr, att.ID) || !stored(mgr, per) {
+	_, attOK = mgr.Get(att)
+	_, perOK = mgr.Get(per)
+	if attOK || !perOK {
 		t.Fatal("the detached hook should be reaped, the persistent one kept")
 	}
 }
@@ -91,15 +70,17 @@ func TestReap(t *testing.T) {
 // After a relay restart, ephemeral hooks get a full grace period again.
 func TestReapGraceStartsAtStartup(t *testing.T) {
 	l, mgr := newLifecycle(t)
-	h := createEphemeral(t, mgr, 1)[0]
-	l.started = h.CreatedAt.Add(time.Hour)
+	id := createHooks(t, mgr, 1, hooks.CreateRequest{Ephemeral: true})[0]
+	l.started = hookOf(t, mgr, id).CreatedAt.Add(time.Hour)
 	at(l, l.started, grace-time.Second)
-	if err := l.Reap(context.Background(), grace); err != nil || !stored(mgr, h.ID) {
+	err := l.Reap(context.Background(), grace)
+	if _, ok := mgr.Get(id); err != nil || !ok {
 		t.Fatalf("reaped right after startup: %v", err)
 	}
 	at(l, l.started, grace)
-	if err := l.Reap(context.Background(), grace); err != nil || stored(mgr, h.ID) {
-		t.Fatalf("Reap at grace = %v, stored = %v", err, stored(mgr, h.ID))
+	err = l.Reap(context.Background(), grace)
+	if _, ok := mgr.Get(id); err != nil || ok {
+		t.Fatalf("Reap at grace = %v, stored = %v", err, ok)
 	}
 }
 
@@ -107,13 +88,13 @@ func TestReapGraceStartsAtStartup(t *testing.T) {
 func TestReapSkipsTakenOverHook(t *testing.T) {
 	l, mgr := newLifecycle(t)
 	logs, _ := observe(l)
-	h := createEphemeral(t, mgr, 1)[0]
-	t0 := h.CreatedAt
+	id := createHooks(t, mgr, 1, hooks.CreateRequest{Ephemeral: true})[0]
+	t0 := hookOf(t, mgr, id).CreatedAt
 	l.started = t0
 	a, dropA, _ := controlPair(t)
 	b, dropB, _ := controlPair(t)
-	admitAttach(t, l, receiver, a, h.ID)
-	admitAttach(t, l, receiver, b, h.ID)
+	admitAttach(t, l, receiver, a, id)
+	admitAttach(t, l, receiver, b, id)
 	at(l, t0, 0)
 	dropA()
 	<-a.Done()
@@ -134,18 +115,21 @@ func TestReapSkipsTakenOverHook(t *testing.T) {
 	}
 
 	at(l, t0, time.Hour)
-	if err := l.Reap(context.Background(), grace); err != nil || !stored(mgr, h.ID) {
+	err := l.Reap(context.Background(), grace)
+	if _, ok := mgr.Get(id); err != nil || !ok {
 		t.Fatalf("reaped a hook b serves: %v", err)
 	}
 	dropB()
-	waitDetached(t, l, h.ID)
+	waitDetached(t, l, id)
 	at(l, t0, time.Hour+grace-time.Second)
-	if err := l.Reap(context.Background(), grace); err != nil || !stored(mgr, h.ID) {
+	err = l.Reap(context.Background(), grace)
+	if _, ok := mgr.Get(id); err != nil || !ok {
 		t.Fatalf("grace counted from before b dropped: %v", err)
 	}
 	at(l, t0, time.Hour+grace)
-	if err := l.Reap(context.Background(), grace); err != nil || stored(mgr, h.ID) {
-		t.Fatalf("Reap at drop+grace = %v, stored = %v", err, stored(mgr, h.ID))
+	err = l.Reap(context.Background(), grace)
+	if _, ok := mgr.Get(id); err != nil || ok {
+		t.Fatalf("Reap at drop+grace = %v, stored = %v", err, ok)
 	}
 	if n := strings.Count(logs.String(), `"msg":"hook.expire"`); n != 1 {
 		t.Fatalf("hook.expire audit lines = %d in %s", n, logs.String())
@@ -174,7 +158,7 @@ func TestReapExpiredEvenWhileServed(t *testing.T) {
 	if err := l.Reap(context.Background(), grace); err != nil {
 		t.Fatal(err)
 	}
-	if stored(mgr, h.ID) {
+	if _, ok := mgr.Get(h.ID); ok {
 		t.Fatal("the expired hook is still stored")
 	}
 	if c := next(t, controls); c.Type != tunnel.ControlHookDeleted || c.Hooks[0].ID != string(h.ID) {
@@ -195,7 +179,7 @@ func TestReapExpiredEvenWhileServed(t *testing.T) {
 // without one for more than grace, and goes on the next pass.
 func TestReapAfterBecomingEphemeral(t *testing.T) {
 	l, mgr := newLifecycle(t)
-	id := createHooks(t, mgr, 1)[0]
+	id := createHooks(t, mgr, 1, hooks.CreateRequest{})[0]
 	t0 := hookOf(t, mgr, id).CreatedAt
 	l.started = t0
 	tun, drop, _ := controlPair(t)
@@ -212,7 +196,7 @@ func TestReapAfterBecomingEphemeral(t *testing.T) {
 	if err := l.Reap(context.Background(), grace); err != nil {
 		t.Fatal(err)
 	}
-	if stored(mgr, id) {
+	if _, ok := mgr.Get(id); ok {
 		t.Fatal("the hook should be reaped on the next pass")
 	}
 }
@@ -236,7 +220,7 @@ func TestReapKeepsHookMadePersistent(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() { done <- l.Reap(context.Background(), grace) }()
-	for stored(mgr, first.ID) { // the pass has listed the hooks once it removes the first
+	for _, ok := mgr.Get(first.ID); ok; _, ok = mgr.Get(first.ID) { // the pass has listed the hooks once it removes the first
 		time.Sleep(100 * time.Microsecond)
 	}
 	no := false
@@ -250,7 +234,7 @@ func TestReapKeepsHookMadePersistent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !stored(mgr, last.ID) {
+	if _, ok := mgr.Get(last.ID); !ok {
 		t.Fatal("reaped a hook a successful update made persistent")
 	}
 }

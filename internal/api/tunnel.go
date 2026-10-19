@@ -57,9 +57,7 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 		return
 	}
 	defer tk.Close()
-	for _, hid := range tk.HookIDs() {
-		admittedHookIDs = append(admittedHookIDs, string(hid))
-	}
+	admittedHookIDs = hookIDs
 
 	conn, err := tunnel.Accept(w, r)
 	if err != nil {

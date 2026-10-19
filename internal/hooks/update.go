@@ -180,8 +180,3 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 	m.hooks[id] = h
 	return h, changed, nil
 }
-
-// expiredLocked reports whether h has passed its expiry.
-func (m *Manager) expiredLocked(h Hook, now time.Time) bool {
-	return h.Expired(now)
-}

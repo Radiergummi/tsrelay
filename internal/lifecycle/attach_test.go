@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -59,7 +58,7 @@ func TestAdmitChecks(t *testing.T) {
 	other := identify.User("desk", "other@example.com", 2, `{"roles":["receiver"]}`)
 	devOnly := identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"channels":["dev"]}`)
 
-	mine := createHooks(t, mgr, 2)
+	mine := createHooks(t, mgr, 2, hooks.CreateRequest{})
 	theirs, err := mgr.Create(ctx, other, hooks.CreateRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +75,7 @@ func TestAdmitChecks(t *testing.T) {
 	served := &tunnel.Tunnel{ID: "served", Session: "s1", Owner: receiver}
 	l.attach(served, mine[0], rejecting.ID)
 	limit := receiver.Grants.Limits.MaxTunnels
-	for i, id := range createHooks(t, mgr, limit-1) {
+	for i, id := range createHooks(t, mgr, limit-1, hooks.CreateRequest{}) {
 		l.attach(&tunnel.Tunnel{ID: fmt.Sprint("more", i), Owner: receiver}, id)
 	}
 
@@ -114,9 +113,6 @@ func TestAdmitChecks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Admit by the serving session = %v", err)
 	}
-	if got := tk.HookIDs(); !slices.Equal(got, []hooks.ID{rejecting.ID, mine[0]}) {
-		t.Fatalf("HookIDs = %v", got)
-	}
 	tk.Close()
 }
 
@@ -125,7 +121,7 @@ func TestAttachNotifiesAndDetaches(t *testing.T) {
 	l.cfg.Events = &events.Hub{}
 	evs, stop := l.cfg.Events.Subscribe(func(events.Event) bool { return true })
 	defer stop()
-	ids := createHooks(t, mgr, 2)
+	ids := createHooks(t, mgr, 2, hooks.CreateRequest{})
 	tun, drop, controls := controlPair(t)
 
 	tk, err := l.Admit(context.Background(), receiver, ids, "", false)
@@ -165,10 +161,7 @@ func TestAttachNotifiesAndDetaches(t *testing.T) {
 	if _, ok := l.Lookup(ids[0]); ok {
 		t.Fatal("hook still attached after its tunnel ended")
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for ended.Load() == 0 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
+	waitFor(t, func() bool { return ended.Load() > 0 })
 	time.Sleep(20 * time.Millisecond)
 	if n := ended.Load(); n != 1 {
 		t.Fatalf("onEnd called %d times, want 1", n)
@@ -193,7 +186,7 @@ func TestAttachNotifiesAndDetaches(t *testing.T) {
 
 func TestAttachTakeover(t *testing.T) {
 	l, mgr := newLifecycle(t)
-	ids := createHooks(t, mgr, 2)
+	ids := createHooks(t, mgr, 2, hooks.CreateRequest{})
 	old, _, controls := controlPair(t)
 	admitAttach(t, l, receiver, old, ids...)
 	next(t, controls) // attached
@@ -226,7 +219,7 @@ func TestAttachTakeover(t *testing.T) {
 // (plan 1 minor 8).
 func TestAttachRechecksDeletedHooks(t *testing.T) {
 	l, mgr := newLifecycle(t)
-	ids := createHooks(t, mgr, 2)
+	ids := createHooks(t, mgr, 2, hooks.CreateRequest{})
 	keep, gone := ids[0], ids[1]
 	tk, err := l.Admit(context.Background(), receiver, []hooks.ID{keep, gone}, "", false)
 	if err != nil {
@@ -257,7 +250,7 @@ func TestAttachRechecksDeletedHooks(t *testing.T) {
 	}
 
 	// A tunnel left with no hooks at all is closed.
-	other := createHooks(t, mgr, 1)[0]
+	other := createHooks(t, mgr, 1, hooks.CreateRequest{})[0]
 	tk, err = l.Admit(context.Background(), receiver, []hooks.ID{other}, "", false)
 	if err != nil {
 		t.Fatal(err)
@@ -279,7 +272,7 @@ func TestAttachRechecksDeletedHooks(t *testing.T) {
 
 func TestTicketCloseReleasesLock(t *testing.T) {
 	l, mgr := newLifecycle(t)
-	ids := createHooks(t, mgr, 1)
+	ids := createHooks(t, mgr, 1, hooks.CreateRequest{})
 	tk, err := l.Admit(context.Background(), receiver, ids, "", false)
 	if err != nil {
 		t.Fatal(err)

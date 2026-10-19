@@ -24,6 +24,9 @@ func (l *Lifecycle) Reap(ctx context.Context, grace time.Duration) error {
 	// take l.mu, and one made since the listing may keep the hook.
 	reapable := func(h hooks.Hook) bool { return h.Expired(now) || l.idleLocked(h, now, grace) }
 	for _, h := range l.cfg.Hooks.ListAll() {
+		if !h.Ephemeral && !h.Expired(now) {
+			continue // can only be reaped once an update makes it so, on a later pass
+		}
 		var cur hooks.Hook
 		var ok bool
 		if cur, ok, err = l.cfg.Hooks.DeleteIf(ctx, h.ID, reapable); err != nil {

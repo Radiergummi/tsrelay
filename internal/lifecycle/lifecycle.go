@@ -127,15 +127,18 @@ func (l *Lifecycle) Snapshot() map[*tunnel.Tunnel][]hooks.ID {
 
 // Close closes every attached tunnel, for relay shutdown.
 func (l *Lifecycle) Close() {
-	l.mu.Lock()
-	ts := make([]*tunnel.Tunnel, 0, len(l.served))
-	for t := range l.served {
-		ts = append(ts, t)
-	}
-	l.mu.Unlock()
-	for _, t := range ts {
+	for t := range l.Snapshot() {
 		t.CloseWith("shutdown")
 	}
+}
+
+// idInfos names ids to a tunnel client, for notices that need no more.
+func idInfos(ids []hooks.ID) []tunnel.HookInfo {
+	infos := make([]tunnel.HookInfo, len(ids))
+	for i, id := range ids {
+		infos[i] = tunnel.HookInfo{ID: string(id)}
+	}
+	return infos
 }
 
 // hookInfo describes h to a tunnel client.

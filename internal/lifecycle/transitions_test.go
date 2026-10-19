@@ -60,7 +60,7 @@ func TestDeleteDetachesAndReleases(t *testing.T) {
 	l, mgr := newLifecycle(t)
 	l.cfg.Inspect = inspect.New(inspect.Config{})
 	logs, evs := observe(l)
-	ids := createHooks(t, mgr, 2)
+	ids := createHooks(t, mgr, 2, hooks.CreateRequest{})
 	id, waited := ids[0], ids[1]
 	tun, _, controls := controlPair(t)
 	admitAttach(t, l, receiver, tun, id)
@@ -120,7 +120,7 @@ func TestDeleteDetachesAndReleases(t *testing.T) {
 
 func TestDeleteTwice(t *testing.T) {
 	l, mgr := newLifecycle(t)
-	id := createHooks(t, mgr, 1)[0]
+	id := createHooks(t, mgr, 1, hooks.CreateRequest{})[0]
 	h := hookOf(t, mgr, id)
 	tun, _, controls := controlPair(t)
 	admitAttach(t, l, receiver, tun, id)
@@ -143,7 +143,7 @@ func TestDeleteTwice(t *testing.T) {
 func TestDeleteRacesTunnelEnd(t *testing.T) {
 	for range 50 {
 		l, mgr := newLifecycle(t)
-		id := createHooks(t, mgr, 1)[0]
+		id := createHooks(t, mgr, 1, hooks.CreateRequest{})[0]
 		h := hookOf(t, mgr, id)
 		tun, drop, _ := controlPair(t)
 		admitAttach(t, l, receiver, tun, id)
@@ -173,7 +173,7 @@ func TestDeleteRacesTunnelEnd(t *testing.T) {
 func TestRevokeKeepsTakenOverHooks(t *testing.T) {
 	l, mgr := newLifecycle(t)
 	logs, _ := observe(l)
-	ids := createHooks(t, mgr, 2)
+	ids := createHooks(t, mgr, 2, hooks.CreateRequest{})
 	h1, h2 := ids[0], ids[1]
 	a, _, ac := controlPair(t)
 	b, _, _ := controlPair(t)
@@ -216,7 +216,7 @@ func TestRevokeKeepsTakenOverHooks(t *testing.T) {
 
 func TestNotifyUpdatedSequence(t *testing.T) {
 	l, mgr := newLifecycle(t)
-	id := createHooks(t, mgr, 1)[0]
+	id := createHooks(t, mgr, 1, hooks.CreateRequest{})[0]
 	tun, _, controls := controlPair(t)
 	admitAttach(t, l, receiver, tun, id)
 	next(t, controls) // attached

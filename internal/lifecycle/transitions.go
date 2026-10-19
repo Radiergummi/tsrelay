@@ -37,7 +37,7 @@ type removal struct {
 // removeLocked deletes h from the store, fails the calls waiting for it and
 // detaches it. A hook already gone is not an error.
 func (l *Lifecycle) removeLocked(ctx context.Context, h hooks.Hook) (removal, error) {
-	if err := l.cfg.Hooks.Delete(ctx, h.ID); err != nil && !errors.Is(err, hooks.ErrNotFound) {
+	if _, _, err := l.cfg.Hooks.DeleteIf(ctx, h.ID, func(hooks.Hook) bool { return true }); err != nil && !errors.Is(err, hooks.ErrNotFound) {
 		return removal{}, err
 	}
 	return l.forgetLocked(h), nil
@@ -57,7 +57,7 @@ func (l *Lifecycle) forgetLocked(h hooks.Hook) removal {
 func (l *Lifecycle) finishRemoval(ctx context.Context, r removal, msg string, attrs ...slog.Attr) {
 	h := r.hook
 	if r.tunnel != nil {
-		r.tunnel.Notify(tunnel.Control{Type: tunnel.ControlHookDeleted, Hooks: []tunnel.HookInfo{{ID: string(h.ID)}}}, r.orphaned)
+		r.tunnel.Notify(tunnel.Control{Type: tunnel.ControlHookDeleted, Hooks: idInfos([]hooks.ID{h.ID})}, r.orphaned)
 	}
 	if l.cfg.Inspect != nil {
 		l.cfg.Inspect.Forget(h.ID)
@@ -72,22 +72,16 @@ func (l *Lifecycle) finishRemoval(ctx context.Context, r removal, msg string, at
 func (l *Lifecycle) Revoke(ctx context.Context, t *tunnel.Tunnel, ids []hooks.ID, reason string) {
 	l.mu.Lock()
 	detached, orphaned := l.detachFromLocked(t, ids)
-	now := l.now()
-	for _, id := range detached {
-		l.detached[id] = now
-	}
 	l.mu.Unlock()
 	if len(detached) == 0 {
 		return
 	}
-	infos := make([]tunnel.HookInfo, len(detached))
-	for i, id := range detached {
+	for _, id := range detached {
 		l.cfg.Events.Publish(events.HookChanged(t.Owner.UserID, string(id)))
-		infos[i] = tunnel.HookInfo{ID: string(id)}
 	}
 	l.cfg.Audit.Log(ctx, audit.TunnelRevoked, audit.Actor(t.Owner), slog.String("tunnel", t.ID),
 		slog.Any("hooks", detached), slog.String("reason", reason))
-	t.Notify(tunnel.Control{Type: tunnel.ControlRevoked, Hooks: infos}, orphaned)
+	t.Notify(tunnel.Control{Type: tunnel.ControlRevoked, Hooks: idInfos(detached)}, orphaned)
 }
 
 // NotifyUpdated tells the tunnel serving the hook its current URL. Messages

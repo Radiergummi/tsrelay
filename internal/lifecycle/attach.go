@@ -109,15 +109,6 @@ func (l *Lifecycle) admit(owner authz.Identity, ids []hooks.ID, session string, 
 	return requested, nil
 }
 
-// HookIDs returns the admitted hooks.
-func (tk *Ticket) HookIDs() []hooks.ID {
-	out := make([]hooks.ID, len(tk.requested))
-	for i, h := range tk.requested {
-		out[i] = h.ID
-	}
-	return out
-}
-
 // Close releases the owner's attach lock without attaching, e.g. because
 // the upgrade failed.
 func (tk *Ticket) Close() { tk.once.Do(tk.unlock) }
@@ -134,7 +125,8 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 	// A hook deleted since Admit must not be attached. One that another
 	// tunnel took over meanwhile is taken from it.
 	var live []hooks.ID
-	var infos, gone []tunnel.HookInfo
+	var goneIDs []hooks.ID
+	var infos []tunnel.HookInfo
 	l.mu.Lock()
 	for _, h := range tk.requested {
 		if _, ok := l.cfg.Hooks.Get(h.ID); ok {
@@ -144,18 +136,14 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 			continue
 		}
 		// Delete and Reap detach under l.mu, so a deleted hook is served by no tunnel.
-		gone = append(gone, tunnel.HookInfo{ID: string(h.ID)})
+		goneIDs = append(goneIDs, h.ID)
 	}
 	reps := l.attachLocked(t, live)
 	l.mu.Unlock()
 
 	for _, rep := range reps {
 		l.cfg.Audit.Log(ctx, audit.TunnelReplaced, slog.String("tunnel", rep.tunnel.ID), slog.String("by", t.ID), slog.Any("hooks", rep.hooks))
-		lost := make([]tunnel.HookInfo, len(rep.hooks))
-		for i, id := range rep.hooks {
-			lost[i] = tunnel.HookInfo{ID: string(id)}
-		}
-		rep.tunnel.Notify(tunnel.Control{Type: tunnel.ControlReplaced, Hooks: lost}, rep.orphaned)
+		rep.tunnel.Notify(tunnel.Control{Type: tunnel.ControlReplaced, Hooks: idInfos(rep.hooks)}, rep.orphaned)
 	}
 	for _, id := range live {
 		l.cfg.Events.Publish(events.HookChanged(tk.owner.UserID, string(id)))
@@ -164,23 +152,21 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 	if len(infos) > 0 {
 		t.Notify(tunnel.Control{Type: tunnel.ControlAttached, Hooks: infos}, false)
 	}
-	if len(gone) > 0 {
-		t.Notify(tunnel.Control{Type: tunnel.ControlHookDeleted, Hooks: gone}, len(live) == 0)
+	if len(goneIDs) > 0 {
+		t.Notify(tunnel.Control{Type: tunnel.ControlHookDeleted, Hooks: idInfos(goneIDs)}, len(live) == 0)
 	}
 
+	// Capture only what the goroutine needs, not the whole Ticket.
+	owner := tk.owner
 	go func() {
 		<-t.Done()
 		l.mu.Lock()
 		hs := l.detachLocked(t)
-		now := l.now()
-		for _, id := range hs {
-			l.detached[id] = now
-		}
 		l.mu.Unlock()
 		for _, id := range hs {
-			l.cfg.Events.Publish(events.HookChanged(tk.owner.UserID, string(id)))
+			l.cfg.Events.Publish(events.HookChanged(owner.UserID, string(id)))
 		}
-		l.cfg.Audit.Log(ctx, audit.TunnelDetach, audit.Actor(tk.owner), slog.String("tunnel", t.ID))
+		l.cfg.Audit.Log(ctx, audit.TunnelDetach, audit.Actor(owner), slog.String("tunnel", t.ID))
 		if onEnd != nil {
 			onEnd(time.Since(attachedAt))
 		}

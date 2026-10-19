@@ -152,24 +152,10 @@ func TestRoute(t *testing.T) {
 	}
 }
 
-func TestDelete(t *testing.T) {
-	m := newManager(t, t.TempDir())
-	h, _ := m.Create(ctx, receiver, CreateRequest{Path: "x"})
-	if err := m.Delete(ctx, h.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, ok := m.Route("moritz", "x"); ok {
-		t.Fatal("deleted hook still routes")
-	}
-	if err := m.Delete(ctx, h.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("second delete: %v", err)
-	}
-}
-
 // DeleteIf decides on the hook as stored, and keeps it when cond fails.
 func TestDeleteIf(t *testing.T) {
 	m := newManager(t, t.TempDir())
-	h, _ := m.Create(ctx, receiver, CreateRequest{Ephemeral: true})
+	h, _ := m.Create(ctx, receiver, CreateRequest{Path: "x", Ephemeral: true})
 	no := false
 	if _, _, err := m.Update(ctx, receiver, h.ID, UpdateRequest{Ephemeral: Opt[bool]{Set: true, Value: &no}}); err != nil {
 		t.Fatal(err)
@@ -183,6 +169,9 @@ func TestDeleteIf(t *testing.T) {
 	}
 	if cur, ok, err := m.DeleteIf(ctx, h.ID, func(Hook) bool { return true }); err != nil || !ok || cur.ID != h.ID {
 		t.Fatalf("DeleteIf = %+v, %v, %v", cur, ok, err)
+	}
+	if _, _, ok := m.Route("moritz", "x"); ok {
+		t.Fatal("deleted hook still routes")
 	}
 	if _, ok, err := m.DeleteIf(ctx, h.ID, func(Hook) bool { return true }); ok || !errors.Is(err, ErrNotFound) {
 		t.Fatalf("DeleteIf on a missing hook = %v, %v", ok, err)
