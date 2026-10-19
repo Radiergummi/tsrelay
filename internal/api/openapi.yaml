@@ -12,7 +12,10 @@ info:
 
     Callers are identified by their tailnet identity; there are no tokens.
     Every response carries `Tsrelay-Version`. Errors are
-    `application/problem+json` and carry `Tsrelay-Error`.
+    `application/problem+json` and carry `Tsrelay-Error`. API responses are
+    `Cache-Control: no-store`. Every write without a `Sec-Fetch-Site` header
+    must send `Content-Type: application/json`, even without a body (415
+    otherwise).
   license:
     name: Apache-2.0
     identifier: Apache-2.0
