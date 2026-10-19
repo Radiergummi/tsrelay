@@ -2,9 +2,11 @@ package api
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -179,6 +181,53 @@ func TestStreamKeepsIdentityWhenIdentifyFails(t *testing.T) {
 	_, lines := e.openStream(e.fake.Client(boss), "/hooks?all=true")
 	e.fake.Fail(errors.New("not on the tailnet"))
 	time.Sleep(100 * time.Millisecond)
+	hub.Publish(hookEvent(moritz, "default", "h_others"))
+	if d := nextData(t, lines); !strings.Contains(d, "h_others") {
+		t.Fatalf("event = %s", d)
+	}
+}
+
+// hangingIdentifier blocks Identify until its context ends once hang is set,
+// as a WhoIs to an unresponsive node would.
+type hangingIdentifier struct {
+	identify.Identifier
+	hang   atomic.Bool
+	called chan struct{}
+}
+
+func (h *hangingIdentifier) Identify(ctx context.Context, addr string) (authz.Identity, error) {
+	if !h.hang.Load() {
+		return h.Identifier.Identify(ctx, addr)
+	}
+	select {
+	case h.called <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	return authz.Identity{}, ctx.Err()
+}
+
+// A hanging identification times out and keeps the last identity, rather
+// than stalling the stream.
+func TestStreamSurvivesHangingIdentify(t *testing.T) {
+	// Restored after the server closes (cleanups run last first), when no
+	// stream reads it any more.
+	old := streamIdentifyTimeout
+	t.Cleanup(func() { streamIdentifyTimeout = old })
+	streamIdentifyTimeout = 50 * time.Millisecond
+	e := newEnv(t)
+	e.api.ReidentifyEvery = 20 * time.Millisecond
+	hub := withHub(e)
+	hi := &hangingIdentifier{Identifier: e.fake, called: make(chan struct{}, 1)}
+	e.api.Identifier = hi
+	boss := identify.User("boss-box", "boss@example.com", 6, `{"roles":["admin"]}`)
+	_, lines := e.openStream(e.fake.Client(boss), "/hooks?all=true")
+	hi.hang.Store(true)
+	select {
+	case <-hi.called:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stream never identified its viewer again")
+	}
 	hub.Publish(hookEvent(moritz, "default", "h_others"))
 	if d := nextData(t, lines); !strings.Contains(d, "h_others") {
 		t.Fatalf("event = %s", d)

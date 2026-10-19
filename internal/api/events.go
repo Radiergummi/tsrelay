@@ -2,6 +2,7 @@ package api
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +26,10 @@ const eventPing = 25 * time.Second
 // viewer again every ReidentifyEvery; this is the backstop for when that is
 // off, after which EventSource reconnects and the caller is authorized again.
 var eventMaxAge = 5 * time.Minute
+
+// streamIdentifyTimeout bounds identifying a stream's viewer again, well
+// under eventPing: the stream sends nothing while it waits.
+var streamIdentifyTimeout = 5 * time.Second
 
 // defaultStreamsPerNode is how many event streams one node may hold open
 // when StreamsPerNode is not set.
@@ -142,7 +147,9 @@ func (a *API) stream(w http.ResponseWriter, r *http.Request, id authz.Identity, 
 			}
 			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Type, b)
 		case <-reidentify:
-			v, err := a.Identifier.Identify(r.Context(), r.RemoteAddr)
+			ctx, cancel := context.WithTimeout(r.Context(), streamIdentifyTimeout)
+			v, err := a.Identifier.Identify(ctx, r.RemoteAddr)
+			cancel()
 			if err != nil {
 				continue
 			}
