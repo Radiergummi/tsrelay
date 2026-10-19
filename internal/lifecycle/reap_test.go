@@ -105,6 +105,7 @@ func TestReapGraceStartsAtStartup(t *testing.T) {
 // A hook a newer tunnel took over is served, however the old tunnel ended.
 func TestReapSkipsTakenOverHook(t *testing.T) {
 	l, mgr := newLifecycle(t)
+	logs, _ := observe(l)
 	h := createEphemeral(t, mgr, 1)[0]
 	t0 := h.CreatedAt
 	l.started = t0
@@ -115,7 +116,17 @@ func TestReapSkipsTakenOverHook(t *testing.T) {
 	at(l, t0, 0)
 	dropA()
 	<-a.Done()
-	time.Sleep(50 * time.Millisecond) // let a's detach run
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		l.mu.Lock()
+		_, serving := l.served[a] // a's detach has run once it serves nothing
+		l.mu.Unlock()
+		if !serving {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("a's detach never ran")
+		}
+	}
 
 	at(l, t0, time.Hour)
 	if err := l.Reap(context.Background(), grace); err != nil || !stored(mgr, h.ID) {
@@ -126,6 +137,13 @@ func TestReapSkipsTakenOverHook(t *testing.T) {
 	at(l, t0, time.Hour+grace-time.Second)
 	if err := l.Reap(context.Background(), grace); err != nil || !stored(mgr, h.ID) {
 		t.Fatalf("grace counted from before b dropped: %v", err)
+	}
+	at(l, t0, time.Hour+grace)
+	if err := l.Reap(context.Background(), grace); err != nil || stored(mgr, h.ID) {
+		t.Fatalf("Reap at drop+grace = %v, stored = %v", err, stored(mgr, h.ID))
+	}
+	if n := strings.Count(logs.String(), `"msg":"hook.expire"`); n != 1 {
+		t.Fatalf("hook.expire audit lines = %d in %s", n, logs.String())
 	}
 }
 
