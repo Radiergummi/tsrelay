@@ -271,7 +271,7 @@ func TestUpdateNotifies(t *testing.T) {
 	if err != nil || !slices.Equal(changed, []string{"path"}) {
 		t.Fatalf("Update = %v, %v", changed, err)
 	}
-	if c := next(t, controls); c.Type != tunnel.ControlHookUpdated || c.Hooks[0].URL != "https://relay"+h.Route() {
+	if c := next(t, controls); c.Type != tunnel.ControlHookUpdated || len(c.Hooks) != 1 || c.Hooks[0].URL != "https://relay"+h.Route() {
 		t.Fatalf("control = %+v, want hook-updated with %s", c, h.Route())
 	}
 	if !strings.Contains(logs.String(), `"msg":"hook.update"`) || !strings.Contains(logs.String(), `"changed":["path"]`) {
@@ -281,19 +281,36 @@ func TestUpdateNotifies(t *testing.T) {
 		t.Fatalf("event = %+v", e)
 	}
 
-	// A refused update has no effects.
+	// A refused or empty update has no effects.
 	if _, _, err := l.Update(context.Background(), receiver, "h_missing", hooks.UpdateRequest{}); !errors.Is(err, hooks.ErrNotFound) {
 		t.Fatalf("Update of a missing hook = %v", err)
 	}
+	if _, changed, err := l.Update(context.Background(), receiver, id, hooks.UpdateRequest{}); err != nil || len(changed) != 0 {
+		t.Fatalf("empty Update = %v, %v", changed, err)
+	}
+	var ve hooks.ValidationError
+	if _, _, err := l.Update(context.Background(), receiver, id, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true}}); !errors.As(err, &ve) {
+		t.Fatalf("Update with a null path = %v", err)
+	}
 	if n := strings.Count(logs.String(), `"msg":"hook.update"`); n != 1 {
 		t.Fatalf("hook.update audit lines = %d", n)
+	}
+	select {
+	case e := <-evs:
+		t.Fatalf("event for a refused update: %+v", e)
+	default:
+	}
+	select {
+	case c := <-controls:
+		t.Fatalf("notice for a refused update: %+v", c)
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 
 // Rotating a public hook's token tells the tunnel its new public URL.
 func TestRotatePublicTokenNotifies(t *testing.T) {
 	l, mgr := newLifecycle(t)
-	logs, _ := observe(l)
+	logs, evs := observe(l)
 	owner := identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"public":true}`)
 	created, err := mgr.Create(context.Background(), owner, hooks.CreateRequest{Public: true})
 	if err != nil {
@@ -303,15 +320,19 @@ func TestRotatePublicTokenNotifies(t *testing.T) {
 	tun, _, controls := controlPair(t)
 	admitAttach(t, l, owner, tun, id)
 	next(t, controls) // attached
+	next(t, evs)      // the attach's hook event
 
 	h, err := l.RotatePublicToken(context.Background(), owner, id)
 	if err != nil || h.PublicToken == old {
 		t.Fatalf("RotatePublicToken = %v, %v", h.PublicToken, err)
 	}
-	if c := next(t, controls); c.Type != tunnel.ControlHookUpdated || c.Hooks[0].PublicURL != "https://public/+"+h.PublicToken {
+	if c := next(t, controls); c.Type != tunnel.ControlHookUpdated || len(c.Hooks) != 1 || c.Hooks[0].PublicURL != "https://public/+"+h.PublicToken {
 		t.Fatalf("control = %+v, want hook-updated with the new token", c)
 	}
 	if !strings.Contains(logs.String(), `"changed":["publicUrl"]`) {
 		t.Fatalf("no hook.update audit line: %s", logs.String())
+	}
+	if e := next(t, evs); e.Type != events.TypeHook || e.HookID != string(id) {
+		t.Fatalf("event = %+v", e)
 	}
 }
