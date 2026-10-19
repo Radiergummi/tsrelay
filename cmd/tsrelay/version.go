@@ -13,6 +13,11 @@ import (
 // and the Dockerfile's VERSION build arg). An unmodified build says "dev".
 var version = "dev"
 
+// commit is the revision the relay was built from, for builds Go cannot
+// stamp it into because they have no .git, like the Dockerfile's (its
+// REVISION build arg). Elsewhere it stays empty, and Go's stamp is used.
+var commit = ""
+
 // versionCheck passes the relay's version (its api.VersionHeader) to seen
 // whenever it differs from this CLI's. A dev build on either side matches
 // anything, so it is never passed on.

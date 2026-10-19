@@ -8,10 +8,16 @@ permissions:
   contents: read
 
 jobs:
+  # Nothing is built or published until the tagged commit passes CI. Its
+  # web job's web-dist artifact is the web UI the binaries embed.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   # Releases are immutable once published, so the release starts as a draft:
   # the binaries are uploaded to it, and the last job publishes it. One job
   # creates it, so the matrix jobs do not race to.
   create-release:
+    needs: [ci]
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -24,26 +30,8 @@ jobs:
         # latest release nor the installers and update check pick it up.
         run: gh release create "${GITHUB_REF_NAME}" --draft --verify-tag --title "${GITHUB_REF_NAME}" --generate-notes ${{ contains(github.ref_name, '-') && '--prerelease' || '' }}
 
-  web:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: ./.github/actions/node
-
-      - name: Build the web UI
-        working-directory: web
-        run: pnpm build
-
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: web-dist
-          path: web/dist
-          include-hidden-files: true
-          if-no-files-found: error
-
   binaries:
-    needs: [web]
+    needs: [ci]
     strategy:
       fail-fast: false
       matrix:
@@ -233,6 +221,7 @@ jobs:
   # an attested image that the tag itself never built. CI builds the image
   # with a cache on every push instead.
   docker:
+    needs: [ci]
     permissions:
       contents: read
       packages: write
@@ -283,6 +272,7 @@ jobs:
           push: true
           build-args: |
             VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}

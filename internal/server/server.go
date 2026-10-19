@@ -36,6 +36,7 @@ type Config struct {
 	AllowedHosts   []string // Host header values the relay answers to
 	CapName        string   // the capability carrying relay grants; GET / names it
 	Version        string   // the relay's version, sent as api.VersionHeader; "" means "dev"
+	Commit         string   // the revision the relay was built from; "" means the one Go stamped, if any
 	EphemeralGrace time.Duration
 	HoldQueue      int // calls per hook that may wait for a tunnel; 0 means relay.DefaultHoldQueue
 	Tunnel         tunnel.Options
@@ -85,7 +86,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 
 	version := cmp.Or(cfg.Version, "dev")
 	mux := http.NewServeMux()
-	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, PublicBaseURL: cfg.PublicBaseURL, CapName: cfg.CapName, Version: version, Commit: commit(), Releases: cfg.Releases, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName)}
+	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, PublicBaseURL: cfg.PublicBaseURL, CapName: cfg.CapName, Version: version, Commit: cmp.Or(cfg.Commit, commit()), Releases: cfg.Releases, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName)}
 	if s.tel.Tracing {
 		s.relay.Tracer = s.tel.Tracer.Tracer(telemetry.ScopeName)
 		if !cfg.NoTracePropagation {
@@ -140,7 +141,7 @@ func (s *Server) Handler() http.Handler { return s.handler }
 func (s *Server) PublicHandler() http.Handler { return s.public }
 
 // commit is the revision this binary was built from, as the Go toolchain
-// stamped it, or "" when it was built outside a checkout.
+// stamped it, or "" when it was built outside a checkout (as in Docker).
 func commit() string {
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, setting := range info.Settings {
