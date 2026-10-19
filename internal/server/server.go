@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 
@@ -58,6 +59,7 @@ type Server struct {
 	relay   *relay.Handler // serves callbacks; its Held() feeds the held-calls gauge
 	handler http.Handler
 	public  http.Handler // nil unless cfg.PublicBaseURL is set
+	routes  []string     // the API's patterns and the UI's inspect redirect
 	inspect *inspect.Inspector
 	events  *events.Hub
 
@@ -107,6 +109,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	a.HTML = u.Index()
 	a.Register(mux)
 	u.Register(mux)
+	s.routes = slices.Concat(a.Routes(), []string{ui.InspectRoute})
 	(&install.Handler{Version: version, BaseURL: cfg.BaseURL}).Register(mux)
 
 	// Callbacks bypass the mux, whose path cleaning would rewrite paths
@@ -144,6 +147,10 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 }
 
 func (s *Server) Handler() http.Handler { return s.handler }
+
+// Routes are the patterns that answer with what the caller may see or do,
+// for proving each one against the access rules.
+func (s *Server) Routes() []string { return s.routes }
 
 // PublicHandler serves the hooks made public, for the Funnel listener. It
 // is nil when Config.PublicBaseURL is empty.

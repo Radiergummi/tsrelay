@@ -128,7 +128,7 @@ The capability name is configurable with `--cap-name`. The default is **`mazetti
   "maxHooks":   10,                    // receiver: hooks owned at once
   "maxTunnels": 5,                     // receiver: tunnels attached at once
   "maxHookTTL": "720h",                // receiver: cap on a hook's expiry; Go duration
-  "public": true                       // receiver: may make hooks public (§19)
+  "public": true                       // receiver: may make hooks in these channels public (§19)
 }
 ```
 
@@ -136,7 +136,7 @@ The capability name is configurable with `--cap-name`. The default is **`mazetti
 |---|---|
 | `receiver` | Create and manage their own hooks in channels matched by their patterns, attach tunnels, inspect and replay their own calls. |
 | `sender` | Call any hook whose channel is matched by their patterns. |
-| `admin` | List, view metadata of, and delete everyone's hooks and tunnels. Admins **cannot** see other users' captured headers or bodies, and cannot replay their calls. |
+| `admin` | List, view metadata of, and delete the hooks and tunnels in channels their patterns match (`*`: everyone's). Admins **cannot** see other users' captured headers or bodies, and cannot edit their hooks or replay or test their calls. Only people are admins: on a tagged node the role grants nothing. |
 
 A node with no value for the capability has no access. The UI tells such a user exactly that, and shows a policy snippet that would grant access.
 
@@ -161,7 +161,7 @@ The grant's `ip` part is what gives network access. The `app` part only authoriz
 - **Each value is parsed on its own.** A malformed value is ignored and logged once per node (fail closed); the others still apply. **Unknown fields are ignored**, which keeps the schema forward-compatible.
 - **`roles` and `channels`** are combined by union. Channels are tracked per role, so a `sender` grant's channels never widen what the same node can do as a `receiver`.
 - **Numeric and duration limits:** for each value, take the value it sets, or the relay's configured default if it sets none. The effective limit is the **maximum** of those. Grants only ever add access in Tailscale, and merging does the same. As a result a grant cannot push a limit *below* the relay default. To restrict most users, an operator lowers the relay default and raises it for specific groups.
-- **`public`** merges by OR: any matching value with it set to `true` grants it. It only counts on a value whose `roles` include `receiver` (§19).
+- **`public`** is scoped by channel: a value with it set to `true` lets the node make public the hooks in that value's `channels` (`*` when absent), and only if the same value grants `receiver` (§19). The channel patterns of all such values are combined by union.
 
 ### 5.4 Channels and patterns
 
@@ -176,11 +176,14 @@ The grant's `ip` part is what gives network access. The `app` part only authoriz
 | Moment | Check |
 |---|---|
 | Every callback request | `WhoIs` on the connection: the caller must be a sender whose patterns match the hook's channel. |
-| Every API request | `WhoIs`. Writes are re-checked against the effective grant: channel, limits, TTL. |
-| Tunnel attach | `WhoIs`: the caller must own every hook it attaches, be a receiver, and stay within `maxTunnels`. |
+| A held call, before it is delivered (§7.3) | Its original address is routed again (tailnet: user and path; public: token), and it is delivered only if that still lands on the same hook. A tailnet sender is identified again and checked against the hook's current channel; if `WhoIs` fails, the call is refused like a hook that no longer routes. Replays and test calls are re-routed too, but have no sender to check (§9.3). |
+| Every API request | `WhoIs`. Writes are re-checked against the effective grant: channel, limits, TTL. Owner actions (edit, rotate the public URL, replay, test) need the receiver role, and its channels must match the hook's channel (for an edit: the channel the hook ends up in). Deleting needs no role (§5.8). |
+| Tunnel attach | `WhoIs`: the caller must own every hook it attaches, be a receiver whose patterns match each hook's channel, and stay within `maxTunnels`. |
+| A hook's channel or `public` flag changes | The node of the tunnel serving it is identified again, and the hook is revoked from that tunnel if the node may no longer serve it there. The change may come from another node, so the tunnel's own node decides; if it can't be identified, its last known grants do. `PATCH` and rotate answer after this check, which can take up to the 10 s identification timeout. |
 | Attached tunnels, every `--revalidate-interval` (60 s default) | `WhoIs` again. A tunnel whose caller is no longer authorized at all is detached with reason `revoked` and closed; one that keeps some hooks but loses others only has those hooks detached, with the same `revoked` control sent naming them. A revalidation started before a takeover never undoes that takeover: it only detaches hooks the checked tunnel still serves at the moment it applies the result. |
+| Open event streams, every `--revalidate-interval` | `WhoIs` again, and later events are filtered with the new identity. The stream ends once the viewer holds no role, or can no longer see the stream's hook. If `WhoIs` fails, the last identity stays. |
 
-Because a hook can only deliver through a live tunnel from its owner, revoking a grant takes effect within one revalidation interval, even for persistent hooks.
+Tunnels keep their node's latest grants: attach records them, and the revalidator and the re-check after a change refresh them. Revocation follows only whether the node may serve the hook on the tailnet; losing the `public` grant never detaches a tunnel (§19). Because a hook can only deliver through a live tunnel from its owner, revoking a grant takes effect within one revalidation interval, even for persistent hooks.
 
 ### 5.6 User slugs
 
@@ -194,9 +197,29 @@ Because a hook can only deliver through a live tunnel from its owner, revoking a
 Authority in the UI and API comes from the network identity, much like a cookie. The relay therefore defends against cross-site attacks and DNS rebinding:
 
 - **Host check:** every request's `Host` must be one of the relay's MagicDNS names or tailnet IPs. Anything else gets `421`.
-- **Writes** (any method but `GET`, `HEAD` and `OPTIONS`, on any path but a callback's, tailnet `/~` or public `/+`) require `Content-Type: application/json` when they have a body. If the `Sec-Fetch-Site` header is present it must be `same-origin` or `none`.
+- **Writes** (any method but `GET`, `HEAD` and `OPTIONS`, on any path but a callback's, tailnet `/~` or public `/+`) require `Content-Type: application/json` when they have a body, and also without one when the request carries no `Sec-Fetch-Site` header: a cross-site HTML form can't send that type, and a script must pass a CORS preflight to, which the relay never answers. If `Sec-Fetch-Site` is present it must be `same-origin` or `none`. The CLI and the web app always send the type (`415` otherwise).
+- **API responses** carry `Cache-Control: no-store`, so nothing a caller was allowed to see stays in a shared cache.
 - **No CORS headers**, ever.
 - **The UI sends a strict CSP:** `default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, with no inline script or style, plus `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`. Captured headers and bodies are always rendered as text, never as HTML.
+
+### 5.8 Access rules
+
+Every authorization decision is made in one package, `internal/access`, from the caller's identity and the hook's owner and channel; it holds no state. The API, the UI, the relay, the lifecycle, the revalidator and the event streams ask it, and decide nothing on their own.
+
+| Question | Rule |
+|---|---|
+| What may a viewer see of a hook? | Everything (query strings, headers, bodies, the public URL, replay) if they are a user who owns it; its metadata if they are a user whose admin patterns match its channel; otherwise nothing, not even that it exists. Ownership needs no role, so a user who lost theirs still sees their hooks. |
+| Create a hook | A user with the receiver role for its channel and, if it is public, the `public` grant for that channel. |
+| Edit, rotate the public URL, replay, test | The owner, with the receiver role. Its channels must match the hook's channel, for an edit the channel the hook ends up in: an owner whose grant no longer covers a hook can move it into a granted channel, but not change anything else. A public result needs the `public` grant for that channel. |
+| Delete | The owner, without any role (removing access is always safe, and a user who lost the receiver role can still clean up), or an admin whose patterns match the hook's channel. |
+| Attach, and keep serving | A user who owns the hook and has the receiver role for its channel. |
+| Serve a call from the internet | The above, and the `public` grant for the hook's channel. Checked per call, so a node that loses it keeps its tunnel (§19). |
+| Call a hook | A sender whose patterns match the hook's channel. Public calls: a token that routes to a public hook. Replays and test calls are the owner's own and need no sender. |
+| Open an event stream | Any role (receiver, sender or admin), and fewer than 8 streams open from the node. What it carries is filtered by what the viewer may see. |
+
+**Status codes:** a hook the caller may not see is `404`, whatever they asked (a hook that doesn't exist is the same `404`, so answers never tell another user's hooks from missing ones). One they may see but not act on is `403`: an admin attempting an owner action, an owner without the receiver role or channel. A setting their grant doesn't allow in a create or edit body (a channel, `public`) is a `422` field error. A sender refused by channel gets `404 hook_not_found`, as if the hook did not exist.
+
+`TestAccessMatrix` (package `server`) asks every route the API and UI serve, as owners, other users, admins scoped to all and to one channel, a tagged admin, users without roles and senders, through the real server, and fails if a registered route has no row.
 
 ## 6. Tunnel protocol
 
@@ -256,7 +279,7 @@ Delivery is **synchronous pass-through.** The sender receives the local applicat
 
 ### 7.3 Hold for reconnect
 
-If a call arrives while no tunnel is attached to its hook, the relay waits up to `holdTimeout` (30 s by default) for one to attach before it forwards anything. Nothing has been read from the request body at that point, so streamed bodies are safe to hold. Held calls count against `--hold-queue` per hook (100 by default); beyond that, or once `holdTimeout` elapses, the call fails with `561 tunnel_unavailable` and `Retry-After: max(5s, holdTimeout)`, rounded up to whole seconds. A hook deleted, or expiring, while calls are held for it releases them at once with `404 hook_not_found`, rather than waiting out `holdTimeout`.
+If a call arrives while no tunnel is attached to its hook, the relay waits up to `holdTimeout` (30 s by default) for one to attach before it forwards anything. Nothing has been read from the request body at that point, so streamed bodies are safe to hold. Held calls count against `--hold-queue` per hook (100 by default); beyond that, or once `holdTimeout` elapses, the call fails with `561 tunnel_unavailable` and `Retry-After: max(5s, holdTimeout)`, rounded up to whole seconds. A hook deleted, or expiring, while calls are held for it releases them at once with `404 hook_not_found`, rather than waiting out `holdTimeout`. When a tunnel does attach, each held call is routed and authorized again before it is delivered (§5.5): it goes to the hook it was addressed to, below that hook's current path and with its current settings, or not at all.
 
 A call already **in flight** when its tunnel drops cannot be retried, because its body has been partly consumed. It fails with `563 tunnel_lost`. Buffered replay is on the backlog (§17).
 
@@ -327,8 +350,9 @@ Every call has an attempts list from the start, even though v1 only ever creates
 
 ### 9.2 Storage and visibility
 
-- **Retention:** the last 100 calls per hook (configurable), in memory, gone on restart. Each captured body is held up to 64 KiB (configurable). Calls that were denied by channel are recorded on the hook they targeted, so the owner can see them.
-- **Visibility:** only the hook's owner sees query strings, headers and bodies. Admins see metadata only.
+- **Retention:** the last 100 calls per hook (configurable), in memory, gone on restart. Each captured body is held up to 64 KiB (configurable).
+- **Refused calls:** calls denied by channel are recorded on the hook they targeted, so the owner can see them, but kept apart so a sender without access can't crowd out real calls: the last 10 per hook, in their own ring, marked `refused: true`. They produce no events, are refused before the rate limit and never count against it, and are never a hook's `lastCall`, which is its newest delivered call.
+- **Visibility:** only the hook's owner sees query strings, headers and bodies. Admins whose patterns match the hook's channel see metadata only, path included (§5.8).
 - **Redaction:** `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and `X-Api-Key` are redacted by default. The list is configurable relay-wide. Redacted values are dropped at capture time and never held in memory.
 - **Opt-in bodies:** body capture is off unless the hook or the relay's default turns it on (§8). Operators can turn it off for the whole relay with `--capture-bodies=false`, whatever hooks set.
 
@@ -336,7 +360,7 @@ Every call has an attempts list from the start, even though v1 only ever creates
 
 - **Replay:** re-sends a captured call down the hook's current tunnel, for calls whose request body was captured in full. Redacted headers are left out. The response goes only to the inspector, never back to the original sender. Only the owner can replay. The `Tsrelay-Sender-*` headers name the original sender, because a replay reproduces that call. A replayed public call carries `Tsrelay-Sender-Public: true` again, has its trace headers stripped, and names the hook's public route in `X-Forwarded-Prefix` while the hook is still public (its tailnet route otherwise). A call whose request body or query string was not captured in full gets `409`, as does one with a request body that was not captured at all because capture was off. A call refused by channel was never delivered either, so it also gets `409`.
 - **Copy as curl:** two variants. One targets the hook URL, which only works for nodes with the sender role. The other targets the tunnel's local target (e.g. `http://localhost:8080/…`), which is what developers usually want.
-- **Send test request:** the owner writes a request (method, path, headers, body; prefilled with a small JSON sample) and sends it through the normal pipeline as a call of kind `test`. The sender authorization step is skipped, because the owner is calling their own hook. This proves the whole chain works on first setup. The API takes `{method, path, headers, body}`. `method` defaults to `POST`, `path` to `/`, and `path` may include a query string. The sender is the owner. Replay and test both answer `201` with the finished call; admins get `403`.
+- **Send test request:** the owner writes a request (method, path, headers, body; prefilled with a small JSON sample) and sends it through the normal pipeline as a call of kind `test`. The sender authorization step is skipped, because the owner is calling their own hook. This proves the whole chain works on first setup. The API takes `{method, path, headers, body}`. `method` defaults to `POST`, `path` to `/`, and `path` may include a query string. The sender is the owner. Replay and test both answer `201` with the finished call; admins, and an owner without the receiver role for the hook's channel, get `403` (§5.8).
 
 ## 10. Web UI and API
 
@@ -353,7 +377,7 @@ Negotiated responses carry `Vary: Accept`. A representation a resource doesn't h
 | Method & path | JSON | Events |
 |---|---|---|
 | `GET /` | The entry document: identity, effective grant (roles, channel patterns, limits), current usage, user slug, the relay's capability name (`capName`), version and, when known, the `commit` it was built from, the relay-wide setting defaults and maxima, how many calls it keeps per hook and whether it keeps bodies at all (`policy`, with `callsPerHook` and `noBodies`), and `links` to `/hooks`, `/channels`, `/tunnel`, `/openapi.json` and `/licenses`. For admins, `latestVersion` and `releaseURL` name a tsrelay release newer than the relay's own: the relay asks GitHub's latest-release API on startup and every 6 hours and keeps the answer in memory. A failed check is logged once and keeps the last answer; nothing waits for it. A dev build and `--update-check=false` never ask. Browsers asking for HTML are redirected to `/hooks`. | |
-| `GET /hooks` | The caller's hooks (admins: `?all=true`); `?channel=` keeps those in one channel. Every hook object, here and elsewhere, carries `lastCall`: its newest call's summary. | The caller's hooks and their calls (admins: `?all=true`) |
+| `GET /hooks` | The caller's hooks (admins: `?all=true`, every hook in their admin channels; anyone else gets their own); `?channel=` keeps those in one channel. Every hook object, here and elsewhere, carries `lastCall`: its newest call's summary. | The caller's hooks and their calls (admins: `?all=true`) |
 | `POST /hooks` | Create. `?dryRun=true` validates without saving and answers `200` with the would-be hook. | |
 | `GET/PATCH/DELETE /hooks/{id}` | Read, update or delete. `PATCH` also accepts `?dryRun=true`, which validates without saving and answers `200` with the would-be hook. | This hook and its calls |
 | `GET /hooks/{id}/calls` | Call summaries, newest first | This hook's calls |
@@ -371,7 +395,9 @@ Negotiated responses carry `Vary: Accept`. A representation a resource doesn't h
 
 The relay can't say who else may send on a channel: grants arrive per request through WhoIs (§5.1), so it only ever knows the caller's own patterns. The rest is in the tailnet policy.
 
-Events are server-sent: `call` (a call summary, on arrival and on completion) and `hook` (`{"id"}` of a hook that was created, changed, deleted or expired, or whose tunnel attached or detached). A stream that falls 64 events behind is closed; clients reconnect and refetch. Since the caller is authorized only when a stream opens, every stream also ends after 5 minutes, and the stream of one hook (or its calls) ends once that hook is deleted or expires.
+Events are server-sent: `call` (a call summary, on arrival and on completion) and `hook` (`{"id"}` of a hook that was created, changed, deleted or expired, or whose tunnel attached or detached). A stream that falls 64 events behind is closed; clients reconnect and refetch. Opening one needs a role (`403` otherwise) and a free slot: a node may hold 8 streams open (the web app opens one per tab), the next gets `429`. Each stream identifies its viewer again every `--revalidate-interval` and filters with the new identity (§5.5); it ends once the viewer holds no role, and the stream of one hook (or its calls) once that hook is deleted, expires or is no longer visible to them. Every stream also ends after 5 minutes, as a backstop.
+
+Every API response carries `Cache-Control: no-store`. Access decisions answer as §5.8 says: `404` for a hook the caller may not see, `403` for one they may see but not act on.
 
 - **Hook IDs** are short, opaque and random, with a prefix (`h_`), so they never collide with the UI's `/hooks/new`. Hook paths contain slashes, so they can't serve as IDs.
 - **Validation errors** are `422` problem responses with a per-field `errors` list. A field error that comes from a grant names the limiting rule, for example "channel `billing` is not matched by your receiver patterns `prod`, `staging.*`".
@@ -390,7 +416,7 @@ The UI is a React single-page app in `web/`, built with Vite and styled with Tai
 - **Channels:** your receive and send patterns and the channels your hooks are in; admins can switch to every channel in use (`?all=true`).
 - **Channel:** one channel's hooks, and whether you may receive and send on it. Channel names everywhere else (the hook list, the hook, the admin table) link here; from the admin table and another user's hook, with `?all=true`.
 - **No access:** what the caller is missing, with an example grant.
-- **Admin:** all hooks and tunnels (metadata only), with delete.
+- **Admin:** all hooks and tunnels in the admin's channels (metadata only), with delete.
 - **Licenses:** the open-source components in the relay, searchable and filtered by ecosystem and license (each filter counts against the others), each opening its license and notice text, and the notices as a download. Open to viewers without a role.
 
 Every page, including the no-access and unidentified states, ends in a footer with the relay's version and commit (linked to GitHub), and links to the licenses and the repository.
@@ -613,7 +639,7 @@ tsrelay --version                                 fang; there is no `version` su
 
 A hook can be made reachable from the internet through Tailscale Funnel, opt-in at two levels: the operator runs the relay with `--funnel`, and the hook's owner sets it `public`. Everything else — the UI, the API, `/~user/hook` routes and static files — stays tailnet-only. The relay does no sender authentication for public calls; apps are expected to verify the provider's signature themselves, which works because bodies are forwarded byte-exact (§7.2), as third-party webhooks (Stripe, GitHub, Twilio) already assume.
 
-**Configuration:** `--funnel` (default `false`) opens the public listener; `--funnel-port` (default `443`, or `8443`/`10000`, the only ports Funnel supports) and `--funnel-max-body-bytes` (default 25 MiB, GitHub's webhook maximum) bound it. `--funnel` requires `--tls`. Startup fails with a clear message if the policy denies the node the `funnel` node attribute for this port, or if Funnel is requested without HTTPS enabled. Whether a user may mark their own hooks public is a policy decision: a `"public": true` field on a receiver grant value (§5.2), merged by OR and meaningless without `"roles": ["receiver"]` (§5.3).
+**Configuration:** `--funnel` (default `false`) opens the public listener; `--funnel-port` (default `443`, or `8443`/`10000`, the only ports Funnel supports) and `--funnel-max-body-bytes` (default 25 MiB, GitHub's webhook maximum) bound it. `--funnel` requires `--tls`. Startup fails with a clear message if the policy denies the node the `funnel` node attribute for this port, or if Funnel is requested without HTTPS enabled. Whether a user may mark their own hooks public is a policy decision: a `"public": true` field on a receiver grant value (§5.2), scoped to that value's channels and meaningless without `"roles": ["receiver"]` (§5.3).
 
 **URL and token:** `https://<relay MagicDNS name>[:port]/+{token}/{remainder...}`, the port omitted at 443; `{remainder}` and the query string are forwarded exactly as for tailnet hooks (§4), and `/+` mirrors `/~`. Each public hook carries a `PublicToken`: 16 bytes of `crypto/rand`, base64url, 22 characters. It is generated when `public` goes false→true, cleared on true→false, and replaced on an explicit rotate (`POST /hooks/{id}/rotate-public-url`, or `tsrelay hooks rotate-url`). The owner can always see it; it never appears in audit records, spans or metric labels.
 
@@ -621,6 +647,6 @@ A hook can be made reachable from the internet through Tailscale Funnel, opt-in 
 
 **Request handling:** `PublicHandler()` answers a plain `404` for every path that doesn't start with `/+`, revealing nothing about what else the relay serves. A public call runs the ordinary pipeline (§7.1) with a pre-built anonymous sender, routed by its token — scanning hooks linearly, like `Route` does, rather than through a separate index. An unknown token, or one whose hook isn't currently public, fails routing outright: it gets the same `404 hook_not_found` as any other missing hook, before the body-size or rate-limit checks and without ever looking for a tunnel. A hook that is public but whose owner has since lost the `public` grant routes normally — its body cap (`min(--funnel-max-body-bytes, hook.maxBodyBytes)`, `413`) and rate limit (`429`) are checked like any call — and only turns into that same `404` once a tunnel is in hand, already attached or after a successful hold; if the hold times out instead, the caller gets the ordinary `561 tunnel_unavailable`. The relay strips every incoming `Tsrelay-*`, `X-Forwarded-*`, `Forwarded`, `Traceparent`, `Tracestate` and `Baggage` header and sets `Tsrelay-Sender-Public: true`, `Tsrelay-Hook`, `Tsrelay-Call-Id` and its own `X-Forwarded-*` headers; there is no `Tsrelay-Sender-Node/Tags/Login`, since there is no tailnet identity. The hook's rate-limit bucket (`rateLimit`, §8) is shared between its public and tailnet callers, so a public token holder can exhaust the same bucket a tailnet sender relies on.
 
-**Revocation:** the tunnel revalidator (§5.5) also refreshes whether each tunnel's owner still holds the `public` grant, so losing it stops public delivery within one `--revalidate-interval`, the same as any other revocation. Gaining it takes effect sooner: when the owner makes a hook public, or updates one that is, the relay identifies the node of the hook's tunnel again and lets it receive public calls if that node now holds the grant. The caller's grants never decide this, since the caller may be on another node. The hook's `public` flag and token are left alone, so restoring the grant brings the same URL back.
+**Revocation:** every call from the internet, and every replay of one, is checked at delivery against the grants of the tunnel's node: its `public` patterns must match the hook's channel. Losing the grant never detaches the tunnel, which keeps serving the hook's tailnet calls; its internet calls get `404 hook_not_found`. The revalidator (§5.5) refreshes the tunnel's grants, so losing the grant stops public delivery within one `--revalidate-interval`. Gaining it takes effect sooner: when the owner changes a hook's channel or `public` flag, the relay identifies the node of the hook's tunnel again and records its grants. The caller's grants never decide this, since the caller may be on another node. The hook's `public` flag and token are left alone, so restoring the grant brings the same URL back.
 
-**API and CLI:** hook JSON gains `public` (visible to anyone who can see the hook) and `publicUrl` (owner only, and only while the hook is public — admins see `public` but never the URL). `GET /` gains `public` (the caller's own grant) and `funnel` (a bool: whether this relay serves Funnel at all). `tsrelay http`, `hooks create` and `hooks update` take `--public`; `tsrelay hooks rotate-url <hook>` issues a new token. Granting `public` without the policy field is a `422` field error on `public`, the same shape as any other disallowed setting, not a `403`.
+**API and CLI:** hook JSON gains `public` (visible to anyone who can see the hook) and `publicUrl` (owner only, and only while the hook is public — admins see `public` but never the URL). `GET /` gains `public` (the channel patterns in which the caller may make hooks public) and `funnel` (a bool: whether this relay serves Funnel at all). `tsrelay http`, `hooks create` and `hooks update` take `--public`; `tsrelay hooks rotate-url <hook>` issues a new token. Setting `public` on a hook in a channel the caller's `public` grant doesn't match is a `422` field error on `public`, the same shape as any other disallowed setting, not a `403`.

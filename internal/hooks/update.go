@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 )
 
@@ -123,7 +124,7 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cur, ok := m.hooks[id]
-	if !ok || !owner.IsUser() || cur.Owner != owner.UserID {
+	if !ok || access.View(owner, cur.Access()) != access.Owner {
 		return Hook{}, nil, ErrNotFound
 	}
 	h := cur

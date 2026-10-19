@@ -59,6 +59,10 @@ func IsAdmin(v authz.Identity) bool { return v.IsUser() && v.Grants.Has(authz.Ro
 // are checked against the hook's fields by the caller.
 func MayCreate(id authz.Identity) bool { return id.IsUser() && id.Grants.Has(authz.RoleReceiver) }
 
+// MayAttach reports whether id may attach tunnels at all; Serve decides each
+// hook.
+func MayAttach(id authz.Identity) bool { return id.IsUser() && id.Grants.Has(authz.RoleReceiver) }
+
 func MayReceive(g authz.Effective, channel string) bool {
 	return g.Allows(authz.RoleReceiver, channel)
 }
@@ -129,6 +133,10 @@ func ServeInternet(node authz.Identity, h Hook) error {
 func Send(sender authz.Identity, h Hook) bool {
 	return sender.Grants.Allows(authz.RoleSender, h.Channel)
 }
+
+// MaySend reports whether sender may call hooks at all; Send decides each
+// hook.
+func MaySend(sender authz.Identity) bool { return sender.Grants.Has(authz.RoleSender) }
 
 // MayStream reports whether id holds any role that can watch events; what it
 // sees is still filtered by View.

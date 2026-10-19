@@ -57,7 +57,7 @@ func (m *Manager) RotatePublicToken(ctx context.Context, owner authz.Identity, i
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	h, ok := m.hooks[id]
-	if !ok || !owner.IsUser() || h.Owner != owner.UserID {
+	if !ok || access.View(owner, h.Access()) != access.Owner {
 		return Hook{}, ErrNotFound
 	}
 	if !h.Public {

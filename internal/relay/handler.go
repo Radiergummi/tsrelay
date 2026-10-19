@@ -207,7 +207,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			at := ct.child(h.Tracer, "tsrelay.authorize")
 			sender, err = h.Identifier.Identify(at.ctx, r.RemoteAddr)
 			at.end(attribute.KeyValue{}, false)
-			if err != nil || !sender.Grants.Has(authz.RoleSender) {
+			if err != nil || !access.MaySend(sender) {
 				h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender),
 					slog.String("action", "call"), slog.String("reason", "no sender role"))
 				problem.New(http.StatusForbidden, problem.SenderForbidden, "this node has no sender role on the relay").Write(rec)
@@ -318,7 +318,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hook, segs, eff = now, nowSegs, h.effective(now, public)
 	}
 
-	if tun.Owner.UserID != hook.Owner {
+	if access.View(tun.Owner, hook.Access()) != access.Owner {
 		// The lifecycle attaches only the owner's tunnels; never deliver a
 		// call to another user's if that invariant is ever broken.
 		delivery = time.Time{}
