@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 )
 
@@ -24,7 +25,7 @@ func newPublicToken() string {
 
 // validatePublic checks that grants let the owner make hooks public in channel.
 func validatePublic(grants authz.Effective, channel string) []FieldError {
-	if grants.AllowsPublic(channel) {
+	if access.MayPublish(grants, channel) {
 		return nil
 	}
 	return []FieldError{{"public", fmt.Sprintf("your grants do not allow public hooks in channel %q", channel)}}

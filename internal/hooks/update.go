@@ -142,7 +142,6 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 		if req.Channel.Value != nil {
 			h.Channel = *req.Channel.Value
 		}
-		errs = append(errs, validateChannel(h.Channel, owner.Grants)...)
 	}
 	if req.Description.Set {
 		h.Description = ""
@@ -168,7 +167,10 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 			h.Public, h.PublicToken = false, ""
 		}
 	}
-	if h.Public && (req.Public.Set || req.Channel.Set) && (!cur.Public || h.Channel != cur.Channel) {
+	// The resulting hook is validated, not just the request: a hook left in a
+	// channel the owner's grants no longer cover must be moved, not edited in place.
+	errs = append(errs, validateChannel(h.Channel, owner.Grants)...)
+	if h.Public {
 		errs = append(errs, validatePublic(owner.Grants, h.Channel)...)
 	}
 	if apply(&h.ExpiresAt, req.ExpiresAt); req.ExpiresAt.Set || req.Ephemeral.Set {
