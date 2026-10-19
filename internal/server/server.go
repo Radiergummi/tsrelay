@@ -12,6 +12,7 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/audit"
+	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/events"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
@@ -84,7 +85,12 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	s.inspect.OnChange = func(owner tailcfg.UserID, channel string, sum inspect.Summary) {
 		s.events.Publish(events.Event{Type: events.TypeCall, Owner: owner, Channel: channel, HookID: string(sum.HookID), Data: sum})
 	}
-	s.tunnels = lifecycle.New(lifecycle.Config{Hooks: mgr, Inspect: s.inspect, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, PublicBaseURL: cfg.PublicBaseURL})
+	s.tunnels = lifecycle.New(lifecycle.Config{Hooks: mgr, Inspect: s.inspect, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, PublicBaseURL: cfg.PublicBaseURL,
+		Identify: func(ctx context.Context, remoteAddr string) (authz.Identity, error) {
+			ctx, cancel := context.WithTimeout(ctx, identifyTimeout)
+			defer cancel()
+			return id.Identify(ctx, remoteAddr)
+		}})
 	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect, PublicMaxBody: cfg.PublicMaxBody}
 
 	version := cmp.Or(cfg.Version, "dev")

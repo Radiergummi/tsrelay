@@ -38,7 +38,7 @@ func newPublicEnv(t *testing.T) *publicEnv {
 // attachPublic attaches a tunnel whose owner may receive public calls.
 func (e *publicEnv) attachPublic(local http.Handler) *tunnel.Tunnel {
 	tun, _ := e.attach(local, tunnel.Options{})
-	tun.SetPublic(true)
+	tun.SetGrants(publicReceiver.Grants)
 	return tun
 }
 
@@ -116,9 +116,9 @@ func TestPublicNotFoundIsUniform(t *testing.T) {
 	// An unknown token.
 	wantProblem(t, e.post("/+AAAAAAAAAAAAAAAAAAAAAA/x", nil), 404, "hook_not_found")
 	// The owner lost the public grant.
-	tun.SetPublic(false)
+	tun.SetGrants(receiver.Grants)
 	wantProblem(t, e.post(e.hook.PublicRoute()+"/x", nil), 404, "hook_not_found")
-	tun.SetPublic(true)
+	tun.SetGrants(publicReceiver.Grants)
 	// The hook was made private again: its old token no longer routes.
 	old := e.hook.PublicRoute()
 	if _, _, err := e.mgr.Update(context.Background(), publicReceiver, e.hook.ID,

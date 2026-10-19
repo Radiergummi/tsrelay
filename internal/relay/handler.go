@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
@@ -306,7 +307,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if public && !tun.Public() {
+	if public && access.ServeInternet(tun.Identity(), hook.Access()) != nil {
 		// The owner's grants no longer allow public hooks. The caller gets
 		// the same answer as for an unknown token; the owner sees the call.
 		delivery = time.Time{}

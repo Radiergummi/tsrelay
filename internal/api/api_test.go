@@ -55,7 +55,7 @@ func newEnv(t *testing.T) *env {
 	al := audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	// Tunnels are told public URLs as if Funnel were on; the tests that turn
 	// it on for the API set e.api.PublicBaseURL to the same base.
-	e.reg = lifecycle.New(lifecycle.Config{Hooks: e.mgr, Inspect: e.in, Audit: al, BaseURL: "https://tsrelay.example.ts.net", PublicBaseURL: publicBase})
+	e.reg = lifecycle.New(lifecycle.Config{Hooks: e.mgr, Inspect: e.in, Audit: al, BaseURL: "https://tsrelay.example.ts.net", PublicBaseURL: publicBase, Identify: e.fake.Identify})
 	rh := &relay.Handler{Identifier: e.fake, Hooks: e.mgr, Tunnels: e.reg, Audit: al, Inspect: e.in}
 	a := &API{
 		Identifier: e.fake, Hooks: e.mgr, Tunnels: e.reg, Inspect: e.in,
@@ -321,6 +321,7 @@ func (e *env) openTunnelQ(id authz.Identity, extra string, hookIDs ...string) (c
 // attach makes tun serve hookID, as the hook's owner would.
 func (e *env) attach(owner authz.Identity, tun *tunnel.Tunnel, hookID string) {
 	e.t.Helper()
+	tun.Owner = owner
 	tk, err := e.reg.Admit(context.Background(), owner, []hooks.ID{hooks.ID(hookID)}, "", false)
 	if err != nil {
 		e.t.Fatal(err)

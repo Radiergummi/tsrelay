@@ -102,6 +102,7 @@ func (e *env) attach(local http.Handler, opts tunnel.Options) (*tunnel.Tunnel, f
 // attachHook makes tun serve id, as the hook's owner would.
 func (e *env) attachHook(tun *tunnel.Tunnel, id hooks.ID) {
 	e.t.Helper()
+	tun.Owner = receiver
 	tk, err := e.reg.Admit(context.Background(), receiver, []hooks.ID{id}, "", false)
 	if err != nil {
 		e.t.Fatal(err)

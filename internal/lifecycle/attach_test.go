@@ -39,9 +39,11 @@ func controlPair(t *testing.T) (*tunnel.Tunnel, func(), chan tunnel.Control) {
 	return tun, drop, controls
 }
 
-// admitAttach admits ids for owner and attaches tun to them.
+// admitAttach admits ids for owner and attaches tun to them, as owner's
+// node would.
 func admitAttach(t *testing.T, l *Lifecycle, owner authz.Identity, tun *tunnel.Tunnel, ids ...hooks.ID) {
 	t.Helper()
+	tun.Owner = owner
 	tk, err := l.Admit(context.Background(), owner, ids, "", false)
 	if err != nil {
 		t.Fatal(err)
@@ -290,5 +292,39 @@ func TestTicketCloseReleasesLock(t *testing.T) {
 		tk.Close()
 	case <-time.After(time.Second):
 		t.Fatal("Admit blocked after Close")
+	}
+}
+
+// A hook whose channel changes between Admit and Attach to one the node may
+// not receive is not attached, and the client is told it was revoked.
+func TestAttachRechecksChannel(t *testing.T) {
+	l, mgr := newLifecycle(t)
+	devOnly := identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"channels":["dev"]}`)
+	ids := createHooks(t, mgr, 2, hooks.CreateRequest{Channel: "dev"})
+	keep, moved := ids[0], ids[1]
+	tk, ae := l.Admit(context.Background(), devOnly, []hooks.ID{keep, moved}, "", false)
+	if ae != nil {
+		t.Fatal(ae)
+	}
+	prod := "prod"
+	if _, _, err := l.Update(context.Background(), receiver, moved, hooks.UpdateRequest{Channel: hooks.Opt[string]{Set: true, Value: &prod}}); err != nil {
+		t.Fatal(err)
+	}
+
+	tun, _, controls := controlPair(t)
+	tun.Owner = devOnly
+	tk.Attach(context.Background(), tun, nil)
+	if _, ok := l.Lookup(moved); ok {
+		t.Fatal("the hook moved to a channel the node may not receive was attached")
+	}
+	if cur, ok := l.Lookup(keep); !ok || cur != tun {
+		t.Fatal("the remaining hook was not attached")
+	}
+	got := byType(t, controls, 2)
+	if hs := got[tunnel.ControlRevoked]; len(hs) != 1 || hs[0].ID != string(moved) {
+		t.Errorf("revoked = %+v, want the moved hook", hs)
+	}
+	if hs := got[tunnel.ControlAttached]; len(hs) != 1 || hs[0].ID != string(keep) {
+		t.Errorf("attached = %+v, want only the remaining hook", hs)
 	}
 }

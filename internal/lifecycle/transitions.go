@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/events"
@@ -102,8 +104,17 @@ func (l *Lifecycle) Create(ctx context.Context, actor authz.Identity, req hooks.
 // Update applies req to the hook id on behalf of actor, as
 // hooks.Manager.Update does, and announces the change: in the audit log, as
 // a hook event, and to the tunnel serving the hook. An update that changes
-// no field is not announced.
+// no field is not announced. A change of the channel or public flag is
+// checked against the serving tunnel's node, see recheck.
 func (l *Lifecycle) Update(ctx context.Context, actor authz.Identity, id hooks.ID, req hooks.UpdateRequest) (hooks.Hook, []string, error) {
+	h, changed, err := l.update(ctx, actor, id, req)
+	if err == nil && slices.ContainsFunc(changed, func(f string) bool { return f == "channel" || f == "public" }) {
+		l.recheck(ctx, id)
+	}
+	return h, changed, err
+}
+
+func (l *Lifecycle) update(ctx context.Context, actor authz.Identity, id hooks.ID, req hooks.UpdateRequest) (hooks.Hook, []string, error) {
 	l.announce.Lock()
 	defer l.announce.Unlock()
 	h, changed, err := l.cfg.Hooks.Update(ctx, actor, id, req)
@@ -115,9 +126,17 @@ func (l *Lifecycle) Update(ctx context.Context, actor authz.Identity, id hooks.I
 }
 
 // RotatePublicToken gives the public hook id a new token on behalf of
-// actor, as hooks.Manager.RotatePublicToken does, and announces the change
-// as Update does.
+// actor, as hooks.Manager.RotatePublicToken does, and announces and checks
+// the change as Update does.
 func (l *Lifecycle) RotatePublicToken(ctx context.Context, actor authz.Identity, id hooks.ID) (hooks.Hook, error) {
+	h, err := l.rotatePublicToken(ctx, actor, id)
+	if err == nil {
+		l.recheck(ctx, id)
+	}
+	return h, err
+}
+
+func (l *Lifecycle) rotatePublicToken(ctx context.Context, actor authz.Identity, id hooks.ID) (hooks.Hook, error) {
 	l.announce.Lock()
 	defer l.announce.Unlock()
 	h, err := l.cfg.Hooks.RotatePublicToken(ctx, actor, id)
@@ -126,6 +145,50 @@ func (l *Lifecycle) RotatePublicToken(ctx context.Context, actor authz.Identity,
 	}
 	l.updated(ctx, actor, h, []string{"publicUrl"})
 	return h, nil
+}
+
+// recheck identifies the node of the tunnel serving id again, records its
+// grants, and revokes the hook if the node may no longer serve it. The
+// change may have been made from another node, so the tunnel's own node
+// decides. Losing the right to serve the hook on the internet only stops
+// public calls (the relay checks that per call); it never revokes. If the
+// node cannot be identified, its last known grants decide. It runs with no
+// lock held: WhoIs may be slow.
+func (l *Lifecycle) recheck(ctx context.Context, id hooks.ID) {
+	t, ok := l.Lookup(id)
+	if !ok {
+		return
+	}
+	node := t.Identity()
+	if l.cfg.Identify != nil {
+		if got, err := l.cfg.Identify(ctx, t.RemoteAddr); err == nil {
+			node = got
+			if got.IsUser() && got.UserID == t.Owner.UserID {
+				t.SetGrants(got.Grants)
+			}
+		}
+	}
+	h, ok := l.cfg.Hooks.Get(id)
+	if !ok {
+		return // deleted meanwhile; the delete detached it
+	}
+	if err := access.Serve(node, h.Access()); err != nil {
+		l.Revoke(ctx, t, []hooks.ID{id}, RevokeReason(err))
+	}
+}
+
+// RevokeReason explains an access.Serve refusal in a revocation.
+func RevokeReason(err error) string {
+	switch {
+	case errors.Is(err, access.ErrNotUser):
+		return "the node no longer belongs to a user"
+	case errors.Is(err, access.ErrOtherUser):
+		return "the node belongs to another user now"
+	case errors.Is(err, access.ErrNoReceiver):
+		return "the receiver role was revoked"
+	default:
+		return "the grants no longer cover the hook's channel"
+	}
 }
 
 func (l *Lifecycle) updated(ctx context.Context, actor authz.Identity, h hooks.Hook, changed []string) {

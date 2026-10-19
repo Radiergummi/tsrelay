@@ -70,7 +70,7 @@ func newPublicHook(t *testing.T, e *env) hooks.Hook {
 	t.Cleanup(e.cli(string(h.ID), local.URL))
 	e.waitFor(func() bool { _, ok := e.srv.tunnels.Lookup(h.ID); return ok })
 	tun, _ := e.srv.tunnels.Lookup(h.ID)
-	tun.SetPublic(true)
+	tun.SetGrants(publicReceiver.Grants)
 	return h
 }
 

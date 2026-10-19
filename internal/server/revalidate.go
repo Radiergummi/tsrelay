@@ -4,12 +4,14 @@ import (
 	"context"
 	"time"
 
-	"github.com/Radiergummi/tsrelay/internal/authz"
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/Radiergummi/tsrelay/internal/lifecycle"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
-// identifyTimeout bounds one WhoIs during revalidation.
+// identifyTimeout bounds one WhoIs during revalidation, and when a hook
+// change is checked against its tunnel's node.
 const identifyTimeout = 10 * time.Second
 
 // maxIdentifyFailures is how many revalidations in a row may fail to identify
@@ -66,20 +68,22 @@ func (s *Server) check(ctx context.Context, t *tunnel.Tunnel, hookIDs []hooks.ID
 		}
 		delete(s.identifyFailures, t)
 		return hookIDs, "the node could not be identified"
-	case !id.IsUser():
-		return hookIDs, "the node no longer belongs to a user"
-	case id.UserID != t.Owner.UserID:
-		return hookIDs, "the node belongs to another user now"
-	case !id.Grants.Has(authz.RoleReceiver):
-		return hookIDs, "the receiver role was revoked"
 	}
-	t.SetPublic(len(id.Grants.PublicPatterns) > 0)
+	if id.IsUser() && id.UserID == t.Owner.UserID {
+		t.SetGrants(id.Grants)
+	}
 	var revoked []hooks.ID
+	var reason string
 	for _, hid := range hookIDs {
 		// A deleted hook is skipped: its deletion detaches it.
-		if h, ok := s.hooks.Get(hid); ok && !id.Grants.Allows(authz.RoleReceiver, h.Channel) {
+		h, ok := s.hooks.Get(hid)
+		if !ok {
+			continue
+		}
+		if err := access.Serve(id, h.Access()); err != nil {
 			revoked = append(revoked, hid)
+			reason = lifecycle.RevokeReason(err)
 		}
 	}
-	return revoked, "the grants no longer cover the hook's channel"
+	return revoked, reason
 }
