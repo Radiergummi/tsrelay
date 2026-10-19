@@ -3,11 +3,14 @@ package lifecycle
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
@@ -30,7 +33,8 @@ func newLifecycle(t *testing.T) (*Lifecycle, *hooks.Manager) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(Config{Hooks: mgr, BaseURL: "https://relay", PublicBaseURL: "https://public"}), mgr
+	al := audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	return New(Config{Hooks: mgr, Audit: al, BaseURL: "https://relay", PublicBaseURL: "https://public"}), mgr
 }
 
 // createHooks creates n hooks and returns their IDs.
