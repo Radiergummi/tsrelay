@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -262,4 +263,56 @@ func TestHeldCallReauthorized(t *testing.T) {
 		defer resp.Body.Close()
 		wantProblem(t, resp, 404, problem.HookNotFound)
 	})
+}
+
+// A held call is routed again from the address it was sent to: a hook
+// renamed meanwhile does not take the call along, and neither hook gets it.
+func TestHeldCallDoesNotFollowRename(t *testing.T) {
+	e := newEnv(t)
+	got := e.call("/~moritz/cb", "x")
+	e.waitHeld(1)
+	if _, _, err := e.mgr.Update(context.Background(), receiver, e.hook.ID,
+		hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new("b")}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.mgr.Create(context.Background(), receiver, hooks.CreateRequest{Path: "cb"}); err != nil {
+		t.Fatal(err)
+	}
+	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("the held call followed the renamed hook")
+	}), tunnel.Options{})
+	if res := <-got; res.status != 404 || res.code != problem.HookNotFound {
+		t.Fatalf("held call after rename = %+v", res)
+	}
+}
+
+// A held call's sender is identified again once a tunnel attaches: one
+// whose grants no longer cover the hook's channel, or who cannot be
+// identified at all, gets the 404 at once and reaches nobody.
+func TestHeldCallReidentifiesSender(t *testing.T) {
+	refused := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("the held call was delivered")
+	})
+	for name, change := range map[string]func(e *env){
+		"grants changed": func(e *env) {
+			e.fake.Update(identify.Tagged("worker", []string{"tag:prod-worker"}, `{"roles":["sender"],"channels":["staging"]}`))
+		},
+		"node offline": func(e *env) { e.fake.Fail(errors.New("whois: node offline")) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t)
+			got := e.call("/~moritz/cb", "x")
+			e.waitHeld(1)
+			change(e)
+			attached := time.Now()
+			e.attach(refused, tunnel.Options{})
+			res := <-got
+			if res.status != 404 || res.code != problem.HookNotFound {
+				t.Fatalf("held call = %+v", res)
+			}
+			if late := time.Since(attached); late > 5*time.Second {
+				t.Fatalf("refused %v after the attach", late)
+			}
+		})
+	}
 }

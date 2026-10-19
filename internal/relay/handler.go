@@ -46,6 +46,9 @@ const (
 // DefaultHoldQueue is how many calls per hook may wait for a tunnel at once.
 const DefaultHoldQueue = 100
 
+// reidentifyTimeout bounds identifying a held call's sender again.
+const reidentifyTimeout = 5 * time.Second
+
 // OutcomeSenderCanceled is the audit error of a call whose sender went away
 // before it completed. Nobody receives it, so it is no problem code.
 const OutcomeSenderCanceled = "sender_canceled"
@@ -184,7 +187,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	var segs int
-	var found bool
 	var token string // a public call's token
 	if public {
 		// An internet client has no tailnet identity: sender stays empty,
@@ -195,10 +197,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 			return
 		}
-		hook, found = h.Hooks.RoutePublic(token)
 	} else {
-		slug, rest, ok := splitRoute(r.URL.Path)
-		if !ok {
+		if _, _, ok := splitRoute(r.URL.Path); !ok {
 			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 			return
 		}
@@ -215,10 +215,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		hook, segs, found = h.Hooks.Route(slug, rest)
 	}
-	if found && encodedSlashIn(r.URL, 1+segs) {
-		found = false // the decoded and escaped paths would split differently
+	hook, found := h.reroute(r, token)
+	if found && !public {
+		segs = strings.Count(hook.Path, "/") + 1
 	}
 	if inj != nil && found && hook.ID != inj.hook {
 		found = false // the path now belongs to another hook
@@ -235,7 +235,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			body.capture, rec.capture = record.reqBuf, record.respBuf
 		}
 	}
-	if !found || (inj == nil && !public && !sender.Grants.Allows(authz.RoleSender, hook.Channel)) {
+	if !found || (inj == nil && !public && !access.Send(sender, hook.Access())) {
 		if found {
 			ct.event("channel_denied")
 			h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender), audit.Hook(hook),
@@ -296,18 +296,41 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			problem.New(problem.StatusTunnelUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook").Write(rec)
 			return
 		}
-		if !h.stillRoutes(hook.ID, token, sender, inj == nil && !public) {
-			// The hook's public token or channel changed while the call
-			// waited: it gets the answer it would get if it arrived now.
+		// The call gets the answer it would get if it arrived now: its
+		// address must still route to the same hook, and its sender, as
+		// identified again, must still be allowed the hook's channel.
+		now, ok := h.reroute(r, token)
+		reason := "the hook changed while the call was held"
+		if ok && now.ID == hook.ID && inj == nil && !public {
+			ictx, cancel := context.WithTimeout(ctx, reidentifyTimeout)
+			again, err := h.Identifier.Identify(ictx, r.RemoteAddr)
+			cancel()
+			if err != nil || !access.Send(again, now.Access()) {
+				ok, reason = false, "the sender lost access while the call was held"
+			} else {
+				sender = again
+			}
+		}
+		if !ok || now.ID != hook.ID {
 			delivery = time.Time{}
 			h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender), audit.Hook(hook),
-				slog.String("action", "call"), slog.String("reason", "the hook changed while the call was held"))
+				slog.String("action", "call"), slog.String("reason", reason))
 			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 			return
 		}
+		hook = now
 	}
 
-	if public && access.ServeInternet(tun.Identity(), hook.Access()) != nil {
+	if tun.Owner.UserID != hook.Owner {
+		// The lifecycle attaches only the owner's tunnels; never deliver a
+		// call to another user's if that invariant is ever broken.
+		delivery = time.Time{}
+		h.Audit.Slog().Error("tunnel owner does not own the hook", "hookID", string(hook.ID), "tunnel", tun.ID)
+		problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
+		return
+	}
+
+	if internet && access.ServeInternet(tun.Identity(), hook.Access()) != nil {
 		// The owner's grants no longer allow public hooks. The caller gets
 		// the same answer as for an unknown token; the owner sees the call.
 		delivery = time.Time{}
@@ -403,16 +426,20 @@ func (h *Handler) dequeue(id hooks.ID) {
 // timeout rounded up to seconds, but at least 5 seconds.
 func holdRetryAfter(hold time.Duration) string { return retryAfter(max(5*time.Second, hold)) }
 
-// stillRoutes reports whether a call routed to hook id before it was held
-// still is: a public call's token must still name the hook, and if
-// checkChannel, the sender's grants must still allow the hook's channel.
-func (h *Handler) stillRoutes(id hooks.ID, token string, sender authz.Identity, checkChannel bool) bool {
+// reroute routes r's original address: a public call's token, or a
+// tailnet call's slug and path. A path whose escaped form would split into
+// other segments than its decoded one routes nowhere.
+func (h *Handler) reroute(r *http.Request, token string) (hooks.Hook, bool) {
 	if token != "" {
-		now, ok := h.Hooks.RoutePublic(token)
-		return ok && now.ID == id
+		hook, ok := h.Hooks.RoutePublic(token)
+		return hook, ok && !encodedSlashIn(r.URL, 1)
 	}
-	now, ok := h.Hooks.Get(id)
-	return ok && (!checkChannel || sender.Grants.Allows(authz.RoleSender, now.Channel))
+	slug, rest, ok := splitRoute(r.URL.Path)
+	if !ok {
+		return hooks.Hook{}, false
+	}
+	hook, segs, ok := h.Hooks.Route(slug, rest)
+	return hook, ok && !encodedSlashIn(r.URL, 1+segs)
 }
 
 func (h *Handler) hookExists(id hooks.ID) bool {

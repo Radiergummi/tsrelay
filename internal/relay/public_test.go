@@ -10,6 +10,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
@@ -226,5 +227,26 @@ func TestPublicReplayHeaders(t *testing.T) {
 	}
 	if !c.Sender.Public || c.Kind != inspect.KindReplay {
 		t.Errorf("call = %+v, want a replay from a public sender", c)
+	}
+}
+
+// A replay of a public call is checked like a public call: once the
+// tunnel's grants lose public access to the hook's channel, the replay is
+// refused, and the owner sees it refused.
+func TestReplayOfPublicCallNeedsPublicGrant(t *testing.T) {
+	e := newPublicEnv(t)
+	tun := e.attachPublic(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("the replay was delivered")
+	}))
+	tun.SetGrants(receiver.Grants)
+	from := httptest.NewRequest("POST", "http://relay.test/hooks/x/calls/c/replay", nil)
+	c, err := e.h.Inject(context.Background(), Injection{
+		Hook: e.hook, Kind: inspect.KindReplay, ReplayOf: "c_orig", Public: true, Method: "POST", From: from,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Outcome != problem.HookNotFound || c.Status != 404 {
+		t.Fatalf("call = %+v, want refused with %s", c, problem.HookNotFound)
 	}
 }

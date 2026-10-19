@@ -397,3 +397,21 @@ func TestEncodedSlashInPrefixIsNotFound(t *testing.T) {
 		wantProblem(t, e.do(sender, "GET", p, nil, nil), 404, problem.HookNotFound)
 	}
 }
+
+// Delivery asserts that the tunnel's owner owns the hook: the lifecycle
+// should never attach another user's tunnel, but if it did, the call is
+// refused like a missing hook instead of reaching that user.
+func TestDeliveryAssert(t *testing.T) {
+	e := newEnv(t)
+	tun, _ := tunneltest.Pair(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("the call reached another user's tunnel")
+	}), tunnel.Options{}, nil)
+	tun.Owner = identify.User("other", "other@example.com", 2, `{"roles":["receiver"]}`)
+	tk, err := e.reg.Admit(context.Background(), receiver, []hooks.ID{e.hook.ID}, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tk.Attach(context.Background(), tun, nil)
+	wantProblem(t, e.do(sender, "POST", "/~moritz/cb", nil, nil), 404, problem.HookNotFound)
+	e.waitLog(`"level":"ERROR","msg":"tunnel owner does not own the hook"`)
+}
