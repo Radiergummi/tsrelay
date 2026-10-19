@@ -58,7 +58,7 @@ func TestRevalidateRevokesLostChannels(t *testing.T) {
 	controls, _ := e.startClient(keep.ID, lose.ID)
 
 	e.srv.revalidate(ctx)
-	if _, ok := e.srv.tunnels.Lookup(lose.ID); !ok {
+	if _, ok := e.srv.tunnels.Lookup(hooks.ID(lose.ID)); !ok {
 		t.Fatal("revalidation revoked a hook whose grants did not change")
 	}
 
@@ -67,10 +67,10 @@ func TestRevalidateRevokesLostChannels(t *testing.T) {
 	if c := receive(t, controls); c.Type != tunnel.ControlRevoked || len(c.Hooks) != 1 || c.Hooks[0].ID != lose.ID {
 		t.Fatalf("control = %+v, want revoked for %s only", c, lose.ID)
 	}
-	if _, ok := e.srv.tunnels.Lookup(lose.ID); ok {
+	if _, ok := e.srv.tunnels.Lookup(hooks.ID(lose.ID)); ok {
 		t.Fatal("the hook whose channel was revoked is still attached")
 	}
-	if _, ok := e.srv.tunnels.Lookup(keep.ID); !ok {
+	if _, ok := e.srv.tunnels.Lookup(hooks.ID(keep.ID)); !ok {
 		t.Fatal("the hook whose channel is still granted was detached")
 	}
 	// The hook is not deleted: it delivers again once the grant is back.
@@ -97,7 +97,7 @@ func TestRevalidateRevokesTunnel(t *testing.T) {
 	if err := receive(t, done); !errors.Is(err, tunnel.ErrNoHooks) {
 		t.Fatalf("client Run = %v, want ErrNoHooks: the relay closes a fully revoked tunnel", err)
 	}
-	if _, ok := e.srv.tunnels.Lookup(hook.ID); ok {
+	if _, ok := e.srv.tunnels.Lookup(hooks.ID(hook.ID)); ok {
 		t.Fatal("the revoked hook is still attached")
 	}
 }
@@ -113,21 +113,21 @@ func TestRevalidationRacingTakeover(t *testing.T) {
 
 	// The revalidator takes its snapshot while T1 serves the hook...
 	var t1 *tunnel.Tunnel
-	var t1Hooks []string
+	var t1Hooks []hooks.ID
 	for tun, hs := range e.srv.tunnels.Snapshot() {
 		t1, t1Hooks = tun, hs
 	}
 	// ...then T2 takes the hook over...
 	defer e.cli(hook.ID, local.URL)()
 	e.waitFor(func() bool {
-		cur, ok := e.srv.tunnels.Lookup(hook.ID)
+		cur, ok := e.srv.tunnels.Lookup(hooks.ID(hook.ID))
 		return ok && cur != t1
 	})
-	t2, _ := e.srv.tunnels.Lookup(hook.ID)
+	t2, _ := e.srv.tunnels.Lookup(hooks.ID(hook.ID))
 	// ...and only then is the (revoking) result for T1 applied.
-	e.srv.revoke(context.Background(), t1, t1Hooks, "test")
+	e.srv.tunnels.Revoke(context.Background(), t1, t1Hooks, "test")
 
-	if cur, ok := e.srv.tunnels.Lookup(hook.ID); !ok || cur != t2 {
+	if cur, ok := e.srv.tunnels.Lookup(hooks.ID(hook.ID)); !ok || cur != t2 {
 		t.Fatal("a stale revocation of T1 detached the hook from T2")
 	}
 	if resp := e.send(hook, "", nil, nil); resp.StatusCode != 204 {
@@ -148,7 +148,7 @@ func TestRevalidateToleratesTransientIdentifyErrors(t *testing.T) {
 	for range maxIdentifyFailures - 1 {
 		e.srv.revalidate(ctx)
 	}
-	if _, ok := e.srv.tunnels.Lookup(hook.ID); !ok {
+	if _, ok := e.srv.tunnels.Lookup(hooks.ID(hook.ID)); !ok {
 		t.Fatal("transient identify errors revoked the hook")
 	}
 	// A success clears the count, so the next failures start over.
@@ -158,7 +158,7 @@ func TestRevalidateToleratesTransientIdentifyErrors(t *testing.T) {
 	for range maxIdentifyFailures - 1 {
 		e.srv.revalidate(ctx)
 	}
-	if _, ok := e.srv.tunnels.Lookup(hook.ID); !ok {
+	if _, ok := e.srv.tunnels.Lookup(hooks.ID(hook.ID)); !ok {
 		t.Fatal("a success did not reset the failure count")
 	}
 	e.srv.revalidate(ctx)
@@ -179,8 +179,8 @@ func TestRevalidateForgetsGoneTunnels(t *testing.T) {
 	if len(e.srv.identifyFailures) != 1 {
 		t.Fatalf("failure counts = %v, want one", e.srv.identifyFailures)
 	}
-	tun, _ := e.srv.tunnels.Lookup(hook.ID)
-	e.srv.tunnels.Detach(tun)
+	tun, _ := e.srv.tunnels.Lookup(hooks.ID(hook.ID))
+	e.srv.tunnels.Revoke(context.Background(), tun, []hooks.ID{hooks.ID(hook.ID)}, "test")
 	e.srv.revalidate(context.Background())
 	if len(e.srv.identifyFailures) != 0 {
 		t.Fatalf("failure counts = %v, want the detached tunnel forgotten", e.srv.identifyFailures)
@@ -210,7 +210,7 @@ func TestRevalidateRefreshesPublic(t *testing.T) {
 	ctx := context.Background()
 	h, _ := e.api.CreateHook(ctx, hooks.CreateRequest{Path: "cb"})
 	e.startClient(h.ID) // dials as receiver, whose grant has no public
-	tun, _ := e.srv.tunnels.Lookup(h.ID)
+	tun, _ := e.srv.tunnels.Lookup(hooks.ID(h.ID))
 	if tun.Public() {
 		t.Fatal("a tunnel of an owner without the public grant must not start public")
 	}
@@ -225,7 +225,7 @@ func TestRevalidateRefreshesPublic(t *testing.T) {
 	if tun.Public() {
 		t.Fatal("revalidation did not clear the public flag")
 	}
-	if _, ok := e.srv.tunnels.Lookup(h.ID); !ok {
+	if _, ok := e.srv.tunnels.Lookup(hooks.ID(h.ID)); !ok {
 		t.Fatal("losing public must not detach the hook from the tailnet")
 	}
 }

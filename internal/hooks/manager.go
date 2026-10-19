@@ -60,24 +60,17 @@ type Manager struct {
 
 	mu    sync.RWMutex
 	hooks map[ID]Hook
-	// detached records when each hook last had no tunnel. Only ephemeral
-	// hooks are reaped, but all hooks are tracked to keep the logic simple.
-	detached map[ID]time.Time
 }
 
-// NewManager loads all hooks from store. Every loaded hook counts as having
-// just lost its tunnel, so ephemeral hooks get a full grace period after a
-// relay restart.
+// NewManager loads all hooks from store.
 func NewManager(ctx context.Context, store Store, slugs SlugConfig) (*Manager, error) {
 	list, err := store.ListHooks(ctx)
 	if err != nil {
 		return nil, err
 	}
-	m := &Manager{store: store, slugs: slugs, policy: DefaultPolicy, now: time.Now, hooks: map[ID]Hook{}, detached: map[ID]time.Time{}}
-	start := m.now()
+	m := &Manager{store: store, slugs: slugs, policy: DefaultPolicy, now: time.Now, hooks: map[ID]Hook{}}
 	for _, h := range list {
 		m.hooks[h.ID] = h
-		m.detached[h.ID] = start
 	}
 	return m, nil
 }
@@ -223,7 +216,6 @@ func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRe
 		return Hook{}, err
 	}
 	m.hooks[h.ID] = h
-	m.detached[h.ID] = m.now()
 	return h, nil
 }
 
@@ -302,7 +294,6 @@ func (m *Manager) Delete(ctx context.Context, id ID) error {
 		return err
 	}
 	delete(m.hooks, id)
-	delete(m.detached, id)
 	return nil
 }
 
@@ -323,58 +314,4 @@ func (m *Manager) Route(slug, rest string) (Hook, int, bool) {
 		}
 	}
 	return Hook{}, 0, false
-}
-
-// SetAttached records whether a tunnel currently serves the hook.
-func (m *Manager) SetAttached(id ID, attached bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if _, ok := m.hooks[id]; !ok {
-		return
-	}
-	if attached {
-		delete(m.detached, id)
-	} else {
-		m.detached[id] = m.now()
-	}
-}
-
-// Reap deletes ephemeral hooks that have had no tunnel for at least grace,
-// and every hook whose expiry has passed, and returns them. served reports
-// whether a tunnel currently serves a hook;
-// it is the source of truth, because a detach can record "detached" after a
-// newer tunnel has already attached. Served hooks get a fresh grace period.
-func (m *Manager) Reap(ctx context.Context, grace time.Duration, served func(ID) bool) ([]Hook, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	now := m.now()
-	var reaped []Hook
-	for id, since := range m.detached {
-		h := m.hooks[id]
-		if !h.Ephemeral || now.Sub(since) < grace {
-			continue
-		}
-		if served(id) {
-			m.detached[id] = now
-			continue
-		}
-		if err := m.store.DeleteHook(ctx, id); err != nil {
-			return reaped, err
-		}
-		delete(m.hooks, id)
-		delete(m.detached, id)
-		reaped = append(reaped, h)
-	}
-	for id, h := range m.hooks {
-		if !m.expiredLocked(h, now) {
-			continue
-		}
-		if err := m.store.DeleteHook(ctx, id); err != nil {
-			return reaped, err
-		}
-		delete(m.hooks, id)
-		delete(m.detached, id)
-		reaped = append(reaped, h)
-	}
-	return reaped, nil
 }
