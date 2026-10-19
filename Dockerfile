@@ -14,8 +14,10 @@ RUN go mod download
 COPY . .
 COPY --from=web /src/web/dist ./web/dist
 ARG VERSION=dev
+# .git is not in the build context, so the revision is passed in.
+ARG REVISION
 ARG TARGETOS TARGETARCH
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /tsrelay ./cmd/tsrelay
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION}" -o /tsrelay ./cmd/tsrelay
 RUN mkdir -p /out/var/lib/tsrelay
 
 FROM gcr.io/distroless/static-debian12:nonroot

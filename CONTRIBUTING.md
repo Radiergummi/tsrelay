@@ -59,7 +59,7 @@ TSRELAY_LOAD=1 go test ./internal/server -run TestLoad -count=1 -v      # add -c
 
 ## Releases
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`. The macOS binaries are signed with a Developer ID Application certificate and notarized with [rcodesign](https://github.com/indygreg/apple-platform-rs/tree/main/apple-codesign). Their secrets live in a GitHub environment named `release`, limited to `v*` tags, so only the signing job can read them:
+Pushing a `v*` tag runs `.github/workflows/release.yml`. It first runs CI on the tagged commit, and builds nothing unless that passes. The macOS binaries are signed with a Developer ID Application certificate and notarized with [rcodesign](https://github.com/indygreg/apple-platform-rs/tree/main/apple-codesign). Their secrets live in a GitHub environment named `release`, limited to `v*` tags, so only the signing job can read them:
 
 - `MACOS_P12`: the certificate and its private key, exported from Keychain Access as a .p12, base64-encoded (`base64 -i cert.p12 | pbcopy`).
 - `MACOS_P12_PASSWORD`: the password the .p12 was exported with.
