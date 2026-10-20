@@ -302,7 +302,7 @@ Tunnel and transport failures use statuses of their own, 561 to 565, which no co
 | `upstream_unreachable` | 564 Upstream Unreachable | The CLI could not connect to the local target. The CLI reports this as a 564 with its own `Tsrelay-Error`, which the relay passes through; any other `Tsrelay-Error` from the tunnel is dropped. |
 | `upstream_timeout` | 565 Upstream Timeout | No response headers within `responseTimeout`. A response body idle for `idleTimeout` is cut off and recorded with this outcome, after its status was sent. |
 
-A call whose sender went away before it completed is recorded with the outcome `sender_canceled` (audit `error`, `tsrelay_calls_total{outcome}`). Nobody receives it, so it is not a `Tsrelay-Error` code.
+A call whose sender went away before it completed is recorded with the outcome `sender_canceled` (audit `error`, `tsrelay_calls_total{outcome}`). Nobody receives it, so it is not a `Tsrelay-Error` code. A sender that hangs up after the response's last byte leaves an `ok` call: the response went out in full.
 
 ## 8. Hook settings
 
