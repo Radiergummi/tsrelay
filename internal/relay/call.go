@@ -53,6 +53,7 @@ type call struct {
 	waited   time.Duration  // held for a tunnel
 	tunnel   *tunnel.Tunnel // the tunnel the call goes down
 	aborted  bool           // the tunnel failed while streaming the response
+	code     string         // the outcome a step recorded; "" until one does, which means ok
 	bytesIn  int64          // the request body bytes read, as of the end
 	bodyEOF  bool           // the request body was read to the end, as of the end
 }
@@ -132,12 +133,23 @@ func (c *call) deliver() error {
 	return nil
 }
 
+// setOutcome records how the call ended. The first outcome recorded
+// stands: what follows it, such as an abort after the forwarder's answer,
+// is a consequence.
+func (c *call) setOutcome(code string) {
+	if c.code == "" {
+		c.code = code
+	}
+}
+
 // fail answers the sender with the error that ended the call.
 func (c *call) fail(err error) {
 	rf, ok := err.(*refusal)
 	if !ok {
-		return // errSenderGone: nobody is left to answer
+		c.setOutcome(OutcomeSenderCanceled) // errSenderGone: nobody is left to answer
+		return
 	}
+	c.setOutcome(rf.code)
 	if rf.retryAfter != "" {
 		c.rec.Header().Set("Retry-After", rf.retryAfter)
 	}
@@ -263,7 +275,7 @@ func (c *call) hold() error {
 	ht.end(attribute.String("tsrelay.hold.result", string(result)), true)
 	switch result {
 	case holdCanceled:
-		return errSenderGone // as in proxyError
+		return errSenderGone // as in call.proxyError
 	case holdHookGone:
 		return errNoHook
 	case holdQueueFull:
@@ -360,7 +372,9 @@ func (c *call) forward() {
 		// closing the body.
 		ModifyResponse: func(resp *http.Response) error {
 			resp.Header.Del(HeaderCallID)
-			if resp.StatusCode != problem.StatusUpstreamUnreachable || resp.Header.Get(problem.HeaderError) != problem.UpstreamUnreachable {
+			if resp.StatusCode == problem.StatusUpstreamUnreachable && resp.Header.Get(problem.HeaderError) == problem.UpstreamUnreachable {
+				c.setOutcome(problem.UpstreamUnreachable)
+			} else {
 				resp.Header.Del(problem.HeaderError)
 			}
 			stripTsrelay(resp.Trailer)
@@ -373,9 +387,33 @@ func (c *call) forward() {
 		},
 		FlushInterval: -1,
 		BufferPool:    tunnel.Buffers,
-		ErrorHandler:  proxyError,
+		ErrorHandler:  c.proxyError,
 	}
 	proxy.ServeHTTP(&idleWriter{ResponseWriter: c.rec, idle: idle}, c.r)
+}
+
+// proxyError answers a call the app did not answer: the reverse proxy
+// got no response headers through the tunnel.
+func (c *call) proxyError(w http.ResponseWriter, r *http.Request, err error) {
+	var p *problem.Problem
+	switch {
+	case errors.Is(err, tunnel.ErrOverloaded):
+		w.Header().Set("Retry-After", "1")
+		p = problem.New(problem.StatusTunnelOverloaded, problem.TunnelOverloaded, "the tunnel is at its concurrency limit")
+	case errors.Is(err, errResponseTimeout):
+		p = problem.New(problem.StatusUpstreamTimeout, problem.UpstreamTimeout, "the local application did not respond in time")
+	case context.Cause(r.Context()) == errIdleTimeout:
+		p = problem.New(http.StatusRequestTimeout, problem.BodyStalled, "the request body stalled for longer than the hook's idle timeout")
+	case context.Cause(r.Context()) == errBodyTooLarge:
+		p = problem.New(http.StatusRequestEntityTooLarge, problem.BodyTooLarge, "the request body is larger than this hook's limit")
+	case r.Context().Err() != nil:
+		c.setOutcome(OutcomeSenderCanceled) // nobody is left to answer
+		return
+	default:
+		p = problem.New(problem.StatusTunnelLost, problem.TunnelLost, "the tunnel was lost while delivering the call")
+	}
+	c.setOutcome(p.Code)
+	p.Write(w)
 }
 
 // end records how the call ended. Deferred by ServeHTTP, it also sees a
@@ -386,6 +424,7 @@ func (c *call) end() {
 	p := recover()
 	if p != nil {
 		c.aborted = true // the tunnel failed while streaming the response
+		c.setOutcome(c.abortCause())
 	}
 	// One reading of both: the transport may still be reading the body.
 	c.bytesIn, c.bodyEOF = c.body.counts()
@@ -395,28 +434,30 @@ func (c *call) end() {
 	}
 }
 
+// abortCause is why a response stopped mid-stream. A relay-forced abort
+// (idle timeout, an oversized body) sets its own cause directly on ctx, so
+// it is identified before falling back to the sender's own context:
+// SetReadDeadline, used to unblock a stalled read, also cancels the
+// sender's context (parent) as a side effect, and must not be mistaken
+// for the sender leaving.
+func (c *call) abortCause() string {
+	switch cause := context.Cause(c.ctx); {
+	case cause == errIdleTimeout:
+		return problem.UpstreamTimeout
+	case cause == errBodyTooLarge:
+		return problem.BodyTooLarge
+	case c.parent.Err() != nil:
+		return OutcomeSenderCanceled
+	default:
+		return problem.TunnelLost
+	}
+}
+
 // result is how the call ended.
 func (c *call) result() Result {
-	code := c.rec.Header().Get(problem.HeaderError)
-	// A relay-forced abort (idle timeout, an oversized body) sets its own
-	// cause directly on ctx, so it is identified before falling back to
-	// the sender's own context: SetReadDeadline, used to unblock a
-	// stalled read, also cancels the sender's context (parent) as a side
-	// effect, and must not be mistaken for the sender leaving.
-	switch cause := context.Cause(c.ctx); {
-	case code != "":
-	case c.aborted && cause == errIdleTimeout:
-		code = problem.UpstreamTimeout
-	case c.aborted && cause == errBodyTooLarge:
-		code = problem.BodyTooLarge
-	case c.parent.Err() != nil:
-		code = OutcomeSenderCanceled
-	case c.aborted:
-		code = problem.TunnelLost
-	}
 	res := Result{
 		CallID: c.id, Kind: c.kind, HookID: c.hook.ID, Sender: c.sender,
-		Method: c.r.Method, Path: c.logPath, Status: c.rec.status, Code: code,
+		Method: c.r.Method, Path: c.logPath, Status: c.rec.status, Code: c.code,
 		BytesIn: c.bytesIn, BytesOut: c.rec.bytes, Waited: c.waited, Duration: time.Since(c.start),
 	}
 	if c.public {

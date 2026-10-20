@@ -21,7 +21,6 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/lifecycle"
-	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -258,22 +257,4 @@ func (b trailerStripper) Close() error {
 	err := b.ReadCloser.Close()
 	stripTsrelay(b.resp.Trailer)
 	return err
-}
-
-func proxyError(w http.ResponseWriter, r *http.Request, err error) {
-	switch {
-	case errors.Is(err, tunnel.ErrOverloaded):
-		w.Header().Set("Retry-After", "1")
-		problem.New(problem.StatusTunnelOverloaded, problem.TunnelOverloaded, "the tunnel is at its concurrency limit").Write(w)
-	case errors.Is(err, errResponseTimeout):
-		problem.New(problem.StatusUpstreamTimeout, problem.UpstreamTimeout, "the local application did not respond in time").Write(w)
-	case context.Cause(r.Context()) == errIdleTimeout:
-		problem.New(http.StatusRequestTimeout, problem.BodyStalled, "the request body stalled for longer than the hook's idle timeout").Write(w)
-	case context.Cause(r.Context()) == errBodyTooLarge:
-		problem.New(http.StatusRequestEntityTooLarge, problem.BodyTooLarge, "the request body is larger than this hook's limit").Write(w)
-	case r.Context().Err() != nil:
-		// The sender went away; nobody is left to answer.
-	default:
-		problem.New(problem.StatusTunnelLost, problem.TunnelLost, "the tunnel was lost while delivering the call").Write(w)
-	}
 }
