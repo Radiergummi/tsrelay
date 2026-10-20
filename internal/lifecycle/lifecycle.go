@@ -1,5 +1,5 @@
 // Package lifecycle owns every transition between hooks and the tunnels that
-// serve them: attach (with takeover), detach when a tunnel ends, delete,
+// serve them: create, attach (with takeover), detach when a tunnel ends, delete,
 // expire (Reap), revoke, update, and shutdown. It is the
 // only writer of which tunnel serves which hook and since when a hook has
 // had none.
@@ -35,11 +35,15 @@ type Config struct {
 // most one tunnel; attaching a newer tunnel replaces the older one
 // ("takeover"). mu guards the registry state and detached-since.
 //
-// Locks are taken in the order owner attach lock → mu → hooks.Manager.mu;
-// nothing is sent, logged or published while mu is held. Under mu:
+// Locks are taken in the order announce → owner attach lock → mu →
+// hooks.Manager.mu; nothing is sent, logged or published while mu is held.
+// announce is held across a hook's change in the store and its
+// announcement, so changes are announced in the order they were made. Under
+// mu:
 //   - byHook only names stored hooks, because hooks are deleted under mu;
 //   - detached only names stored hooks that no tunnel serves.
 type Lifecycle struct {
+	announce  sync.Mutex // see above; held by Create, Update, RotatePublicToken, Delete and Reap
 	mu        sync.Mutex
 	byHook    map[hooks.ID]*tunnel.Tunnel
 	served    map[*tunnel.Tunnel][]hooks.ID

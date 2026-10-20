@@ -17,9 +17,10 @@ import (
 // period. A store error stops the pass and is returned; hooks removed
 // before it keep their effects.
 func (l *Lifecycle) Reap(ctx context.Context, grace time.Duration) error {
+	l.announce.Lock()
+	defer l.announce.Unlock()
 	now := l.now()
-	// List outside l.mu, so callbacks don't wait on the copy and sort. A hook
-	// an update makes reapable since is reaped on a later pass.
+	// List outside l.mu, so callbacks don't wait on the copy and sort.
 	var candidates []hooks.ID
 	for _, h := range l.cfg.Hooks.ListAll() {
 		if h.Ephemeral || h.Expired(now) {
@@ -30,8 +31,8 @@ func (l *Lifecycle) Reap(ctx context.Context, grace time.Duration) error {
 	l.mu.Lock()
 	var removed []removal
 	var err error
-	// Decide on the hook as stored, not on the listed copy: updates don't
-	// take l.mu, and one made since the listing may keep the hook.
+	// Decide under l.mu, not on the listing: a tunnel may have attached
+	// since.
 	reapable := func(h hooks.Hook) bool { return h.Expired(now) || l.idleLocked(h, now, grace) }
 	for _, id := range candidates {
 		var cur hooks.Hook
