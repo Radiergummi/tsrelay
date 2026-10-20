@@ -81,7 +81,8 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	if s.tel == nil {
 		s.tel = telemetry.Must(telemetry.Setup(context.Background(), telemetry.Config{}))
 	}
-	al.Observer = s.newMetrics(s.tel.Meter)
+	onCall, onAudit := s.newMetrics(s.tel.Meter)
+	al.Observer = onAudit
 	s.inspect = inspect.New(cfg.Inspect)
 	s.events = &events.Hub{}
 	s.inspect.OnChange = func(owner tailcfg.UserID, channel string, sum inspect.Summary) {
@@ -93,7 +94,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 			defer cancel()
 			return id.Identify(ctx, remoteAddr)
 		}})
-	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect, PublicMaxBody: cfg.PublicMaxBody}
+	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect, PublicMaxBody: cfg.PublicMaxBody, OnCall: onCall}
 
 	version := cmp.Or(cfg.Version, "dev")
 	mux := http.NewServeMux()

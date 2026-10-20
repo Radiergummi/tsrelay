@@ -53,6 +53,8 @@ type call struct {
 	waited   time.Duration  // held for a tunnel
 	tunnel   *tunnel.Tunnel // the tunnel the call goes down
 	aborted  bool           // the tunnel failed while streaming the response
+	bytesIn  int64          // the request body bytes read, as of the end
+	bodyEOF  bool           // the request body was read to the end, as of the end
 }
 
 // refusal is a step's answer that ends the call before it reaches the app.
@@ -376,15 +378,25 @@ func (c *call) forward() {
 	proxy.ServeHTTP(&idleWriter{ResponseWriter: c.rec, idle: idle}, c.r)
 }
 
-// end records how the call ended: in the audit log, its span and the
-// inspector. Deferred by ServeHTTP, it also sees a panic from a tunnel that
-// failed while streaming the response, and passes it on.
+// end records how the call ended. Deferred by ServeHTTP, it also sees a
+// panic from a tunnel that failed while streaming the response, and passes
+// it on.
 func (c *call) end() {
 	defer c.cancel(nil)
 	p := recover()
 	if p != nil {
 		c.aborted = true // the tunnel failed while streaming the response
 	}
+	// One reading of both: the transport may still be reading the body.
+	c.bytesIn, c.bodyEOF = c.body.counts()
+	c.finish(c.result())
+	if p != nil {
+		panic(p)
+	}
+}
+
+// result is how the call ended.
+func (c *call) result() Result {
 	code := c.rec.Header().Get(problem.HeaderError)
 	// A relay-forced abort (idle timeout, an oversized body) sets its own
 	// cause directly on ctx, so it is identified before falling back to
@@ -402,38 +414,46 @@ func (c *call) end() {
 	case c.aborted:
 		code = problem.TunnelLost
 	}
-	r := c.r
-	bytesIn, bodyEOF := c.body.counts() // the transport may still be reading the body
-	attrs := make([]slog.Attr, 0, 13)
-	attrs = append(attrs,
-		slog.String("callID", c.id), slog.String("kind", string(c.kind)),
-		slog.String("hookID", string(c.hook.ID)), audit.Actor(c.sender),
-		slog.String("method", r.Method), slog.String("path", c.logPath),
-		slog.Int("status", c.rec.status), slog.String("error", code),
-		slog.Int64("bytesIn", bytesIn), slog.Int64("bytesOut", c.rec.bytes),
-		slog.Duration("waited", c.waited), slog.Duration("duration", time.Since(c.start)),
-	)
+	res := Result{
+		CallID: c.id, Kind: c.kind, HookID: c.hook.ID, Sender: c.sender,
+		Method: c.r.Method, Path: c.logPath, Status: c.rec.status, Code: code,
+		BytesIn: c.bytesIn, BytesOut: c.rec.bytes, Waited: c.waited, Duration: time.Since(c.start),
+	}
 	if c.public {
-		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-		attrs = append(attrs, slog.String("clientIP", ip))
+		res.ClientIP, _, _ = net.SplitHostPort(c.r.RemoteAddr)
 	}
 	if !c.headers.IsZero() {
-		attrs = append(attrs, slog.Duration("ttfb", c.headers.Sub(c.delivery.Add(c.waited))))
+		res.TTFB, res.HasTTFB = c.headers.Sub(c.delivery.Add(c.waited)), true
 	}
-	c.h.Audit.Log(r.Context(), audit.Call, attrs...)
-	c.trace.finish(callAttrs{
-		callID: c.id, kind: string(c.kind), hookID: string(c.hook.ID), method: r.Method, path: c.logPath,
-		code: code, senderNode: c.sender.NodeName, senderTags: c.sender.Tags, status: c.rec.status,
-		bytesIn: bytesIn, bytesOut: c.rec.bytes, waited: c.waited,
-	})
-	c.record.finish(outcome{
-		code: code, status: c.rec.status, header: c.rec.Header(),
-		start: c.start, delivery: c.delivery, wrote: c.rec.wrote, waited: c.waited, tunnel: c.tunnel,
-		bytesIn: bytesIn, bytesOut: c.rec.bytes,
-		bodyRead: bodyEOF || r.ContentLength == 0,
+	return res
+}
+
+// finish reports res to the audit log, the metrics, the call's span and
+// the inspector, in that order.
+func (c *call) finish(res Result) {
+	attrs := make([]slog.Attr, 0, 13)
+	attrs = append(attrs,
+		slog.String("callID", res.CallID), slog.String("kind", string(res.Kind)),
+		slog.String("hookID", string(res.HookID)), audit.Actor(res.Sender),
+		slog.String("method", res.Method), slog.String("path", res.Path),
+		slog.Int("status", res.Status), slog.String("error", res.Code),
+		slog.Int64("bytesIn", res.BytesIn), slog.Int64("bytesOut", res.BytesOut),
+		slog.Duration("waited", res.Waited), slog.Duration("duration", res.Duration),
+	)
+	if c.public {
+		attrs = append(attrs, slog.String("clientIP", res.ClientIP))
+	}
+	if res.HasTTFB {
+		attrs = append(attrs, slog.Duration("ttfb", res.TTFB))
+	}
+	c.h.Audit.Log(c.r.Context(), audit.Call, attrs...)
+	if c.h.OnCall != nil {
+		c.h.OnCall(res)
+	}
+	c.trace.finish(res)
+	c.record.finish(res, delivered{
+		start: c.start, delivery: c.delivery, wrote: c.rec.wrote, header: c.rec.Header(), tunnel: c.tunnel,
+		bodyRead: c.bodyEOF || c.r.ContentLength == 0,
 		whole:    !c.aborted && c.parent.Err() == nil,
 	})
-	if p != nil {
-		panic(p)
-	}
 }

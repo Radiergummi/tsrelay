@@ -45,49 +45,44 @@ func (h *Handler) startRecord(r *http.Request, callID string, start time.Time, k
 	return &callRecord{in: h.Inspect, id: callID, reqBuf: h.Inspect.NewBuffer(capture), respBuf: h.Inspect.NewBuffer(capture)}
 }
 
-// outcome is how a call ended, as the handler saw it.
-type outcome struct {
-	code     string // Tsrelay-Error or OutcomeSenderCanceled; "" means ok
-	status   int
-	header   http.Header // the response headers as sent
+// delivered is what only the inspector needs of how a call ended.
+type delivered struct {
 	start    time.Time   // when the call arrived
 	delivery time.Time   // when delivery (holding included) began; zero if it never did
 	wrote    time.Time   // when the response status was written; zero if never
-	waited   time.Duration
-	tunnel   *tunnel.Tunnel // the tunnel the call went down, if any
-	bytesIn  int64
-	bytesOut int64
+	header   http.Header // the response headers as sent
+	tunnel   *tunnel.Tunnel
 	bodyRead bool // the request body was read to the end
 	whole    bool // the response was sent in full
 }
 
 // finish records how the call ended.
-func (rc *callRecord) finish(o outcome) {
+func (rc *callRecord) finish(res Result, d delivered) {
 	if rc == nil {
 		return
 	}
 	now := time.Now()
 	rc.in.Update(rc.id, func(c *inspect.Call) {
-		c.Outcome = cmp.Or(o.code, inspect.OutcomeOK)
-		c.Status = o.status
-		c.Duration = hooks.Duration(now.Sub(o.start))
-		c.RequestBody = rc.reqBuf.Capture(o.bodyRead)
-		if o.delivery.IsZero() {
+		c.Outcome = res.Outcome()
+		c.Status = res.Status
+		c.Duration = hooks.Duration(now.Sub(d.start))
+		c.RequestBody = rc.reqBuf.Capture(d.bodyRead)
+		if d.delivery.IsZero() {
 			return // refused before delivery: no attempt
 		}
-		respHeaders, respRedacted := rc.in.Redact(o.header)
+		respHeaders, respRedacted := rc.in.Redact(d.header)
 		a := inspect.Attempt{
-			ID: ids.New("a_"), StartedAt: o.delivery,
-			WaitedFor: hooks.Duration(o.waited), Duration: hooks.Duration(now.Sub(o.delivery)),
-			Status: o.status, ResponseHeaders: respHeaders, Redacted: respRedacted,
-			ResponseBody: rc.respBuf.Capture(o.whole),
-			BytesIn:      o.bytesIn, BytesOut: o.bytesOut, Error: o.code,
+			ID: ids.New("a_"), StartedAt: d.delivery,
+			WaitedFor: hooks.Duration(res.Waited), Duration: hooks.Duration(now.Sub(d.delivery)),
+			Status: res.Status, ResponseHeaders: respHeaders, Redacted: respRedacted,
+			ResponseBody: rc.respBuf.Capture(d.whole),
+			BytesIn:      res.BytesIn, BytesOut: res.BytesOut, Error: res.Code,
 		}
-		if forwarded := o.delivery.Add(o.waited); o.wrote.After(forwarded) {
-			a.TTFB = hooks.Duration(o.wrote.Sub(forwarded))
+		if forwarded := d.delivery.Add(res.Waited); d.wrote.After(forwarded) {
+			a.TTFB = hooks.Duration(d.wrote.Sub(forwarded))
 		}
-		if o.tunnel != nil {
-			a.TunnelID, a.Node = o.tunnel.ID, o.tunnel.Owner.NodeName
+		if d.tunnel != nil {
+			a.TunnelID, a.Node = d.tunnel.ID, d.tunnel.Owner.NodeName
 		}
 		c.Attempts = append(c.Attempts, a)
 	})

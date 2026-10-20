@@ -66,6 +66,10 @@ type Handler struct {
 
 	PublicMaxBody int64 // body cap of public calls; 0: only the hook's own limit
 
+	// OnCall, if set, is called with every call's result, after its audit
+	// record: the relay's call metrics.
+	OnCall func(Result)
+
 	Tracer     trace.Tracer                  // nil: tracing off; no span code runs
 	Propagator propagation.TextMapPropagator // nil: don't join senders' traces or pass ours on
 
