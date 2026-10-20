@@ -56,7 +56,7 @@ func newServeCmd(c *cli) *cobra.Command {
 	grace := fs.Duration("ephemeral-grace", server.DefaultEphemeralGrace, "how long an ephemeral hook survives without a tunnel")
 	policyFlags := registerPolicyFlags(fs)
 	concurrency := fs.Int("tunnel-concurrency", tunnel.DefaultConcurrency, "concurrent calls per tunnel")
-	revalidate := fs.Duration("revalidate-interval", time.Minute, "how often attached tunnels are re-authorized")
+	revalidate := fs.Duration("revalidate-interval", time.Minute, "how often attached tunnels and open event streams are re-authorized")
 	opsListen := fs.String("ops-listen", "", "host address for /healthz, /readyz and /metrics, e.g. :9090; never on the tailnet (empty: off)")
 	opsPprof := fs.Bool("ops-pprof", false, "serve /debug/pprof/ on the ops listener")
 	funnel := fs.Bool("funnel", false, "serve hooks their owners made public on the internet, through Tailscale Funnel")
@@ -137,11 +137,10 @@ func newServeCmd(c *cli) *cobra.Command {
 			server: server.Config{
 				EphemeralGrace: *grace, HoldQueue: *holdQueue, Tunnel: tunnel.Options{Concurrency: *concurrency},
 				Inspect: inspect.Config{CallsPerHook: *captureCalls, CaptureLimit: *captureLimit, NoBodies: !*captureBodies, Redact: redact.Values},
-				CapName: *capName, NoTracePropagation: !*propagate,
+				CapName: *capName, NoTracePropagation: !*propagate, Revalidate: *revalidate,
 			},
-			revalidate: *revalidate,
-			opsListen:  *opsListen,
-			otel:       *otlp, pprof: *opsPprof,
+			opsListen: *opsListen,
+			otel:      *otlp, pprof: *opsPprof,
 			updateCheck: *updateCheck,
 			funnel:      *funnel, funnelPort: *funnelPort, funnelMaxBody: *funnelMaxBody,
 		})
@@ -163,7 +162,6 @@ type relayConfig struct {
 	limits             authz.Limits
 	policy             hooks.Policy
 	server             server.Config
-	revalidate         time.Duration
 	opsListen          string // host address of the ops listener; empty: off
 	otel, pprof        bool   // --otel, --ops-pprof
 	updateCheck        bool   // --update-check
@@ -262,7 +260,7 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 		mgr, al)
 	defer srv.Close()
 	go srv.RunReaper(ctx, 30*time.Second)
-	go srv.RunRevalidator(ctx, cfg.revalidate)
+	go srv.RunRevalidator(ctx)
 
 	hs := &http.Server{
 		Handler:           srv.Handler(),

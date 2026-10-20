@@ -4,22 +4,27 @@ import (
 	"context"
 	"time"
 
-	"github.com/Radiergummi/tsrelay/internal/authz"
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/Radiergummi/tsrelay/internal/lifecycle"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
-// identifyTimeout bounds one WhoIs during revalidation.
+// identifyTimeout bounds one WhoIs during revalidation, and when a hook
+// change is checked against its tunnel's node.
 const identifyTimeout = 10 * time.Second
 
 // maxIdentifyFailures is how many revalidations in a row may fail to identify
 // a tunnel's node before its hooks are revoked.
 const maxIdentifyFailures = 3
 
-// RunRevalidator re-authorizes every attached tunnel every interval until
-// ctx is done (DESIGN.md §5.5).
-func (s *Server) RunRevalidator(ctx context.Context, interval time.Duration) {
-	runEvery(ctx, interval, func() { s.revalidate(ctx) })
+// RunRevalidator re-authorizes every attached tunnel every Config.Revalidate
+// until ctx is done (DESIGN.md §5.5). Event streams re-authorize themselves
+// at the same interval.
+func (s *Server) RunRevalidator(ctx context.Context) {
+	if s.cfg.Revalidate > 0 {
+		runEvery(ctx, s.cfg.Revalidate, func() { s.revalidate(ctx) })
+	}
 }
 
 // revalidate identifies each tunnel's client again and revokes the hooks
@@ -63,20 +68,22 @@ func (s *Server) check(ctx context.Context, t *tunnel.Tunnel, hookIDs []hooks.ID
 		}
 		delete(s.identifyFailures, t)
 		return hookIDs, "the node could not be identified"
-	case !id.IsUser():
-		return hookIDs, "the node no longer belongs to a user"
-	case id.UserID != t.Owner.UserID:
-		return hookIDs, "the node belongs to another user now"
-	case !id.Grants.Has(authz.RoleReceiver):
-		return hookIDs, "the receiver role was revoked"
 	}
-	t.SetPublic(id.Grants.Public)
+	if id.IsUser() && id.UserID == t.Owner.UserID {
+		t.SetGrants(id.Grants)
+	}
 	var revoked []hooks.ID
+	var reason string
 	for _, hid := range hookIDs {
 		// A deleted hook is skipped: its deletion detaches it.
-		if h, ok := s.hooks.Get(hid); ok && !id.Grants.Allows(authz.RoleReceiver, h.Channel) {
+		h, ok := s.hooks.Get(hid)
+		if !ok {
+			continue
+		}
+		if err := access.Serve(id, h.Access()); err != nil {
 			revoked = append(revoked, hid)
+			reason = lifecycle.RevokeReason(err)
 		}
 	}
-	return revoked, "the grants no longer cover the hook's channel"
+	return revoked, reason
 }

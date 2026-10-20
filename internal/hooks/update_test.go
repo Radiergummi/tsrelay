@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -152,5 +153,43 @@ func TestExpiry(t *testing.T) {
 	now = now.Add(2 * time.Minute)
 	if _, _, ok := m.Route("moritz", "x"); ok {
 		t.Fatal("expired hook still routes before the reaper ran")
+	}
+}
+
+// A grant change can leave a hook in a channel its owner no longer receives
+// on: editing anything but the channel then fails, and moving it succeeds.
+func TestUpdateRevalidatesResultingChannel(t *testing.T) {
+	m := newManager(t, t.TempDir())
+	before := identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"channels":["dev","prod"]}`)
+	after := identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"channels":["prod"]}`)
+	h, err := m.Create(ctx, before, CreateRequest{Channel: "dev"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = m.Update(ctx, after, h.ID, UpdateRequest{Description: Opt[string]{Set: true, Value: new("x")}})
+	if msg := fieldErr(t, err, "channel"); !strings.Contains(msg, `"dev"`) {
+		t.Errorf("message %q should name the channel", msg)
+	}
+	got, _, err := m.Update(ctx, after, h.ID, UpdateRequest{Channel: Opt[string]{Set: true, Value: new("prod")}})
+	if err != nil || got.Channel != "prod" {
+		t.Fatalf("moving into a granted channel = %+v, %v", got, err)
+	}
+}
+
+func TestUpdateRevalidatesPublic(t *testing.T) {
+	m := newManager(t, t.TempDir())
+	before := identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"channels":["dev","prod"],"public":true}`)
+	after := identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"channels":["dev","prod"]}`)
+	h, err := m.Create(ctx, before, CreateRequest{Channel: "dev", Public: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = m.Update(ctx, after, h.ID, UpdateRequest{Description: Opt[string]{Set: true, Value: new("x")}})
+	fieldErr(t, err, "public")
+	got, _, err := m.Update(ctx, after, h.ID, UpdateRequest{Public: Opt[bool]{Set: true, Value: new(false)}})
+	if err != nil || got.Public {
+		t.Fatalf("turning public off = %+v, %v", got, err)
 	}
 }

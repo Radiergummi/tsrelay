@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"tailscale.com/tailcfg"
 )
@@ -114,7 +115,7 @@ func validateChannel(channel string, grants authz.Effective) []FieldError {
 	switch {
 	case !authz.ValidChannel(channel):
 		return []FieldError{{"channel", fmt.Sprintf("%q is not a valid channel name (dot-separated [a-z0-9-] segments)", channel)}}
-	case !grants.Allows(authz.RoleReceiver, channel):
+	case !access.MayReceive(grants, channel):
 		return []FieldError{{"channel", fmt.Sprintf("channel %q is not matched by your receiver patterns %s",
 			channel, strings.Join(grants.Patterns[authz.RoleReceiver], ", "))}}
 	}
@@ -155,7 +156,7 @@ func (m *Manager) CheckCreate(ctx context.Context, owner authz.Identity, req Cre
 }
 
 func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRequest, dry bool) (Hook, error) {
-	if !owner.IsUser() || !owner.Grants.Has(authz.RoleReceiver) {
+	if !access.MayCreate(owner) {
 		return Hook{}, ErrForbidden
 	}
 	slug, err := m.slugs.Slug(owner.Login)
@@ -180,7 +181,7 @@ func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRe
 	errs = append(errs, m.policy.Validate(req.Settings)...)
 	errs = append(errs, validateExpiry(req.ExpiresAt, req.Ephemeral, m.now(), owner.Grants.Limits.MaxHookTTL)...)
 	if req.Public {
-		errs = append(errs, validatePublic(owner.Grants)...)
+		errs = append(errs, validatePublic(owner.Grants, req.Channel)...)
 	}
 	if len(owned) >= owner.Grants.Limits.MaxHooks {
 		errs = append(errs, FieldError{"", fmt.Sprintf("you already own %d hooks, the maximum your grants allow", len(owned))})

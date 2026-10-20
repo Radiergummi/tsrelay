@@ -10,6 +10,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
@@ -38,7 +39,7 @@ func newPublicEnv(t *testing.T) *publicEnv {
 // attachPublic attaches a tunnel whose owner may receive public calls.
 func (e *publicEnv) attachPublic(local http.Handler) *tunnel.Tunnel {
 	tun, _ := e.attach(local, tunnel.Options{})
-	tun.SetPublic(true)
+	tun.SetGrants(publicReceiver.Grants)
 	return tun
 }
 
@@ -116,9 +117,9 @@ func TestPublicNotFoundIsUniform(t *testing.T) {
 	// An unknown token.
 	wantProblem(t, e.post("/+AAAAAAAAAAAAAAAAAAAAAA/x", nil), 404, "hook_not_found")
 	// The owner lost the public grant.
-	tun.SetPublic(false)
+	tun.SetGrants(receiver.Grants)
 	wantProblem(t, e.post(e.hook.PublicRoute()+"/x", nil), 404, "hook_not_found")
-	tun.SetPublic(true)
+	tun.SetGrants(publicReceiver.Grants)
 	// The hook was made private again: its old token no longer routes.
 	old := e.hook.PublicRoute()
 	if _, _, err := e.mgr.Update(context.Background(), publicReceiver, e.hook.ID,
@@ -226,5 +227,26 @@ func TestPublicReplayHeaders(t *testing.T) {
 	}
 	if !c.Sender.Public || c.Kind != inspect.KindReplay {
 		t.Errorf("call = %+v, want a replay from a public sender", c)
+	}
+}
+
+// A replay of a public call is checked like a public call: once the
+// tunnel's grants lose public access to the hook's channel, the replay is
+// refused, and the owner sees it refused.
+func TestReplayOfPublicCallNeedsPublicGrant(t *testing.T) {
+	e := newPublicEnv(t)
+	tun := e.attachPublic(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("the replay was delivered")
+	}))
+	tun.SetGrants(receiver.Grants)
+	from := httptest.NewRequest("POST", "http://relay.test/hooks/x/calls/c/replay", nil)
+	c, err := e.h.Inject(context.Background(), Injection{
+		Hook: e.hook, Kind: inspect.KindReplay, ReplayOf: "c_orig", Public: true, Method: "POST", From: from,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Outcome != problem.HookNotFound || c.Status != 404 {
+		t.Fatalf("call = %+v, want refused with %s", c, problem.HookNotFound)
 	}
 }

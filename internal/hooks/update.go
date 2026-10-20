@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 )
 
@@ -123,7 +124,7 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cur, ok := m.hooks[id]
-	if !ok || !owner.IsUser() || cur.Owner != owner.UserID {
+	if !ok || access.View(owner, cur.Access()) != access.Owner {
 		return Hook{}, nil, ErrNotFound
 	}
 	h := cur
@@ -142,7 +143,6 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 		if req.Channel.Value != nil {
 			h.Channel = *req.Channel.Value
 		}
-		errs = append(errs, validateChannel(h.Channel, owner.Grants)...)
 	}
 	if req.Description.Set {
 		h.Description = ""
@@ -163,11 +163,16 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 		case req.Public.Value == nil:
 			errs = append(errs, FieldError{"public", "cannot be null"})
 		case *req.Public.Value && !cur.Public:
-			errs = append(errs, validatePublic(owner.Grants)...)
 			h.Public, h.PublicToken = true, newPublicToken()
 		case !*req.Public.Value:
 			h.Public, h.PublicToken = false, ""
 		}
+	}
+	// The resulting hook is validated, not just the request: a hook left in a
+	// channel the owner's grants no longer cover must be moved, not edited in place.
+	errs = append(errs, validateChannel(h.Channel, owner.Grants)...)
+	if h.Public {
+		errs = append(errs, validatePublic(owner.Grants, h.Channel)...)
 	}
 	if apply(&h.ExpiresAt, req.ExpiresAt); req.ExpiresAt.Set || req.Ephemeral.Set {
 		errs = append(errs, validateExpiry(h.ExpiresAt, h.Ephemeral, m.now(), owner.Grants.Limits.MaxHookTTL)...)

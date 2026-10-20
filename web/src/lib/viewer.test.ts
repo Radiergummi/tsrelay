@@ -13,3 +13,8 @@ test("roles and ownership", () => {
   expect(owns(fixtures.me, fixtures.theirs)).toBe(false);
   expect(owns({ ...fixtures.me, login: undefined }, fixtures.hook)).toBe(false);
 });
+
+test("only people are admins", () => {
+  const tagged = { ...fixtures.meAdmin, login: undefined, tags: ["tag:ops"] };
+  expect(isAdmin(tagged)).toBe(false);
+});

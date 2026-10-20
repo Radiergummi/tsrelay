@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"slices"
 
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/problem"
@@ -38,12 +39,18 @@ type ChannelDetail struct {
 	Hooks      []Hook `json:"hooks"`
 }
 
-// scopedHooks are the hooks GET /hooks lists: the caller's, or every
-// user's for an admin asking for ?all=true (which non-admins can't).
+// scopedHooks are the hooks GET /hooks lists: the caller's, or for an admin
+// asking for ?all=true (which non-admins can't) every hook in their admin
+// channels.
 func (a *API) scopedHooks(r *http.Request, id authz.Identity) (list []hooks.Hook, all bool) {
 	switch {
-	case r.URL.Query().Get("all") == "true" && id.Grants.Has(authz.RoleAdmin):
-		return a.Hooks.ListAll(), true
+	case r.URL.Query().Get("all") == "true" && access.IsAdmin(id):
+		for _, h := range a.Hooks.ListAll() {
+			if access.View(id, h.Access()) != access.None {
+				list = append(list, h)
+			}
+		}
+		return list, true
 	case id.IsUser():
 		return a.Hooks.List(id.UserID), false
 	}
@@ -87,8 +94,8 @@ func (a *API) getChannel(w http.ResponseWriter, r *http.Request, id authz.Identi
 	list, _ := a.scopedHooks(r, id)
 	out := ChannelDetail{
 		Name: name, Hooks: []Hook{},
-		CanReceive: id.Grants.Allows(authz.RoleReceiver, name),
-		CanSend:    id.Grants.Allows(authz.RoleSender, name),
+		CanReceive: access.MayReceive(id.Grants, name),
+		CanSend:    access.Send(id, access.Hook{Channel: name}),
 	}
 	for _, h := range list {
 		if h.Channel == name {

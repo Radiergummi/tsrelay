@@ -80,8 +80,9 @@ async function send(
   const headers: Record<string, string> = { Accept: "application/json" };
   const init: RequestInit = { method, headers, credentials: "same-origin" };
   if (signal) init.signal = signal;
+  // Bodyless writes too: the relay's guard requires JSON on every write.
+  if (method !== "GET") headers["Content-Type"] = "application/json";
   if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(body);
   }
   let resp: Response;

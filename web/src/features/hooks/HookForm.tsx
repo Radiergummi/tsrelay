@@ -11,7 +11,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Segment, SegmentedControl } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { allowingPattern, channelChoices, validChannel } from "@/lib/channels";
+import { allowingPattern, channelChoices, matchChannel, validChannel } from "@/lib/channels";
 import { toast } from "@/lib/toast";
 import { DeliveryFields } from "./DeliveryFields";
 import { ExpiryField } from "./ExpiryField";
@@ -55,7 +55,8 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   }, [patterns, inUse]);
   const channel = values["channel"]?.trim() || "default";
   const pattern = allowingPattern(patterns, channel);
-  const canPublish = (me.public ?? false) && (me.funnel ?? false);
+  const canPublishHere = me.public.some((p) => matchChannel(p, channel));
+  const canPublish = canPublishHere && (me.funnel ?? false);
 
   // The hook's URL is base followed by its path. A new hook has no URL
   // yet, and the entry document has no base URL, so it is this origin's.
@@ -236,8 +237,8 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
             hint={
               !me.funnel
                 ? "This relay does not serve hooks on the internet."
-                : !me.public
-                  ? 'Your grants do not allow public hooks. A receiver grant needs "public": true.'
+                : !canPublishHere
+                  ? `Your grants do not allow public hooks in channel "${channel}". A receiver grant needs "public": true.`
                   : values["public"] === "true"
                     ? "Anyone with the public URL can call this hook. Verify webhook signatures in your app."
                     : "The internet reaches the hook at a secret URL, through the relay's Funnel."
