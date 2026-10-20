@@ -121,11 +121,14 @@ func TestStreamCap(t *testing.T) {
 	open[0].Body.Close()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		resp, _ := e.openStream(c, "/hooks")
+		resp, lines := e.openStream(c, "/hooks")
 		if resp.StatusCode == http.StatusOK {
 			break
 		}
-		resp.Body.Close()
+		// The reader is reading this short refusal to its end. Closing the
+		// body while it does can deadlock net/http's body; let it finish.
+		for range lines {
+		}
 		if time.Now().After(deadline) {
 			t.Fatalf("closing a stream did not free its slot: %d", resp.StatusCode)
 		}
