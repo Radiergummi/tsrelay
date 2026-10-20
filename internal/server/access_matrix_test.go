@@ -104,8 +104,14 @@ func TestAccessMatrix(t *testing.T) {
 		return id
 	}
 	devCall, prodCall := call("senderDev", dev), call("senderProd", prod)
-	var doc sbom.Document
-	json.Unmarshal(sbom.ProjectedJSON(), &doc)
+	// Anyone may read the attribution, which a build without an SBOM lacks;
+	// CI's sbom job runs this test with one.
+	attribution, textID := http.StatusNotFound, "0123456789abcdef0123456789abcdef"
+	if sbom.Available() {
+		var doc sbom.Document
+		json.Unmarshal(sbom.ProjectedJSON(), &doc)
+		attribution, textID = http.StatusOK, doc.Components[0].TextID
+	}
 
 	rows := []matrixRow{
 		{route: "GET /{$}", path: "/", want: statuses{"": 200}},
@@ -178,10 +184,10 @@ func TestAccessMatrix(t *testing.T) {
 		// The documents and attribution need no role.
 		{route: "GET /openapi", path: "/openapi.json", want: statuses{"": 200}},
 		{route: "GET /openapi.yaml", path: "/openapi.yaml", want: statuses{"": 200}},
-		{route: "GET /licenses", path: "/licenses", want: statuses{"": 200}},
-		{route: "GET /licenses/{textId}", path: "/licenses/{textId}", want: statuses{"": 200}},
-		{route: "GET /notices.txt", path: "/notices.txt", want: statuses{"": 200}},
-		{route: "GET /sbom.cdx.json", path: "/sbom.cdx.json", want: statuses{"": 200}},
+		{route: "GET /licenses", path: "/licenses", want: statuses{"": attribution}},
+		{route: "GET /licenses/{textId}", path: "/licenses/{textId}", want: statuses{"": attribution}},
+		{route: "GET /notices.txt", path: "/notices.txt", want: statuses{"": attribution}},
+		{route: "GET /sbom.cdx.json", path: "/sbom.cdx.json", want: statuses{"": attribution}},
 
 		{route: "GET /inspect/{callID}", path: "/inspect/{devCall}", kind: asHTML, want: statuses{"": 404, "owner": 303, "ownerNoRoles": 303, "adminAll": 303}},
 		{route: "GET /inspect/{callID}", path: "/inspect/{prodCall}", kind: asHTML, want: statuses{"": 404, "owner": 303, "ownerNoRoles": 303, "adminAll": 303, "adminProd": 303}},
@@ -199,7 +205,7 @@ func TestAccessMatrix(t *testing.T) {
 		{route: "call", path: "/x", kind: asInternet, want: statuses{"senderDev": 202}}, // the identity is ignored: the internet has none
 	}
 
-	m := &matrix{e: e, dev: dev.ID, prod: prod.ID, devCall: devCall, prodCall: prodCall, textID: doc.Components[0].TextID, public: publicServer(t, e)}
+	m := &matrix{e: e, dev: dev.ID, prod: prod.ID, devCall: devCall, prodCall: prodCall, textID: textID, public: publicServer(t, e)}
 	// The owner sees what the rows below must show nobody else.
 	for path, want := range map[string][]string{
 		"/hooks/" + dev.ID + "/calls/" + devCall: {secretBodyJSON, "s3cr3t-header", "s3cr3t-query"},
