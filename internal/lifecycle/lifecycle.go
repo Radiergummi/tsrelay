@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
+	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/events"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
@@ -29,6 +30,9 @@ type Config struct {
 	Audit         *audit.Logger
 	BaseURL       string // HookInfo.URL = BaseURL + h.Route()
 	PublicBaseURL string // HookInfo.PublicURL; empty: the relay serves no Funnel
+	// Identify identifies a tunnel's node again, by its remote address, when
+	// a hook it serves changes. nil: its last known grants decide.
+	Identify func(ctx context.Context, remoteAddr string) (authz.Identity, error)
 }
 
 // Lifecycle tracks which tunnel serves each hook. A hook is served by at

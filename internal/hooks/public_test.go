@@ -58,6 +58,27 @@ func TestCreatePublicNeedsGrant(t *testing.T) {
 	}
 }
 
+func TestPublicScopedToChannel(t *testing.T) {
+	m := newPublicManager(t)
+	ctx := context.Background()
+	devOnly := identify.User("laptop", "moritz@example.com", 1,
+		`{"roles":["receiver"],"channels":["dev","prod"]}`,
+		`{"roles":["receiver"],"channels":["dev"],"public":true}`)
+	if _, err := m.Create(ctx, devOnly, CreateRequest{Path: "a", Channel: "dev", Public: true}); err != nil {
+		t.Fatalf("public in dev: %v", err)
+	}
+	_, err := m.Create(ctx, devOnly, CreateRequest{Path: "b", Channel: "prod", Public: true})
+	var ve ValidationError
+	if !errors.As(err, &ve) || len(ve) != 1 || ve[0].Field != "public" {
+		t.Fatalf("public in prod: err = %v, want a field error on public", err)
+	}
+	h, _ := m.Create(ctx, devOnly, CreateRequest{Path: "c", Channel: "dev", Public: true})
+	_, _, err = m.Update(ctx, devOnly, h.ID, UpdateRequest{Channel: Opt[string]{Set: true, Value: new("prod")}})
+	if !errors.As(err, &ve) || len(ve) != 1 || ve[0].Field != "public" {
+		t.Fatalf("moving a public hook to prod: err = %v, want a field error on public", err)
+	}
+}
+
 func TestPublicToggleRotatesToken(t *testing.T) {
 	m := newPublicManager(t)
 	ctx := context.Background()

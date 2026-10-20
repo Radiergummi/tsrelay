@@ -16,12 +16,14 @@ const (
 // Buffer is how many events a subscriber may fall behind before it is dropped.
 const Buffer = 64
 
-// Event is one change. Owner is the user who owns the hook it concerns.
+// Event is one change. Owner and Channel are those of the hook it
+// concerns, which decide who may see it.
 type Event struct {
-	Type   string
-	Owner  tailcfg.UserID
-	HookID string
-	Data   any // encoded as JSON for the event stream
+	Type    string
+	Owner   tailcfg.UserID
+	Channel string
+	HookID  string
+	Data    any // encoded as JSON for the event stream
 }
 
 // Hub delivers published events to matching subscribers. Publish never
@@ -92,8 +94,8 @@ func (h *Hub) Publish(e Event) {
 
 // HookChanged is the event for a hook that was created, updated, deleted or
 // expired, or whose tunnel attached or detached. Subscribers refetch it.
-func HookChanged(owner tailcfg.UserID, hookID string) Event {
-	return Event{Type: TypeHook, Owner: owner, HookID: hookID, Data: map[string]string{"id": hookID}}
+func HookChanged(owner tailcfg.UserID, channel, hookID string) Event {
+	return Event{Type: TypeHook, Owner: owner, Channel: channel, HookID: hookID, Data: map[string]string{"id": hookID}}
 }
 
 // Close ends every subscription, for relay shutdown. Later subscriptions

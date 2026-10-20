@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/audit"
+	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/events"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
@@ -39,7 +41,8 @@ type Config struct {
 	Version        string   // the relay's version, sent as api.VersionHeader; "" means "dev"
 	Commit         string   // the revision the relay was built from; "" means the one Go stamped, if any
 	EphemeralGrace time.Duration
-	HoldQueue      int // calls per hook that may wait for a tunnel; 0 means relay.DefaultHoldQueue
+	Revalidate     time.Duration // how often tunnels and event streams are authorized again; 0: never
+	HoldQueue      int           // calls per hook that may wait for a tunnel; 0 means relay.DefaultHoldQueue
 	Tunnel         tunnel.Options
 	Inspect        inspect.Config
 	Telemetry      *telemetry.Telemetry // nil: Prometheus metrics only, no tracing
@@ -56,6 +59,7 @@ type Server struct {
 	relay   *relay.Handler // serves callbacks; its Held() feeds the held-calls gauge
 	handler http.Handler
 	public  http.Handler // nil unless cfg.PublicBaseURL is set
+	routes  []string     // the API's patterns and the UI's inspect redirect
 	inspect *inspect.Inspector
 	events  *events.Hub
 
@@ -80,15 +84,20 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	al.Observer = s.newMetrics(s.tel.Meter)
 	s.inspect = inspect.New(cfg.Inspect)
 	s.events = &events.Hub{}
-	s.inspect.OnChange = func(owner tailcfg.UserID, sum inspect.Summary) {
-		s.events.Publish(events.Event{Type: events.TypeCall, Owner: owner, HookID: string(sum.HookID), Data: sum})
+	s.inspect.OnChange = func(owner tailcfg.UserID, channel string, sum inspect.Summary) {
+		s.events.Publish(events.Event{Type: events.TypeCall, Owner: owner, Channel: channel, HookID: string(sum.HookID), Data: sum})
 	}
-	s.tunnels = lifecycle.New(lifecycle.Config{Hooks: mgr, Inspect: s.inspect, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, PublicBaseURL: cfg.PublicBaseURL})
+	s.tunnels = lifecycle.New(lifecycle.Config{Hooks: mgr, Inspect: s.inspect, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, PublicBaseURL: cfg.PublicBaseURL,
+		Identify: func(ctx context.Context, remoteAddr string) (authz.Identity, error) {
+			ctx, cancel := context.WithTimeout(ctx, identifyTimeout)
+			defer cancel()
+			return id.Identify(ctx, remoteAddr)
+		}})
 	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect, PublicMaxBody: cfg.PublicMaxBody}
 
 	version := cmp.Or(cfg.Version, "dev")
 	mux := http.NewServeMux()
-	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, PublicBaseURL: cfg.PublicBaseURL, CapName: cfg.CapName, Version: version, Commit: cmp.Or(cfg.Commit, commit()), Releases: cfg.Releases, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName)}
+	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, PublicBaseURL: cfg.PublicBaseURL, CapName: cfg.CapName, Version: version, Commit: cmp.Or(cfg.Commit, commit()), Releases: cfg.Releases, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName), ReidentifyEvery: cfg.Revalidate}
 	if s.tel.Tracing {
 		s.relay.Tracer = s.tel.Tracer.Tracer(telemetry.ScopeName)
 		if !cfg.NoTracePropagation {
@@ -100,6 +109,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	a.HTML = u.Index()
 	a.Register(mux)
 	u.Register(mux)
+	s.routes = slices.Concat(a.Routes(), []string{ui.InspectRoute})
 	(&install.Handler{Version: version, BaseURL: cfg.BaseURL}).Register(mux)
 
 	// Callbacks bypass the mux, whose path cleaning would rewrite paths
@@ -137,6 +147,10 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 }
 
 func (s *Server) Handler() http.Handler { return s.handler }
+
+// Routes are the patterns that answer with what the caller may see or do,
+// for proving each one against the access rules.
+func (s *Server) Routes() []string { return s.routes }
 
 // PublicHandler serves the hooks made public, for the Funnel listener. It
 // is nil when Config.PublicBaseURL is empty.

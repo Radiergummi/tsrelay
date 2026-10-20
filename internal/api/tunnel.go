@@ -9,6 +9,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
@@ -28,7 +29,7 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 		problem.New(http.StatusBadRequest, problem.BadRequest, "expected Connection: Upgrade and Upgrade: "+tunnel.UpgradeToken).Write(w)
 		return
 	}
-	if !id.IsUser() || !id.Grants.Has(authz.RoleReceiver) {
+	if !access.MayAttach(id) {
 		a.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(id), slog.String("action", "tunnel.attach"), slog.String("reason", "no receiver role"))
 		problem.New(http.StatusForbidden, problem.Forbidden, "attaching tunnels requires the receiver role").Write(w)
 		return

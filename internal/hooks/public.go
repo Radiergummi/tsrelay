@@ -6,7 +6,9 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
+	"fmt"
 
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 )
 
@@ -21,12 +23,12 @@ func newPublicToken() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// validatePublic checks that grants let the owner make hooks public.
-func validatePublic(grants authz.Effective) []FieldError {
-	if grants.Public {
+// validatePublic checks that grants let the owner make hooks public in channel.
+func validatePublic(grants authz.Effective, channel string) []FieldError {
+	if access.MayPublish(grants, channel) {
 		return nil
 	}
-	return []FieldError{{"public", `your grants do not allow public hooks; a receiver grant needs "public": true`}}
+	return []FieldError{{"public", fmt.Sprintf("your grants do not allow public hooks in channel %q", channel)}}
 }
 
 // RoutePublic finds the public hook with token. Like Route, it scans every
@@ -55,7 +57,7 @@ func (m *Manager) RotatePublicToken(ctx context.Context, owner authz.Identity, i
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	h, ok := m.hooks[id]
-	if !ok || !owner.IsUser() || h.Owner != owner.UserID {
+	if !ok || access.View(owner, h.Access()) != access.Owner {
 		return Hook{}, ErrNotFound
 	}
 	if !h.Public {

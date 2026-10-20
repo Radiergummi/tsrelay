@@ -367,3 +367,23 @@ func TestStateTargets(t *testing.T) {
 		t.Fatalf("Targets = %v", got)
 	}
 }
+
+func TestAPIClientBodylessWritesDeclareJSON(t *testing.T) {
+	var types []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		types = append(types, r.Header.Get("Content-Type"))
+		w.Write([]byte("{}"))
+	}))
+	defer srv.Close()
+	c := &API{BaseURL: srv.URL, HTTP: srv.Client()}
+	c.RotatePublicURL(context.Background(), "h_1")
+	c.DeleteHook(context.Background(), "h_1")
+	for _, got := range types {
+		if got != "application/json" {
+			t.Errorf("Content-Type = %q", got)
+		}
+	}
+	if len(types) != 2 {
+		t.Fatalf("requests = %d", len(types))
+	}
+}

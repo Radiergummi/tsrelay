@@ -28,6 +28,7 @@ export const summary = z.object({
   receivedAt: z.string(),
   kind: z.string(), // "sender" | "replay" | "test" | "public"
   replayOf: z.optional(z.string()),
+  refused: z.optional(z.boolean()), // the sender may not use the hook's channel
   sender,
   method: z.string(),
   path: z.string(),
@@ -158,7 +159,7 @@ export const me = z.object({
     callsPerHook: z.number(),
     noBodies: z.optional(z.boolean()),
   }),
-  public: z.optional(z.boolean()),
+  public: z.array(z.string()),
   funnel: z.optional(z.boolean()),
 });
 

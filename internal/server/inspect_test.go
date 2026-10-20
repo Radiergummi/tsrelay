@@ -42,9 +42,7 @@ func (e *env) postJSON(path string, in, out any) int {
 		body = bytes.NewReader(b)
 	}
 	req, _ := http.NewRequest("POST", e.base+path, body)
-	if in != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := e.api.HTTP.Do(req)
 	if err != nil {
 		e.t.Fatal(err)
@@ -175,6 +173,7 @@ func TestEventStream(t *testing.T) {
 	operator := identify.User("ops-box", "ops@example.com", 3, `{"roles":["admin"]}`)
 	stranger := identify.User("desk", "other@example.com", 2, `{"roles":["receiver"]}`)
 	mine, all, theirs := e.sse(receiver, "/hooks"), e.sse(operator, "/hooks?all=true"), e.sse(stranger, "/hooks")
+	senders := e.sse(sender, "/hooks") // a tagged node owns no hooks, so it sees none
 
 	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
 	if err != nil {
@@ -206,6 +205,8 @@ func TestEventStream(t *testing.T) {
 	select {
 	case ev := <-theirs:
 		t.Fatalf("another user's stream received %+v", ev)
+	case ev := <-senders:
+		t.Fatalf("a sender's stream received %+v", ev)
 	case <-time.After(100 * time.Millisecond):
 	}
 
@@ -219,8 +220,9 @@ func TestEventStream(t *testing.T) {
 		resp.Body.Close()
 		return resp.StatusCode
 	}
-	if code := stream(sender, "/hooks"); code != 403 {
-		t.Errorf("tagged node's stream = %d, want 403", code)
+	taggedAdmin := identify.Tagged("ops-robot", []string{"tag:ops"}, `{"roles":["admin"]}`)
+	if code := stream(taggedAdmin, "/hooks?all=true"); code != 403 {
+		t.Errorf("tagged admin's stream = %d, want 403: only people are admins", code)
 	}
 	if code := stream(stranger, "/hooks/"+h.ID); code != 404 {
 		t.Errorf("another user's hook stream = %d, want 404", code)

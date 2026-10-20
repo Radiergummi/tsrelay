@@ -25,11 +25,14 @@ func Guard(allowedHosts []string, next http.Handler) http.Handler {
 		// Every write but a callback's, tailnet (/~) or public (/+), is an
 		// API write.
 		if !isCallback(r.URL.Path) && !safeMethod(r.Method) {
-			if s := r.Header.Get("Sec-Fetch-Site"); s != "" && s != "same-origin" && s != "none" {
+			site := r.Header.Get("Sec-Fetch-Site")
+			if site != "" && site != "same-origin" && site != "none" {
 				problem.New(http.StatusForbidden, problem.Forbidden, "cross-site requests to the API are not allowed").Write(w)
 				return
 			}
-			if r.ContentLength != 0 {
+			// Browsers without Sec-Fetch-Site could still submit a bodyless
+			// cross-site form; requiring JSON forces a preflight.
+			if site == "" || r.ContentLength != 0 {
 				if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
 					problem.New(http.StatusUnsupportedMediaType, problem.UnsupportedMediaType, "API requests must be application/json").Write(w)
 					return

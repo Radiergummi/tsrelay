@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
@@ -44,6 +45,9 @@ const (
 
 // DefaultHoldQueue is how many calls per hook may wait for a tunnel at once.
 const DefaultHoldQueue = 100
+
+// reidentifyTimeout bounds identifying a held call's sender again.
+const reidentifyTimeout = 5 * time.Second
 
 // OutcomeSenderCanceled is the audit error of a call whose sender went away
 // before it completed. Nobody receives it, so it is no problem code.
@@ -182,8 +186,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	var err error
-	var segs int
-	var found bool
 	var token string // a public call's token
 	if public {
 		// An internet client has no tailnet identity: sender stays empty,
@@ -194,10 +196,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 			return
 		}
-		hook, found = h.Hooks.RoutePublic(token)
 	} else {
-		slug, rest, ok := splitRoute(r.URL.Path)
-		if !ok {
+		if _, _, ok := splitRoute(r.URL.Path); !ok {
 			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 			return
 		}
@@ -207,35 +207,34 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			at := ct.child(h.Tracer, "tsrelay.authorize")
 			sender, err = h.Identifier.Identify(at.ctx, r.RemoteAddr)
 			at.end(attribute.KeyValue{}, false)
-			if err != nil || !sender.Grants.Has(authz.RoleSender) {
+			if err != nil || !access.MaySend(sender) {
 				h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender),
 					slog.String("action", "call"), slog.String("reason", "no sender role"))
 				problem.New(http.StatusForbidden, problem.SenderForbidden, "this node has no sender role on the relay").Write(rec)
 				return
 			}
 		}
-		hook, segs, found = h.Hooks.Route(slug, rest)
 	}
-	if found && encodedSlashIn(r.URL, 1+segs) {
-		found = false // the decoded and escaped paths would split differently
-	}
+	hook, segs, found := h.reroute(r, token)
 	if inj != nil && found && hook.ID != inj.hook {
 		found = false // the path now belongs to another hook
 	}
 	var eff hooks.Effective
+	refused := found && inj == nil && !public && !access.Send(sender, hook.Access())
 	if found {
 		// Calls refused by channel are recorded too, so the owner can see
-		// them (DESIGN.md §9.2). The sender cannot tell: it gets the same
-		// 404 as for a missing hook.
-		eff = h.Hooks.Effective(hook)
-		record = h.startRecord(r, callID, start, kind, replayOf, hook, sender, internet, 1+segs, eff.Capture)
+		// them (DESIGN.md §9.2), but marked, so they cannot crowd out
+		// delivered ones. The sender cannot tell: it gets the same 404 as
+		// for a missing hook.
+		eff = h.effective(hook, public)
+		record = h.startRecord(r, callID, start, kind, replayOf, hook, sender, refused, internet, 1+segs, eff.Capture)
 		ct.event("routed")
 		if record != nil {
 			body.capture, rec.capture = record.reqBuf, record.respBuf
 		}
 	}
-	if !found || (inj == nil && !public && !sender.Grants.Allows(authz.RoleSender, hook.Channel)) {
-		if found {
+	if !found || refused {
+		if refused {
 			ct.event("channel_denied")
 			h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender), audit.Hook(hook),
 				slog.String("action", "call"), slog.String("reason", "channel not allowed"))
@@ -243,9 +242,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
 		return
-	}
-	if public && h.PublicMaxBody > 0 && (eff.MaxBodyBytes == 0 || eff.MaxBodyBytes > h.PublicMaxBody) {
-		eff.MaxBodyBytes = h.PublicMaxBody
 	}
 	if eff.MaxBodyBytes > 0 && r.ContentLength > eff.MaxBodyBytes {
 		ct.event("body_too_large")
@@ -295,18 +291,59 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			problem.New(problem.StatusTunnelUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook").Write(rec)
 			return
 		}
-		if !h.stillRoutes(hook.ID, token, sender, inj == nil && !public) {
-			// The hook's public token or channel changed while the call
-			// waited: it gets the answer it would get if it arrived now.
+		// The call gets the answer it would get if it arrived now: its
+		// sender is identified again, and its address must still route to
+		// the same hook, whose channel that sender must still be allowed.
+		// The hook is routed after the identification, which may be slow.
+		again, idErr := sender, error(nil)
+		if inj == nil && !public {
+			ictx, cancel := context.WithTimeout(ctx, reidentifyTimeout)
+			again, idErr = h.Identifier.Identify(ictx, r.RemoteAddr)
+			cancel()
+			if idErr != nil && ctx.Err() != nil {
+				return // the sender went away, as in the hold's canceled case
+			}
+		}
+		now, nowSegs, ok := h.reroute(r, token)
+		reason := "the hook changed while the call was held"
+		if ok && now.ID == hook.ID && inj == nil && !public {
+			if idErr != nil || !access.Send(again, now.Access()) {
+				ok, reason = false, "the sender lost access while the call was held"
+			} else {
+				sender = again
+			}
+		}
+		if !ok || now.ID != hook.ID {
 			delivery = time.Time{}
 			h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender), audit.Hook(hook),
-				slog.String("action", "call"), slog.String("reason", "the hook changed while the call was held"))
+				slog.String("action", "call"), slog.String("reason", reason))
 			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
+			return
+		}
+		// The hook may have changed while still routing the call: forward
+		// it with the hook's current path and settings.
+		hook, segs, eff = now, nowSegs, h.effective(now, public)
+		// The tunnel may have been revoked or replaced meanwhile.
+		if tun, attached = h.Tunnels.Lookup(hook.ID); !attached {
+			rec.Header().Set("Retry-After", holdRetryAfter(eff.HoldTimeout.Std()))
+			problem.New(problem.StatusTunnelUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook").Write(rec)
 			return
 		}
 	}
 
-	if public && !tun.Public() {
+	if err := access.Serve(tun.Identity(), hook.Access()); err != nil {
+		// A channel the node may not receive is a revocation in progress.
+		// The lifecycle attaches only the owner's tunnels, so another
+		// user's is a broken invariant; neither gets the call.
+		delivery = time.Time{}
+		if errors.Is(err, access.ErrNotUser) || errors.Is(err, access.ErrOtherUser) {
+			h.Audit.Slog().Error("tunnel owner does not own the hook", "hookID", string(hook.ID), "tunnel", tun.ID)
+		}
+		problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
+		return
+	}
+
+	if internet && access.ServeInternet(tun.Identity(), hook.Access()) != nil {
 		// The owner's grants no longer allow public hooks. The caller gets
 		// the same answer as for an unknown token; the owner sees the call.
 		delivery = time.Time{}
@@ -402,16 +439,31 @@ func (h *Handler) dequeue(id hooks.ID) {
 // timeout rounded up to seconds, but at least 5 seconds.
 func holdRetryAfter(hold time.Duration) string { return retryAfter(max(5*time.Second, hold)) }
 
-// stillRoutes reports whether a call routed to hook id before it was held
-// still is: a public call's token must still name the hook, and if
-// checkChannel, the sender's grants must still allow the hook's channel.
-func (h *Handler) stillRoutes(id hooks.ID, token string, sender authz.Identity, checkChannel bool) bool {
+// reroute routes r's original address: a public call's token, or a
+// tailnet call's slug and path. It returns the hook and how many path
+// segments below the route's first belong to it. A path whose escaped form
+// would split into other segments than its decoded one routes nowhere.
+func (h *Handler) reroute(r *http.Request, token string) (hooks.Hook, int, bool) {
 	if token != "" {
-		now, ok := h.Hooks.RoutePublic(token)
-		return ok && now.ID == id
+		hook, ok := h.Hooks.RoutePublic(token)
+		return hook, 0, ok && !encodedSlashIn(r.URL, 1)
 	}
-	now, ok := h.Hooks.Get(id)
-	return ok && (!checkChannel || sender.Grants.Allows(authz.RoleSender, now.Channel))
+	slug, rest, ok := splitRoute(r.URL.Path)
+	if !ok {
+		return hooks.Hook{}, 0, false
+	}
+	hook, segs, ok := h.Hooks.Route(slug, rest)
+	return hook, segs, ok && !encodedSlashIn(r.URL, 1+segs)
+}
+
+// effective is hook's effective settings for a call, with a public call's
+// body capped at PublicMaxBody.
+func (h *Handler) effective(hook hooks.Hook, public bool) hooks.Effective {
+	eff := h.Hooks.Effective(hook)
+	if public && h.PublicMaxBody > 0 && (eff.MaxBodyBytes == 0 || eff.MaxBodyBytes > h.PublicMaxBody) {
+		eff.MaxBodyBytes = h.PublicMaxBody
+	}
+	return eff
 }
 
 func (h *Handler) hookExists(id hooks.ID) bool {

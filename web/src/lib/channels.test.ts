@@ -8,6 +8,17 @@ test("channel patterns match like authz.MatchChannel", () => {
   expect(matchChannel("staging.*", "staging")).toBe(false);
   expect(matchChannel("a*c", "abbbc")).toBe(true);
   expect(matchChannel("a*c", "abcd")).toBe(false);
+  expect(matchChannel("*", "prod.eu.west")).toBe(true);
+  expect(matchChannel("prod", "prod.eu")).toBe(false);
+  expect(matchChannel("prod.*", "prod.eu.west")).toBe(true);
+  expect(matchChannel("prod.*", "prod")).toBe(false);
+  expect(matchChannel("*.eu", "prod.eu")).toBe(true);
+  expect(matchChannel("*.eu", "prod.eu.west")).toBe(false);
+  expect(matchChannel("p*d", "prod.eu")).toBe(false);
+  expect(matchChannel("**", "x")).toBe(true);
+  expect(matchChannel("a*b*c", "axxbyyc")).toBe(true);
+  expect(matchChannel("a*b*c", "axxbyy")).toBe(false);
+  expect(matchChannel("staging", "prod")).toBe(false);
 });
 
 test("choices are default when a pattern allows it, then every literal pattern", () => {

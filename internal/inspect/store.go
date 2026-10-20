@@ -13,6 +13,11 @@ import (
 const (
 	DefaultCallsPerHook = 100
 	DefaultCaptureLimit = 64 << 10
+
+	// refusedPerHook is how many refused calls are kept per hook, apart
+	// from the others, so a sender shut out by the channel cannot evict
+	// delivered calls (DESIGN.md §9.2).
+	refusedPerHook = 10
 )
 
 // Config configures the inspector (DESIGN.md §9.2, §12).
@@ -28,14 +33,15 @@ type Config struct {
 type Inspector struct {
 	cfg    Config
 	redact Redactor
-	// OnChange, if set, is called after a call was added or changed. It
-	// runs with the store's lock held, so changes are reported in order; it
+	// OnChange, if set, is called after a call was added or changed,
+	// except for refused calls, which are not announced. It runs with the store's lock held, so changes are reported in order; it
 	// must not block or call the Inspector. Set it before first use.
-	OnChange func(owner tailcfg.UserID, s Summary)
+	OnChange func(owner tailcfg.UserID, channel string, s Summary)
 
-	mu     sync.Mutex
-	byHook map[hooks.ID][]*Call // oldest first
-	byID   map[string]*Call
+	mu      sync.Mutex
+	byHook  map[hooks.ID][]*Call // oldest first
+	refused map[hooks.ID][]*Call // oldest first; the calls with Refused set
+	byID    map[string]*Call
 }
 
 func New(cfg Config) *Inspector {
@@ -44,7 +50,7 @@ func New(cfg Config) *Inspector {
 	if cfg.Redact == nil {
 		cfg.Redact = DefaultRedact
 	}
-	return &Inspector{cfg: cfg, redact: NewRedactor(cfg.Redact), byHook: map[hooks.ID][]*Call{}, byID: map[string]*Call{}}
+	return &Inspector{cfg: cfg, redact: NewRedactor(cfg.Redact), byHook: map[hooks.ID][]*Call{}, refused: map[hooks.ID][]*Call{}, byID: map[string]*Call{}}
 }
 
 // CallsPerHook is how many calls the inspector keeps per hook.
@@ -116,19 +122,24 @@ func (in *Inspector) NewBuffer(hookCapture bool) *Buffer {
 }
 
 // Add records a new call and drops the hook's oldest calls beyond
-// CallsPerHook.
+// CallsPerHook. Refused calls are kept apart, up to refusedPerHook, and
+// only ever drop each other.
 func (in *Inspector) Add(c Call) {
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	p := &c
-	list := append(in.byHook[c.HookID], p)
-	if over := len(list) - in.cfg.CallsPerHook; over > 0 {
+	ring, limit := in.byHook, in.cfg.CallsPerHook
+	if c.Refused {
+		ring, limit = in.refused, refusedPerHook
+	}
+	list := append(ring[c.HookID], p)
+	if over := len(list) - limit; over > 0 {
 		for _, old := range list[:over] {
 			delete(in.byID, old.ID)
 		}
 		list = slices.Delete(list, 0, over)
 	}
-	in.byHook[c.HookID] = list
+	ring[c.HookID] = list
 	in.byID[c.ID] = p
 	in.changedLocked(p)
 }
@@ -146,24 +157,32 @@ func (in *Inspector) Update(id string, f func(*Call)) {
 }
 
 func (in *Inspector) changedLocked(c *Call) {
-	if in.OnChange != nil {
-		in.OnChange(c.Owner, c.Summary())
+	if in.OnChange != nil && !c.Refused {
+		in.OnChange(c.Owner, c.Channel, c.Summary())
 	}
 }
 
-// List returns the hook's calls, newest first.
+// List returns the hook's calls, refused ones included, newest first.
 func (in *Inspector) List(hook hooks.ID) []Summary {
 	in.mu.Lock()
 	defer in.mu.Unlock()
-	list := in.byHook[hook]
-	out := make([]Summary, 0, len(list))
-	for i := len(list) - 1; i >= 0; i-- {
-		out = append(out, list[i].Summary())
+	calls, refused := in.byHook[hook], in.refused[hook]
+	out := make([]Summary, 0, len(calls)+len(refused))
+	i, j := len(calls)-1, len(refused)-1
+	for i >= 0 || j >= 0 {
+		if j < 0 || i >= 0 && !refused[j].ReceivedAt.After(calls[i].ReceivedAt) {
+			out = append(out, calls[i].Summary())
+			i--
+		} else {
+			out = append(out, refused[j].Summary())
+			j--
+		}
 	}
 	return out
 }
 
-// Latest returns the hook's newest call.
+// Latest returns the hook's newest call that was not refused: refused
+// calls are not announced, and must not hide the hook's real traffic.
 func (in *Inspector) Latest(hook hooks.ID) (Summary, bool) {
 	in.mu.Lock()
 	defer in.mu.Unlock()
@@ -189,8 +208,9 @@ func (in *Inspector) Get(id string) (Call, bool) {
 func (in *Inspector) Forget(hook hooks.ID) {
 	in.mu.Lock()
 	defer in.mu.Unlock()
-	for _, c := range in.byHook[hook] {
+	for _, c := range slices.Concat(in.byHook[hook], in.refused[hook]) {
 		delete(in.byID, c.ID)
 	}
 	delete(in.byHook, hook)
+	delete(in.refused, hook)
 }

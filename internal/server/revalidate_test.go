@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -83,12 +84,12 @@ func TestRevalidateRevokesLostChannels(t *testing.T) {
 }
 
 func TestRevalidateRevokesTunnel(t *testing.T) {
-	e := newEnv(t, Config{})
+	e := newEnv(t, Config{Revalidate: 10 * time.Millisecond})
 	hook, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
 	controls, done := e.startClient(hook.ID)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go e.srv.RunRevalidator(ctx, 10*time.Millisecond)
+	go e.srv.RunRevalidator(ctx)
 
 	e.fake.Update(identify.User("laptop", "moritz@example.com", 1, `{"roles":["sender"]}`))
 	if c := receive(t, controls); c.Type != tunnel.ControlRevoked || len(c.Hooks) != 1 || c.Hooks[0].ID != hook.ID {
@@ -205,25 +206,25 @@ func TestRevalidateRevokesChangedOwner(t *testing.T) {
 	}
 }
 
-func TestRevalidateRefreshesPublic(t *testing.T) {
+func TestRevalidateRefreshesGrants(t *testing.T) {
 	e := newEnv(t, Config{})
 	ctx := context.Background()
 	h, _ := e.api.CreateHook(ctx, hooks.CreateRequest{Path: "cb"})
 	e.startClient(h.ID) // dials as receiver, whose grant has no public
 	tun, _ := e.srv.tunnels.Lookup(hooks.ID(h.ID))
-	if tun.Public() {
-		t.Fatal("a tunnel of an owner without the public grant must not start public")
+	if len(tun.Identity().Grants.PublicPatterns) != 0 {
+		t.Fatal("a tunnel of an owner without the public grant must not start with it")
 	}
 	// fake.Update re-identifies the connections already dialled, the tunnel's included.
 	e.fake.Update(identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"public":true}`))
 	e.srv.revalidate(ctx)
-	if !tun.Public() {
-		t.Fatal("revalidation did not pick up the public grant")
+	if !slices.Equal(tun.Identity().Grants.PublicPatterns, []string{"*"}) {
+		t.Fatalf("grants = %+v, revalidation did not pick up the public grant", tun.Identity().Grants)
 	}
 	e.fake.Update(receiver)
 	e.srv.revalidate(ctx)
-	if tun.Public() {
-		t.Fatal("revalidation did not clear the public flag")
+	if len(tun.Identity().Grants.PublicPatterns) != 0 {
+		t.Fatal("revalidation did not clear the public grant")
 	}
 	if _, ok := e.srv.tunnels.Lookup(hooks.ID(h.ID)); !ok {
 		t.Fatal("losing public must not detach the hook from the tailnet")
