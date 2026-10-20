@@ -1,11 +1,11 @@
 # The web UI is built into web/dist, which the binary embeds. A plain
 # `go build` works without Node and serves a placeholder page instead.
-.PHONY: ui build dev check e2e sbom sbom-check sbom-verify
+.PHONY: ui build dev check e2e sbom
 
 ui:
 	cd web && pnpm install --frozen-lockfile && pnpm build
 
-build: ui
+build: ui sbom
 	go build -o tsrelay ./cmd/tsrelay
 
 # Vite on :5173 in front of the dev harness (internal/server/uidev_test.go)
@@ -27,17 +27,9 @@ check:
 e2e: ui
 	cd web && pnpm exec playwright install chromium && pnpm e2e
 
-# The SBOM, license texts and notices internal/sbom embeds; see
-# scripts/build-sbom.sh. Needs jq.
-SBOM_ARTIFACTS = internal/sbom/sbom.cdx.json internal/sbom/licensetexts.json internal/sbom/notices.txt
-
+# The SBOM, license texts and notices internal/sbom embeds, written to
+# internal/sbom/generated; see scripts/build-sbom.sh. Needs jq. Without
+# them the binary has no licenses page or `tsrelay licenses`.
 sbom:
 	cd web && pnpm install --frozen-lockfile
 	./scripts/build-sbom.sh
-
-# Fails when the committed SBOM is stale. CI runs sbom, then sbom-verify.
-sbom-check: sbom sbom-verify
-
-sbom-verify:
-	@git diff --exit-code -- $(SBOM_ARTIFACTS) \
-	  || { echo "The SBOM is stale; run 'make sbom' and commit the result." >&2; exit 1; }

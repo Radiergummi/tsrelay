@@ -15,7 +15,40 @@ import (
 // nobody is identified but has no role; the attribution needs none.
 var nobody = identify.User("phone", "nobody@example.com", 4)
 
+// requireSBOM skips tests of the attribution in a build without the SBOM.
+// CI's sbom job builds it and runs these tests.
+func requireSBOM(t *testing.T) {
+	t.Helper()
+	if !sbom.Available() {
+		t.Skip("this build has no SBOM; run 'make sbom'")
+	}
+}
+
+// The entry document links the licenses only when there are some.
+func TestEntryDocumentLinksTheLicenses(t *testing.T) {
+	e := newEnv(t)
+	var me Me
+	e.call(nobody, "GET", "/", nil, &me)
+	if _, ok := me.Links["licenses"]; ok != sbom.Available() {
+		t.Errorf("links.licenses = %q, SBOM available: %v", me.Links["licenses"], sbom.Available())
+	}
+}
+
+// A plain go build has no SBOM, and says so rather than serving nothing.
+func TestAttributionWithoutSBOM(t *testing.T) {
+	if sbom.Available() {
+		t.Skip("this build has an SBOM")
+	}
+	e := newEnv(t)
+	for _, path := range []string{"/licenses", "/notices.txt", "/sbom.cdx.json"} {
+		if resp := e.call(nobody, "GET", path, nil, nil); resp.StatusCode != http.StatusNotFound || resp.Header.Get("Content-Type") != "application/problem+json" {
+			t.Errorf("GET %s = %d %s, want a 404 problem", path, resp.StatusCode, resp.Header.Get("Content-Type"))
+		}
+	}
+}
+
 func TestLicenses(t *testing.T) {
+	requireSBOM(t)
 	e := newEnv(t)
 	e.srv.Config.Handler = negotiate.Extensions(e.srv.Config.Handler)
 	var doc sbom.Document
@@ -35,6 +68,7 @@ func TestLicenses(t *testing.T) {
 }
 
 func TestLicenseText(t *testing.T) {
+	requireSBOM(t)
 	e := newEnv(t)
 	var doc sbom.Document
 	json.Unmarshal(sbom.ProjectedJSON(), &doc)
@@ -53,6 +87,7 @@ func TestLicenseText(t *testing.T) {
 }
 
 func TestNoticesAndSBOM(t *testing.T) {
+	requireSBOM(t)
 	e := newEnv(t)
 	// Through the extension handling the server uses: .json must not be
 	// stripped from /sbom.cdx.json.
@@ -76,12 +111,13 @@ func TestEntryDocumentNamesTheCommit(t *testing.T) {
 	}
 	e.api.Commit = "0123456789abcdef"
 	var me Me
-	if e.call(nobody, "GET", "/", nil, &me); me.Commit != "0123456789abcdef" || me.Links["licenses"] != "/licenses" {
+	if e.call(nobody, "GET", "/", nil, &me); me.Commit != "0123456789abcdef" {
 		t.Errorf("entry document = %+v", me)
 	}
 }
 
 func TestAttributionNeedsNoRole(t *testing.T) {
+	requireSBOM(t)
 	e := newEnv(t)
 	for _, path := range []string{"/licenses", "/notices.txt", "/sbom.cdx.json"} {
 		if resp := e.call(nobody, "GET", path, nil, nil); resp.StatusCode != 200 {

@@ -29,6 +29,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/release"
+	"github.com/Radiergummi/tsrelay/internal/sbom"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"golang.org/x/mod/semver"
 	"tailscale.com/tailcfg"
@@ -90,8 +91,15 @@ type Me struct {
 	ReleaseURL    string `json:"releaseURL,omitempty"`
 }
 
-// links point from the entry document to the relay's resources.
-var links = map[string]string{"hooks": "/hooks", "channels": "/channels", "tunnel": "/tunnel", "openapi": "/openapi.json", "licenses": "/licenses"}
+// links point from the entry document to the relay's resources. A build
+// without an SBOM has no licenses to link to.
+var links = func() map[string]string {
+	l := map[string]string{"hooks": "/hooks", "channels": "/channels", "tunnel": "/tunnel", "openapi": "/openapi.json", "licenses": "/licenses"}
+	if !sbom.Available() {
+		delete(l, "licenses")
+	}
+	return l
+}()
 
 // Policy is the relay-wide setting defaults and maxima (DESIGN.md §8), which
 // the UI shows next to each setting, and how many calls the relay keeps per
