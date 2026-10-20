@@ -7,13 +7,38 @@ import (
 	"testing"
 
 	"tailscale.com/ipn/ipnstate"
+
+	"github.com/Radiergummi/tsrelay/internal/sbom"
 )
+
+// requireSBOM skips tests of the notices in a build without the SBOM. CI's
+// sbom job builds it and runs these tests.
+func requireSBOM(t *testing.T) {
+	t.Helper()
+	if !sbom.Available() {
+		t.Skip("this build has no SBOM; run 'make sbom'")
+	}
+}
+
+func TestLicensesWithoutSBOM(t *testing.T) {
+	if sbom.Available() {
+		t.Skip("this build has an SBOM")
+	}
+	var stdout, stderr syncBuf
+	if code := run(t.Context(), []string{"licenses"}, &stdout, &stderr, deps{Status: noTailscale}); code == 0 {
+		t.Fatal("licenses exited 0 without notices to print")
+	}
+	if !strings.Contains(stderr.String(), "no license notices") {
+		t.Errorf("stderr = %q", stderr.String())
+	}
+}
 
 func noTailscale(context.Context) (*ipnstate.Status, error) {
 	return nil, errors.New("tailscale is not running")
 }
 
 func TestLicensesPrintsTheNotices(t *testing.T) {
+	requireSBOM(t)
 	t.Setenv("TSRELAY_RELAY", "")
 	var stdout syncBuf
 	if code := run(t.Context(), []string{"licenses"}, &stdout, new(nopWriter), deps{Status: noTailscale}); code != 0 {
@@ -32,6 +57,7 @@ func TestLicensesPrintsTheNotices(t *testing.T) {
 }
 
 func TestLicensesNamesTheRelaysPage(t *testing.T) {
+	requireSBOM(t)
 	var stdout syncBuf
 	if code := run(t.Context(), []string{"licenses", "--relay", "tsrelay.example.ts.net"}, &stdout, new(nopWriter), deps{Status: noTailscale}); code != 0 {
 		t.Fatalf("licenses exited %d", code)

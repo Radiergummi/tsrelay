@@ -26,13 +26,13 @@ Other useful targets:
 
 ```bash
 make ui        # build the web UI into web/dist, which the binary embeds
-make build     # make ui, then build ./tsrelay
-make sbom      # regenerate the SBOM and license texts in internal/sbom (needs jq)
+make build     # make ui and make sbom, then build ./tsrelay
+make sbom      # build the SBOM and license texts into internal/sbom/generated (needs jq)
 ```
 
-The binary embeds a software bill of materials, its components' license and notice texts, and the notices built from them (`internal/sbom`), which the licenses page and `tsrelay licenses` show. When you add, remove or upgrade a Go module or a web UI dependency, run `make sbom` and commit the result. CI regenerates them and fails if they differ from what's committed (`make sbom-check` does the same locally). The output is the same on every machine: the Go part is pinned to linux/amd64 and to the Go version go.mod names.
+The binary embeds a software bill of materials, its components' license and notice texts, and the notices built from them (`internal/sbom`), which the licenses page and `tsrelay licenses` show. They are built, not committed: `make build` builds them, and CI builds them for the release. The output is the same on every machine: the Go part is pinned to linux/amd64 and to the Go version go.mod names.
 
-A plain `go build` works without Node and pnpm; its binary serves a placeholder page instead of the UI.
+A plain `go build` works without Node, pnpm and jq; its binary serves a placeholder page instead of the UI, and has no licenses page or `tsrelay licenses`.
 
 To work on the web UI, `make dev` serves it with hot reload on http://127.0.0.1:5173 against a dev relay with sample data. That relay also listens directly on 127.0.0.1:8098 (admin only), :8097 (no grant) and :8096 (another user), so you can open those to see the other identities' views.
 

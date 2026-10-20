@@ -6,3 +6,5 @@
 /web/test-results/
 /web/playwright-report/
 .superpowers
+/internal/sbom/generated/*
+!/internal/sbom/generated/.gitkeep
