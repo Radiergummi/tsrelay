@@ -35,9 +35,10 @@ type Effective struct {
 	// Patterns maps each granted role to the channel patterns it applies to.
 	Patterns map[Role][]string
 	Limits   Limits
-	// Public lets the node's user make their hooks reachable from the
-	// internet. Only a value that grants the receiver role can set it.
-	Public bool
+	// PublicPatterns are the channels in which the node's user may make hooks
+	// reachable from the internet. Only a value that grants the receiver role
+	// contributes, and only for its own channels.
+	PublicPatterns []string
 }
 
 // Has reports whether the role was granted at all.
@@ -49,6 +50,16 @@ func (e Effective) Has(r Role) bool {
 // Allows reports whether one of the role's patterns matches channel.
 func (e Effective) Allows(r Role, channel string) bool {
 	for _, p := range e.Patterns[r] {
+		if MatchChannel(p, channel) {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowsPublic reports whether one of the public patterns matches channel.
+func (e Effective) AllowsPublic(channel string) bool {
+	for _, p := range e.PublicPatterns {
 		if MatchChannel(p, channel) {
 			return true
 		}
@@ -118,7 +129,11 @@ func Parse(values []tailcfg.RawMessage, defaults Limits) (eff Effective, errs []
 			eff.Limits.MaxHookTTL = max(eff.Limits.MaxHookTTL, time.Duration(*v.MaxHookTTL))
 		}
 		if v.Public && slices.Contains(v.Roles, RoleReceiver) {
-			eff.Public = true
+			for _, c := range channels {
+				if !slices.Contains(eff.PublicPatterns, c) {
+					eff.PublicPatterns = append(eff.PublicPatterns, c)
+				}
+			}
 		}
 	}
 	return eff, errs

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"tailscale.com/tailcfg"
 )
 
 // finished waits until the call has an outcome and returns it.
@@ -175,5 +177,59 @@ func TestRecordsRefusedCalls(t *testing.T) {
 	resp = e.do(sender, "POST", "/~moritz/nope", nil, nil)
 	if _, ok := e.in.Get(resp.Header.Get(HeaderCallID)); ok {
 		t.Fatal("a call for no hook was recorded")
+	}
+}
+
+// A node with a sender role but not the hook's channel cannot flood the
+// owner's inspector: its refused calls stay apart from delivered ones,
+// publish no events and spend none of the hook's rate limit.
+func TestRefusedCallsDoNotEvict(t *testing.T) {
+	e := newEnvWith(t, inspect.Config{CallsPerHook: 5})
+	var events atomic.Int64
+	e.in.OnChange = func(tailcfg.UserID, string, inspect.Summary) { events.Add(1) }
+	e.patch(hooks.SettingsPatch{RateLimit: hooks.Opt[hooks.RateLimit]{Set: true, Value: &hooks.RateLimit{PerSecond: 0.001, Burst: 6}}})
+	e.attach(echo(), tunnel.Options{})
+	var delivered []string
+	for range 5 {
+		resp := e.do(sender, "POST", "/~moritz/cb", nil, nil)
+		io.ReadAll(resp.Body)
+		delivered = append(delivered, e.finished(resp).ID)
+	}
+	before := events.Load()
+
+	staging := identify.Tagged("w2", []string{"tag:staging"}, `{"roles":["sender"],"channels":["staging"]}`)
+	var last inspect.Call
+	for range 50 {
+		resp := e.do(staging, "POST", "/~moritz/cb", nil, nil)
+		wantProblem(t, resp, 404, problem.HookNotFound)
+		last = e.finished(resp) // the owner can still open a refused call
+	}
+	if !last.Refused || last.HookID != e.hook.ID {
+		t.Fatalf("refused call = %+v", last)
+	}
+	if n := events.Load(); n != before {
+		t.Fatalf("refused calls published %d events", n-before)
+	}
+
+	refused, kept := 0, map[string]bool{}
+	for _, s := range e.in.List(e.hook.ID) {
+		if s.Refused {
+			refused++
+		} else {
+			kept[s.ID] = true
+		}
+	}
+	for _, id := range delivered {
+		if !kept[id] {
+			t.Fatalf("delivered call %s was evicted by refused ones", id)
+		}
+	}
+	if refused == 0 || refused > 10 {
+		t.Fatalf("%d refused calls listed, want 1 to 10", refused)
+	}
+
+	// The refused calls spent none of the burst: the sixth real call passes.
+	if resp := e.do(sender, "POST", "/~moritz/cb", nil, nil); resp.StatusCode != 200 {
+		t.Fatalf("next real call: %d", resp.StatusCode)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"github.com/Radiergummi/tsrelay/internal/tunnel/tunneltest"
@@ -227,13 +228,14 @@ func TestConcurrencyAboveDefault(t *testing.T) {
 	}
 }
 
-func TestPublicFlag(t *testing.T) {
+func TestGrants(t *testing.T) {
 	tun, _ := tunneltest.Pair(t, http.NotFoundHandler(), tunnel.Options{}, nil)
-	if tun.Public() {
-		t.Fatal("a tunnel whose owner has no public grant starts public")
+	tun.Owner = authz.Identity{UserID: 1, Grants: authz.Effective{PublicPatterns: []string{"dev"}}}
+	if got := tun.Identity(); got.UserID != 1 || !got.Grants.AllowsPublic("dev") {
+		t.Fatalf("Identity() = %+v, want the owner", got)
 	}
-	tun.SetPublic(true)
-	if !tun.Public() {
-		t.Fatal("SetPublic(true) did not stick")
+	tun.SetGrants(authz.Effective{})
+	if got := tun.Identity(); got.UserID != 1 || got.Grants.AllowsPublic("dev") {
+		t.Fatalf("Identity() = %+v, want the owner with the new grants", got)
 	}
 }

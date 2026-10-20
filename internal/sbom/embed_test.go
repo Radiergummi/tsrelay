@@ -7,7 +7,17 @@ import (
 	"testing"
 )
 
+// requireSBOM skips tests of the built artifacts in a build without them.
+// CI's sbom job builds them and runs these tests.
+func requireSBOM(t *testing.T) {
+	t.Helper()
+	if !Available() {
+		t.Skip("this build has no SBOM; run 'make sbom'")
+	}
+}
+
 func TestRawIsCycloneDX(t *testing.T) {
+	requireSBOM(t)
 	var doc map[string]any
 	if err := json.Unmarshal(Raw(), &doc); err != nil {
 		t.Fatalf("the embedded SBOM is not JSON: %v", err)
@@ -20,6 +30,7 @@ func TestRawIsCycloneDX(t *testing.T) {
 // served is the document GET /licenses serves, the only one with text IDs.
 func served(t *testing.T) Document {
 	t.Helper()
+	requireSBOM(t)
 	var doc Document
 	if err := json.Unmarshal(ProjectedJSON(), &doc); err != nil {
 		t.Fatalf("ProjectedJSON: %v", err)
@@ -94,6 +105,7 @@ func TestNoticesCoverEveryComponent(t *testing.T) {
 }
 
 func TestNoticesStartWithTsrelaysNotice(t *testing.T) {
+	requireSBOM(t)
 	notice, err := os.ReadFile("../../NOTICE")
 	if err != nil {
 		t.Fatal(err)
@@ -106,6 +118,7 @@ func TestNoticesStartWithTsrelaysNotice(t *testing.T) {
 // Reads one entry straight from the pool, so a broken lookup cannot supply
 // its own fixture.
 func TestAttachTextsSetsIDsFromThePool(t *testing.T) {
+	requireSBOM(t)
 	key, want := "", ComponentTexts{}
 	for k, entry := range texts.Components {
 		if key == "" || entry.Notice != "" {

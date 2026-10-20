@@ -72,7 +72,10 @@ export function api(request: APIRequestContext, user: keyof typeof users = "dev"
       return ((await r.json()) as { id: string }).id;
     },
     async deleteHook(id: string): Promise<void> {
-      await request.delete(`${base}/hooks/${id}`);
+      const r = await request.delete(`${base}/hooks/${id}`, {
+        headers: { "Content-Type": "application/json" },
+      });
+      expect(r.status()).toBe(204);
     },
     async sendTest(hookId: string, path: string): Promise<string> {
       const r = await request.post(`${base}/hooks/${hookId}/test`, {

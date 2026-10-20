@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -17,6 +18,9 @@ func newLicensesCmd(c *cli) *cobra.Command {
 		Short: "Print the licenses of the open-source components in tsrelay",
 		Args:  arity(0, 0, ""),
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !sbom.Available() {
+				return errors.New("this build of tsrelay has no license notices; build it with make build, or install a release")
+			}
 			c.stdout.Write(sbom.Notices())
 			if base, err := relayBase(cmd.Context(), c.relay, c.d); err == nil {
 				fmt.Fprintf(c.stdout, "\nThe relay lists them at %s/licenses\n", base)

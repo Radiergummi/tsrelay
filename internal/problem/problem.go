@@ -91,6 +91,7 @@ func (p *Problem) Error() string { return p.Code + ": " + p.Detail }
 // Write sends p. Callers set extra headers such as Retry-After beforehand.
 func (p *Problem) Write(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/problem+json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set(HeaderError, p.Code)
 	w.WriteHeader(p.Status)
 	_ = json.NewEncoder(w).Encode(p)

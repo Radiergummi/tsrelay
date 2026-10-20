@@ -12,7 +12,10 @@ info:
 
     Callers are identified by their tailnet identity; there are no tokens.
     Every response carries `Tsrelay-Version`. Errors are
-    `application/problem+json` and carry `Tsrelay-Error`.
+    `application/problem+json` and carry `Tsrelay-Error`. API responses are
+    `Cache-Control: no-store`. Every write without a `Sec-Fetch-Site` header
+    must send `Content-Type: application/json`, even without a body (415
+    otherwise).
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -39,11 +42,11 @@ paths:
     get:
       operationId: listHooks
       summary: Your hooks
-      description: As events, changes to your hooks and their calls.
+      description: As events, changes to your hooks and their calls. Event streams need a role; a node may hold 8 open, and each is authorized again while open.
       parameters:
         - name: all
           in: query
-          description: Admins only; every user's hooks, as metadata.
+          description: Admins only; every user's hooks in the admin's channels, as metadata.
           schema: { type: boolean }
         - name: channel
           in: query
@@ -62,6 +65,7 @@ paths:
             text/html: {}
         "403": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
     post:
       operationId: createHook
       summary: Create a hook
@@ -105,8 +109,10 @@ paths:
             text/event-stream:
               schema: { $ref: "#/components/schemas/Event" }
             text/html: {}
+        "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
     patch:
       operationId: updateHook
       summary: Change a hook; only the given fields change
@@ -124,6 +130,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Hook" }
         "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "422": { $ref: "#/components/responses/Problem" }
     delete:
@@ -145,6 +152,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Hook" }
+        "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
   /hooks/{id}/calls:
@@ -165,8 +173,10 @@ paths:
             text/event-stream:
               schema: { $ref: "#/components/schemas/Event" }
             text/html: {}
+        "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
   /hooks/{id}/calls/{callID}:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -501,7 +511,7 @@ components:
                 rateLimit: { $ref: "#/components/schemas/RateLimit" }
             callsPerHook: { type: integer }
             noBodies: { type: boolean, description: "The relay keeps no bodies, whatever hooks set (--capture-bodies=false)" }
-        public: { type: boolean, description: "The caller may make hooks public" }
+        public: { type: array, items: { type: string }, description: "Channel patterns in which the caller may make hooks public; empty when none" }
         funnel: { type: boolean, description: "The relay serves public hooks on the internet" }
         links:
           type: object
@@ -531,7 +541,9 @@ components:
             id: { type: string }
             node: { type: string }
             target: { type: string }
-        lastCall: { $ref: "#/components/schemas/Summary" }
+        lastCall:
+          $ref: "#/components/schemas/Summary"
+          description: The newest call that was not refused.
     Channels:
       type: object
       required: [receive, send, channels]
@@ -612,6 +624,12 @@ components:
         receivedAt: { type: string, format: date-time }
         kind: { type: string, enum: [sender, public, replay, test] }
         replayOf: { type: string }
+        refused:
+          type: boolean
+          description: >-
+            The sender may not use the hook's channel and was answered as if
+            there were no hook. Refused calls are kept apart (the last 10 per
+            hook), never evict delivered calls, and publish no events.
         sender: { $ref: "#/components/schemas/Sender" }
         method: { type: string }
         path: { type: string }
@@ -686,9 +704,9 @@ components:
     Event:
       description: |
         A server-sent event. `event: call` carries a call `Summary` when a
-        call arrives and again when it completes; `event: hook` carries the
-        ID of a hook that was created, changed, deleted or expired, or whose
-        tunnel attached or detached. A stream that falls 64 events behind is
+        call arrives and again when it completes, except for refused calls;
+        `event: hook` carries the ID of a hook that was created, changed,
+        deleted or expired, or whose tunnel attached or detached. A stream that falls 64 events behind is
         closed; reconnect and refetch.
       oneOf:
         - $ref: "#/components/schemas/Summary"

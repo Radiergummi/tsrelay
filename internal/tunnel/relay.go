@@ -68,8 +68,8 @@ type Tunnel struct {
 	conn *watchedConn
 	sem  chan struct{}
 
-	closeReason atomic.Pointer[string] // why the relay closed the tunnel; nil: the connection ended
-	public      atomic.Bool            // the owner may receive public calls; the revalidator refreshes it
+	closeReason atomic.Pointer[string]          // why the relay closed the tunnel; nil: the connection ended
+	grants      atomic.Pointer[authz.Effective] // the node's latest grants; nil: Owner.Grants
 }
 
 // NewTunnel starts speaking HTTP/2, as client, on an accepted connection.
@@ -89,9 +89,7 @@ func NewTunnel(conn net.Conn, id string, owner authz.Identity, opts Options) (*T
 		wc.Close()
 		return nil, err
 	}
-	t := &Tunnel{ID: id, Owner: owner, cc: cc, conn: wc, sem: make(chan struct{}, opts.Concurrency)}
-	t.public.Store(owner.Grants.Public)
-	return t, nil
+	return &Tunnel{ID: id, Owner: owner, cc: cc, conn: wc, sem: make(chan struct{}, opts.Concurrency)}, nil
 }
 
 // Done is closed once the tunnel's connection has failed or been closed.
@@ -112,12 +110,18 @@ func (t *Tunnel) CloseReason() string {
 	return "disconnected"
 }
 
-// Public reports whether the tunnel's owner may currently receive calls
-// from the internet. Public calls are only delivered through such tunnels.
-func (t *Tunnel) Public() bool { return t.public.Load() }
+// Identity is the tunnel's owner with the latest grants its node was
+// identified with.
+func (t *Tunnel) Identity() authz.Identity {
+	id := t.Owner
+	if g := t.grants.Load(); g != nil {
+		id.Grants = *g
+	}
+	return id
+}
 
-// SetPublic records whether the owner may receive public calls.
-func (t *Tunnel) SetPublic(v bool) { t.public.Store(v) }
+// SetGrants records the grants the tunnel's node was identified with again.
+func (t *Tunnel) SetGrants(g authz.Effective) { t.grants.Store(&g) }
 
 // CloseWith closes the tunnel, recording reason unless one was recorded first.
 func (t *Tunnel) CloseWith(reason string) {

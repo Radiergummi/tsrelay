@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/problem"
@@ -85,12 +86,12 @@ func TestMePublicAndFunnel(t *testing.T) {
 	e := newEnv(t)
 	var me Me
 	e.call(publicMoritz, "GET", "/", nil, &me)
-	if !me.Public || me.Funnel {
+	if len(me.Public) != 1 || me.Public[0] != "*" || me.Funnel {
 		t.Fatalf("me = %+v; want public grant, funnel off", me)
 	}
 	e.api.PublicBaseURL = publicBase
 	e.call(moritz, "GET", "/", nil, &me)
-	if me.Public || !me.Funnel {
+	if me.Public == nil || len(me.Public) != 0 || !me.Funnel {
 		t.Fatalf("me = %+v; want no public grant, funnel on", me)
 	}
 }
@@ -133,9 +134,9 @@ func TestPublicRefreshesTunnelGrant(t *testing.T) {
 	}
 	t.Cleanup(func() { conn.Close() })
 	tun, _ := tunneltest.Pair(t, http.NotFoundHandler(), tunnel.Options{}, nil)
-	tun.Owner, tun.RemoteAddr = moritz, conn.LocalAddr().String()
+	tun.RemoteAddr = conn.LocalAddr().String()
 	e.attach(moritz, tun, h.ID)
-	if tun.Public() {
+	if access.MayPublish(tun.Identity().Grants, h.Channel) {
 		t.Fatal("the tunnel may receive public calls before the grant")
 	}
 
@@ -143,7 +144,7 @@ func TestPublicRefreshesTunnelGrant(t *testing.T) {
 	if resp := e.call(publicMoritz, "PATCH", "/hooks/"+h.ID, map[string]any{"public": true}, nil); resp.StatusCode != 200 {
 		t.Fatalf("update: %d", resp.StatusCode)
 	}
-	if !tun.Public() {
+	if !access.MayPublish(tun.Identity().Grants, h.Channel) {
 		t.Fatal("the tunnel still may not receive public calls")
 	}
 }

@@ -1,25 +1,50 @@
 package sbom
 
 import (
-	_ "embed"
+	"embed"
 	"encoding/json"
 )
 
-// The artifacts `make sbom` writes; see scripts/build-sbom.sh. Tests check
-// they parse and agree, so decoding them at startup cannot fail.
+// The artifacts `make sbom` writes into generated/; see
+// scripts/build-sbom.sh. They are built, not committed, so a plain go build
+// embeds none of them and Available reports false. Tests check that built
+// ones parse and agree, so decoding them at startup cannot fail.
+//
+//go:embed all:generated
+var generated embed.FS
+
 var (
-	//go:embed sbom.cdx.json
-	raw []byte
-	//go:embed licensetexts.json
-	rawTexts []byte
-	//go:embed notices.txt
-	notices []byte
+	raw      = read("sbom.cdx.json")
+	rawTexts = read("licensetexts.json")
+	notices  = read("notices.txt")
 )
 
 var (
-	texts         = mustDecode[Artifact](rawTexts)
-	projectedJSON = mustProject(raw)
+	texts         Artifact
+	projectedJSON []byte
 )
+
+// Each is decoded on its own: scripts/licensetexts imports this package
+// while only the SBOM has been written.
+func init() {
+	if rawTexts != nil {
+		texts = mustDecode[Artifact](rawTexts)
+	}
+	if raw != nil {
+		projectedJSON = mustProject(raw)
+	}
+}
+
+func read(name string) []byte {
+	b, _ := generated.ReadFile("generated/" + name) // absent without `make sbom`
+	return b
+}
+
+// Available reports whether this build embeds the SBOM and the texts made
+// from it. `make build` and the release builds do.
+func Available() bool {
+	return raw != nil && rawTexts != nil && notices != nil
+}
 
 func mustDecode[T any](b []byte) T {
 	var v T

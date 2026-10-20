@@ -1,7 +1,8 @@
 // Command licensetexts harvests the license and notice texts of every
-// component in the SBOM into internal/sbom/licensetexts.json, and renders
-// them after tsrelay's NOTICE into internal/sbom/notices.txt. Run by
-// scripts/build-sbom.sh from the repository root.
+// component in the SBOM into internal/sbom/generated/licensetexts.json, and
+// renders them after tsrelay's NOTICE into
+// internal/sbom/generated/notices.txt. Run by scripts/build-sbom.sh from the
+// repository root.
 package main
 
 import (
@@ -17,9 +18,9 @@ import (
 )
 
 const (
-	sbomPath    = "internal/sbom/sbom.cdx.json"
-	textsPath   = "internal/sbom/licensetexts.json"
-	noticesPath = "internal/sbom/notices.txt"
+	sbomPath    = "internal/sbom/generated/sbom.cdx.json"
+	textsPath   = "internal/sbom/generated/licensetexts.json"
+	noticesPath = "internal/sbom/generated/notices.txt"
 	preamble    = "NOTICE"
 	nodeModules = "web/node_modules/.pnpm"
 )

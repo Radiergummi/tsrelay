@@ -143,6 +143,7 @@ func TestEventStreamEndsAfterMaxAge(t *testing.T) {
 	defer func(d time.Duration) { eventMaxAge = d }(eventMaxAge)
 	eventMaxAge = 100 * time.Millisecond
 	e := newEnv(t)
+	withHub(e) // without a hub, streams end at once
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

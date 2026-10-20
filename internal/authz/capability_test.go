@@ -121,10 +121,26 @@ func TestParsePublic(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			eff, errs := Parse(raw(tc.values...), DefaultLimits)
-			if len(errs) != 0 || eff.Public != tc.want {
-				t.Fatalf("Public = %v (errs %v), want %v", eff.Public, errs, tc.want)
+			if got := len(eff.PublicPatterns) > 0; len(errs) != 0 || got != tc.want {
+				t.Fatalf("public = %v (errs %v), want %v", got, errs, tc.want)
 			}
 		})
+	}
+}
+
+func TestParsePublicScoped(t *testing.T) {
+	eff, errs := Parse(raw(
+		`{"roles":["receiver"],"channels":["dev"],"public":true}`,
+		`{"roles":["receiver"],"channels":["prod"]}`,
+	), DefaultLimits)
+	if len(errs) != 0 || !eff.AllowsPublic("dev") || eff.AllowsPublic("prod") {
+		t.Fatalf("dev=%v prod=%v (errs %v), want true, false", eff.AllowsPublic("dev"), eff.AllowsPublic("prod"), errs)
+	}
+	if eff, _ := Parse(raw(`{"roles":["receiver"],"public":true}`), DefaultLimits); !eff.AllowsPublic("anything") {
+		t.Fatal("public without channels must apply to every channel")
+	}
+	if eff, _ := Parse(raw(`{"roles":["sender"],"public":true}`), DefaultLimits); len(eff.PublicPatterns) != 0 {
+		t.Fatalf("PublicPatterns = %v, want none", eff.PublicPatterns)
 	}
 }
 

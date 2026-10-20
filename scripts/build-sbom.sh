@@ -8,7 +8,7 @@
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-out=internal/sbom/sbom.cdx.json
+out=internal/sbom/generated/sbom.cdx.json
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 

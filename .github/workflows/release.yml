@@ -9,7 +9,8 @@ permissions:
 
 jobs:
   # Nothing is built or published until the tagged commit passes CI. Its
-  # web job's web-dist artifact is the web UI the binaries embed.
+  # web-dist and sbom artifacts are the web UI and the attribution the
+  # binaries and the image embed.
   ci:
     uses: ./.github/workflows/ci.yml
 
@@ -45,6 +46,11 @@ jobs:
         with:
           name: web-dist
           path: web/dist
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom
+          path: internal/sbom/generated
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -230,6 +236,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The Dockerfile builds the web UI itself, but not the SBOM: it is
+      # copied in with the rest of the build context.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom
+          path: internal/sbom/generated
 
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 

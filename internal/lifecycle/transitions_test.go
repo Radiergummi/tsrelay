@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
+	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/events"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
@@ -334,5 +335,221 @@ func TestRotatePublicTokenNotifies(t *testing.T) {
 	}
 	if e := next(t, evs); e.Type != events.TypeHook || e.HookID != string(id) {
 		t.Fatalf("event = %+v", e)
+	}
+}
+
+// A delete that races an update is announced after it, so the audit log and
+// the hook events never show an update of a deleted hook.
+func TestDeleteWaitsForUpdateAnnouncement(t *testing.T) {
+	l, mgr := newLifecycle(t)
+	logs, _ := observe(l)
+	id := createHooks(t, mgr, 1, hooks.CreateRequest{})[0]
+	announcing, release := make(chan struct{}), make(chan struct{})
+	l.cfg.Audit.Observer = func(event string, _ []slog.Attr) {
+		if event == audit.HookUpdate {
+			close(announcing)
+			<-release
+		}
+	}
+
+	path := "renamed"
+	updated := make(chan error)
+	go func() {
+		_, _, err := l.Update(context.Background(), receiver, id, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: &path}})
+		updated <- err
+	}()
+	<-announcing
+	deleted := make(chan error)
+	go func() { deleted <- l.Delete(context.Background(), receiver, id) }()
+	select {
+	case err := <-deleted:
+		t.Fatalf("Delete returned (%v) while the update was still being announced", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	if err := <-updated; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-deleted; err != nil {
+		t.Fatal(err)
+	}
+	if u, d := strings.Index(logs.String(), `"msg":"hook.update"`), strings.Index(logs.String(), `"msg":"hook.delete"`); u < 0 || d < u {
+		t.Fatalf("audit order wrong: %s", logs.String())
+	}
+}
+
+// Creating a hook is audited and published; a refused create is not.
+func TestCreateAnnounces(t *testing.T) {
+	l, _ := newLifecycle(t)
+	logs, evs := observe(l)
+	h, err := l.Create(context.Background(), receiver, hooks.CreateRequest{Ephemeral: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logs.String(), `"msg":"hook.create"`) || !strings.Contains(logs.String(), `"ephemeral":true`) {
+		t.Fatalf("no hook.create audit line: %s", logs.String())
+	}
+	if e := next(t, evs); e.Type != events.TypeHook || e.HookID != string(h.ID) {
+		t.Fatalf("event = %+v", e)
+	}
+
+	tagged := identify.Tagged("ci", []string{"tag:ci"}, `{"roles":["receiver"]}`)
+	if _, err := l.Create(context.Background(), tagged, hooks.CreateRequest{}); !errors.Is(err, hooks.ErrForbidden) {
+		t.Fatalf("Create by a tagged node = %v", err)
+	}
+	if n := strings.Count(logs.String(), `"msg":"hook.create"`); n != 1 {
+		t.Fatalf("hook.create audit lines = %d", n)
+	}
+	select {
+	case e := <-evs:
+		t.Fatalf("event for a refused create: %+v", e)
+	default:
+	}
+}
+
+var devOnly = identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"channels":["dev"]}`)
+
+// recheckEnv attaches a tunnel from node to two hooks in "dev" and returns
+// them with the client's control messages.
+func recheckEnv(t *testing.T, node authz.Identity) (*Lifecycle, *syncBuffer, *tunnel.Tunnel, []hooks.ID, chan tunnel.Control) {
+	t.Helper()
+	l, mgr := newLifecycle(t)
+	logs, _ := observe(l)
+	ids := createHooks(t, mgr, 2, hooks.CreateRequest{Channel: "dev"})
+	tun, _, controls := controlPair(t)
+	admitAttach(t, l, node, tun, ids...)
+	next(t, controls) // attached
+	return l, logs, tun, ids, controls
+}
+
+// byType receives n control messages; the lifecycle sends them concurrently.
+func byType(t *testing.T, controls chan tunnel.Control, n int) map[tunnel.ControlType][]tunnel.HookInfo {
+	t.Helper()
+	got := map[tunnel.ControlType][]tunnel.HookInfo{}
+	for range n {
+		c := next(t, controls)
+		got[c.Type] = c.Hooks
+	}
+	return got
+}
+
+func noControl(t *testing.T, controls chan tunnel.Control) {
+	t.Helper()
+	select {
+	case c := <-controls:
+		t.Fatalf("unexpected control %+v", c)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func moveTo(t *testing.T, l *Lifecycle, id hooks.ID, channel string) {
+	t.Helper()
+	if _, _, err := l.Update(context.Background(), receiver, id, hooks.UpdateRequest{Channel: hooks.Opt[string]{Set: true, Value: &channel}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A channel change made from one node revokes the hook from the tunnel of
+// another node that may not receive the new channel; the tunnel's other
+// hooks stay.
+func TestChannelChangeRevokesServingTunnel(t *testing.T) {
+	l, logs, tun, ids, controls := recheckEnv(t, receiver)
+	l.cfg.Identify = func(context.Context, string) (authz.Identity, error) { return devOnly, nil }
+	moveTo(t, l, ids[1], "prod")
+
+	if hs := byType(t, controls, 2)[tunnel.ControlRevoked]; len(hs) != 1 || hs[0].ID != string(ids[1]) {
+		t.Fatalf("revoked = %+v, want the moved hook", hs)
+	}
+	if _, ok := l.Lookup(ids[1]); ok {
+		t.Fatal("the moved hook stayed attached")
+	}
+	if cur, ok := l.Lookup(ids[0]); !ok || cur != tun {
+		t.Fatal("the tunnel's other hook was detached")
+	}
+	if !strings.Contains(logs.String(), `"msg":"tunnel.revoked"`) || !strings.Contains(logs.String(), `"reason":"the grants no longer cover the hook's channel"`) {
+		t.Fatalf("no tunnel.revoked audit line with the channel reason: %s", logs.String())
+	}
+	if g := tun.Identity().Grants; !slices.Equal(g.Patterns[authz.RoleReceiver], []string{"dev"}) {
+		t.Fatalf("tunnel grants = %+v, want the re-identified ones", g)
+	}
+}
+
+// When the tunnel's node cannot be identified, its last known grants decide.
+func TestRecheckFallsBackToLastGrants(t *testing.T) {
+	fail := func(context.Context, string) (authz.Identity, error) {
+		return authz.Identity{}, errors.New("whois failed")
+	}
+
+	l, _, _, ids, controls := recheckEnv(t, devOnly)
+	l.cfg.Identify = fail
+	moveTo(t, l, ids[1], "prod")
+	if hs := byType(t, controls, 2)[tunnel.ControlRevoked]; len(hs) != 1 || hs[0].ID != string(ids[1]) {
+		t.Fatalf("revoked = %+v, want the moved hook", hs)
+	}
+
+	l, _, tun, ids, controls := recheckEnv(t, receiver)
+	l.cfg.Identify = fail
+	moveTo(t, l, ids[1], "prod")
+	if c := next(t, controls); c.Type != tunnel.ControlHookUpdated {
+		t.Fatalf("control = %+v, want only hook-updated", c)
+	}
+	noControl(t, controls)
+	if cur, ok := l.Lookup(ids[1]); !ok || cur != tun {
+		t.Fatal("a hook the last known grants cover was detached")
+	}
+}
+
+// Losing permission to serve a hook on the internet never revokes it from
+// the tailnet.
+func TestPublicLossKeepsTunnel(t *testing.T) {
+	l, _, tun, ids, controls := recheckEnv(t, devOnly)
+	l.cfg.Identify = func(context.Context, string) (authz.Identity, error) { return devOnly, nil }
+	publisher := identify.User("desk", "moritz@example.com", 1, `{"roles":["receiver"],"public":true}`)
+	if _, _, err := l.Update(context.Background(), publisher, ids[0], hooks.UpdateRequest{Public: hooks.Opt[bool]{Set: true, Value: new(true)}}); err != nil {
+		t.Fatal(err)
+	}
+	if c := next(t, controls); c.Type != tunnel.ControlHookUpdated {
+		t.Fatalf("control = %+v, want only hook-updated", c)
+	}
+	noControl(t, controls)
+	if cur, ok := l.Lookup(ids[0]); !ok || cur != tun {
+		t.Fatal("the hook was detached")
+	}
+}
+
+// Delete decides on the stored hook: an admin scoped to prod whose check
+// passed while the hook was in prod cannot delete it once it moved to dev,
+// and is told it is not found.
+func TestDeleteRechecksStoredHook(t *testing.T) {
+	l, mgr := newLifecycle(t)
+	prodAdmin := identify.User("ops", "ops@example.com", 2, `{"roles":["admin"],"channels":["prod"]}`)
+	id := createHooks(t, mgr, 1, hooks.CreateRequest{Channel: "dev"})[0]
+	if err := l.Delete(context.Background(), prodAdmin, id); !errors.Is(err, hooks.ErrNotFound) {
+		t.Fatalf("Delete = %v, want ErrNotFound", err)
+	}
+	hookOf(t, mgr, id)
+}
+
+// A channel change is announced in both channels, so admins scoped to the
+// old one learn the hook left it.
+func TestUpdateAnnouncesOldChannel(t *testing.T) {
+	l, mgr := newLifecycle(t)
+	_, evs := observe(l)
+	id := createHooks(t, mgr, 1, hooks.CreateRequest{Channel: "dev"})[0]
+	prod := "prod"
+	if _, _, err := l.Update(context.Background(), receiver, id, hooks.UpdateRequest{Channel: hooks.Opt[string]{Set: true, Value: &prod}}); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for range 2 {
+		e := next(t, evs)
+		if e.Type != events.TypeHook || e.HookID != string(id) {
+			t.Fatalf("event = %+v", e)
+		}
+		got = append(got, e.Channel)
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"dev", "prod"}) {
+		t.Fatalf("hook events in channels %v, want dev and prod", got)
 	}
 }

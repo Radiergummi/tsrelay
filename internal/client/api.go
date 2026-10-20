@@ -99,7 +99,8 @@ func (c *API) do(ctx context.Context, method, path string, in, out any) error {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
-	if in != nil {
+	// Bodyless writes carry it too: the relay's guard requires it (DESIGN.md §5.7).
+	if method != http.MethodGet {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := c.HTTP.Do(req)

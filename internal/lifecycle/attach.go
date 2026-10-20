@@ -2,16 +2,19 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/events"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"tailscale.com/tailcfg"
 )
 
 // AdmitErrorKind says which attach check failed.
@@ -85,10 +88,13 @@ func (l *Lifecycle) admit(owner authz.Identity, ids []hooks.ID, session string, 
 	requested := make([]hooks.Hook, 0, len(ids))
 	for _, id := range ids {
 		h, ok := l.cfg.Hooks.Get(id)
-		if !ok || h.Owner != owner.UserID {
+		if !ok {
 			return nil, &AdmitError{Kind: HookNotFound, Hook: id}
 		}
-		if !owner.Grants.Allows(authz.RoleReceiver, h.Channel) {
+		switch err := access.Serve(owner, h.Access()); {
+		case errors.Is(err, access.ErrNotUser), errors.Is(err, access.ErrOtherUser):
+			return nil, &AdmitError{Kind: HookNotFound, Hook: id}
+		case err != nil:
 			return nil, &AdmitError{Kind: ChannelDenied, Hook: id, Channel: h.Channel}
 		}
 		if cur, ok := l.byHook[id]; ok {
@@ -122,20 +128,27 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 	l := tk.l
 	attachedAt := time.Now()
 
-	// A hook deleted since Admit must not be attached. One that another
+	// A hook deleted since Admit must not be attached, nor one the owner
+	// may no longer serve because its channel changed. One that another
 	// tunnel took over meanwhile is taken from it.
-	var live []hooks.ID
-	var goneIDs []hooks.ID
+	var live, goneIDs, revoked []hooks.ID
+	var reason string
 	var infos []tunnel.HookInfo
 	l.mu.Lock()
 	for _, h := range tk.requested {
-		if cur, ok := l.cfg.Hooks.Get(h.ID); ok {
-			live = append(live, h.ID)
-			infos = append(infos, l.hookInfo(cur))
+		cur, ok := l.cfg.Hooks.Get(h.ID)
+		if !ok {
+			// Delete and Reap detach under l.mu, so a deleted hook is served by no tunnel.
+			goneIDs = append(goneIDs, h.ID)
 			continue
 		}
-		// Delete and Reap detach under l.mu, so a deleted hook is served by no tunnel.
-		goneIDs = append(goneIDs, h.ID)
+		if err := access.Serve(tk.owner, cur.Access()); err != nil {
+			revoked = append(revoked, h.ID)
+			reason = RevokeReason(err)
+			continue
+		}
+		live = append(live, h.ID)
+		infos = append(infos, l.hookInfo(cur))
 	}
 	reps := l.attachLocked(t, live)
 	l.mu.Unlock()
@@ -145,11 +158,16 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 		rep.tunnel.Notify(tunnel.Control{Type: tunnel.ControlReplaced, Hooks: idInfos(rep.hooks)}, rep.orphaned)
 	}
 	for _, id := range live {
-		l.cfg.Events.Publish(events.HookChanged(tk.owner.UserID, string(id)))
+		l.publishTunnelChange(tk.owner.UserID, id)
 	}
 	l.cfg.Audit.Log(ctx, audit.TunnelAttach, audit.Actor(tk.owner), slog.String("tunnel", t.ID), slog.Any("hooks", live))
 	if len(infos) > 0 {
 		t.Notify(tunnel.Control{Type: tunnel.ControlAttached, Hooks: infos}, false)
+	}
+	if len(revoked) > 0 {
+		l.cfg.Audit.Log(ctx, audit.TunnelRevoked, audit.Actor(tk.owner), slog.String("tunnel", t.ID),
+			slog.Any("hooks", revoked), slog.String("reason", reason))
+		t.Notify(tunnel.Control{Type: tunnel.ControlRevoked, Hooks: idInfos(revoked)}, len(live) == 0 && len(goneIDs) == 0)
 	}
 	if len(goneIDs) > 0 {
 		t.Notify(tunnel.Control{Type: tunnel.ControlHookDeleted, Hooks: idInfos(goneIDs)}, len(live) == 0)
@@ -163,11 +181,19 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 		hs := l.detachLocked(t)
 		l.mu.Unlock()
 		for _, id := range hs {
-			l.cfg.Events.Publish(events.HookChanged(owner.UserID, string(id)))
+			l.publishTunnelChange(owner.UserID, id)
 		}
 		l.cfg.Audit.Log(ctx, audit.TunnelDetach, audit.Actor(owner), slog.String("tunnel", t.ID))
 		if onEnd != nil {
 			onEnd(time.Since(attachedAt))
 		}
 	}()
+}
+
+// publishTunnelChange announces that the hook id's tunnel attached or
+// detached. A hook deleted meanwhile has no channel any more; its deletion
+// was announced with one.
+func (l *Lifecycle) publishTunnelChange(owner tailcfg.UserID, id hooks.ID) {
+	h, _ := l.cfg.Hooks.Get(id)
+	l.cfg.Events.Publish(events.HookChanged(owner, h.Channel, string(id)))
 }

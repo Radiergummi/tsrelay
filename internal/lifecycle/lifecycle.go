@@ -1,5 +1,5 @@
 // Package lifecycle owns every transition between hooks and the tunnels that
-// serve them: attach (with takeover), detach when a tunnel ends, delete,
+// serve them: create, attach (with takeover), detach when a tunnel ends, delete,
 // expire (Reap), revoke, update, and shutdown. It is the
 // only writer of which tunnel serves which hook and since when a hook has
 // had none.
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
+	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/events"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
@@ -29,17 +30,24 @@ type Config struct {
 	Audit         *audit.Logger
 	BaseURL       string // HookInfo.URL = BaseURL + h.Route()
 	PublicBaseURL string // HookInfo.PublicURL; empty: the relay serves no Funnel
+	// Identify identifies a tunnel's node again, by its remote address, when
+	// a hook it serves changes. nil: its last known grants decide.
+	Identify func(ctx context.Context, remoteAddr string) (authz.Identity, error)
 }
 
 // Lifecycle tracks which tunnel serves each hook. A hook is served by at
 // most one tunnel; attaching a newer tunnel replaces the older one
 // ("takeover"). mu guards the registry state and detached-since.
 //
-// Locks are taken in the order owner attach lock → mu → hooks.Manager.mu;
-// nothing is sent, logged or published while mu is held. Under mu:
+// Locks are taken in the order announce → owner attach lock → mu →
+// hooks.Manager.mu; nothing is sent, logged or published while mu is held.
+// announce is held across a hook's change in the store and its
+// announcement, so changes are announced in the order they were made. Under
+// mu:
 //   - byHook only names stored hooks, because hooks are deleted under mu;
 //   - detached only names stored hooks that no tunnel serves.
 type Lifecycle struct {
+	announce  sync.Mutex // see above; held by Create, Update, RotatePublicToken, Delete and Reap
 	mu        sync.Mutex
 	byHook    map[hooks.ID]*tunnel.Tunnel
 	served    map[*tunnel.Tunnel][]hooks.ID
