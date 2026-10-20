@@ -220,7 +220,12 @@ func TestCallMetricsByOutcome(t *testing.T) {
 	}
 	// Call records are written after the response, so wait for them.
 	var missing []string
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+	defer func() {
+		if t.Failed() {
+			t.Logf("metrics lack %q", missing)
+		}
+	}()
+	e.waitFor(func() bool {
 		rec := httptest.NewRecorder()
 		ops.ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
 		missing = missing[:0]
@@ -229,9 +234,6 @@ func TestCallMetricsByOutcome(t *testing.T) {
 				missing = append(missing, w)
 			}
 		}
-		if len(missing) == 0 {
-			return
-		}
-	}
-	t.Fatalf("metrics lack %q", missing)
+		return len(missing) == 0
+	})
 }

@@ -52,38 +52,24 @@ type call struct {
 	headers  time.Time      // when the app's response headers arrived; zero if they never did
 	waited   time.Duration  // held for a tunnel
 	tunnel   *tunnel.Tunnel // the tunnel the call goes down
-	aborted  bool           // the tunnel failed while streaming the response
 	code     string         // the outcome a step recorded; "" until one does, which means ok
-	bytesIn  int64          // the request body bytes read, as of the end
-	bodyEOF  bool           // the request body was read to the end, as of the end
 }
 
-// refusal is a step's answer that ends the call before it reaches the app.
+// refusal is the relay's answer to a call that ends without the app's.
 type refusal struct {
-	status     int
-	code       string // a problem code
-	detail     string
+	*problem.Problem
 	retryAfter string // "" means no Retry-After header
 }
 
-func (r *refusal) Error() string { return r.code + ": " + r.detail }
+func refuse(status int, code, detail string) *refusal {
+	return &refusal{Problem: problem.New(status, code, detail)}
+}
 
 // errNoHook is the answer to anything that must look like a missing hook.
-var errNoHook = &refusal{status: http.StatusNotFound, code: problem.HookNotFound, detail: "no hook at this path"}
+var errNoHook = refuse(http.StatusNotFound, problem.HookNotFound, "no hook at this path")
 
 // errSenderGone ends a call whose sender went away: nobody is left to answer.
 var errSenderGone = errors.New("the sender went away")
-
-// holdResult is how waiting for a tunnel ended, as the hold span records it.
-type holdResult string
-
-const (
-	holdAttached  holdResult = "attached"
-	holdCanceled  holdResult = "canceled"
-	holdHookGone  holdResult = "hook_gone"
-	holdQueueFull holdResult = "queue_full"
-	holdTimeout   holdResult = "timeout"
-)
 
 func (h *Handler) newCall(w http.ResponseWriter, r *http.Request) *call {
 	c := &call{h: h, start: time.Now(), id: ids.New("c_"), kind: inspect.KindSender, parent: r.Context()}
@@ -142,18 +128,19 @@ func (c *call) setOutcome(code string) {
 	}
 }
 
-// fail answers the sender with the error that ended the call.
+// fail answers the sender with the error that ended the call, a
+// *refusal or errSenderGone, and records it as the call's outcome.
 func (c *call) fail(err error) {
-	rf, ok := err.(*refusal)
-	if !ok {
-		c.setOutcome(OutcomeSenderCanceled) // errSenderGone: nobody is left to answer
+	if err == errSenderGone {
+		c.setOutcome(OutcomeSenderCanceled) // nobody is left to answer
 		return
 	}
-	c.setOutcome(rf.code)
+	rf := err.(*refusal)
+	c.setOutcome(rf.Code)
 	if rf.retryAfter != "" {
 		c.rec.Header().Set("Retry-After", rf.retryAfter)
 	}
-	problem.New(rf.status, rf.code, rf.detail).Write(c.rec)
+	rf.Write(c.rec)
 }
 
 // identify checks the call's address and who sent it. An internet client
@@ -182,7 +169,7 @@ func (c *call) identify() error {
 	if err != nil || !access.MaySend(sender) {
 		c.h.Audit.Log(c.r.Context(), audit.AuthzDeny, audit.Actor(sender),
 			slog.String("action", "call"), slog.String("reason", "no sender role"))
-		return &refusal{status: http.StatusForbidden, code: problem.SenderForbidden, detail: "this node has no sender role on the relay"}
+		return refuse(http.StatusForbidden, problem.SenderForbidden, "this node has no sender role on the relay")
 	}
 	return nil
 }
@@ -194,26 +181,25 @@ func (c *call) route() error {
 		found = false // the path now belongs to another hook
 	}
 	c.hook, c.segs = hook, segs
-	refused := found && c.inj == nil && !c.public && !access.Send(c.sender, hook.Access())
-	if found {
-		// Calls refused by channel are recorded too, so the owner can see
-		// them (DESIGN.md §9.2), but marked, so they cannot crowd out
-		// delivered ones. The sender cannot tell: it gets the same 404 as
-		// for a missing hook.
-		c.eff = c.h.effective(hook, c.public)
-		c.record = c.h.startRecord(c.r, c.id, c.start, c.kind, c.replayOf, hook, c.sender, refused, c.internet, 1+segs, c.eff.Capture)
-		c.trace.event("routed")
-		if c.record != nil {
-			c.body.capture, c.rec.capture = c.record.reqBuf, c.record.respBuf
-		}
+	if !found {
+		return errNoHook
 	}
-	if !found || refused {
-		if refused {
-			c.trace.event("channel_denied")
-			c.h.Audit.Log(c.r.Context(), audit.AuthzDeny, audit.Actor(c.sender), audit.Hook(hook),
-				slog.String("action", "call"), slog.String("reason", "channel not allowed"))
-			c.hook = hooks.Hook{} // do not reveal the hook in the audit record either
-		}
+	// Calls refused by channel are recorded too, so the owner can see them
+	// (DESIGN.md §9.2), but marked, so they cannot crowd out delivered
+	// ones. The sender cannot tell: it gets the same 404 as for a missing
+	// hook.
+	refused := c.inj == nil && !c.public && !access.Send(c.sender, hook.Access())
+	c.eff = c.h.effective(hook, c.public)
+	c.record = c.h.startRecord(c.r, c.id, c.start, c.kind, c.replayOf, hook, c.sender, refused, c.internet, 1+segs, c.eff.Capture)
+	c.trace.event("routed")
+	if c.record != nil {
+		c.body.capture, c.rec.capture = c.record.reqBuf, c.record.respBuf
+	}
+	if refused {
+		c.trace.event("channel_denied")
+		c.h.Audit.Log(c.r.Context(), audit.AuthzDeny, audit.Actor(c.sender), audit.Hook(hook),
+			slog.String("action", "call"), slog.String("reason", "channel not allowed"))
+		c.hook = hooks.Hook{} // do not reveal the hook in the audit record either
 		return errNoHook
 	}
 	return nil
@@ -223,13 +209,15 @@ func (c *call) route() error {
 func (c *call) limit() error {
 	if c.eff.MaxBodyBytes > 0 && c.r.ContentLength > c.eff.MaxBodyBytes {
 		c.trace.event("body_too_large")
-		return &refusal{status: http.StatusRequestEntityTooLarge, code: problem.BodyTooLarge,
-			detail: fmt.Sprintf("the request body is larger than this hook's limit of %d bytes", c.eff.MaxBodyBytes)}
+		return refuse(http.StatusRequestEntityTooLarge, problem.BodyTooLarge,
+			fmt.Sprintf("the request body is larger than this hook's limit of %d bytes", c.eff.MaxBodyBytes))
 	}
 	if wait, ok := c.h.limiters.allow(c.hook.ID, c.eff.RateLimit, time.Now(), c.h.hookExists); !ok {
 		c.trace.event("rate_limited")
-		return &refusal{status: http.StatusTooManyRequests, code: problem.RateLimited, retryAfter: retryAfter(wait),
-			detail: fmt.Sprintf("this hook accepts %g calls per second (burst %d)", c.eff.RateLimit.PerSecond, c.eff.RateLimit.Burst)}
+		rf := refuse(http.StatusTooManyRequests, problem.RateLimited,
+			fmt.Sprintf("this hook accepts %g calls per second (burst %d)", c.eff.RateLimit.PerSecond, c.eff.RateLimit.Burst))
+		rf.retryAfter = retryAfter(wait)
+		return rf
 	}
 	return nil
 }
@@ -251,8 +239,9 @@ func (c *call) attach() error {
 
 // tunnelUnavailable is the answer when no tunnel is attached to the hook.
 func (c *call) tunnelUnavailable(detail string) *refusal {
-	return &refusal{status: problem.StatusTunnelUnavailable, code: problem.TunnelUnavailable, detail: detail,
-		retryAfter: holdRetryAfter(c.eff.HoldTimeout.Std())}
+	rf := refuse(problem.StatusTunnelUnavailable, problem.TunnelUnavailable, detail)
+	rf.retryAfter = holdRetryAfter(c.eff.HoldTimeout.Std())
+	return rf
 }
 
 // hold waits for a tunnel to attach to the hook.
@@ -261,29 +250,19 @@ func (c *call) hold() error {
 	ht := c.trace.child(c.h.Tracer, "tsrelay.hold")
 	_, err := c.h.hold(c.ctx, c.hook, c.eff.HoldTimeout.Std())
 	c.waited = time.Since(holdStart)
-	result := holdAttached
+	result := "attached" // the span's tsrelay.hold.result
 	switch {
 	case err != nil && c.ctx.Err() != nil:
-		result = holdCanceled
+		result, err = "canceled", errSenderGone
 	case errors.Is(err, lifecycle.ErrHookGone), errors.Is(err, errHookExpired):
-		result = holdHookGone
+		result, err = "hook_gone", errNoHook
 	case errors.Is(err, errHoldQueueFull):
-		result = holdQueueFull
+		result, err = "queue_full", c.tunnelUnavailable("no tunnel is attached to this hook, and too many calls are waiting for one")
 	case err != nil:
-		result = holdTimeout
+		result, err = "timeout", c.tunnelUnavailable("no tunnel is attached to this hook")
 	}
-	ht.end(attribute.String("tsrelay.hold.result", string(result)), true)
-	switch result {
-	case holdCanceled:
-		return errSenderGone // as in call.proxyError
-	case holdHookGone:
-		return errNoHook
-	case holdQueueFull:
-		return c.tunnelUnavailable("no tunnel is attached to this hook, and too many calls are waiting for one")
-	case holdTimeout:
-		return c.tunnelUnavailable("no tunnel is attached to this hook")
-	}
-	return nil
+	ht.end(attribute.String("tsrelay.hold.result", result), true)
+	return err
 }
 
 // recheck gives a held call the answer it would get if it arrived now: its
@@ -394,26 +373,28 @@ func (c *call) forward() {
 
 // proxyError answers a call the app did not answer: the reverse proxy
 // got no response headers through the tunnel.
-func (c *call) proxyError(w http.ResponseWriter, r *http.Request, err error) {
-	var p *problem.Problem
+func (c *call) proxyError(_ http.ResponseWriter, r *http.Request, err error) {
+	c.fail(proxyRefusal(r, err))
+}
+
+// proxyRefusal is the answer to a call that got no response headers.
+func proxyRefusal(r *http.Request, err error) error {
 	switch {
 	case errors.Is(err, tunnel.ErrOverloaded):
-		w.Header().Set("Retry-After", "1")
-		p = problem.New(problem.StatusTunnelOverloaded, problem.TunnelOverloaded, "the tunnel is at its concurrency limit")
+		rf := refuse(problem.StatusTunnelOverloaded, problem.TunnelOverloaded, "the tunnel is at its concurrency limit")
+		rf.retryAfter = "1"
+		return rf
 	case errors.Is(err, errResponseTimeout):
-		p = problem.New(problem.StatusUpstreamTimeout, problem.UpstreamTimeout, "the local application did not respond in time")
+		return refuse(problem.StatusUpstreamTimeout, problem.UpstreamTimeout, "the local application did not respond in time")
 	case context.Cause(r.Context()) == errIdleTimeout:
-		p = problem.New(http.StatusRequestTimeout, problem.BodyStalled, "the request body stalled for longer than the hook's idle timeout")
+		return refuse(http.StatusRequestTimeout, problem.BodyStalled, "the request body stalled for longer than the hook's idle timeout")
 	case context.Cause(r.Context()) == errBodyTooLarge:
-		p = problem.New(http.StatusRequestEntityTooLarge, problem.BodyTooLarge, "the request body is larger than this hook's limit")
+		return refuse(http.StatusRequestEntityTooLarge, problem.BodyTooLarge, "the request body is larger than this hook's limit")
 	case r.Context().Err() != nil:
-		c.setOutcome(OutcomeSenderCanceled) // nobody is left to answer
-		return
+		return errSenderGone
 	default:
-		p = problem.New(problem.StatusTunnelLost, problem.TunnelLost, "the tunnel was lost while delivering the call")
+		return refuse(problem.StatusTunnelLost, problem.TunnelLost, "the tunnel was lost while delivering the call")
 	}
-	c.setOutcome(p.Code)
-	p.Write(w)
 }
 
 // end records how the call ended. Deferred by ServeHTTP, it also sees a
@@ -422,13 +403,13 @@ func (c *call) proxyError(w http.ResponseWriter, r *http.Request, err error) {
 func (c *call) end() {
 	defer c.cancel(nil)
 	p := recover()
-	if p != nil {
-		c.aborted = true // the tunnel failed while streaming the response
+	aborted := p != nil // the tunnel failed while streaming the response
+	if aborted {
 		c.setOutcome(c.abortCause())
 	}
 	// One reading of both: the transport may still be reading the body.
-	c.bytesIn, c.bodyEOF = c.body.counts()
-	c.finish(c.result())
+	bytesIn, bodyEOF := c.body.counts()
+	c.finish(c.result(bytesIn), c.delivered(aborted, bodyEOF))
 	if p != nil {
 		panic(p)
 	}
@@ -453,12 +434,12 @@ func (c *call) abortCause() string {
 	}
 }
 
-// result is how the call ended.
-func (c *call) result() Result {
+// result is how the call ended, with bytesIn of its request body read.
+func (c *call) result(bytesIn int64) Result {
 	res := Result{
 		CallID: c.id, Kind: c.kind, HookID: c.hook.ID, Sender: c.sender,
 		Method: c.r.Method, Path: c.logPath, Status: c.rec.status, Code: c.code,
-		BytesIn: c.bytesIn, BytesOut: c.rec.bytes, Waited: c.waited, Duration: time.Since(c.start),
+		BytesIn: bytesIn, BytesOut: c.rec.bytes, Waited: c.waited, Duration: time.Since(c.start),
 	}
 	if c.public {
 		res.ClientIP, _, _ = net.SplitHostPort(c.r.RemoteAddr)
@@ -470,8 +451,8 @@ func (c *call) result() Result {
 }
 
 // finish reports res to the audit log, the metrics, the call's span and
-// the inspector, in that order.
-func (c *call) finish(res Result) {
+// the inspector (with d), in that order.
+func (c *call) finish(res Result, d delivered) {
 	attrs := make([]slog.Attr, 0, 13)
 	attrs = append(attrs,
 		slog.String("callID", res.CallID), slog.String("kind", string(res.Kind)),
@@ -481,7 +462,7 @@ func (c *call) finish(res Result) {
 		slog.Int64("bytesIn", res.BytesIn), slog.Int64("bytesOut", res.BytesOut),
 		slog.Duration("waited", res.Waited), slog.Duration("duration", res.Duration),
 	)
-	if c.public {
+	if res.Kind == inspect.KindPublic {
 		attrs = append(attrs, slog.String("clientIP", res.ClientIP))
 	}
 	if res.HasTTFB {
@@ -492,18 +473,19 @@ func (c *call) finish(res Result) {
 		c.h.OnCall(res)
 	}
 	c.trace.finish(res)
-	c.record.finish(res, c.delivered())
+	c.record.finish(res, d)
 }
 
 // delivered is what the inspector needs of how the call ended, beyond its
-// result.
-func (c *call) delivered() delivered {
+// result: whether it aborted mid-response, and whether its request body
+// was read to the end.
+func (c *call) delivered(aborted, bodyEOF bool) delivered {
 	return delivered{
-		start: c.start, delivery: c.delivery, wrote: c.rec.wrote, header: c.rec.Header(), tunnel: c.tunnel,
-		bodyRead: c.bodyEOF || c.r.ContentLength == 0,
+		delivery: c.delivery, wrote: c.rec.wrote, header: c.rec.Header(), tunnel: c.tunnel,
+		bodyRead: bodyEOF || c.r.ContentLength == 0,
 		// The response went out in full unless the call broke off or its
 		// sender left first; a sender that leaves after the last byte does
 		// not cut the response short.
-		whole: !c.aborted && c.code != OutcomeSenderCanceled,
+		whole: !aborted && c.code != OutcomeSenderCanceled,
 	}
 }

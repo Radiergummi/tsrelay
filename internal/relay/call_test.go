@@ -23,7 +23,7 @@ func testCall(parent context.Context) *call {
 func TestUnrecordedOutcomeIsOK(t *testing.T) {
 	parent, cancel := context.WithCancel(context.Background())
 	cancel()
-	if res := testCall(parent).result(); res.Code != "" || res.Outcome() != "ok" {
+	if res := testCall(parent).result(0); res.Code != "" || res.Outcome() != "ok" {
 		t.Fatalf("outcome = %q, want ok", res.Outcome())
 	}
 }
@@ -33,9 +33,8 @@ func TestUnrecordedOutcomeIsOK(t *testing.T) {
 func TestFirstOutcomeWins(t *testing.T) {
 	c := testCall(context.Background())
 	c.setOutcome(problem.UpstreamUnreachable)
-	c.aborted = true
-	c.setOutcome(c.abortCause())
-	if got := c.result().Code; got != problem.UpstreamUnreachable {
+	c.setOutcome(c.abortCause()) // as end does after an abort
+	if got := c.result(0).Code; got != problem.UpstreamUnreachable {
 		t.Fatalf("code = %q, want %q", got, problem.UpstreamUnreachable)
 	}
 }
@@ -45,7 +44,7 @@ func TestFirstOutcomeWins(t *testing.T) {
 func TestAnsweredResponseIsWhole(t *testing.T) {
 	parent, cancel := context.WithCancel(context.Background())
 	cancel()
-	if !testCall(parent).delivered().whole {
+	if !testCall(parent).delivered(false, false).whole {
 		t.Fatal("the response body of an answered call is marked cut short")
 	}
 }

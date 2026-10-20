@@ -47,7 +47,6 @@ func (h *Handler) startRecord(r *http.Request, callID string, start time.Time, k
 
 // delivered is what only the inspector needs of how a call ended.
 type delivered struct {
-	start    time.Time   // when the call arrived
 	delivery time.Time   // when delivery (holding included) began; zero if it never did
 	wrote    time.Time   // when the response status was written; zero if never
 	header   http.Header // the response headers as sent
@@ -65,7 +64,7 @@ func (rc *callRecord) finish(res Result, d delivered) {
 	rc.in.Update(rc.id, func(c *inspect.Call) {
 		c.Outcome = res.Outcome()
 		c.Status = res.Status
-		c.Duration = hooks.Duration(now.Sub(d.start))
+		c.Duration = hooks.Duration(res.Duration)
 		c.RequestBody = rc.reqBuf.Capture(d.bodyRead)
 		if d.delivery.IsZero() {
 			return // refused before delivery: no attempt
