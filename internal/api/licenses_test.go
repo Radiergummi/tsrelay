@@ -24,6 +24,16 @@ func requireSBOM(t *testing.T) {
 	}
 }
 
+// The entry document links the licenses only when there are some.
+func TestEntryDocumentLinksTheLicenses(t *testing.T) {
+	e := newEnv(t)
+	var me Me
+	e.call(nobody, "GET", "/", nil, &me)
+	if _, ok := me.Links["licenses"]; ok != sbom.Available() {
+		t.Errorf("links.licenses = %q, SBOM available: %v", me.Links["licenses"], sbom.Available())
+	}
+}
+
 // A plain go build has no SBOM, and says so rather than serving nothing.
 func TestAttributionWithoutSBOM(t *testing.T) {
 	if sbom.Available() {
@@ -101,7 +111,7 @@ func TestEntryDocumentNamesTheCommit(t *testing.T) {
 	}
 	e.api.Commit = "0123456789abcdef"
 	var me Me
-	if e.call(nobody, "GET", "/", nil, &me); me.Commit != "0123456789abcdef" || me.Links["licenses"] != "/licenses" {
+	if e.call(nobody, "GET", "/", nil, &me); me.Commit != "0123456789abcdef" {
 		t.Errorf("entry document = %+v", me)
 	}
 }

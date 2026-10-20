@@ -116,7 +116,7 @@ jobs:
       # These packages skip their attribution tests without an SBOM, and
       # run them here.
       - name: Test
-        run: go test ./internal/sbom/ ./internal/api/ ./cmd/tsrelay/ ./scripts/...
+        run: go test ./internal/sbom/ ./internal/api/ ./internal/server/ ./cmd/tsrelay/ ./scripts/...
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
