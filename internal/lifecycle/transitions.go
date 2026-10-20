@@ -18,6 +18,8 @@ import (
 // and that removal has already had these effects. The store deletes under
 // l.mu, so a Wait cannot register for a hook that is already gone.
 func (l *Lifecycle) Delete(ctx context.Context, actor authz.Identity, id hooks.ID) error {
+	l.announce.Lock()
+	defer l.announce.Unlock()
 	l.mu.Lock()
 	h, _, err := l.cfg.Hooks.DeleteIf(ctx, id, func(hooks.Hook) bool { return true })
 	var r removal
@@ -83,11 +85,27 @@ func (l *Lifecycle) Revoke(ctx context.Context, t *tunnel.Tunnel, ids []hooks.ID
 	t.Notify(tunnel.Control{Type: tunnel.ControlRevoked, Hooks: idInfos(detached)}, orphaned)
 }
 
+// Create creates a hook for actor, as hooks.Manager.Create does, and
+// announces it in the audit log and as a hook event.
+func (l *Lifecycle) Create(ctx context.Context, actor authz.Identity, req hooks.CreateRequest) (hooks.Hook, error) {
+	l.announce.Lock()
+	defer l.announce.Unlock()
+	h, err := l.cfg.Hooks.Create(ctx, actor, req)
+	if err != nil {
+		return h, err
+	}
+	l.cfg.Audit.Log(ctx, audit.HookCreate, audit.Actor(actor), audit.Hook(h), slog.Bool("ephemeral", h.Ephemeral))
+	l.cfg.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
+	return h, nil
+}
+
 // Update applies req to the hook id on behalf of actor, as
 // hooks.Manager.Update does, and announces the change: in the audit log, as
 // a hook event, and to the tunnel serving the hook. An update that changes
 // no field is not announced.
 func (l *Lifecycle) Update(ctx context.Context, actor authz.Identity, id hooks.ID, req hooks.UpdateRequest) (hooks.Hook, []string, error) {
+	l.announce.Lock()
+	defer l.announce.Unlock()
 	h, changed, err := l.cfg.Hooks.Update(ctx, actor, id, req)
 	if err != nil || len(changed) == 0 {
 		return h, changed, err
@@ -100,6 +118,8 @@ func (l *Lifecycle) Update(ctx context.Context, actor authz.Identity, id hooks.I
 // actor, as hooks.Manager.RotatePublicToken does, and announces the change
 // as Update does.
 func (l *Lifecycle) RotatePublicToken(ctx context.Context, actor authz.Identity, id hooks.ID) (hooks.Hook, error) {
+	l.announce.Lock()
+	defer l.announce.Unlock()
 	h, err := l.cfg.Hooks.RotatePublicToken(ctx, actor, id)
 	if err != nil {
 		return h, err

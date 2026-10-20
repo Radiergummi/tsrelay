@@ -290,7 +290,7 @@ func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		return
 	}
 	dry := r.URL.Query().Get("dryRun") == "true"
-	create := a.Hooks.Create
+	create := a.Tunnels.Create
 	if dry {
 		create = a.Hooks.CheckCreate
 	}
@@ -315,8 +315,6 @@ func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		writeJSON(w, http.StatusOK, a.HookJSON(h, id))
 		return
 	}
-	a.Audit.Log(r.Context(), audit.HookCreate, audit.Actor(id), audit.Hook(h), slog.Bool("ephemeral", h.Ephemeral))
-	a.Events.Publish(events.HookChanged(h.Owner, string(h.ID)))
 	w.Header().Set("Location", "/hooks/"+string(h.ID))
 	writeJSON(w, http.StatusCreated, a.HookJSON(h, id))
 }
