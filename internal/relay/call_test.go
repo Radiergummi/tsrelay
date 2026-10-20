@@ -39,3 +39,13 @@ func TestFirstOutcomeWins(t *testing.T) {
 		t.Fatalf("code = %q, want %q", got, problem.UpstreamUnreachable)
 	}
 }
+
+// A response that went out in full is captured whole, even if its sender
+// is gone by the end: the call is ok, so its body is not cut short.
+func TestAnsweredResponseIsWhole(t *testing.T) {
+	parent, cancel := context.WithCancel(context.Background())
+	cancel()
+	if !testCall(parent).delivered().whole {
+		t.Fatal("the response body of an answered call is marked cut short")
+	}
+}

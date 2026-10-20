@@ -492,9 +492,18 @@ func (c *call) finish(res Result) {
 		c.h.OnCall(res)
 	}
 	c.trace.finish(res)
-	c.record.finish(res, delivered{
+	c.record.finish(res, c.delivered())
+}
+
+// delivered is what the inspector needs of how the call ended, beyond its
+// result.
+func (c *call) delivered() delivered {
+	return delivered{
 		start: c.start, delivery: c.delivery, wrote: c.rec.wrote, header: c.rec.Header(), tunnel: c.tunnel,
 		bodyRead: c.bodyEOF || c.r.ContentLength == 0,
-		whole:    !c.aborted && c.parent.Err() == nil,
-	})
+		// The response went out in full unless the call broke off or its
+		// sender left first; a sender that leaves after the last byte does
+		// not cut the response short.
+		whole: !c.aborted && c.code != OutcomeSenderCanceled,
+	}
 }
