@@ -259,3 +259,26 @@ func TestSenderCanceledMidResponse(t *testing.T) {
 		t.Fatalf("recorded as tunnel_lost:\n%s", e.log())
 	}
 }
+
+// A sender's call whose tunnel dies while the response streams is recorded
+// as tunnel_lost, in the audit log and the inspector.
+func TestTunnelLostMidResponse(t *testing.T) {
+	e := newEnv(t)
+	// The app does not end its response when its call is cancelled, or the
+	// stream could end cleanly before the connection closes.
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	_, drop := e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "first")
+		w.(http.Flusher).Flush()
+		<-release
+	}), tunnel.Options{})
+	resp := e.do(sender, "GET", "/~moritz/cb", nil, nil)
+	io.ReadFull(resp.Body, make([]byte, 5))
+	drop()
+	io.Copy(io.Discard, resp.Body)
+	e.waitLog(`"error":"tunnel_lost"`)
+	if c, ok := e.in.Get(resp.Header.Get(HeaderCallID)); !ok || c.Outcome != problem.TunnelLost {
+		t.Fatalf("inspector call = %+v, want outcome %q", c, problem.TunnelLost)
+	}
+}

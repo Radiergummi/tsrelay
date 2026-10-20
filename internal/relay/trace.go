@@ -61,50 +61,41 @@ func (c callTrace) end(attr attribute.KeyValue, hasAttr bool) {
 	c.span.End()
 }
 
-// callAttrs are what a call span records when it ends: the same fields as
-// the call audit record, and never a query string, header value or body.
-type callAttrs struct {
-	callID, kind, hookID, method, path, code string
-	senderNode                               string
-	senderTags                               []string
-	status                                   int
-	bytesIn, bytesOut                        int64
-	waited                                   time.Duration
-}
-
-// finish records attrs on the call span and ends it. The span is an error
-// only if the relay produced the outcome (a Tsrelay-Error code); a sender
-// that went away, or the app's own 5xx, is not.
-func (c callTrace) finish(a callAttrs) {
+// finish records res on the call span and ends it: the same fields as the
+// call's audit record, and never a query string, header value or body.
+// The span is an error only if the relay produced the outcome (a
+// Tsrelay-Error code); a sender that went away, or the app's own 5xx, is
+// not.
+func (c callTrace) finish(res Result) {
 	if c.span == nil {
 		return
 	}
 	if c.span.IsRecording() {
 		kv := []attribute.KeyValue{
-			attribute.String("tsrelay.call.id", a.callID),
-			attribute.String("tsrelay.call.kind", a.kind),
-			attribute.String("http.request.method", a.method),
-			attribute.String("url.path", a.path),
-			attribute.String("tsrelay.sender.node", a.senderNode),
-			attribute.Int64("tsrelay.bytes_in", a.bytesIn),
-			attribute.Int64("tsrelay.bytes_out", a.bytesOut),
+			attribute.String("tsrelay.call.id", res.CallID),
+			attribute.String("tsrelay.call.kind", string(res.Kind)),
+			attribute.String("http.request.method", res.Method),
+			attribute.String("url.path", res.Path),
+			attribute.String("tsrelay.sender.node", res.Sender.NodeName),
+			attribute.Int64("tsrelay.bytes_in", res.BytesIn),
+			attribute.Int64("tsrelay.bytes_out", res.BytesOut),
 		}
-		if a.hookID != "" {
-			kv = append(kv, attribute.String("tsrelay.hook.id", a.hookID))
+		if res.HookID != "" {
+			kv = append(kv, attribute.String("tsrelay.hook.id", string(res.HookID)))
 		}
-		if len(a.senderTags) > 0 {
-			kv = append(kv, attribute.String("tsrelay.sender.tags", strings.Join(a.senderTags, ",")))
+		if len(res.Sender.Tags) > 0 {
+			kv = append(kv, attribute.String("tsrelay.sender.tags", strings.Join(res.Sender.Tags, ",")))
 		}
-		if a.status != 0 {
-			kv = append(kv, attribute.Int("http.response.status_code", a.status))
+		if res.Status != 0 {
+			kv = append(kv, attribute.Int("http.response.status_code", res.Status))
 		}
-		if a.waited > 0 {
-			kv = append(kv, attribute.Float64("tsrelay.waited", a.waited.Seconds()))
+		if res.Waited > 0 {
+			kv = append(kv, attribute.Float64("tsrelay.waited", res.Waited.Seconds()))
 		}
-		if a.code != "" {
-			kv = append(kv, attribute.String("tsrelay.error", a.code))
-			if a.code != OutcomeSenderCanceled {
-				c.span.SetStatus(codes.Error, a.code)
+		if res.Code != "" {
+			kv = append(kv, attribute.String("tsrelay.error", res.Code))
+			if res.Code != OutcomeSenderCanceled {
+				c.span.SetStatus(codes.Error, res.Code)
 			}
 		}
 		c.span.SetAttributes(kv...)

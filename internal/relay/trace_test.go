@@ -15,7 +15,7 @@ func TestTracingOffAllocatesNothing(t *testing.T) {
 	h := &Handler{}
 	header := http.Header{"Traceparent": {"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}}
 	ctx := context.Background()
-	a := callAttrs{callID: "c_x", kind: "sender", method: "POST", path: "/~m/x", status: 200}
+	a := Result{CallID: "c_x", Kind: "sender", Method: "POST", Path: "/~m/x", Status: 200}
 	allocs := testing.AllocsPerRun(100, func() {
 		ct := h.startCall(ctx, header, false)
 		at := ct.child(h.Tracer, "tsrelay.authorize")

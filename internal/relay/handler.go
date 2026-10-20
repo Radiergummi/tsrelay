@@ -5,9 +5,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
-	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -17,17 +15,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
-	"github.com/Radiergummi/tsrelay/internal/ids"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/lifecycle"
-	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -71,6 +65,10 @@ type Handler struct {
 
 	PublicMaxBody int64 // body cap of public calls; 0: only the hook's own limit
 
+	// OnCall, if set, is called with every call's result, after its audit
+	// record: the relay's call metrics.
+	OnCall func(Result)
+
 	Tracer     trace.Tracer                  // nil: tracing off; no span code runs
 	Propagator propagation.TextMapPropagator // nil: don't join senders' traces or pass ours on
 
@@ -93,302 +91,11 @@ func (h *Handler) ServePublic(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	callID := ids.New("c_")
-	w.Header().Set(HeaderCallID, callID)
-	inj, _ := r.Context().Value(injectKey{}).(*injection) // nil for sender calls
-	public := r.Context().Value(publicKey{}) != nil       // through ServePublic
-	internet := public || inj != nil && inj.public        // the sender, or the replayed call's, is on the internet
-	logPath := r.URL.Path
-	if public {
-		logPath = publicLogPath(r.URL)
+	c := h.newCall(w, r)
+	defer c.end()
+	if err := c.deliver(); err != nil {
+		c.fail(err)
 	}
-	ct := h.startCall(r.Context(), r.Header, inj != nil || public)
-	rec := &recorder{ResponseWriter: w}
-	parent := r.Context() // ends when the sender goes away
-	// Limits cancel the call with a cause that selects the error reported.
-	ctx, cancel := context.WithCancelCause(ct.ctx)
-	defer cancel(nil)
-	r = r.WithContext(ctx)
-	body := &countingReader{ReadCloser: r.Body}
-	r.Body = body
-	var hook hooks.Hook
-	var sender authz.Identity
-	var waited time.Duration
-	kind := inspect.KindSender
-	replayOf := ""
-	if inj != nil {
-		inj.callID, kind, replayOf = callID, inj.kind, inj.replayOf
-	}
-	if public {
-		kind = inspect.KindPublic
-	}
-	var record *callRecord    // set once the call is routed to a hook
-	var delivery time.Time    // when delivery began, holding included
-	var headersAt time.Time   // when the app's response headers arrived; zero if they never did
-	var served *tunnel.Tunnel // the tunnel the call went down
-	aborted := false
-	defer func() {
-		p := recover()
-		if p != nil {
-			aborted = true // the tunnel failed while streaming the response
-		}
-		code := rec.Header().Get(problem.HeaderError)
-		// A relay-forced abort (idle timeout, an oversized body) sets its own
-		// cause directly on ctx, so it is identified before falling back to
-		// the sender's own context: SetReadDeadline, used to unblock a
-		// stalled read, also cancels the sender's context (parent) as a side
-		// effect, and must not be mistaken for the sender leaving.
-		switch cause := context.Cause(ctx); {
-		case code != "":
-		case aborted && cause == errIdleTimeout:
-			code = problem.UpstreamTimeout
-		case aborted && cause == errBodyTooLarge:
-			code = problem.BodyTooLarge
-		case parent.Err() != nil:
-			code = OutcomeSenderCanceled
-		case aborted:
-			code = problem.TunnelLost
-		}
-		bytesIn, bodyEOF := body.counts() // the transport may still be reading the body
-		attrs := make([]slog.Attr, 0, 13)
-		attrs = append(attrs,
-			slog.String("callID", callID), slog.String("kind", string(kind)),
-			slog.String("hookID", string(hook.ID)), audit.Actor(sender),
-			slog.String("method", r.Method), slog.String("path", logPath),
-			slog.Int("status", rec.status), slog.String("error", code),
-			slog.Int64("bytesIn", bytesIn), slog.Int64("bytesOut", rec.bytes),
-			slog.Duration("waited", waited), slog.Duration("duration", time.Since(start)),
-		)
-		if public {
-			ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-			attrs = append(attrs, slog.String("clientIP", ip))
-		}
-		if !headersAt.IsZero() {
-			attrs = append(attrs, slog.Duration("ttfb", headersAt.Sub(delivery.Add(waited))))
-		}
-		h.Audit.Log(r.Context(), audit.Call, attrs...)
-		ct.finish(callAttrs{
-			callID: callID, kind: string(kind), hookID: string(hook.ID), method: r.Method, path: logPath,
-			code: code, senderNode: sender.NodeName, senderTags: sender.Tags, status: rec.status,
-			bytesIn: bytesIn, bytesOut: rec.bytes, waited: waited,
-		})
-		record.finish(outcome{
-			code: code, status: rec.status, header: rec.Header(),
-			start: start, delivery: delivery, wrote: rec.wrote, waited: waited, tunnel: served,
-			bytesIn: bytesIn, bytesOut: rec.bytes,
-			bodyRead: bodyEOF || r.ContentLength == 0,
-			whole:    !aborted && parent.Err() == nil,
-		})
-		if p != nil {
-			panic(p)
-		}
-	}()
-
-	var err error
-	var token string // a public call's token
-	if public {
-		// An internet client has no tailnet identity: sender stays empty,
-		// and the hook's token is all that routes the call.
-		var ok bool
-		token, ok = splitPublicRoute(r.URL.Path)
-		if !ok {
-			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
-			return
-		}
-	} else {
-		if _, _, ok := splitRoute(r.URL.Path); !ok {
-			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
-			return
-		}
-		if inj != nil {
-			sender = inj.sender // the owner's replay or test: no sender authorization (DESIGN.md §9.3)
-		} else {
-			at := ct.child(h.Tracer, "tsrelay.authorize")
-			sender, err = h.Identifier.Identify(at.ctx, r.RemoteAddr)
-			at.end(attribute.KeyValue{}, false)
-			if err != nil || !access.MaySend(sender) {
-				h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender),
-					slog.String("action", "call"), slog.String("reason", "no sender role"))
-				problem.New(http.StatusForbidden, problem.SenderForbidden, "this node has no sender role on the relay").Write(rec)
-				return
-			}
-		}
-	}
-	hook, segs, found := h.reroute(r, token)
-	if inj != nil && found && hook.ID != inj.hook {
-		found = false // the path now belongs to another hook
-	}
-	var eff hooks.Effective
-	refused := found && inj == nil && !public && !access.Send(sender, hook.Access())
-	if found {
-		// Calls refused by channel are recorded too, so the owner can see
-		// them (DESIGN.md §9.2), but marked, so they cannot crowd out
-		// delivered ones. The sender cannot tell: it gets the same 404 as
-		// for a missing hook.
-		eff = h.effective(hook, public)
-		record = h.startRecord(r, callID, start, kind, replayOf, hook, sender, refused, internet, 1+segs, eff.Capture)
-		ct.event("routed")
-		if record != nil {
-			body.capture, rec.capture = record.reqBuf, record.respBuf
-		}
-	}
-	if !found || refused {
-		if refused {
-			ct.event("channel_denied")
-			h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender), audit.Hook(hook),
-				slog.String("action", "call"), slog.String("reason", "channel not allowed"))
-			hook = hooks.Hook{} // do not reveal the hook in the audit record either
-		}
-		problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
-		return
-	}
-	if eff.MaxBodyBytes > 0 && r.ContentLength > eff.MaxBodyBytes {
-		ct.event("body_too_large")
-		problem.New(http.StatusRequestEntityTooLarge, problem.BodyTooLarge,
-			fmt.Sprintf("the request body is larger than this hook's limit of %d bytes", eff.MaxBodyBytes)).Write(rec)
-		return
-	}
-	if wait, ok := h.limiters.allow(hook.ID, eff.RateLimit, time.Now(), h.hookExists); !ok {
-		ct.event("rate_limited")
-		rec.Header().Set("Retry-After", retryAfter(wait))
-		problem.New(http.StatusTooManyRequests, problem.RateLimited,
-			fmt.Sprintf("this hook accepts %g calls per second (burst %d)", eff.RateLimit.PerSecond, eff.RateLimit.Burst)).Write(rec)
-		return
-	}
-	delivery = time.Now()
-	tun, attached := h.Tunnels.Lookup(hook.ID)
-	if !attached {
-		// Nothing has been read from the body yet, so holding is safe.
-		holdStart := time.Now()
-		ht := ct.child(h.Tracer, "tsrelay.hold")
-		tun, err = h.hold(ctx, hook, eff.HoldTimeout.Std())
-		waited = time.Since(holdStart)
-		result := "attached"
-		switch {
-		case err != nil && ctx.Err() != nil:
-			result = "canceled"
-		case errors.Is(err, lifecycle.ErrHookGone), errors.Is(err, errHookExpired):
-			result = "hook_gone"
-		case errors.Is(err, errHoldQueueFull):
-			result = "queue_full"
-		case err != nil:
-			result = "timeout"
-		}
-		ht.end(attribute.String("tsrelay.hold.result", result), true)
-		switch result {
-		case "canceled":
-			return // the sender went away; nobody is left to answer (as in proxyError)
-		case "hook_gone":
-			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
-			return
-		case "queue_full":
-			rec.Header().Set("Retry-After", holdRetryAfter(eff.HoldTimeout.Std()))
-			problem.New(problem.StatusTunnelUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook, and too many calls are waiting for one").Write(rec)
-			return
-		case "timeout":
-			rec.Header().Set("Retry-After", holdRetryAfter(eff.HoldTimeout.Std()))
-			problem.New(problem.StatusTunnelUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook").Write(rec)
-			return
-		}
-		// The call gets the answer it would get if it arrived now: its
-		// sender is identified again, and its address must still route to
-		// the same hook, whose channel that sender must still be allowed.
-		// The hook is routed after the identification, which may be slow.
-		again, idErr := sender, error(nil)
-		if inj == nil && !public {
-			ictx, cancel := context.WithTimeout(ctx, reidentifyTimeout)
-			again, idErr = h.Identifier.Identify(ictx, r.RemoteAddr)
-			cancel()
-			if idErr != nil && ctx.Err() != nil {
-				return // the sender went away, as in the hold's canceled case
-			}
-		}
-		now, nowSegs, ok := h.reroute(r, token)
-		reason := "the hook changed while the call was held"
-		if ok && now.ID == hook.ID && inj == nil && !public {
-			if idErr != nil || !access.Send(again, now.Access()) {
-				ok, reason = false, "the sender lost access while the call was held"
-			} else {
-				sender = again
-			}
-		}
-		if !ok || now.ID != hook.ID {
-			delivery = time.Time{}
-			h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(sender), audit.Hook(hook),
-				slog.String("action", "call"), slog.String("reason", reason))
-			problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
-			return
-		}
-		// The hook may have changed while still routing the call: forward
-		// it with the hook's current path and settings.
-		hook, segs, eff = now, nowSegs, h.effective(now, public)
-		// The tunnel may have been revoked or replaced meanwhile.
-		if tun, attached = h.Tunnels.Lookup(hook.ID); !attached {
-			rec.Header().Set("Retry-After", holdRetryAfter(eff.HoldTimeout.Std()))
-			problem.New(problem.StatusTunnelUnavailable, problem.TunnelUnavailable, "no tunnel is attached to this hook").Write(rec)
-			return
-		}
-	}
-
-	if err := access.Serve(tun.Identity(), hook.Access()); err != nil {
-		// A channel the node may not receive is a revocation in progress.
-		// The lifecycle attaches only the owner's tunnels, so another
-		// user's is a broken invariant; neither gets the call.
-		delivery = time.Time{}
-		if errors.Is(err, access.ErrNotUser) || errors.Is(err, access.ErrOtherUser) {
-			h.Audit.Slog().Error("tunnel owner does not own the hook", "hookID", string(hook.ID), "tunnel", tun.ID)
-		}
-		problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
-		return
-	}
-
-	if internet && access.ServeInternet(tun.Identity(), hook.Access()) != nil {
-		// The owner's grants no longer allow public hooks. The caller gets
-		// the same answer as for an unknown token; the owner sees the call.
-		delivery = time.Time{}
-		h.Audit.Log(r.Context(), audit.AuthzDeny, audit.Hook(hook),
-			slog.String("action", "call"), slog.String("reason", "the owner may not receive public calls"))
-		problem.New(http.StatusNotFound, problem.HookNotFound, "no hook at this path").Write(rec)
-		return
-	}
-
-	served = tun
-	idle := newIdleWatch(eff.IdleTimeout.Std(), func() {
-		cancel(errIdleTimeout)
-		// Unblock a pending read from a stalled sender, so the error can be sent.
-		_ = http.NewResponseController(rec).SetReadDeadline(time.Now())
-	})
-	defer idle.stop()
-	r.Body = &callBody{ReadCloser: r.Body, max: eff.MaxBodyBytes, idle: idle, cancel: cancel}
-	proxy := &httputil.ReverseProxy{
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			h.rewrite(pr, hook, eff, sender, callID, 1+segs, internet)
-		},
-		// The relay's call ID replaces any the local app set. A Tsrelay-Error
-		// the app set is dropped, so its own answers are never taken for the
-		// relay's; the one problem the CLI forwarder writes, when the app is
-		// unreachable, is kept. Tsrelay- trailers are dropped too, both as
-		// announced and once they arrive, which the proxy reads after
-		// closing the body.
-		ModifyResponse: func(resp *http.Response) error {
-			resp.Header.Del(HeaderCallID)
-			if resp.StatusCode != problem.StatusUpstreamUnreachable || resp.Header.Get(problem.HeaderError) != problem.UpstreamUnreachable {
-				resp.Header.Del(problem.HeaderError)
-			}
-			stripTsrelay(resp.Trailer)
-			resp.Body = trailerStripper{resp.Body, resp}
-			return nil
-		},
-		Transport: forwardTransport{
-			rt: timeoutTransport{rt: tun, timeout: eff.ResponseTimeout.Std()}, headers: &headersAt,
-			tracer: h.Tracer, prop: h.Propagator,
-		},
-		FlushInterval: -1,
-		BufferPool:    tunnel.Buffers,
-		ErrorHandler:  proxyError,
-	}
-	proxy.ServeHTTP(&idleWriter{ResponseWriter: rec, idle: idle}, r)
 }
 
 // hold waits up to timeout for a tunnel to attach to hook, but never past
@@ -550,22 +257,4 @@ func (b trailerStripper) Close() error {
 	err := b.ReadCloser.Close()
 	stripTsrelay(b.resp.Trailer)
 	return err
-}
-
-func proxyError(w http.ResponseWriter, r *http.Request, err error) {
-	switch {
-	case errors.Is(err, tunnel.ErrOverloaded):
-		w.Header().Set("Retry-After", "1")
-		problem.New(problem.StatusTunnelOverloaded, problem.TunnelOverloaded, "the tunnel is at its concurrency limit").Write(w)
-	case errors.Is(err, errResponseTimeout):
-		problem.New(problem.StatusUpstreamTimeout, problem.UpstreamTimeout, "the local application did not respond in time").Write(w)
-	case context.Cause(r.Context()) == errIdleTimeout:
-		problem.New(http.StatusRequestTimeout, problem.BodyStalled, "the request body stalled for longer than the hook's idle timeout").Write(w)
-	case context.Cause(r.Context()) == errBodyTooLarge:
-		problem.New(http.StatusRequestEntityTooLarge, problem.BodyTooLarge, "the request body is larger than this hook's limit").Write(w)
-	case r.Context().Err() != nil:
-		// The sender went away; nobody is left to answer.
-	default:
-		problem.New(problem.StatusTunnelLost, problem.TunnelLost, "the tunnel was lost while delivering the call").Write(w)
-	}
 }

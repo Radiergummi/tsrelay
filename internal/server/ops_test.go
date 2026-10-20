@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/ui"
@@ -166,5 +167,73 @@ func TestHoldMetrics(t *testing.T) {
 		rec := httptest.NewRecorder()
 		ops.ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
 		return strings.Contains(rec.Body.String(), `tsrelay_call_hold_seconds_count{outcome="ok"} 1`)
+	})
+}
+
+// Each way a call can end is counted under its outcome label: delivered,
+// refused, held until the hold timed out, and given up by its sender while
+// held.
+func TestCallMetricsByOutcome(t *testing.T) {
+	e := newEnv(t, Config{})
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	defer local.Close()
+	delivered, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "delivered"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.cli(delivered.ID, local.URL)()
+	short := hooks.Duration(50 * time.Millisecond)
+	unattached, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "unattached", Settings: hooks.Settings{HoldTimeout: &short}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "held"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(ctx context.Context, url string) {
+		req, _ := http.NewRequestWithContext(ctx, "POST", url, nil)
+		if resp, err := e.fake.Client(sender).Do(req); err == nil {
+			resp.Body.Close()
+		}
+	}
+	e.send(delivered, "", nil, nil)
+	post(context.Background(), e.base+"/~nobody/nothing")
+	post(context.Background(), unattached.URL)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { post(ctx, held.URL); close(done) }()
+	e.waitFor(func() bool { return e.srv.relay.Held() == 1 })
+	cancel()
+	<-done
+
+	ops := &Ops{}
+	ops.Ready(e.srv)
+	want := []string{
+		`tsrelay_calls_total{outcome="ok"} 1`,
+		`tsrelay_calls_total{outcome="hook_not_found"} 1`,
+		`tsrelay_calls_total{outcome="tunnel_unavailable"} 1`,
+		`tsrelay_calls_total{outcome="sender_canceled"} 1`,
+		`tsrelay_call_hold_seconds_count{outcome="tunnel_unavailable"} 1`,
+		`tsrelay_call_hold_seconds_count{outcome="sender_canceled"} 1`,
+		`tsrelay_call_ttfb_seconds_count{kind="sender",outcome="ok"} 1`,
+	}
+	// Call records are written after the response, so wait for them.
+	var missing []string
+	defer func() {
+		if t.Failed() {
+			t.Logf("metrics lack %q", missing)
+		}
+	}()
+	e.waitFor(func() bool {
+		rec := httptest.NewRecorder()
+		ops.ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+		missing = missing[:0]
+		for _, w := range want {
+			if !strings.Contains(rec.Body.String(), w) {
+				missing = append(missing, w)
+			}
+		}
+		return len(missing) == 0
 	})
 }

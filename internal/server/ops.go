@@ -1,7 +1,6 @@
 package server
 
 import (
-	"cmp"
 	"context"
 	"io"
 	"log/slog"
@@ -9,9 +8,9 @@ import (
 	"net/http/pprof"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
+	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -64,11 +63,12 @@ func servePprof(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// newMetrics builds the relay's metrics (DESIGN.md §13). Counters and
-// histograms derive from audit events through the returned observer, so the
-// request path has no instrumentation of its own; gauges are read when the
-// metrics are collected.
-func (s *Server) newMetrics(mp metric.MeterProvider) func(event string, attrs []slog.Attr) {
+// newMetrics builds the relay's metrics (DESIGN.md §13). The call counters
+// and histograms are fed each call's result through onCall, and the
+// denials counter the audit log's events through onAudit, so the request
+// path has no instrumentation of its own; gauges are read when the metrics
+// are collected.
+func (s *Server) newMetrics(mp metric.MeterProvider) (onCall func(relay.Result), onAudit func(event string, attrs []slog.Attr)) {
 	m := mp.Meter(telemetry.ScopeName)
 	calls := telemetry.Must(m.Int64Counter("tsrelay_calls_total", metric.WithDescription("Callback calls, by outcome: ok or the relay's error code.")))
 	callBytes := telemetry.Must(m.Int64Counter("tsrelay_call_bytes_total", metric.WithDescription("Callback body bytes, in from senders and out to them.")))
@@ -109,50 +109,28 @@ func (s *Server) newMetrics(mp metric.MeterProvider) func(event string, attrs []
 
 	bytesIn := metric.WithAttributes(attribute.String("direction", "in"))
 	bytesOut := metric.WithAttributes(attribute.String("direction", "out"))
-	return func(event string, attrs []slog.Attr) {
+	onCall = func(res relay.Result) {
 		ctx := context.Background()
-		switch event {
-		case audit.Call:
-			var outcome, kind string
-			var in, out int64
-			var waited, total, firstByte time.Duration
-			hasTTFB := false // the app's response headers arrived
-			for _, a := range attrs {
-				switch k := a.Value.Kind(); {
-				case a.Key == "error" && k == slog.KindString:
-					outcome = a.Value.String()
-				case a.Key == "kind" && k == slog.KindString:
-					kind = a.Value.String()
-				case a.Key == "bytesIn" && k == slog.KindInt64:
-					in = a.Value.Int64()
-				case a.Key == "bytesOut" && k == slog.KindInt64:
-					out = a.Value.Int64()
-				case a.Key == "waited" && k == slog.KindDuration:
-					waited = a.Value.Duration()
-				case a.Key == "duration" && k == slog.KindDuration:
-					total = a.Value.Duration()
-				case a.Key == "ttfb" && k == slog.KindDuration:
-					firstByte, hasTTFB = a.Value.Duration(), true
-				}
-			}
-			outcome = cmp.Or(outcome, "ok")
-			o := attribute.String("outcome", outcome)
-			byOutcome := metric.WithAttributes(o)
-			calls.Add(ctx, 1, byOutcome)
-			callBytes.Add(ctx, in, bytesIn)
-			callBytes.Add(ctx, out, bytesOut)
-			ok := metric.WithAttributes(o, attribute.String("kind", kind))
-			duration.Record(ctx, total.Seconds(), ok)
-			if hasTTFB {
-				ttfb.Record(ctx, firstByte.Seconds(), ok)
-			}
-			if waited > 0 {
-				hold.Record(ctx, waited.Seconds(), byOutcome)
-			}
-		case audit.AuthzDeny:
-			denials.Add(ctx, 1, metric.WithAttributes(attribute.String("action", attrString(attrs, "action"))))
+		o := attribute.String("outcome", res.Outcome())
+		byOutcome := metric.WithAttributes(o)
+		calls.Add(ctx, 1, byOutcome)
+		callBytes.Add(ctx, res.BytesIn, bytesIn)
+		callBytes.Add(ctx, res.BytesOut, bytesOut)
+		ok := metric.WithAttributes(o, attribute.String("kind", string(res.Kind)))
+		duration.Record(ctx, res.Duration.Seconds(), ok)
+		if res.HasTTFB {
+			ttfb.Record(ctx, res.TTFB.Seconds(), ok)
+		}
+		if res.Waited > 0 {
+			hold.Record(ctx, res.Waited.Seconds(), byOutcome)
 		}
 	}
+	onAudit = func(event string, attrs []slog.Attr) {
+		if event == audit.AuthzDeny {
+			denials.Add(context.Background(), 1, metric.WithAttributes(attribute.String("action", attrString(attrs, "action"))))
+		}
+	}
+	return onCall, onAudit
 }
 
 func attrString(attrs []slog.Attr, key string) string {
