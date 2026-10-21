@@ -15,12 +15,24 @@ import (
 	"testing"
 )
 
+// get asks h for p as the router would route it.
 func get(t *testing.T, h *Handler, p string) *httptest.ResponseRecorder {
 	t.Helper()
-	mux := http.NewServeMux()
-	h.Register(mux)
+	req := httptest.NewRequest(http.MethodGet, p, nil)
+	var handler http.Handler
+	switch p {
+	case "/install.sh":
+		handler = h.Shell()
+	case "/install.ps1":
+		handler = h.PowerShell()
+	default:
+		goos, arch, _ := strings.Cut(strings.TrimPrefix(p, "/download/"), "/")
+		req.SetPathValue("os", goos)
+		req.SetPathValue("arch", arch)
+		handler = h.Download()
+	}
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, p, nil))
+	handler.ServeHTTP(rec, req)
 	return rec
 }
 

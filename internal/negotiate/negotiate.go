@@ -77,17 +77,28 @@ func MidPath(path string) bool {
 	return false
 }
 
-// Stripped reports whether Extensions removed an extension from r's path.
-func Stripped(r *http.Request) bool {
-	_, ok := r.Context().Value(forcedKey{}).(Type)
-	return ok
+// Forced returns the representation an extension on r's path asked for,
+// and false when Extensions stripped none.
+func Forced(r *http.Request) (Type, bool) {
+	t, ok := r.Context().Value(forcedKey{}).(Type)
+	return t, ok
+}
+
+// Extension reports whether path ends in an extension Extensions strips.
+func Extension(path string) bool {
+	for ext := range extensions {
+		if strings.HasSuffix(path, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 // Pick returns the representation of offers that r asks for, and false when
 // it asks for none of them. It adds Vary: Accept to the response.
 func Pick(w http.ResponseWriter, r *http.Request, offers ...Type) (Type, bool) {
 	w.Header().Add("Vary", "Accept")
-	if t, ok := r.Context().Value(forcedKey{}).(Type); ok {
+	if t, ok := Forced(r); ok {
 		for _, o := range offers {
 			if o == t {
 				return t, true

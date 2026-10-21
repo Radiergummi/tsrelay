@@ -12,7 +12,6 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
-	"github.com/Radiergummi/tsrelay/internal/negotiate"
 )
 
 // get GETs path as id with the given Accept header, through the same
@@ -36,11 +35,10 @@ func (e *env) get(path, accept string) (*http.Response, string) {
 
 func TestResourcesAreNegotiated(t *testing.T) {
 	e := newEnv(t)
-	e.srv.Config.Handler = negotiate.Extensions([]string{"/sbom.cdx.json"}, e.srv.Config.Handler)
 	var h Hook
 	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
 	const browser = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-	for _, path := range []string{"/hooks", "/hooks/" + h.ID, "/hooks/" + h.ID + "/calls", "/channels", "/channels/default"} {
+	for _, path := range []string{"/hooks", "/hooks/" + h.ID, "/hooks/" + h.ID + "/calls", "/channels", "/channels/default", "/channels/prod.payments"} {
 		for _, tc := range []struct {
 			name, path, accept, wantType string
 		}{
@@ -101,7 +99,19 @@ func TestOpenAPIDocument(t *testing.T) {
 	}
 }
 
-// The OpenAPI document describes exactly the routes Register mounts.
+// excusedUndocumented are the routes openapi.yaml leaves out on purpose,
+// each with the reason.
+var excusedUndocumented = map[string]string{
+	"/":                         "the web UI and its assets; not an API operation",
+	"GET /inspect/{callID}":     "redirect for the CLI's inspect links into the web UI",
+	"GET /install.sh":           "install script for curl | sh; not an API operation",
+	"GET /install.ps1":          "install script for PowerShell; not an API operation",
+	"GET /download/{os}/{arch}": "redirect to a release asset; not an API operation",
+}
+
+// The OpenAPI document describes exactly the routes the router registers,
+// but for the excused ones; an excuse for a documented or unregistered
+// route is stale.
 func TestOpenAPIMatchesRoutes(t *testing.T) {
 	var doc struct {
 		Paths map[string]map[string]any `yaml:"paths"`
@@ -117,22 +127,23 @@ func TestOpenAPIMatchesRoutes(t *testing.T) {
 			}
 		}
 	}
-	a := &API{}
-	a.Register(http.NewServeMux())
 	var registered []string
-	for _, r := range a.Routes() {
+	for _, r := range newEnv(t).router.Routes {
 		registered = append(registered, strings.TrimSuffix(r, "{$}"))
 	}
-	slices.Sort(documented)
-	slices.Sort(registered)
 	for _, r := range registered {
-		if !slices.Contains(documented, r) {
+		if _, excused := excusedUndocumented[r]; !excused && !slices.Contains(documented, r) {
 			t.Errorf("%s is not in openapi.yaml", r)
 		}
 	}
 	for _, d := range documented {
 		if !slices.Contains(registered, d) {
 			t.Errorf("openapi.yaml documents %s, which is not registered", d)
+		}
+	}
+	for r := range excusedUndocumented {
+		if slices.Contains(documented, r) || !slices.Contains(registered, r) {
+			t.Errorf("stale excuse for %s: it is documented or not registered", r)
 		}
 	}
 }

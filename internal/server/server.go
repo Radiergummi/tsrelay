@@ -5,10 +5,7 @@ import (
 	"cmp"
 	"context"
 	"net/http"
-	"net/url"
 	"runtime/debug"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/api"
@@ -20,7 +17,6 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/install"
 	"github.com/Radiergummi/tsrelay/internal/lifecycle"
-	"github.com/Radiergummi/tsrelay/internal/negotiate"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/release"
 	"github.com/Radiergummi/tsrelay/internal/telemetry"
@@ -47,6 +43,7 @@ type Config struct {
 	Inspect        inspect.Config
 	Telemetry      *telemetry.Telemetry // nil: Prometheus metrics only, no tracing
 	Releases       *release.Checker     // the latest release, named to admins in GET /; nil: none (--update-check=false)
+	ReleaseAssets  string               // base URL of the release assets /download redirects to; "" means GitHub's
 
 	NoTracePropagation bool // don't join senders' traces or pass the relay's to apps (--trace-propagation=false)
 }
@@ -97,7 +94,6 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect, PublicMaxBody: cfg.PublicMaxBody, OnCall: onCall}
 
 	version := cmp.Or(cfg.Version, "dev")
-	mux := http.NewServeMux()
 	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, PublicBaseURL: cfg.PublicBaseURL, CapName: cfg.CapName, Version: version, Commit: cmp.Or(cfg.Commit, commit()), Releases: cfg.Releases, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName), ReidentifyEvery: cfg.Revalidate}
 	if s.tel.Tracing {
 		s.relay.Tracer = s.tel.Tracer.Tracer(telemetry.ScopeName)
@@ -108,42 +104,14 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	}
 	u := ui.New(a, web.Dist)
 	a.HTML = u.Index()
-	a.Register(mux)
-	u.Register(mux)
-	s.routes = slices.Concat(a.Routes(), []string{ui.InspectRoute})
-	(&install.Handler{Version: version, BaseURL: cfg.BaseURL}).Register(mux)
-
-	// Callbacks bypass the mux, whose path cleaning would rewrite paths
-	// such as "/~m/cb//x" that must reach the local app unchanged. They
-	// also go without the version header: their responses stay exactly
-	// what the receiver's app returned.
-	resources := negotiate.Extensions([]string{"/sbom.cdx.json"}, mux)
-	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/~") {
-			s.relay.ServeHTTP(w, r)
-			return
-		}
-		w.Header().Set(api.VersionHeader, version)
-		resources.ServeHTTP(w, r)
+	r := api.NewRouter(api.RouterConfig{
+		API:          a,
+		Inspect:      u.Inspect(),
+		Fallback:     u.Fallback(),
+		Install:      &install.Handler{Version: version, BaseURL: cfg.BaseURL, Releases: cfg.ReleaseAssets},
+		AllowedHosts: cfg.AllowedHosts,
 	})
-	s.handler = api.Guard(cfg.AllowedHosts, root)
-
-	if cfg.PublicBaseURL != "" {
-		u, err := url.Parse(cfg.PublicBaseURL)
-		if err != nil {
-			panic("server: invalid PublicBaseURL: " + err.Error())
-		}
-		guarded := api.Guard([]string{u.Hostname()}, http.HandlerFunc(s.relay.ServePublic))
-		s.public = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Nothing but public hooks: the UI, the API and tailnet hooks
-			// must not be reachable from the internet, not even as errors.
-			if !strings.HasPrefix(r.URL.Path, "/+") {
-				http.NotFound(w, r)
-				return
-			}
-			guarded.ServeHTTP(w, r)
-		})
-	}
+	s.handler, s.public, s.routes = r.Tailnet, r.Public, r.Routes
 	return s
 }
 

@@ -1,0 +1,137 @@
+package api
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/Radiergummi/tsrelay/internal/problem"
+	"github.com/Radiergummi/tsrelay/internal/sbom"
+)
+
+// send sends method path as moritz with the given Accept header.
+func (e *env) send(method, path, accept string) (*http.Response, string) {
+	e.t.Helper()
+	req, _ := http.NewRequest(method, e.srv.URL+path, nil)
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
+	if method != "GET" && method != "HEAD" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	c := e.fake.Client(moritz)
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := c.Do(req)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp, string(b)
+}
+
+// A method no route serves at a path another method's route serves is
+// refused with the methods that are.
+func TestMethodNotAllowed(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	for path, allow := range map[string]string{
+		"PUT /hooks":          "GET, HEAD, POST",
+		"POST /hooks/" + h.ID: "GET, HEAD, PATCH, DELETE",
+		"PATCH /channels":     "GET, HEAD",
+		"DELETE /hooks.json":  "GET, HEAD, POST",
+	} {
+		method, p, _ := strings.Cut(path, " ")
+		resp, _ := e.send(method, p, "")
+		if resp.StatusCode != http.StatusMethodNotAllowed || resp.Header.Get("Allow") != allow || resp.Header.Get(problem.HeaderError) != problem.MethodNotAllowed {
+			t.Errorf("%s = %d Allow %q error %q, want 405 Allow %q", path, resp.StatusCode, resp.Header.Get("Allow"), resp.Header.Get(problem.HeaderError), allow)
+		}
+	}
+}
+
+// GET and HEAD belong to the app wherever no route claims them, so they
+// are never 405.
+func TestGetNeverMethodNotAllowed(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	if resp, _ := e.send("HEAD", "/hooks", ""); resp.StatusCode != 200 {
+		t.Errorf("HEAD /hooks = %d", resp.StatusCode)
+	}
+	if resp, _ := e.send("GET", "/hooks/"+h.ID+"/test", ""); resp.StatusCode != 404 || resp.Header.Get(problem.HeaderError) != problem.NotFound {
+		t.Errorf("GET test = %d %s, want a 404 problem", resp.StatusCode, resp.Header.Get(problem.HeaderError))
+	}
+	if resp, body := e.send("GET", "/hooks/"+h.ID+"/test", "text/html"); resp.StatusCode != 200 || body != "the app" {
+		t.Errorf("GET test as HTML = %d %q, want the app", resp.StatusCode, body)
+	}
+}
+
+// An extension on an inner segment of a path no route claims names no
+// resource, whatever the client accepts. (Where a route's wildcard takes
+// the segment, as /hooks/{id}/calls does, the route decides.)
+func TestMidPathSuffixIsNotFound(t *testing.T) {
+	e := newEnv(t)
+	for _, p := range []string{"/hooks.json/calls", "/channels.html/x/y"} {
+		for _, accept := range []string{"", "text/html"} {
+			resp, _ := e.send("GET", p, accept)
+			if resp.StatusCode != 404 || resp.Header.Get("Content-Type") != "application/problem+json" {
+				t.Errorf("GET %s (%q) = %d %s, want a 404 problem", p, accept, resp.StatusCode, resp.Header.Get("Content-Type"))
+			}
+		}
+	}
+}
+
+func TestDottedChannelWithSuffix(t *testing.T) {
+	e := newEnv(t)
+	resp, body := e.send("GET", "/channels/prod.payments.json", "text/html")
+	var c Channel
+	json.Unmarshal([]byte(body), &c)
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "application/json" || c.Name != "prod.payments" {
+		t.Fatalf("GET /channels/prod.payments.json = %d %s %s", resp.StatusCode, resp.Header.Get("Content-Type"), body)
+	}
+}
+
+// A document with one type refuses an extension asking for another,
+// rather than serving itself under the wrong name.
+func TestFixedTypeDocumentsRefuseOtherSuffixes(t *testing.T) {
+	e := newEnv(t)
+	refused := []string{"/install.sh.json", "/install.ps1.html", "/download/linux/amd64.json", "/openapi.html", "/openapi.yaml.json"}
+	if sbom.Available() {
+		refused = append(refused, "/notices.txt.json", "/sbom.cdx.json.html")
+	}
+	for _, p := range refused {
+		if resp, _ := e.send("GET", p, ""); resp.StatusCode != http.StatusNotAcceptable {
+			t.Errorf("GET %s = %d, want 406", p, resp.StatusCode)
+		}
+	}
+	for p, ct := range map[string]string{
+		"/openapi.json": "application/json",
+		"/openapi":      "application/json",
+		"/openapi.yaml": "application/yaml",
+		"/install.sh":   "text/x-shellscript; charset=utf-8",
+	} {
+		if resp, _ := e.send("GET", p, ""); resp.StatusCode != 200 || resp.Header.Get("Content-Type") != ct {
+			t.Errorf("GET %s = %d %s, want 200 %s", p, resp.StatusCode, resp.Header.Get("Content-Type"), ct)
+		}
+	}
+}
+
+func TestRoutesAreRecorded(t *testing.T) {
+	e := newEnv(t)
+	routes := e.router.Routes
+	for _, want := range []string{"GET /{$}", "GET /inspect/{callID}", "GET /install.sh", "GET /install.ps1", "GET /download/{os}/{arch}", "/"} {
+		if !slices.Contains(routes, want) {
+			t.Errorf("routes lack %s: %v", want, routes)
+		}
+	}
+	sorted := slices.Clone(routes)
+	slices.Sort(sorted)
+	if len(slices.Compact(sorted)) != len(routes) {
+		t.Errorf("routes repeat: %v", routes)
+	}
+}

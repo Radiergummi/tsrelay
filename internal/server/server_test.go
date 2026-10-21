@@ -186,6 +186,29 @@ func TestSignedWebhookEndToEnd(t *testing.T) {
 	}
 }
 
+// A callback path reaches the local app exactly as sent, however much it
+// looks like a representation or an unclean path, and its response carries
+// nothing of the relay's own.
+func TestCallbackPathsReachTheAppUnchanged(t *testing.T) {
+	e := newEnv(t, Config{})
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, r.URL.EscapedPath())
+	}))
+	defer local.Close()
+	hook, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Ephemeral: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.cli(hook.ID, local.URL)()
+	for _, rest := range []string{"/x.json", "/x.html", "/a.json/b", "//x"} {
+		resp := e.send(hook, rest, nil, nil)
+		got, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != 200 || string(got) != rest || resp.Header.Get(api.VersionHeader) != "" {
+			t.Errorf("%s reached the app as %d %q (version header %q)", rest, resp.StatusCode, got, resp.Header.Get(api.VersionHeader))
+		}
+	}
+}
+
 func TestLocalAppDown(t *testing.T) {
 	e := newEnv(t, Config{})
 	local := httptest.NewServer(http.NotFoundHandler())

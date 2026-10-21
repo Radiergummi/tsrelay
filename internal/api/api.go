@@ -59,8 +59,6 @@ type API struct {
 	// viewer again; 0 means never.
 	ReidentifyEvery time.Duration
 
-	routes []string // the patterns Register mounted
-
 	streamsMu sync.Mutex
 	streams   map[tailcfg.StableNodeID]int // open event streams per node
 }
@@ -141,42 +139,6 @@ type TunnelInfo struct {
 	Target string `json:"target,omitempty"`
 }
 
-func (a *API) Register(mux *http.ServeMux) {
-	latency := a.latencyHistogram()
-	handle := func(pattern string, h http.Handler) {
-		a.routes = append(a.routes, pattern)
-		mux.Handle(pattern, h)
-	}
-	route := func(pattern string, f func(http.ResponseWriter, *http.Request, authz.Identity)) {
-		handle(pattern, a.observed(latency, pattern, a.authed(f)))
-	}
-	// A resource also answers as the web UI and, with stream, as events.
-	resource := func(pattern string, f, stream func(http.ResponseWriter, *http.Request, authz.Identity)) {
-		handle(pattern, a.negotiated(a.observed(latency, pattern, a.authed(f)), stream))
-	}
-	handle("GET /{$}", a.entry(a.observed(latency, "GET /", a.authed(a.me))))
-	resource("GET /hooks", a.listHooks, a.hooksStream)
-	route("POST /hooks", a.createHook)
-	resource("GET /hooks/{id}", a.getHook, a.hookStream)
-	route("PATCH /hooks/{id}", a.updateHook)
-	route("POST /hooks/{id}/rotate-public-url", a.rotatePublicURL)
-	route("DELETE /hooks/{id}", a.deleteHook)
-	resource("GET /hooks/{id}/calls", a.listCalls, a.callsStream)
-	resource("GET /hooks/{id}/calls/{callID}", a.getCall, nil)
-	route("POST /hooks/{id}/calls/{callID}/replay", a.replayCall)
-	route("POST /hooks/{id}/test", a.testCall)
-	resource("GET /channels", a.listChannels, nil)
-	resource("GET /channels/{name}", a.getChannel, nil)
-	// Long-lived: not observed (the tunnel traces its own attach and detach).
-	handle("GET /tunnel", a.authed(a.tunnel))
-	handle("GET /openapi", http.HandlerFunc(serveOpenAPI))
-	handle("GET /openapi.yaml", http.HandlerFunc(serveOpenAPIYAML))
-	resource("GET /licenses", a.licenses, nil)
-	route("GET /licenses/{textId}", a.licenseText)
-	route("GET /notices.txt", a.notices)
-	route("GET /sbom.cdx.json", a.sbomDocument)
-}
-
 // negotiated serves a resource as JSON from h, as events from stream (if
 // it has one), or as the web UI.
 func (a *API) negotiated(h http.Handler, stream func(http.ResponseWriter, *http.Request, authz.Identity)) http.Handler {
@@ -226,10 +188,6 @@ func notAcceptable(w http.ResponseWriter, offers []negotiate.Type) {
 	}
 	problem.New(http.StatusNotAcceptable, problem.NotAcceptable, "this resource is available as "+strings.Join(types, ", ")).Write(w)
 }
-
-// Routes are the patterns Register mounted, for checking them against the
-// OpenAPI document.
-func (a *API) Routes() []string { return a.routes }
 
 // NotIdentified is the detail of the forbidden problem for a caller the
 // tailnet could not identify; the CLI explains it by this text.

@@ -38,13 +38,20 @@ type Handler struct {
 	Releases string // base URL of the release assets; "" means GitHub's
 }
 
-// Register renders the install scripts once; nothing in them changes for
-// the relay's lifetime.
-func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /install.sh", h.script("install.sh.tmpl", "text/x-shellscript; charset=utf-8"))
-	mux.HandleFunc("GET /install.ps1", h.script("install.ps1.tmpl", "text/plain; charset=utf-8"))
-	mux.HandleFunc("GET /download/{os}/{arch}", h.download)
+// Shell serves install.sh, rendered once: nothing in it changes for the
+// relay's lifetime.
+func (h *Handler) Shell() http.Handler {
+	return h.script("install.sh.tmpl", "text/x-shellscript; charset=utf-8")
 }
+
+// PowerShell serves install.ps1, rendered once.
+func (h *Handler) PowerShell() http.Handler {
+	return h.script("install.ps1.tmpl", "text/plain; charset=utf-8")
+}
+
+// Download redirects GET /download/{os}/{arch} to that build of the
+// relay's release.
+func (h *Handler) Download() http.Handler { return http.HandlerFunc(h.download) }
 
 func (h *Handler) dev() bool { return h.Version == "dev" }
 

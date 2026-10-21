@@ -20,7 +20,6 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/identify"
-	"github.com/Radiergummi/tsrelay/internal/install"
 	"github.com/Radiergummi/tsrelay/internal/release"
 	"github.com/Radiergummi/tsrelay/internal/server"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
@@ -65,15 +64,8 @@ func newAssetServer(t *testing.T, version string) *assetServer {
 // relayWithAssets restarts the relay at version, with its downloads
 // redirecting to a fake asset server instead of GitHub.
 func (e *cliEnv) relayWithAssets(version string) *assetServer {
-	e.restartRelayAt(version)
 	a := newAssetServer(e.t, version)
-	e.handlerMu.Lock()
-	defer e.handlerMu.Unlock()
-	mux := http.NewServeMux()
-	(&install.Handler{Version: version, BaseURL: e.relayURL, Releases: a.URL}).Register(mux)
-	relay := e.handler
-	mux.Handle("/", relay)
-	e.handler = mux
+	e.restartRelayWith(server.Config{Version: version, ReleaseAssets: a.URL})
 	return a
 }
 

@@ -39,15 +39,14 @@ func (u *UI) Index() http.Handler {
 	return secure(http.HandlerFunc(u.app))
 }
 
-// InspectRoute is the pattern of the redirect for the CLI's inspect links,
-// the UI's one route that decides what the caller may see.
-const InspectRoute = "GET /inspect/{callID}"
+// Inspect serves the redirect for the CLI's inspect links.
+func (u *UI) Inspect() http.Handler {
+	return secure(http.HandlerFunc(u.inspectRedirect))
+}
 
-// Register mounts the redirect for the CLI's inspect links and, as the
-// catch-all, the app and its assets.
-func (u *UI) Register(mux *http.ServeMux) {
-	mux.Handle(InspectRoute, secure(http.HandlerFunc(u.inspectRedirect)))
-	mux.Handle("/", secure(http.HandlerFunc(u.serve)))
+// Fallback serves every GET no route claims: the app and its assets.
+func (u *UI) Fallback() http.Handler {
+	return secure(http.HandlerFunc(u.serve))
 }
 
 // inspectRedirect resolves the inspect link the CLI prints for each call

@@ -79,7 +79,8 @@ func TestExtensionsKeepsOtherPaths(t *testing.T) {
 // next handler saw, whether a suffix was stripped, and what Pick chose.
 func serveExt(literal []string, p string) (path string, stripped bool, picked Type) {
 	h := Extensions(literal, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path, stripped = r.URL.Path, Stripped(r)
+		path = r.URL.Path
+		_, stripped = Forced(r)
 		picked, _ = Pick(w, r, JSON, HTML)
 	}))
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, p, nil))

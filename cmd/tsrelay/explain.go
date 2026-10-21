@@ -68,6 +68,8 @@ var problemExplanations = map[string]explanation{
 		[]string{updateFix}},
 	problem.NotAcceptable: {"The relay can't answer in JSON", "This tsrelay may not speak the relay's API.",
 		[]string{updateFix}},
+	problem.MethodNotAllowed: {"The relay doesn't do that here", "This tsrelay may not speak the relay's API.",
+		[]string{updateFix}},
 	problem.Internal: {"The relay failed", "Something went wrong on the relay itself.",
 		[]string{"Retry; if it keeps failing, ask the relay's operator to check its logs"}},
 }

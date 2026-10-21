@@ -366,13 +366,13 @@ Every call has an attempts list from the start, even though v1 only ever creates
 
 ### 10.1 Resources
 
-The UI and the API share one URL space: each resource has a single URL, and the client picks its representation (package `negotiate`).
+The UI and the API share one URL space: each resource has a single URL, and the client picks its representation (package `negotiate`). Every route is registered in one place, `internal/api/router.go`, which also puts the host guard, the callback split (`/~` paths bypass all of this and reach the app unchanged) and extension handling in front; the tests ask URL questions through that handler.
 
-1. A `.json` or `.html` extension on the last path segment wins, and is stripped before routing. The app routes only bare URLs, so a `.html` URL is redirected to the bare one.
+1. A `.json` or `.html` extension on the last path segment wins, and is stripped before routing. A dot before it is part of the name: `/channels/team.payments.json` is the channel `team.payments` as JSON, and a channel named `x.json` is `/channels/x.json.json`. Routes whose file name ends in such an extension, `/sbom.cdx.json`, keep it. The app routes only bare URLs, so a `.html` URL is redirected to the bare one.
 2. Otherwise the `Accept` header decides (RFC 9110, with q-values and wildcards). `application/vnd.tsrelay.v1+json` is a versioned alias of JSON. An event stream is only chosen when `text/event-stream` is named; a wildcard never picks it.
 3. Without either, the answer is JSON.
 
-Negotiated responses carry `Vary: Accept`. A representation a resource doesn't have gets `406` (`not_acceptable`). Writes are not negotiated; they answer in JSON. HTML is the web UI (§10.2), which then reads the same URL as JSON.
+Negotiated responses carry `Vary: Accept`. A representation a resource doesn't have gets `406` (`not_acceptable`), and so does an extension on a document of one type, such as `/install.sh.json`. A path no route claims belongs to the web UI for `GET` and `HEAD`; another method gets `405` (`method_not_allowed`) with `Allow` when some route serves the path, and an extension on an inner segment (`/hooks.json/calls`) gets `404`. Writes are not negotiated; they answer in JSON. HTML is the web UI (§10.2), which then reads the same URL as JSON.
 
 | Method & path | JSON | Events |
 |---|---|---|

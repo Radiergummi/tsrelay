@@ -9,7 +9,7 @@ import (
 )
 
 // openAPIYAML is the API's description (DESIGN.md §10.1), written by hand.
-// TestOpenAPIMatchesRoutes keeps it in step with Register.
+// TestOpenAPIMatchesRoutes keeps it in step with the router.
 //
 //go:embed openapi.yaml
 var openAPIYAML []byte
