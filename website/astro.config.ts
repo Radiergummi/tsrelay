@@ -1,9 +1,8 @@
 import { defineConfig } from "astro/config";
-import { type RehypePlugins, type RemarkPlugins, unified } from "@astrojs/markdown-remark";
+import { type RemarkPlugins, unified } from "@astrojs/markdown-remark";
 import sitemap from "@astrojs/sitemap";
 import tailwindcss from "@tailwindcss/vite";
 import { visit } from "unist-util-visit";
-import { rehypeMermaid } from "@/lib/mermaid-diagrams.ts";
 import { lastModifiedFor } from "@/lib/pages.ts";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -419,8 +418,6 @@ const remarkPlugins: RemarkPlugins = [
   remarkStripTitle,
 ];
 
-const rehypePlugins: RehypePlugins = [rehypeMermaid];
-
 export default defineConfig({
   site: "https://tsrelay.mazetti.me",
   // Astro's default, "jsx", drops whitespace that spans a line break next to an
@@ -454,10 +451,8 @@ export default defineConfig({
     preview: { strictPort: true },
   },
   markdown: {
-    processor: unified({ remarkPlugins, rehypePlugins }),
-    // Shiki runs ahead of every user rehype plugin, so `mermaid` has to be kept
-    // out of its hands for `rehypeMermaid` to see an untouched code block.
-    syntaxHighlight: { type: "shiki", excludeLangs: ["mermaid"] },
+    processor: unified({ remarkPlugins }),
+    syntaxHighlight: "shiki",
     shikiConfig: {
       themes: {
         light: "github-light",

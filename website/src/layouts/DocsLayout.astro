@@ -3,7 +3,6 @@ import PageFooter from "@/components/PageFooter.astro";
 import PageHeader from "@/components/PageHeader.astro";
 import BaseLayout from "./BaseLayout.astro";
 import TableOfContents from "../components/TableOfContents.astro";
-import MermaidViewport from "../components/MermaidViewport.astro";
 import {repoUrl} from "../lib/navigation";
 import {getLastModified} from "../lib/git";
 
@@ -77,8 +76,6 @@ const editUrl = `${repoUrl}/edit/main/${sourcePath}`;
     </main>
 
     <TableOfContents headings={headings} />
-
-    <MermaidViewport />
 
     <div id="copy-status" class="sr-only" aria-live="polite" role="status"></div>
 

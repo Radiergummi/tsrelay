@@ -1,19 +1,18 @@
 ---
-import {getEntry, render} from "astro:content";
+import {getEntry} from "astro:content";
 import Head from "../components/Head.astro";
 import Header from "../components/Header.astro";
 import Hero from "../components/Hero.astro";
-import MermaidViewport from "../components/MermaidViewport.astro";
+import HomeSections from "../components/HomeSections.astro";
 import {markdownFor} from "../lib/pages";
 import "../styles/global.css";
 
 const home = await getEntry("docs", "index");
 
 if (!home) {
-    throw new Error("no docs/index entry; the home page takes its description and body from it");
+    throw new Error("no docs/index entry; the home page takes its description from it");
 }
 
-const {Content} = await render(home);
 const markdownUrl = markdownFor("/");
 ---
 <html lang="en">
@@ -23,16 +22,10 @@ const markdownUrl = markdownFor("/");
 <body class="min-h-screen">
 <Header currentPath="/" />
 <div class="mx-auto max-w-shell">
-    <main id="main-content" class="min-w-0">
+    <main id="main-content" class="min-w-0" data-pagefind-ignore>
         <Hero description={home.data.description} />
-
-        <section class="border-t px-6 py-14 md:px-12 lg:px-16">
-            <div class="prose">
-                <Content />
-            </div>
-        </section>
+        <HomeSections />
     </main>
 </div>
-<MermaidViewport />
 </body>
 </html>

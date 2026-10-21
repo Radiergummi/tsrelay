@@ -45,8 +45,6 @@
 
   --status-ok: oklch(0.52 0.13 150);
   --status-warn: oklch(0.6 0.14 65);
-
-  --mermaid-dot: oklch(0.86 0.004 75);
 }
 
 .dark {
@@ -68,8 +66,6 @@
 
   --status-ok: oklch(0.74 0.14 150);
   --status-warn: oklch(0.8 0.13 75);
-
-  --mermaid-dot: oklch(0.3 0.005 60);
 }
 
 @theme inline {
@@ -562,93 +558,6 @@
 
   html {
     scroll-behavior: auto;
-  }
-}
-
-/* endregion */
-
-/* region Mermaid diagrams */
-.prose .mermaid-figure {
-  /* Diagrams run wider than the measure prose is set at, so they reclaim the gutter. */
-  @apply my-7 lg:-mx-12 overflow-hidden rounded-md border bg-(--pele-bg);
-
-  /**
-   * Pele draws every colour, font and corner through these, so the SVG follows the
-   * theme. Its background is the figure's own, as the ground the backing behind
-   * each label is cut from: a different one draws every label as a box.
-   */
-  --pele-bg: var(--sidebar-background);
-  --pele-fg: var(--foreground);
-  --pele-muted: var(--muted-foreground);
-  --pele-line: var(--muted-foreground);
-  --pele-surface: var(--muted);
-  --pele-surface-alt: var(--sidebar-background);
-  --pele-border: var(--border);
-  --pele-accent: var(--active);
-  --pele-radius: 8px;
-  --pele-font: --theme(--font-sans);
-
-  /* The bold weight `src/lib/mermaid-diagrams.ts` measures labels at; keep in step. */
-  --pele-bold-weight: 600;
-  --pele-title-weight: 600;
-  --pele-heading-weight: 600;
-
-  &:fullscreen,
-  &[data-expanded] {
-    --pele-bg: var(--background);
-
-    @apply flex flex-col;
-
-    .mermaid-viewport {
-      @apply flex-1 min-h-0;
-    }
-
-    /**
-     * Room past the drawing is where an enlarged one is shown. At rest it fits
-     * both ways, by the proportions the plugin writes, so a tall layout is not
-     * stretched to the width and cut off.
-     */
-    /*noinspection CssUnresolvedCustomProperty*/
-    .mermaid-canvas {
-      @apply flex size-full items-center justify-center;
-
-      container-type: size;
-
-      svg {
-        width: min(100%, 100cqh * var(--diagram-ratio, 1));
-      }
-    }
-  }
-
-  /* Fullscreen where the browser offers none for a figure, as on an iPhone. */
-  &[data-expanded] {
-    @apply fixed inset-0 z-60 m-0 size-full max-w-none max-h-none p-0 rounded-none border-0 text-foreground;
-  }
-}
-
-.prose .mermaid-viewport {
-  @apply overflow-hidden;
-
-  container-type: inline-size;
-
-  /* A dot grid behind the diagram, at a 20px gap. */
-  background-image: radial-gradient(circle, var(--mermaid-dot) 1px, transparent 1px);
-  background-size: 20px 20px;
-}
-
-/**
- * The padding is the zoomed element's own, not the viewport's: Pele carries an
- * enlarged drawing over its element's padding to the edges. A diagram fits the
- * column and is never scaled past the width Pele laid it out at.
- */
-/*noinspection CssUnresolvedCustomProperty*/
-.prose .mermaid-canvas {
-  @apply mx-auto p-6;
-
-  width: min(100%, calc(var(--diagram-width, 100%) + 3rem));
-
-  svg {
-    @apply block w-full h-auto;
   }
 }
 
