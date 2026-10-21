@@ -151,5 +151,5 @@ func idInfos(ids []hooks.ID) []tunnel.HookInfo {
 
 // hookInfo describes h to a tunnel client.
 func (l *Lifecycle) hookInfo(h hooks.Hook) tunnel.HookInfo {
-	return tunnel.HookInfo{ID: string(h.ID), URL: l.cfg.BaseURL + h.Route(), Public: h.Public, PublicURL: h.PublicURL(l.cfg.PublicBaseURL)}
+	return tunnel.HookInfo{ID: string(h.ID), URL: l.cfg.BaseURL + h.Route(), Path: h.Path, Public: h.Public, PublicURL: h.PublicURL(l.cfg.PublicBaseURL)}
 }

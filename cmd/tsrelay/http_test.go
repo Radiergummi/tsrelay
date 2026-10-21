@@ -499,22 +499,19 @@ func TestHTTPAppliesLowerSeqAfterReconnect(t *testing.T) {
 
 func TestDropMessage(t *testing.T) {
 	const u = "https://r/~m/cb"
-	for typ, want := range map[tunnel.ControlType]string{
-		tunnel.ControlReplaced:    "another tsrelay process",
-		tunnel.ControlRevoked:     "grants no longer allow",
-		tunnel.ControlHookDeleted: "was deleted",
+	for reason, want := range map[client.DropReason]string{
+		client.DropReplaced: "another tsrelay process",
+		client.DropRevoked:  "grants no longer allow",
+		client.DropDeleted:  "was deleted",
 	} {
-		d, ok := drops[typ]
+		text, ok := drops[reason]
 		if !ok {
-			t.Errorf("%s: no drop message", typ)
+			t.Errorf("%s: no drop message", reason)
 			continue
 		}
-		if msg := fmt.Sprintf(d.text, u); !strings.Contains(msg, want) || !strings.Contains(msg, u) {
-			t.Errorf("%s: %q", typ, msg)
+		if msg := fmt.Sprintf(text, u); !strings.Contains(msg, want) || !strings.Contains(msg, u) {
+			t.Errorf("%s: %q", reason, msg)
 		}
-	}
-	if _, ok := drops[tunnel.ControlAttached]; ok {
-		t.Error("attached does not end delivery")
 	}
 }
 

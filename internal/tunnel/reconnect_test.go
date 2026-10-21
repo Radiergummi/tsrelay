@@ -242,3 +242,48 @@ func TestClientReplace(t *testing.T) {
 	}
 	recv(t, f.tunnels)
 }
+
+func TestClientRemove(t *testing.T) {
+	f := newFakeRelay(t, http.StatusServiceUnavailable, 0)
+	c := f.client(make(chan bool, 16))
+	c.Hooks = []string{"h1", "h2"}
+	dials := make(chan []string, 4)
+	first := true
+	c.Dial = func(ctx context.Context, hooks []string, a tunnel.Attach) (net.Conn, error) {
+		dials <- slices.Clone(hooks)
+		if first {
+			first = false
+			c.Remove("h1")
+			c.Remove("unknown") // no effect
+			return nil, errors.New("down")
+		}
+		return tunnel.Dial(ctx, tunnel.NewHTTPClient(nil), f.srv.URL+"/?hook="+hooks[0])
+	}
+	run(t, c)
+	if got := recv(t, dials); !slices.Equal(got, []string{"h1", "h2"}) {
+		t.Fatalf("first dial = %v", got)
+	}
+	if got := recv(t, dials); !slices.Equal(got, []string{"h2"}) {
+		t.Fatalf("dial after Remove = %v, want [h2]", got)
+	}
+	recv(t, f.tunnels)
+}
+
+// A dial that fails after removing the last hook ends Run with ErrNoHooks
+// at once, without reporting a lost connection first.
+func TestClientNoHooksAfterFailedDial(t *testing.T) {
+	f := newFakeRelay(t, http.StatusServiceUnavailable, 0)
+	states := make(chan bool, 16)
+	c := f.client(states)
+	c.Dial = func(context.Context, []string, tunnel.Attach) (net.Conn, error) {
+		c.Remove("h1")
+		return nil, errors.New("down")
+	}
+	_, done := run(t, c)
+	if err := recv(t, done); !errors.Is(err, tunnel.ErrNoHooks) {
+		t.Fatalf("Run = %v, want ErrNoHooks", err)
+	}
+	if len(states) != 0 {
+		t.Fatalf("OnState was called %d times, want none", len(states))
+	}
+}

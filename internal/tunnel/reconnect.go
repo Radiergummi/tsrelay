@@ -59,6 +59,9 @@ func (c *Client) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
+			if len(c.current()) == 0 { // Dial removed the last hook
+				return ErrNoHooks
+			}
 			var p *problem.Problem
 			if errors.As(err, &p) && p.Status >= 400 && p.Status < 500 {
 				return err
@@ -110,13 +113,19 @@ func (c *Client) Replace(oldID, newID string) {
 	}
 }
 
+// Remove drops id from the hooks later dials attach, e.g. after the relay
+// refused a redial for it. Unknown IDs are ignored.
+func (c *Client) Remove(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.hooks = slices.DeleteFunc(c.hooks, func(x string) bool { return x == id })
+}
+
 func (c *Client) handleControl(ctl Control) {
 	if ctl.Type == ControlReplaced || ctl.Type == ControlRevoked || ctl.Type == ControlHookDeleted {
-		c.mu.Lock()
 		for _, h := range ctl.Hooks {
-			c.hooks = slices.DeleteFunc(c.hooks, func(x string) bool { return x == h.ID })
+			c.Remove(h.ID)
 		}
-		c.mu.Unlock()
 	}
 	if c.OnControl != nil {
 		c.OnControl(ctl)

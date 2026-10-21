@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -376,4 +377,71 @@ func TestBackgroundRefusals(t *testing.T) {
 		}
 	}
 	e.assertRunDirEmpty()
+}
+
+// http recreating its hook on the first dial records the new hook, not the
+// one it found before dialing.
+func TestBackgroundRecordFollowsFirstDialRecreate(t *testing.T) {
+	e := newBackgroundEnv(t)
+	var deleted atomic.Value // the hook ID the first tunnel request found gone
+	e.handlerMu.Lock()
+	inner := e.handler
+	e.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/tunnel" && deleted.Load() == nil {
+			id := r.URL.Query().Get("hook")
+			deleted.Store(id)
+			if err := e.api().DeleteHook(r.Context(), id); err != nil {
+				t.Error(err)
+			}
+		}
+		inner.ServeHTTP(w, r)
+	})
+	e.handlerMu.Unlock()
+
+	r := e.background("http", e.local.URL, "--name", "pay")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		hs := e.record(r.ID).Hooks
+		if len(hs) == 1 && hs[0].Path == "pay" && hs[0].ID != deleted.Load() {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("record hooks = %+v, want the recreated hook (not %v)", hs, deleted.Load())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// A hook the relay takes away leaves the record, so ps and stop no longer
+// find the tunnel by it.
+func TestBackgroundRecordDropsHook(t *testing.T) {
+	e := newBackgroundEnv(t)
+	ctx := context.Background()
+	pay, err := e.api().CreateHook(ctx, hooks.CreateRequest{Path: "pay"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ship, err := e.api().CreateHook(ctx, hooks.CreateRequest{Path: "ship"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := e.background("attach", "pay", "ship", "--to", e.local.URL)
+	e.waitLog(r.ID, "connected")
+	if err := e.api().DeleteHook(ctx, pay.ID); err != nil {
+		t.Fatal(err)
+	}
+	want := []runHook{{ID: ship.ID, Path: "ship", URL: ship.URL}}
+	deadline := time.Now().Add(5 * time.Second)
+	for !slices.Equal(e.record(r.ID).Hooks, want) {
+		if time.Now().After(deadline) {
+			t.Fatalf("record hooks = %+v, want %+v", e.record(r.ID).Hooks, want)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if code, _, _ := e.tsrelay("stop", "pay"); code == 0 {
+		t.Fatal("stop by a dropped hook's path should find nothing")
+	}
+	if code, _, errOut := e.tsrelay("stop", "ship"); code != 0 || !strings.Contains(errOut, "stopped "+r.ID) {
+		t.Fatalf("stop ship: exit %d\n%s", code, errOut)
+	}
 }

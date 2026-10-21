@@ -41,6 +41,7 @@ const (
 type HookInfo struct {
 	ID        string `json:"id"`
 	URL       string `json:"url,omitempty"`
+	Path      string `json:"path,omitempty"` // below the owner's prefix, as in the API
 	Public    bool   `json:"public,omitempty"`
 	PublicURL string `json:"publicUrl,omitempty"` // set while the hook is public and the relay serves Funnel
 }

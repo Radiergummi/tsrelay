@@ -758,3 +758,6 @@ components:
             properties:
               field: { type: string }
               message: { type: string }
+        hook:
+          type: string
+          description: For a refused tunnel attach, the hook it was refused for.

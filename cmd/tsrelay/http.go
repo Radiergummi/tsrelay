@@ -5,14 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -121,64 +119,23 @@ func newHTTPCmd(c *cli) *cobra.Command {
 		out.url(hook, false)
 
 		startURL := hook.URL // what a command started after "--" gets
-		// hook and seqs change when the hook is recreated or updated; mu guards
-		// them, as control messages arrive concurrently.
-		var mu sync.Mutex
-		seqs := updateSeqs{}
-		var tc *tunnel.Client
-		tc = &tunnel.Client{
-			Hooks:  []string{hook.ID},
-			Target: target.Redacted(),
-			Dial: func(ctx context.Context, ids []string, a tunnel.Attach) (net.Conn, error) {
-				conn, err := tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, ids...))
-				if !isNotFound(err) {
-					return conn, err
-				}
-				// The relay reaped the hook while this CLI was disconnected for
-				// longer than the ephemeral grace period: recreate it at the
-				// same path, so its URL keeps working.
-				mu.Lock()
-				old := hook
-				mu.Unlock()
+		session := &client.Session{API: relayAPI, Hooks: []api.Hook{hook}, Target: target, Insecure: *insecure,
+			// The relay reaped the hook while this CLI was disconnected for
+			// longer than the ephemeral grace period: recreate it at the same
+			// path, so its URL keeps working.
+			Recreate: func(ctx context.Context, gone api.Hook) (api.Hook, error) {
 				recreate := req
-				recreate.Public = old.Public // as it was last, not as the flags first asked
-				h, _, err := ensureHook(ctx, relayAPI, old.Path, "", recreate)
-				if err != nil {
-					return nil, err
-				}
-				tc.Replace(old.ID, h.ID)
-				mu.Lock()
-				hook = h
-				mu.Unlock()
-				c.bg.hookChanged(old.ID, h.ID, h.URL)
-				out.url(h, true)
-				return tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, h.ID))
-			},
-			Handler: callHandler(target, *insecure, out),
-			OnState: c.whenAttached(out.onState(target.String(), hook.Effective.HoldTimeout.Std()), []api.Hook{hook}, target.Redacted()),
-			OnControl: func(ctl tunnel.Control) {
-				mu.Lock()
-				defer mu.Unlock()
-				seqs.observe(ctl)
-				if ctl.Type == tunnel.ControlHookUpdated {
-					for _, h := range ctl.Hooks {
-						if h.ID != hook.ID || !seqs.fresh(h.ID, ctl.Seq) || (h.URL == hook.URL && h.Public == hook.Public && h.PublicURL == hook.PublicURL) {
-							continue
-						}
-						// Only the path can change the URL; the prefix before it stays.
-						hook.Path = strings.TrimPrefix(h.URL, strings.TrimSuffix(hook.URL, hook.Path))
-						hook.URL, hook.PublicURL, hook.Public = h.URL, h.PublicURL, h.Public
-						c.bg.hookChanged(hook.ID, hook.ID, hook.URL)
-						if err := state.Remember(key, hook.Path, hook.URL); err != nil {
-							out.status(styleWarn, "could not remember the hook path: "+err.Error())
-						}
-						out.url(hook, false)
-					}
-				}
-				out.dropped(ctl, func(string) string { return hook.URL })
+				recreate.Public = gone.Public // as it was last, not as the flags first asked
+				h, _, err := ensureHook(ctx, relayAPI, gone.Path, "", recreate)
+				return h, err
 			},
 		}
-		return exitWith(runTunnel(ctx, tc, command, startURL, out))
+		session.OnEvent = c.sessionEvents(session, out, hook.Effective.HoldTimeout.Std(), func(h api.Hook) {
+			if err := state.Remember(key, h.Path, h.URL); err != nil {
+				out.status(styleWarn, "could not remember the hook path: "+err.Error())
+			}
+		})
+		return exitWith(runTunnel(ctx, session.Run, command, startURL, out))
 	}
 	return cmd
 }
@@ -207,12 +164,12 @@ func parseTarget(s string, example func(target string) string) (*url.URL, error)
 	return nil, e
 }
 
-// runTunnel runs tc until it stops and returns the exit code. With a
+// runTunnel runs run until it stops and returns the exit code. With a
 // command, it first starts the command with TSRELAY_URL set. Whichever ends
 // first stops the other: the command gets SIGTERM, and is killed after
 // childStopTimeout. If the command exits on its own, its exit code becomes
 // tsrelay's.
-func runTunnel(ctx context.Context, tc *tunnel.Client, command []string, hookURL string, out *output) int {
+func runTunnel(ctx context.Context, run func(context.Context) error, command []string, hookURL string, out *output) int {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var childDone chan error
@@ -238,7 +195,7 @@ func runTunnel(ctx context.Context, tc *tunnel.Client, command []string, hookURL
 		go func() { childDone <- cmd.Wait() }()
 	}
 	tunnelDone := make(chan error, 1)
-	go func() { tunnelDone <- tc.Run(runCtx) }()
+	go func() { tunnelDone <- run(runCtx) }()
 
 	select {
 	case err := <-tunnelDone:
@@ -358,21 +315,6 @@ func ensureHook(ctx context.Context, c *client.API, explicit, remembered string,
 		h, err = c.CreateHook(ctx, req)
 	}
 	return h, err == nil, err
-}
-
-// isNotFound reports whether err is the relay's 404, which a tunnel dial
-// gets for a hook that no longer exists.
-func isNotFound(err error) bool {
-	var p *problem.Problem
-	return errors.As(err, &p) && p.Status == http.StatusNotFound
-}
-
-// callHandler delivers calls to target and reports them on out.
-func callHandler(target *url.URL, insecure bool, out *output) http.Handler {
-	return client.LogCalls(client.NewForwarder(target, client.Options{
-		Insecure:        insecure,
-		OnUpstreamError: out.upstreamError,
-	}), out.call)
 }
 
 // openState loads the CLI's state: d.StatePath in tests, else
