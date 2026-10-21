@@ -1,7 +1,10 @@
 // Package authz turns Tailscale application capabilities into tsrelay permissions.
 package authz
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 // DefaultChannel is the channel a hook is created in when none is given.
 const DefaultChannel = "default"
@@ -14,9 +17,11 @@ var (
 )
 
 // ValidChannel reports whether name is a valid concrete channel name:
-// dot-separated segments of [a-z0-9-].
+// dot-separated segments of [a-z0-9-], the last of which is not json or
+// html: /channels/a.json is channel a as JSON (DESIGN.md §10.1).
 func ValidChannel(name string) bool {
-	return len(name) <= maxChannelLen && channelRE.MatchString(name)
+	return len(name) <= maxChannelLen && channelRE.MatchString(name) &&
+		!strings.HasSuffix(name, ".json") && !strings.HasSuffix(name, ".html")
 }
 
 // ValidPattern reports whether p is a valid channel pattern for use in a grant.

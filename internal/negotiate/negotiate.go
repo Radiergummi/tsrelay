@@ -9,6 +9,7 @@ import (
 	"context"
 	"mime"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -41,13 +42,18 @@ type forcedKey struct{}
 
 // Extensions strips a .json or .html extension from the last segment of
 // the path and remembers it for Pick, so routes match the bare resource.
-// A segment with another extension before it, as in /sbom.cdx.json, names
-// a file and is kept.
-func Extensions(next http.Handler) http.Handler {
+// A dot before it is part of the name: /channels/team.payments.json is the
+// channel team.payments as JSON. The literal paths are file names, such as
+// /sbom.cdx.json, and keep their extension.
+func Extensions(literal []string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if slices.Contains(literal, r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		for ext, t := range extensions {
 			p, ok := strings.CutSuffix(r.URL.Path, ext)
-			if !ok || strings.HasSuffix(p, "/") || strings.Contains(p[strings.LastIndexByte(p, '/')+1:], ".") {
+			if !ok || strings.HasSuffix(p, "/") {
 				continue
 			}
 			u := *r.URL
@@ -60,17 +66,39 @@ func Extensions(next http.Handler) http.Handler {
 	})
 }
 
-// Stripped reports whether Extensions removed an extension from r's path.
-func Stripped(r *http.Request) bool {
-	_, ok := r.Context().Value(forcedKey{}).(Type)
-	return ok
+// MidPath reports whether an extension ends a segment other than the last,
+// as in /hooks.json/calls: no resource has such a path.
+func MidPath(path string) bool {
+	for ext := range extensions {
+		if strings.Contains(path, ext+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// Forced returns the representation an extension on r's path asked for,
+// and false when Extensions stripped none.
+func Forced(r *http.Request) (Type, bool) {
+	t, ok := r.Context().Value(forcedKey{}).(Type)
+	return t, ok
+}
+
+// Extension reports whether path ends in an extension Extensions strips.
+func Extension(path string) bool {
+	for ext := range extensions {
+		if strings.HasSuffix(path, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 // Pick returns the representation of offers that r asks for, and false when
 // it asks for none of them. It adds Vary: Accept to the response.
 func Pick(w http.ResponseWriter, r *http.Request, offers ...Type) (Type, bool) {
 	w.Header().Add("Vary", "Accept")
-	if t, ok := r.Context().Value(forcedKey{}).(Type); ok {
+	if t, ok := Forced(r); ok {
 		for _, o := range offers {
 			if o == t {
 				return t, true

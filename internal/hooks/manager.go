@@ -114,7 +114,7 @@ func validateHookPath(path string, owned []Hook, except ID) []FieldError {
 func validateChannel(channel string, grants authz.Effective) []FieldError {
 	switch {
 	case !authz.ValidChannel(channel):
-		return []FieldError{{"channel", fmt.Sprintf("%q is not a valid channel name (dot-separated [a-z0-9-] segments)", channel)}}
+		return []FieldError{{"channel", fmt.Sprintf("%q is not a valid channel name (dot-separated [a-z0-9-] segments, not ending in .json or .html)", channel)}}
 	case !access.MayReceive(grants, channel):
 		return []FieldError{{"channel", fmt.Sprintf("channel %q is not matched by your receiver patterns %s",
 			channel, strings.Join(grants.Patterns[authz.RoleReceiver], ", "))}}

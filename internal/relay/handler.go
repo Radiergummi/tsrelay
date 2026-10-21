@@ -100,12 +100,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // hold waits up to timeout for a tunnel to attach to hook, but never past
 // the hook's expiry, and only while fewer than HoldQueue calls wait for it.
-func (h *Handler) hold(ctx context.Context, hook hooks.Hook, timeout time.Duration) (*tunnel.Tunnel, error) {
+func (h *Handler) hold(ctx context.Context, hook hooks.Hook, timeout time.Duration) error {
 	if timeout <= 0 {
-		return nil, errHoldTimeout
+		return errHoldTimeout
 	}
 	if !h.enqueue(hook.ID) {
-		return nil, errHoldQueueFull
+		return errHoldQueueFull
 	}
 	defer h.dequeue(hook.ID)
 	cause := errHoldTimeout
@@ -116,7 +116,8 @@ func (h *Handler) hold(ctx context.Context, hook hooks.Hook, timeout time.Durati
 	}
 	ctx, cancel := context.WithTimeoutCause(ctx, timeout, cause)
 	defer cancel()
-	return h.Tunnels.Wait(ctx, hook.ID)
+	_, err := h.Tunnels.Wait(ctx, hook.ID)
+	return err
 }
 
 func (h *Handler) enqueue(id hooks.ID) bool {

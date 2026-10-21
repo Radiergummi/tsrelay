@@ -45,7 +45,8 @@ func TestPublicHandlerSurface(t *testing.T) {
 	e := newEnv(t, Config{PublicBaseURL: "https://tsrelay.example.ts.net"})
 	ps := publicServer(t, e)
 	for _, p := range []string{"/", "/hooks", "/tunnel", "/static/x.js",
-		"/~moritz/cb", "/healthz", "/readyz", "/metrics", "/install.sh", "/hooks/new"} {
+		"/~moritz/cb", "/healthz", "/readyz", "/metrics", "/install.sh", "/hooks/new",
+		"/hooks.json", "/.json", "/openapi.json", "/hooks.json/calls", "/sbom.cdx.json"} {
 		resp := publicGet(t, ps, "tsrelay.example.ts.net", p)
 		b, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode != 404 || resp.Header.Get("Tsrelay-Error") != "" ||

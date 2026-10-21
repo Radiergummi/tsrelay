@@ -52,7 +52,7 @@ func (u *UI) serve(w http.ResponseWriter, r *http.Request) {
 // app sends the app for a request asking for HTML. A .html extension is
 // redirected away first, since the app routes only the bare URL.
 func (u *UI) app(w http.ResponseWriter, r *http.Request) {
-	if representation.Stripped(r) {
+	if _, ok := representation.Forced(r); ok {
 		http.Redirect(w, r, r.URL.RequestURI(), http.StatusFound)
 		return
 	}

@@ -37,6 +37,7 @@ const (
 	MisdirectedRequest   = "misdirected_request"
 	UnsupportedMediaType = "unsupported_media_type"
 	NotAcceptable        = "not_acceptable"
+	MethodNotAllowed     = "method_not_allowed"
 	Internal             = "internal"
 )
 

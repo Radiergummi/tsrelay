@@ -23,6 +23,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/lifecycle"
+	"github.com/Radiergummi/tsrelay/internal/negotiate"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/release"
@@ -37,13 +38,14 @@ var (
 )
 
 type env struct {
-	t    *testing.T
-	fake *identify.Fake
-	mgr  *hooks.Manager
-	reg  *lifecycle.Lifecycle
-	in   *inspect.Inspector
-	srv  *httptest.Server
-	api  *API
+	t      *testing.T
+	fake   *identify.Fake
+	mgr    *hooks.Manager
+	reg    *lifecycle.Lifecycle
+	in     *inspect.Inspector
+	srv    *httptest.Server
+	api    *API
+	router *Router
 }
 
 func newEnv(t *testing.T) *env {
@@ -69,12 +71,26 @@ func newEnv(t *testing.T) *env {
 		}),
 	}
 	e.api = a
-	mux := http.NewServeMux()
-	a.Register(mux)
-	e.api = a
-	e.srv = httptest.NewServer(Guard([]string{"127.0.0.1"}, mux))
+	e.router = NewRouter(RouterConfig{
+		API:          a,
+		Inspect:      http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "inspect") }),
+		Fallback:     http.HandlerFunc(stubApp),
+		AllowedHosts: []string{"127.0.0.1"},
+	})
+	e.srv = httptest.NewServer(e.router.Tailnet)
 	t.Cleanup(e.srv.Close)
 	return e
+}
+
+// stubApp stands in for the web UI's catch-all: the app for HTML, a 404
+// problem for everything else.
+func stubApp(w http.ResponseWriter, r *http.Request) {
+	if t, _ := negotiate.Pick(w, r, negotiate.JSON, negotiate.HTML); t == negotiate.HTML {
+		w.Header().Set("Content-Type", "text/html")
+		io.WriteString(w, "the app")
+		return
+	}
+	problem.New(http.StatusNotFound, problem.NotFound, "not found").Write(w)
 }
 
 func (e *env) call(id authz.Identity, method, path string, in any, out any) *http.Response {

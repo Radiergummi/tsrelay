@@ -48,7 +48,6 @@ func (h *Handler) startRecord(r *http.Request, callID string, start time.Time, k
 // delivered is what only the inspector needs of how a call ended.
 type delivered struct {
 	delivery time.Time   // when delivery (holding included) began; zero if it never did
-	wrote    time.Time   // when the response status was written; zero if never
 	header   http.Header // the response headers as sent
 	tunnel   *tunnel.Tunnel
 	bodyRead bool // the request body was read to the end
@@ -77,8 +76,8 @@ func (rc *callRecord) finish(res Result, d delivered) {
 			ResponseBody: rc.respBuf.Capture(d.whole),
 			BytesIn:      res.BytesIn, BytesOut: res.BytesOut, Error: res.Code,
 		}
-		if forwarded := d.delivery.Add(res.Waited); d.wrote.After(forwarded) {
-			a.TTFB = hooks.Duration(d.wrote.Sub(forwarded))
+		if res.HasTTFB {
+			a.TTFB = hooks.Duration(res.TTFB)
 		}
 		if d.tunnel != nil {
 			a.TunnelID, a.Node = d.tunnel.ID, d.tunnel.Owner.NodeName

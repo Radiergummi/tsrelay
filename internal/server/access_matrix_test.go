@@ -189,6 +189,14 @@ func TestAccessMatrix(t *testing.T) {
 		{route: "GET /notices.txt", path: "/notices.txt", want: statuses{"": attribution}},
 		{route: "GET /sbom.cdx.json", path: "/sbom.cdx.json", want: statuses{"": attribution}},
 
+		// The install scripts and downloads need no identity at all.
+		{route: "GET /install.sh", path: "/install.sh", want: statuses{"": 200}},
+		{route: "GET /install.ps1", path: "/install.ps1", want: statuses{"": 200}},
+		{route: "GET /download/{os}/{arch}", path: "/download/linux/amd64", want: statuses{"": 302}},
+		// The catch-all: the web UI for a browser, a 404 for anything else.
+		{route: "/", path: "/nope", kind: asHTML, want: statuses{"": 200}},
+		{route: "/", path: "/nope", want: statuses{"": 404}},
+
 		{route: "GET /inspect/{callID}", path: "/inspect/{devCall}", kind: asHTML, want: statuses{"": 404, "owner": 303, "ownerNoRoles": 303, "adminAll": 303}},
 		{route: "GET /inspect/{callID}", path: "/inspect/{prodCall}", kind: asHTML, want: statuses{"": 404, "owner": 303, "ownerNoRoles": 303, "adminAll": 303, "adminProd": 303}},
 		{route: "GET /inspect/{callID}", path: "/inspect/c_nope", kind: asHTML, want: statuses{"": 404}},
@@ -326,7 +334,10 @@ func (m *matrix) fill(t *testing.T, path string) (string, func()) {
 // ask sends row's request as id and returns the status and body.
 func (m *matrix) ask(t *testing.T, id authz.Identity, row matrixRow, path string) (int, string) {
 	t.Helper()
-	method := strings.Fields(row.route)[0]
+	method, _, ok := strings.Cut(row.route, " ")
+	if !ok {
+		method = "GET" // a pattern without one, such as the catch-all
+	}
 	url := m.e.base + path
 	switch row.kind {
 	case asCall:
