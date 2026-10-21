@@ -241,7 +241,7 @@ The protocol version lives in the `Upgrade` token. An incompatible change gets a
 ### 6.3 Liveness and reconnect
 
 - **Keepalive:** both sides send HTTP/2 PINGs every 15 s. A connection is declared dead after 2 missed PINGs.
-- **Reconnect:** the CLI reconnects with exponential backoff and full jitter (from 250 ms up to 30 s) and attaches the same hooks again. A refused attach names the hook it was refused for in the problem's `hook` field. Once the CLI has been attached, a redial refused for one hook (`404`, `403` or `409`) drops that hook and redials with the rest; `tsrelay http` recreates its hook on `404` instead. A refusal on the first attach ends the command.
+- **Reconnect:** the CLI reconnects with exponential backoff and full jitter (from 250 ms up to 30 s) and attaches the same hooks again. A refused attach names the hook it was refused for in the problem's `hook` field. Once the CLI has been attached, a redial refused for one hook (`404`, `403` or `409`) drops that hook and redials with the rest. A refusal on the first attach ends the command, as those hooks were named on purpose. `tsrelay http` recreates its hook on a `404` instead, on any attach, but only once per dial.
 - **Takeover:** when a second tunnel attaches to a hook that already has one, the hook's `attachPolicy` decides.
   - **`takeover`** (default): the new tunnel wins. The old one is sent `replaced` and detached from that hook. It is closed once it serves no hooks.
   - **`reject`:** the new attach fails with `409`.

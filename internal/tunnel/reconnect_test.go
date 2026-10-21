@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -216,67 +217,61 @@ func TestClientDropsRevokedHooks(t *testing.T) {
 	}
 }
 
-// Replace changes the hooks of later dials, as the CLI does after it
-// recreated a hook the relay reaped while it was disconnected.
-func TestClientReplace(t *testing.T) {
-	f := newFakeRelay(t, http.StatusServiceUnavailable, 1)
+// A client with List dials what its owner says, every time, and leaves the
+// hooks control messages take away to the owner, which hears of them in
+// OnControl: one list, so a redial cannot attach a hook the owner dropped.
+func TestClientList(t *testing.T) {
+	f := newFakeRelay(t, 0, 0)
 	c := f.client(make(chan bool, 16))
+	var mu sync.Mutex
+	list := []string{"h1"}
+	c.Hooks = nil
+	c.List = func() []string { mu.Lock(); defer mu.Unlock(); return slices.Clone(list) }
 	dials := make(chan []string, 4)
 	dial := c.Dial
-	first := true
 	c.Dial = func(ctx context.Context, hooks []string, a tunnel.Attach) (net.Conn, error) {
 		dials <- slices.Clone(hooks)
-		if first {
-			first = false
-			c.Replace("h1", "h2")
-			c.Replace("unknown", "h3") // no effect
-		}
 		return dial(ctx, hooks, a)
 	}
-	run(t, c)
+	controls := make(chan tunnel.Control, 4)
+	c.OnControl = func(ctl tunnel.Control) { controls <- ctl }
+	_, done := run(t, c)
 	if got := recv(t, dials); !slices.Equal(got, []string{"h1"}) {
 		t.Fatalf("first dial = %v", got)
 	}
-	if got := recv(t, dials); !slices.Equal(got, []string{"h2"}) {
-		t.Fatalf("dial after Replace = %v, want [h2]", got)
+	tun := recv(t, f.tunnels)
+	mu.Lock()
+	list = []string{"h2"}
+	mu.Unlock()
+	if err := tun.Send(context.Background(), tunnel.Control{Type: tunnel.ControlReplaced, Hooks: []tunnel.HookInfo{{ID: "h2"}}}); err != nil {
+		t.Fatal(err)
 	}
-	recv(t, f.tunnels)
+	recv(t, controls)
+	tun.Close()
+	if got := recv(t, dials); !slices.Equal(got, []string{"h2"}) {
+		t.Fatalf("redial = %v, want the owner's [h2] despite the control message", got)
+	}
+	tun = recv(t, f.tunnels)
+	mu.Lock()
+	list = nil
+	mu.Unlock()
+	tun.Close()
+	if err := recv(t, done); !errors.Is(err, tunnel.ErrNoHooks) {
+		t.Fatalf("Run = %v, want ErrNoHooks once the owner's list is empty", err)
+	}
 }
 
-func TestClientRemove(t *testing.T) {
-	f := newFakeRelay(t, http.StatusServiceUnavailable, 0)
-	c := f.client(make(chan bool, 16))
-	c.Hooks = []string{"h1", "h2"}
-	dials := make(chan []string, 4)
-	first := true
-	c.Dial = func(ctx context.Context, hooks []string, a tunnel.Attach) (net.Conn, error) {
-		dials <- slices.Clone(hooks)
-		if first {
-			first = false
-			c.Remove("h1")
-			c.Remove("unknown") // no effect
-			return nil, errors.New("down")
-		}
-		return tunnel.Dial(ctx, tunnel.NewHTTPClient(nil), f.srv.URL+"/?hook="+hooks[0])
-	}
-	run(t, c)
-	if got := recv(t, dials); !slices.Equal(got, []string{"h1", "h2"}) {
-		t.Fatalf("first dial = %v", got)
-	}
-	if got := recv(t, dials); !slices.Equal(got, []string{"h2"}) {
-		t.Fatalf("dial after Remove = %v, want [h2]", got)
-	}
-	recv(t, f.tunnels)
-}
-
-// A dial that fails after removing the last hook ends Run with ErrNoHooks
-// at once, without reporting a lost connection first.
+// A dial that fails after its owner dropped the last hook ends Run with
+// ErrNoHooks at once, without reporting a lost connection first.
 func TestClientNoHooksAfterFailedDial(t *testing.T) {
 	f := newFakeRelay(t, http.StatusServiceUnavailable, 0)
 	states := make(chan bool, 16)
 	c := f.client(states)
+	var list atomic.Pointer[[]string]
+	list.Store(&[]string{"h1"})
+	c.List = func() []string { return *list.Load() }
 	c.Dial = func(context.Context, []string, tunnel.Attach) (net.Conn, error) {
-		c.Remove("h1")
+		list.Store(&[]string{})
 		return nil, errors.New("down")
 	}
 	_, done := run(t, c)

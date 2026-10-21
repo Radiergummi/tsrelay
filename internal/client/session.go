@@ -64,11 +64,10 @@ type Session struct {
 	// and OnEvent may call Current while handling them.
 	OnEvent func(Event)
 
-	emitMu  sync.Mutex // held while emitting ordered events; taken before mu
+	emitMu  sync.Mutex // held while emitting ordered events and changing current; taken before mu
 	mu      sync.Mutex
-	current []api.Hook
+	current []api.Hook // the one list of hooks served, which tunnel.Client dials
 	seqs    updateSeqs
-	tc      *tunnel.Client
 }
 
 // Run serves the hooks until ctx is done (nil), no hooks remain
@@ -77,10 +76,9 @@ type Session struct {
 func (s *Session) Run(ctx context.Context) error {
 	s.mu.Lock()
 	s.current, s.seqs = slices.Clone(s.Hooks), updateSeqs{}
-	ids := s.ids()
 	s.mu.Unlock()
-	s.tc = &tunnel.Client{
-		Hooks:  ids,
+	tc := &tunnel.Client{
+		List:   s.ids,
 		Target: s.Target.Redacted(),
 		Dial:   s.dial,
 		Handler: LogCalls(NewForwarder(s.Target, Options{
@@ -90,7 +88,7 @@ func (s *Session) Run(ctx context.Context) error {
 		OnState:   s.state,
 		OnControl: s.control,
 	}
-	return s.tc.Run(ctx)
+	return tc.Run(ctx)
 }
 
 // Current returns the hooks served now.
@@ -106,8 +104,10 @@ func (s *Session) emit(e Event) {
 	}
 }
 
-// ids are the IDs of the current hooks. The caller holds mu.
+// ids are the IDs of the current hooks.
 func (s *Session) ids() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	ids := make([]string, len(s.current))
 	for i, h := range s.current {
 		ids[i] = h.ID
@@ -125,8 +125,7 @@ func (s *Session) state(connected bool, err error) {
 	s.emit(Event{Kind: EventLost, Err: err})
 }
 
-// control applies a control message to the current hooks; tunnel.Client
-// has already dropped the hooks it ends delivery of from later dials.
+// control applies a control message to the current hooks.
 func (s *Session) control(ctl tunnel.Control) {
 	s.emitMu.Lock()
 	defer s.emitMu.Unlock()
@@ -176,10 +175,7 @@ func sameHook(a, b api.Hook) bool {
 func (s *Session) dial(ctx context.Context, _ []string, a tunnel.Attach) (net.Conn, error) {
 	recreated := map[string]bool{} // a recreated hook refused again is not recreated again
 	for {
-		s.mu.Lock()
-		ids := s.ids()
-		s.mu.Unlock()
-		conn, err := tunnel.Dial(ctx, s.API.HTTP, s.API.TunnelURL(a, ids...))
+		conn, err := tunnel.Dial(ctx, s.API.HTTP, s.API.TunnelURL(a, s.ids()...))
 		id, reason, ok := refusal(err)
 		if !ok {
 			return conn, err
@@ -193,7 +189,8 @@ func (s *Session) dial(ctx context.Context, _ []string, a tunnel.Attach) (net.Co
 // refused handles a dial refused for hook id: it recreates or drops the
 // hook and returns nil to dial again, or returns the error to give up
 // with. A first dial (resume false) never drops: those hooks were named on
-// purpose, and serving fewer of them quietly would hide that.
+// purpose, and serving fewer of them quietly would hide that. Holding emitMu
+// keeps current from changing while a recreate is under way.
 func (s *Session) refused(ctx context.Context, resume bool, id string, reason DropReason, err error, recreated map[string]bool) error {
 	s.emitMu.Lock()
 	defer s.emitMu.Unlock()
@@ -218,7 +215,6 @@ func (s *Session) refused(ctx context.Context, resume bool, id string, reason Dr
 		s.mu.Lock()
 		s.current[i] = h
 		s.mu.Unlock()
-		s.tc.Replace(gone.ID, h.ID)
 		s.emit(Event{Kind: EventHookChanged, Hook: h, OldID: gone.ID, Recreated: true})
 		return nil
 	case !resume:
@@ -228,7 +224,6 @@ func (s *Session) refused(ctx context.Context, resume bool, id string, reason Dr
 	s.current = slices.Delete(s.current, i, i+1)
 	left := len(s.current)
 	s.mu.Unlock()
-	s.tc.Remove(id)
 	s.emit(Event{Kind: EventHookDropped, Hook: gone, Reason: reason})
 	if left == 0 {
 		return tunnel.ErrNoHooks
