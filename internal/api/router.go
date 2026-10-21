@@ -33,23 +33,35 @@ type Router struct {
 type routeRecorder struct {
 	mux      *http.ServeMux
 	patterns []string
+	writes   []string // the methods other than GET and HEAD the patterns name
 }
 
 func (m *routeRecorder) Handle(pattern string, h http.Handler) {
 	m.patterns = append(m.patterns, pattern)
+	if method, _, ok := strings.Cut(pattern, " "); ok && method != http.MethodGet && method != http.MethodHead && !slices.Contains(m.writes, method) {
+		m.writes = append(m.writes, method)
+	}
 	m.mux.Handle(pattern, h)
 }
 
-// allows lists the methods a route of its own answers at r's path, rather
-// than the catch-all behind every path.
+// allows lists the methods r's path allows when a route of its own answers
+// there, rather than the catch-all behind every path, and nil otherwise.
+// GET and HEAD are always among them: the web UI answers them everywhere.
 func (m *routeRecorder) allows(r *http.Request) []string {
-	var methods []string
+	methods := []string{http.MethodGet, http.MethodHead}
+	routed := false
 	probe := *r
-	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPatch, http.MethodDelete} {
+	for _, method := range append([]string{http.MethodGet}, m.writes...) {
 		probe.Method = method
 		if _, pattern := m.mux.Handler(&probe); pattern != "" && pattern != "/" {
-			methods = append(methods, method)
+			routed = true
+			if method != http.MethodGet {
+				methods = append(methods, method)
+			}
 		}
+	}
+	if !routed {
+		return nil
 	}
 	return methods
 }
@@ -70,14 +82,24 @@ func NewRouter(cfg RouterConfig) *Router {
 	resource := func(pattern string, f, stream func(http.ResponseWriter, *http.Request, authz.Identity)) {
 		m.Handle(pattern, a.negotiated(observed(pattern, f), stream))
 	}
-	// A document has the representations it offers and no other; a file
-	// name that ends like one, such as /sbom.cdx.json, keeps its extension.
+	// A document has the representations it offers and no other (only); a
+	// file name that ends like one, such as /sbom.cdx.json, keeps its
+	// extension.
 	var literal []string
-	document := func(pattern string, h http.Handler, offers ...negotiate.Type) {
+	document := func(pattern string, h http.Handler) {
 		if path, ok := strings.CutPrefix(pattern, "GET "); ok && negotiate.Extension(path) {
 			literal = append(literal, path)
 		}
-		m.Handle(pattern, only(h, offers...))
+		m.Handle(pattern, h)
+	}
+	// A file is a document for identified callers, who are identified
+	// before an extension is refused, as on its bare path.
+	file := func(pattern string, f func(http.ResponseWriter, *http.Request, authz.Identity), offers ...negotiate.Type) {
+		document(pattern, observed(pattern, func(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+			if !refuses(w, r, offers) {
+				f(w, r, id)
+			}
+		}))
 	}
 	in := &install.Handler{Version: a.Version, BaseURL: a.BaseURL, Releases: cfg.ReleaseAssets}
 	m.Handle("GET /{$}", a.entry(observed("GET /", a.me)))
@@ -95,16 +117,16 @@ func NewRouter(cfg RouterConfig) *Router {
 	resource("GET /channels/{name}", a.getChannel, nil)
 	// Long-lived: not observed (the tunnel traces its own attach and detach).
 	m.Handle("GET /tunnel", a.authed(a.tunnel))
-	document("GET /openapi", http.HandlerFunc(serveOpenAPI), negotiate.JSON)
-	document("GET /openapi.yaml", http.HandlerFunc(serveOpenAPIYAML))
+	document("GET /openapi", only(http.HandlerFunc(serveOpenAPI), negotiate.JSON))
+	document("GET /openapi.yaml", only(http.HandlerFunc(serveOpenAPIYAML)))
 	resource("GET /licenses", a.licenses, nil)
-	document("GET /licenses/{textId}", observed("GET /licenses/{textId}", a.licenseText))
-	document("GET /notices.txt", observed("GET /notices.txt", a.notices))
-	document("GET /sbom.cdx.json", observed("GET /sbom.cdx.json", a.sbomDocument))
+	file("GET /licenses/{textId}", a.licenseText)
+	file("GET /notices.txt", a.notices)
+	file("GET /sbom.cdx.json", a.sbomDocument, negotiate.JSON)
 	m.Handle("GET /inspect/{callID}", cfg.Inspect)
-	document("GET /install.sh", in.Shell())
-	document("GET /install.ps1", in.PowerShell())
-	document("GET /download/{os}/{arch}", in.Download())
+	document("GET /install.sh", only(in.Shell()))
+	document("GET /install.ps1", only(in.PowerShell()))
+	document("GET /download/{os}/{arch}", only(in.Download()))
 	m.Handle("/", catchAll(m, cfg.Fallback))
 
 	// Callbacks bypass the mux, whose path cleaning would rewrite paths
@@ -150,7 +172,7 @@ func catchAll(m *routeRecorder, fallback http.Handler) http.Handler {
 			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			if allow := m.allows(r); len(allow) > 0 {
+			if allow := m.allows(r); allow != nil {
 				w.Header().Set("Allow", strings.Join(allow, ", "))
 				problem.New(http.StatusMethodNotAllowed, problem.MethodNotAllowed, r.Method+" is not allowed here").Write(w)
 				return
@@ -164,10 +186,18 @@ func catchAll(m *routeRecorder, fallback http.Handler) http.Handler {
 // extension asking for another: /install.sh.json is not the script.
 func only(h http.Handler, offers ...negotiate.Type) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if t, ok := negotiate.Forced(r); ok && !slices.Contains(offers, t) {
-			notAcceptable(w, offers)
-			return
+		if !refuses(w, r, offers) {
+			h.ServeHTTP(w, r)
 		}
-		h.ServeHTTP(w, r)
 	})
+}
+
+// refuses answers 406 when an extension on r's path asks for a
+// representation not in offers, and reports whether it did.
+func refuses(w http.ResponseWriter, r *http.Request, offers []negotiate.Type) bool {
+	if t, ok := negotiate.Forced(r); ok && !slices.Contains(offers, t) {
+		notAcceptable(w, offers)
+		return true
+	}
+	return false
 }

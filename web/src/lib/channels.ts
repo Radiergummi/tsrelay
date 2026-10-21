@@ -32,8 +32,9 @@ export function channelChoices(patterns: string[]): string[] {
 
 const channelRE = /^[a-z0-9-]+(\.[a-z0-9-]+)*$/;
 
-/** validChannel is authz.ValidChannel: dot-separated segments of [a-z0-9-], at most 64 characters. */
-export const validChannel = (name: string) => name.length <= 64 && channelRE.test(name);
+/** validChannel is authz.ValidChannel: dot-separated segments of [a-z0-9-], at most 64 characters, not ending in .json or .html. */
+export const validChannel = (name: string) =>
+  name.length <= 64 && channelRE.test(name) && !/\.(json|html)$/.test(name);
 
 /** allowingPattern is the pattern that lets a receiver use channel name: a literal match first, else the first wildcard that matches. */
 export function allowingPattern(patterns: string[], name: string): string | undefined {
