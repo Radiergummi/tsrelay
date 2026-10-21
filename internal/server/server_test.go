@@ -243,13 +243,12 @@ func TestEphemeralHookExpires(t *testing.T) {
 	per, _ := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "per"})
 	e.cli(eph.ID, local.URL)() // connect, then disconnect
 
+	// The reaper deletes the hook first and audits it after, so wait for
+	// both.
 	e.waitFor(func() bool {
 		hs, _ := e.api.ListHooks(context.Background())
-		return len(hs) == 1 && hs[0].ID == per.ID
+		return len(hs) == 1 && hs[0].ID == per.ID && strings.Contains(e.log.String(), `"msg":"hook.expire"`)
 	})
-	if !strings.Contains(e.log.String(), `"msg":"hook.expire"`) {
-		t.Fatal("expiry was not audited")
-	}
 	if resp := e.send(eph, "", nil, nil); resp.Header.Get(problem.HeaderError) != problem.HookNotFound {
 		t.Fatalf("expired hook answered %d", resp.StatusCode)
 	}
