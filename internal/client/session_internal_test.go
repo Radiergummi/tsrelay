@@ -1,8 +1,15 @@
 package client
 
 import (
+	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"slices"
 	"testing"
+
+	"github.com/Radiergummi/tsrelay/internal/api"
+	"github.com/Radiergummi/tsrelay/internal/tunnel"
 
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
@@ -42,5 +49,23 @@ func TestUpdateSeqs(t *testing.T) {
 	}
 	if !s.fresh("h_1", 0) || !s.fresh("h_1", 0) {
 		t.Fatal("0 (a relay without sequence numbers) is always fresh")
+	}
+}
+
+// A dial attaches the hooks tunnel.Client hands it, not the session's own
+// list: tunnel.Client drops a hook the relay took away before the session
+// hears of it, and a redial in between must not attach it again.
+func TestSessionDialsTheTunnelClientsHooks(t *testing.T) {
+	var asked []string
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = r.URL.Query()["hook"]
+		problem.New(http.StatusServiceUnavailable, "unavailable", "down").Write(w)
+	}))
+	defer relay.Close()
+	s := &Session{API: &API{BaseURL: relay.URL, HTTP: relay.Client()}}
+	s.current = []api.Hook{{ID: "h_gone"}, {ID: "h_kept"}}
+	s.dial(context.Background(), []string{"h_kept"}, tunnel.Attach{Resume: true})
+	if !slices.Equal(asked, []string{"h_kept"}) {
+		t.Fatalf("dial attached %v, want [h_kept]", asked)
 	}
 }

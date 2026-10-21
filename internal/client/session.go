@@ -170,15 +170,14 @@ func sameHook(a, b api.Hook) bool {
 	return a.URL == b.URL && a.Path == b.Path && a.Public == b.Public && a.PublicURL == b.PublicURL
 }
 
-// dial attaches the current hooks. A dial refused for one of them
-// recreates it (a 404 with Recreate set, once per hook and dial) or, on a
-// redial, drops it, and dials again. Any other refusal is returned.
-func (s *Session) dial(ctx context.Context, _ []string, a tunnel.Attach) (net.Conn, error) {
+// dial attaches ids, the hooks tunnel.Client holds: it drops a hook the
+// relay takes away before the session hears of it, so it alone says what
+// to dial. A dial refused for one of them recreates it (a 404 with Recreate
+// set, once per hook and dial) or, on a redial, drops it, and dials again.
+// Any other refusal is returned.
+func (s *Session) dial(ctx context.Context, ids []string, a tunnel.Attach) (net.Conn, error) {
 	recreated := map[string]bool{} // a recreated hook refused again is not recreated again
 	for {
-		s.mu.Lock()
-		ids := s.ids()
-		s.mu.Unlock()
 		conn, err := tunnel.Dial(ctx, s.API.HTTP, s.API.TunnelURL(a, ids...))
 		id, reason, ok := refusal(err)
 		if !ok {
@@ -187,6 +186,7 @@ func (s *Session) dial(ctx context.Context, _ []string, a tunnel.Attach) (net.Co
 		if err := s.refused(ctx, a.Resume, id, reason, err, recreated); err != nil {
 			return nil, err
 		}
+		ids = s.tc.Current()
 	}
 }
 

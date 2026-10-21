@@ -50,7 +50,7 @@ func (c *Client) Run(ctx context.Context) error {
 	backoff := minB
 	attach := Attach{Session: ids.New("s_"), Target: c.Target}
 	for {
-		hooks := c.current()
+		hooks := c.Current()
 		if len(hooks) == 0 {
 			return ErrNoHooks
 		}
@@ -59,7 +59,7 @@ func (c *Client) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
-			if len(c.current()) == 0 { // Dial removed the last hook
+			if len(c.Current()) == 0 { // Dial removed the last hook
 				return ErrNoHooks
 			}
 			var p *problem.Problem
@@ -80,7 +80,7 @@ func (c *Client) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		if len(c.current()) == 0 {
+		if len(c.Current()) == 0 {
 			return ErrNoHooks
 		}
 		c.state(false, errTunnelLost)
@@ -97,7 +97,8 @@ func (c *Client) Run(ctx context.Context) error {
 	}
 }
 
-func (c *Client) current() []string {
+// Current returns the hooks the next dial attaches.
+func (c *Client) Current() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return slices.Clone(c.hooks)
