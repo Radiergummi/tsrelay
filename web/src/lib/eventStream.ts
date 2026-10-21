@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { callRecorded, hookChanged, resync } from "@/api/cache";
 import { paths } from "@/api/client";
-import { keys } from "@/api/queries";
-import { hookEvent, summary, type Hook, type Me, type Summary } from "@/api/schemas";
+import { hookEvent, summary } from "@/api/schemas";
 import { backoffDelay } from "./backoff";
 
 export type LiveStatus = "off" | "connecting" | "live" | "reconnecting";
@@ -11,46 +11,6 @@ export interface LiveStreamOptions {
   document?: Pick<Document, "hidden" | "addEventListener" | "removeEventListener">;
   base?: number;
   max?: number;
-}
-
-const newer = (s: Summary, last: Summary | undefined) =>
-  !last || last.id === s.id || Date.parse(s.receivedAt) >= Date.parse(last.receivedAt);
-
-/**
- * applyCallEvent folds a call summary into the cached lists, the hook's
- * lastCall, and refreshes the call if it's open. The list keeps no more
- * calls than the relay does (the entry document's policy.callsPerHook). A list being
- * fetched is refetched instead, since the answer in flight may predate the
- * event and would overwrite it.
- */
-export function applyCallEvent(qc: QueryClient, s: Summary): void {
-  const key = keys.calls(s.hookId);
-  if (qc.getQueryState(key)?.fetchStatus === "fetching") {
-    void qc.invalidateQueries({ queryKey: key });
-  } else {
-    const cap = qc.getQueryData<Me>(keys.me)?.policy.callsPerHook;
-    qc.setQueryData<Summary[]>(key, (list) => {
-      if (!list) return list;
-      const rest = list.filter((c) => c.id !== s.id);
-      const sorted = [s, ...rest].sort(
-        (a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt),
-      );
-      return cap === undefined ? sorted : sorted.slice(0, cap);
-    });
-  }
-  const withLast = (h: Hook): Hook =>
-    h.id === s.hookId && newer(s, h.lastCall) ? { ...h, lastCall: s } : h;
-  qc.setQueriesData<Hook[]>({ queryKey: keys.allHooks }, (list) => list?.map(withLast));
-  qc.setQueryData<Hook>(keys.hook(s.hookId), (h) => (h ? withLast(h) : h));
-  void qc.invalidateQueries({ queryKey: keys.call(s.hookId, s.id) });
-}
-
-/** applyHookEvent refetches a hook that changed (or was deleted), the lists, the channels and the entry document's hook count. */
-export function applyHookEvent(qc: QueryClient, id: string): void {
-  void qc.invalidateQueries({ queryKey: keys.hook(id) });
-  void qc.invalidateQueries({ queryKey: keys.allHooks });
-  void qc.invalidateQueries({ queryKey: keys.allChannels });
-  void qc.invalidateQueries({ queryKey: keys.me });
 }
 
 /**
@@ -155,7 +115,7 @@ export class LiveStream {
     this.source = es;
     if (this.state !== "reconnecting") this.setState("connecting");
     es.onopen = () => {
-      if (this.needsRefetch) void this.qc.invalidateQueries({ type: "active" });
+      if (this.needsRefetch) resync(this.qc);
       this.needsRefetch = false;
       this.attempt = 0;
       this.setState("live");
@@ -172,11 +132,11 @@ export class LiveStream {
     };
     es.addEventListener("call", (e) => {
       const r = summary.safeParse(parse((e as MessageEvent).data));
-      if (r.success) applyCallEvent(this.qc, r.data);
+      if (r.success) callRecorded(this.qc, r.data);
     });
     es.addEventListener("hook", (e) => {
       const r = hookEvent.safeParse(parse((e as MessageEvent).data));
-      if (r.success) applyHookEvent(this.qc, r.data.id);
+      if (r.success) hookChanged(this.qc, r.data.id);
     });
   }
 

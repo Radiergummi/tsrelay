@@ -46,7 +46,7 @@ TSRELAY_LOAD=1 go test ./internal/server -run TestLoad -count=1 -v      # add -c
 
 `TestLoad` drives the relay in-process (knobs: `TSRELAY_LOAD_CONCURRENCY`, `_DURATION`, `_BODY`, `_MODE=plain|streaming`) and reports throughput and the latency the relay adds over calling the app directly.
 
-`.github/workflows/ci.yml` runs the checks, the UI build with its bundle budget, and the end-to-end tests on every push and pull request.
+`.github/workflows/ci.yml` runs the checks, the UI build, and the end-to-end tests on every push and pull request.
 
 ## Pull requests
 

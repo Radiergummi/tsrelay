@@ -1,8 +1,7 @@
 import { memo } from "react";
-import { ApiError } from "@/api/client";
 import { useCall } from "@/api/queries";
 import type { Attempt, Call } from "@/api/schemas";
-import { PageError } from "@/components/PageState";
+import { QueryView } from "@/components/QueryView";
 import { Skeleton } from "@/components/ui/skeleton";
 import { outcomeLabel } from "@/lib/format";
 import { bodyKind, decodeBody, headerValue } from "./bytes";
@@ -61,16 +60,23 @@ const mark = { same: "  ", add: "+ ", del: "- " };
  */
 export const DiffView = memo(function DiffView({ call }: { call: Call }) {
   const original = useCall(call.hookId, call.replayOf);
-  if (original.isPending) return <Skeleton className="h-24 w-full" />;
-  // Only a 404 means expired; a failed refetch keeps showing the diff.
-  if (original.error instanceof ApiError && original.error.status === 404)
-    return (
-      <p className="text-muted-foreground">
-        The original call ({call.replayOf}) has expired, so there is nothing to compare with.
-      </p>
-    );
-  if (original.data === undefined) return <PageError error={original.error} />;
-  const lines = diffLines(responseLines(original.data), responseLines(call));
+  return (
+    <QueryView
+      query={original}
+      pending={<Skeleton className="h-24 w-full" />}
+      gone={
+        <p className="text-muted-foreground">
+          The original call ({call.replayOf}) has expired, so there is nothing to compare with.
+        </p>
+      }
+    >
+      {(o) => <Diff original={o} call={call} />}
+    </QueryView>
+  );
+});
+
+function Diff({ original, call }: { original: Call; call: Call }) {
+  const lines = diffLines(responseLines(original), responseLines(call));
   if (!lines)
     return <p className="text-muted-foreground">The responses are too large to compare here.</p>;
   return (
@@ -93,4 +99,4 @@ export const DiffView = memo(function DiffView({ call }: { call: Call }) {
       </pre>
     </div>
   );
-});
+}

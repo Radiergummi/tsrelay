@@ -1,10 +1,9 @@
 import { lazy, Suspense, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ApiError } from "@/api/client";
 import { useReplay } from "@/api/mutations";
 import { useCall } from "@/api/queries";
 import type { Call, Hook, Me } from "@/api/schemas";
-import { PageError } from "@/components/PageState";
+import { QueryView } from "@/components/QueryView";
 import { StatusText } from "@/components/StatusText";
 import { TimeAgo } from "@/components/TimeAgo";
 import { Button } from "@/components/ui/button";
@@ -38,29 +37,31 @@ export function Inspector({
   onSelect: (callId: string) => void;
 }) {
   const call = useCall(hook.id, callId);
-  if (call.isPending) return <Skeleton className="h-64 w-full" />;
-  // A failed refetch keeps showing the call, unless it has expired.
-  if (call.error instanceof ApiError && call.error.status === 404) {
-    return (
-      <div className="py-12 text-center">
-        <p className="mb-2 font-medium">This call has expired from the inspector</p>
-        <p className="text-muted-foreground">
-          The relay keeps only the most recent calls of each hook, in memory, and forgets them when
-          it restarts.
-        </p>
-      </div>
-    );
-  }
-  if (call.data === undefined) return <PageError error={call.error} />;
   return (
-    <CallView
-      key={call.data.id}
-      hook={hook}
-      call={call.data}
-      owner={owns(me, hook)}
-      relayNoBodies={me.policy.noBodies === true}
-      onSelect={onSelect}
-    />
+    <QueryView
+      query={call}
+      pending={<Skeleton className="h-64 w-full" />}
+      gone={
+        <div className="py-12 text-center">
+          <p className="mb-2 font-medium">This call has expired from the inspector</p>
+          <p className="text-muted-foreground">
+            The relay keeps only the most recent calls of each hook, in memory, and forgets them
+            when it restarts.
+          </p>
+        </div>
+      }
+    >
+      {(c) => (
+        <CallView
+          key={c.id}
+          hook={hook}
+          call={c}
+          owner={owns(me, hook)}
+          relayNoBodies={me.policy.noBodies === true}
+          onSelect={onSelect}
+        />
+      )}
+    </QueryView>
   );
 }
 

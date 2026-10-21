@@ -1,7 +1,9 @@
 import { Trash2 } from "lucide-react";
 import { Link } from "react-router";
 import { useHooks } from "@/api/queries";
-import { EmptyState, PageError, TableSkeleton } from "@/components/PageState";
+import type { Hook } from "@/api/schemas";
+import { EmptyState } from "@/components/PageState";
+import { QueryView } from "@/components/QueryView";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -31,9 +33,11 @@ export function AdminPage() {
   useAllEvents(admin);
   const hooks = useHooks(true);
   if (!admin) return <EmptyState title="Only relay admins can see this page." />;
-  if (hooks.isPending) return <TableSkeleton />;
-  if (hooks.data === undefined) return <PageError error={hooks.error} />;
-  const list = [...hooks.data].sort(
+  return <QueryView query={hooks}>{(data) => <AllHooks hooks={data} />}</QueryView>;
+}
+
+function AllHooks({ hooks }: { hooks: Hook[] }) {
+  const list = [...hooks].sort(
     (a, b) => a.owner.localeCompare(b.owner) || a.path.localeCompare(b.path),
   );
   const tunnels = new Set(list.flatMap((h) => (h.tunnel ? [h.tunnel.id] : []))).size;

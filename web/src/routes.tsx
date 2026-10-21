@@ -1,8 +1,7 @@
 import { Navigate, type RouteObject } from "react-router";
 import { Layout } from "@/components/Layout";
 
-// Pages are lazy, so the first load carries only the shell (the bundle
-// budget is 120 KiB gzip of initial JavaScript).
+// Pages are lazy, so the first load carries only the shell.
 export const routes: RouteObject[] = [
   {
     element: <Layout />,

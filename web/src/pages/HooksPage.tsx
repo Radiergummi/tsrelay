@@ -1,7 +1,8 @@
 import { Link, useSearchParams } from "react-router";
 import { useChannels, useHooks } from "@/api/queries";
 import type { Hook } from "@/api/schemas";
-import { EmptyState, PageError, TableSkeleton } from "@/components/PageState";
+import { EmptyState } from "@/components/PageState";
+import { QueryView } from "@/components/QueryView";
 import { buttonVariants } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -44,33 +45,33 @@ export function HooksPage() {
           </Link>
         </div>
       </div>
-      {hooks.isPending ? (
-        <TableSkeleton />
-      ) : hooks.data === undefined ? (
-        <PageError error={hooks.error} />
-      ) : hooks.data.length === 0 && channel ? (
-        <EmptyState title={`You have no hooks in ${channel}`} />
-      ) : hooks.data.length === 0 ? (
-        <EmptyState title="You have no hooks yet">
-          <div className="mx-auto max-w-xl space-y-3">
-            <p>Install the CLI:</p>
-            <InstallCommand platform={detectPlatform()} />
-            <p>
-              Then run <code>tsrelay http 8080</code> on your machine to get a hook whose calls
-              reach port 8080, or{" "}
-              <Link to="/hooks/new" className="text-primary hover:underline">
-                create one here
-              </Link>
-              .{" "}
-              <Link to="/cli" className="text-primary hover:underline">
-                Other ways to install
-              </Link>
-            </p>
-          </div>
-        </EmptyState>
-      ) : (
-        <HooksTable hooks={hooks.data} />
-      )}
+      <QueryView query={hooks}>
+        {(list) =>
+          list.length === 0 && channel ? (
+            <EmptyState title={`You have no hooks in ${channel}`} />
+          ) : list.length === 0 ? (
+            <EmptyState title="You have no hooks yet">
+              <div className="mx-auto max-w-xl space-y-3">
+                <p>Install the CLI:</p>
+                <InstallCommand platform={detectPlatform()} />
+                <p>
+                  Then run <code>tsrelay http 8080</code> on your machine to get a hook whose calls
+                  reach port 8080, or{" "}
+                  <Link to="/hooks/new" className="text-primary hover:underline">
+                    create one here
+                  </Link>
+                  .{" "}
+                  <Link to="/cli" className="text-primary hover:underline">
+                    Other ways to install
+                  </Link>
+                </p>
+              </div>
+            </EmptyState>
+          ) : (
+            <HooksTable hooks={list} />
+          )
+        }
+      </QueryView>
     </section>
   );
 }

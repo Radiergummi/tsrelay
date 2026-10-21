@@ -1,30 +1,11 @@
+import { Scale } from "lucide-react";
 import { Link } from "react-router";
 
 const repository = "https://github.com/Radiergummi/tsrelay";
 
 const linkClass = "inline-flex items-center gap-1 transition hover:text-foreground";
 
-// The icons are inline rather than from lucide-react, and there is no cn():
-// the footer is in the initial bundle, which has a 120 KiB gzip budget.
-function ScaleIcon() {
-  return (
-    <svg
-      className="size-3.5"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" />
-      <path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" />
-      <path d="M7 21h10M12 3v18M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2" />
-    </svg>
-  );
-}
-
+// lucide-react ships no brand icons, so the GitHub mark is drawn here.
 function GitHubIcon() {
   return (
     <svg className="size-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -63,7 +44,7 @@ export function Footer({
         </div>
         <nav aria-label="Footer" className="flex items-center gap-4">
           <Link to="/licenses" className={linkClass}>
-            <ScaleIcon />
+            <Scale className="size-3.5" aria-hidden="true" />
             Licenses
           </Link>
           <a href={repository} target="_blank" rel="noopener noreferrer" className={linkClass}>

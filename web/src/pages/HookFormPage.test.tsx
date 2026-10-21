@@ -2,7 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
-import { keys } from "@/api/queries";
+import { keys } from "@/api/cache";
 import { makeQueryClient } from "@/api/queryClient";
 import { fixtures } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";

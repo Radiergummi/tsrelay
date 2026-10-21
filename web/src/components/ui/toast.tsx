@@ -1,7 +1,9 @@
 import { Toast } from "@base-ui/react/toast";
 import { X } from "lucide-react";
-import { toastManager } from "@/lib/toastRuntime";
 import { cn } from "@/lib/utils";
+
+/** toastManager lets code outside React (mutation callbacks) add toasts; see @/lib/toast. */
+export const toastManager = Toast.createToastManager();
 
 function ToastList() {
   const { toasts } = Toast.useToastManager();

@@ -1,25 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
+import { keys } from "./cache";
 import { paths, request, requestText } from "./client";
 import * as s from "./schemas";
-
-export const keys = {
-  me: ["me"] as const,
-  /** allHooks prefixes both hook lists, the viewer's and ?all=true. */
-  allHooks: ["hooks"] as const,
-  hooks: (all: boolean, channel?: string) =>
-    channel
-      ? (["hooks", all ? "all" : "mine", channel] as const)
-      : (["hooks", all ? "all" : "mine"] as const),
-  /** allChannels prefixes the channel list and every channel, in either scope. */
-  allChannels: ["channels"] as const,
-  channels: (all: boolean) => ["channels", all ? "all" : "mine"] as const,
-  channel: (name: string, all: boolean) => ["channels", all ? "all" : "mine", name] as const,
-  hook: (id: string) => ["hook", id] as const,
-  calls: (id: string) => ["calls", id] as const,
-  call: (hookId: string, callId: string) => ["call", hookId, callId] as const,
-  licenses: ["licenses"] as const,
-  licenseText: (textId: string) => ["licenseText", textId] as const,
-};
 
 export function useMe() {
   return useQuery({

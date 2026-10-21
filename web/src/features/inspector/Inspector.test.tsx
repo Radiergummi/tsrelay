@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { useState } from "react";
 import { expect, test, vi } from "vitest";
-import { keys } from "@/api/queries";
+import { keys } from "@/api/cache";
 import { fixtures } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";
 import { server } from "@/test/server";

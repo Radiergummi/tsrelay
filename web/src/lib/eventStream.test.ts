@@ -1,7 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { keys } from "@/api/queries";
-import type { Hook, Me, Summary } from "@/api/schemas";
+import { keys } from "@/api/cache";
+import type { Hook, Summary } from "@/api/schemas";
 import { fixtures } from "@/test/fixtures";
 import { LiveStream } from "./eventStream";
 
@@ -113,83 +113,26 @@ test("reconnects with backoff after errors, and refetches once back", () => {
   expect(spy).toHaveBeenCalledWith({ type: "active" });
 });
 
-test("a call event updates the list, the hook's lastCall and the open call", () => {
+// What a call or hook event does to the cache is cache.test.ts's; these
+// only check that the events get there.
+test("a call event reaches the cache", () => {
   const h: Hook = fixtures.hook;
   const old: Summary = fixtures.calls.at(-1)!;
   qc.setQueryData(keys.calls(h.id), [old]);
-  qc.setQueryData(keys.hooks(false), [{ ...h, lastCall: old }]);
-  qc.setQueryData(keys.hook(h.id), { ...h, lastCall: old });
-  qc.setQueryData(keys.call(h.id, "c_new"), fixtures.callPending);
-  const spy = vi.spyOn(qc, "invalidateQueries");
   stream.setUser(true);
-
-  const fresh: Summary = {
+  latest().emit("call", {
     ...old,
     id: "c_new",
     receivedAt: new Date(Date.parse(old.receivedAt) + 1000).toISOString(),
-    outcome: "pending",
-  };
-  latest().emit("call", fresh);
-  expect(qc.getQueryData<Summary[]>(keys.calls(h.id))!.map((c) => c.id)).toEqual(["c_new", old.id]);
-  expect(qc.getQueryData<Hook[]>(keys.hooks(false))![0]!.lastCall?.id).toBe("c_new");
-  expect(qc.getQueryData<Hook>(keys.hook(h.id))!.lastCall?.id).toBe("c_new");
-
-  latest().emit("call", { ...fresh, outcome: "ok", status: 200 }); // completion replaces, not appends
-  expect(qc.getQueryData<Summary[]>(keys.calls(h.id))!.map((c) => c.id)).toEqual(["c_new", old.id]);
-  expect(qc.getQueryData<Summary[]>(keys.calls(h.id))![0]!.status).toBe(200);
-  expect(spy).toHaveBeenCalledWith({ queryKey: keys.call(h.id, "c_new") });
-});
-
-const later = (s: Summary, seconds: number, id: string): Summary => ({
-  ...s,
-  id,
-  receivedAt: new Date(Date.parse(s.receivedAt) + seconds * 1000).toISOString(),
-});
-
-test("a list at the relay's cap stays at the cap, dropping the oldest", () => {
-  const h: Hook = fixtures.hook;
-  const base: Summary = fixtures.calls.at(-1)!;
-  const me: Me = { ...fixtures.me, policy: { ...fixtures.me.policy, callsPerHook: 3 } };
-  qc.setQueryData(keys.me, me);
-  qc.setQueryData(keys.calls(h.id), [
-    later(base, 2, "c_2"),
-    later(base, 1, "c_1"),
-    later(base, 0, "c_0"),
-  ]);
-  stream.setUser(true);
-  latest().emit("call", later(base, 3, "c_3"));
-  expect(qc.getQueryData<Summary[]>(keys.calls(h.id))!.map((c) => c.id)).toEqual([
-    "c_3",
-    "c_2",
-    "c_1",
-  ]);
-});
-
-// A fetch that started before the event would answer without it and
-// overwrite the patched list, so the event refetches the list instead.
-test("a call event while the list is being fetched refetches it rather than patching", () => {
-  const h: Hook = fixtures.hook;
-  const base: Summary = fixtures.calls.at(-1)!;
-  qc.setQueryData(keys.calls(h.id), [base]);
-  void qc.fetchQuery({
-    queryKey: keys.calls(h.id),
-    queryFn: () => new Promise<Summary[]>(() => {}),
   });
-  expect(qc.getQueryState(keys.calls(h.id))?.fetchStatus).toBe("fetching");
-  const spy = vi.spyOn(qc, "invalidateQueries");
-  stream.setUser(true);
-  latest().emit("call", later(base, 1, "c_new"));
-  expect(spy).toHaveBeenCalledWith({ queryKey: keys.calls(h.id) });
-  expect(qc.getQueryData<Summary[]>(keys.calls(h.id))!.map((c) => c.id)).toEqual([base.id]);
+  expect(qc.getQueryData<Summary[]>(keys.calls(h.id))!.map((c) => c.id)).toEqual(["c_new", old.id]);
 });
 
-test("a hook event invalidates the hook, the lists and the entry document", () => {
+test("a hook event reaches the cache", () => {
   stream.setUser(true);
   const spy = vi.spyOn(qc, "invalidateQueries");
   latest().emit("hook", { id: "h_1" });
   expect(spy).toHaveBeenCalledWith({ queryKey: keys.hook("h_1") });
-  expect(spy).toHaveBeenCalledWith({ queryKey: ["hooks"] });
-  expect(spy).toHaveBeenCalledWith({ queryKey: keys.me });
 });
 
 test("malformed events are ignored", () => {

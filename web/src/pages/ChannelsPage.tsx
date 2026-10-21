@@ -1,7 +1,8 @@
 import { Link, useSearchParams } from "react-router";
 import { useChannels } from "@/api/queries";
 import type { Channels } from "@/api/schemas";
-import { EmptyState, PageError, TableSkeleton } from "@/components/PageState";
+import { EmptyState } from "@/components/PageState";
+import { QueryView } from "@/components/QueryView";
 import {
   Table,
   TableBody,
@@ -41,20 +42,18 @@ export function ChannelsPage() {
           </Link>
         )}
       </div>
-      {channels.isPending ? (
-        <TableSkeleton />
-      ) : channels.data === undefined ? (
-        <PageError error={channels.error} />
-      ) : (
-        <>
-          <Patterns channels={channels.data} />
-          {channels.data.channels.length === 0 ? (
-            <EmptyState title={all ? "No hooks use a channel yet" : "You have no hooks yet"} />
-          ) : (
-            <ChannelsTable channels={channels.data} all={all} />
-          )}
-        </>
-      )}
+      <QueryView query={channels}>
+        {(c) => (
+          <>
+            <Patterns channels={c} />
+            {c.channels.length === 0 ? (
+              <EmptyState title={all ? "No hooks use a channel yet" : "You have no hooks yet"} />
+            ) : (
+              <ChannelsTable channels={c} all={all} />
+            )}
+          </>
+        )}
+      </QueryView>
     </section>
   );
 }
