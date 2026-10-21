@@ -10,8 +10,9 @@ export function App() {
   const [router] = useState(() => createBrowserRouter(routes));
   return (
     <QueryClientProvider client={client}>
-      <RouterProvider router={router} />
+      {/* First: it subscribes in an effect, and earlier siblings' effects run first. */}
       <Toaster />
+      <RouterProvider router={router} />
     </QueryClientProvider>
   );
 }
