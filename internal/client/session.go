@@ -64,12 +64,11 @@ type Session struct {
 	// and OnEvent may call Current while handling them.
 	OnEvent func(Event)
 
-	emitMu    sync.Mutex // held while emitting ordered events; taken before mu
-	mu        sync.Mutex
-	current   []api.Hook
-	seqs      updateSeqs
-	connected bool // attached at least once
-	tc        *tunnel.Client
+	emitMu  sync.Mutex // held while emitting ordered events; taken before mu
+	mu      sync.Mutex
+	current []api.Hook
+	seqs    updateSeqs
+	tc      *tunnel.Client
 }
 
 // Run serves the hooks until ctx is done (nil), no hooks remain
@@ -77,7 +76,7 @@ type Session struct {
 // fix (its problem).
 func (s *Session) Run(ctx context.Context) error {
 	s.mu.Lock()
-	s.current, s.seqs, s.connected = slices.Clone(s.Hooks), updateSeqs{}, false
+	s.current, s.seqs = slices.Clone(s.Hooks), updateSeqs{}
 	ids := s.ids()
 	s.mu.Unlock()
 	s.tc = &tunnel.Client{
@@ -120,9 +119,6 @@ func (s *Session) state(connected bool, err error) {
 	s.emitMu.Lock()
 	defer s.emitMu.Unlock()
 	if connected {
-		s.mu.Lock()
-		s.connected = true
-		s.mu.Unlock()
 		s.emit(Event{Kind: EventConnected})
 		return
 	}
@@ -174,10 +170,9 @@ func sameHook(a, b api.Hook) bool {
 	return a.URL == b.URL && a.Path == b.Path && a.Public == b.Public && a.PublicURL == b.PublicURL
 }
 
-// dial attaches the current hooks. A redial refused for one of them
-// recreates it (a 404 with Recreate set, once per hook and dial) or, once
-// the session has been connected, drops it, and dials again. Any other
-// refusal is returned.
+// dial attaches the current hooks. A dial refused for one of them
+// recreates it (a 404 with Recreate set, once per hook and dial) or, on a
+// redial, drops it, and dials again. Any other refusal is returned.
 func (s *Session) dial(ctx context.Context, _ []string, a tunnel.Attach) (net.Conn, error) {
 	recreated := map[string]bool{} // a recreated hook refused again is not recreated again
 	for {
@@ -189,58 +184,56 @@ func (s *Session) dial(ctx context.Context, _ []string, a tunnel.Attach) (net.Co
 		if !ok {
 			return conn, err
 		}
-		s.emitMu.Lock()
-		s.mu.Lock()
-		i := slices.IndexFunc(s.current, func(h api.Hook) bool { return h.ID == id })
-		connected := s.connected
-		s.mu.Unlock()
-		switch {
-		case i < 0: // not one of ours: nothing to drop
-			s.emitMu.Unlock()
-			return nil, err
-		case reason == DropDeleted && s.Recreate != nil && !recreated[id]:
-			var h api.Hook
-			if h, err = s.recreate(ctx, i); err == nil {
-				recreated[h.ID] = true
-			}
-		case reason == DropDeleted && recreated[id]: // gone again right away: recreating won't help
-		case !connected: // the hooks were named on purpose; don't serve fewer quietly
-		default:
-			s.mu.Lock()
-			gone := s.current[i]
-			s.current = slices.Delete(s.current, i, i+1)
-			left := len(s.current)
-			s.mu.Unlock()
-			s.tc.Remove(id)
-			s.emit(Event{Kind: EventHookDropped, Hook: gone, Reason: reason})
-			err = nil
-			if left == 0 {
-				err = tunnel.ErrNoHooks
-			}
-		}
-		s.emitMu.Unlock()
-		if err != nil {
+		if err := s.refused(ctx, a.Resume, id, reason, err, recreated); err != nil {
 			return nil, err
 		}
 	}
 }
 
-// recreate replaces the current hook at i, which the relay no longer has,
-// and returns its replacement. The caller holds emitMu.
-func (s *Session) recreate(ctx context.Context, i int) (api.Hook, error) {
+// refused handles a dial refused for hook id: it recreates or drops the
+// hook and returns nil to dial again, or returns the error to give up
+// with. A first dial (resume false) never drops: those hooks were named on
+// purpose, and serving fewer of them quietly would hide that.
+func (s *Session) refused(ctx context.Context, resume bool, id string, reason DropReason, err error, recreated map[string]bool) error {
+	s.emitMu.Lock()
+	defer s.emitMu.Unlock()
 	s.mu.Lock()
-	gone := s.current[i]
+	i := slices.IndexFunc(s.current, func(h api.Hook) bool { return h.ID == id })
+	var gone api.Hook
+	if i >= 0 {
+		gone = s.current[i]
+	}
 	s.mu.Unlock()
-	h, err := s.Recreate(ctx, gone)
-	if err != nil {
-		return api.Hook{}, err
+	switch {
+	case i < 0: // not one of ours: nothing to drop
+		return err
+	case reason == DropDeleted && recreated[id]: // gone again right away: recreating won't help
+		return err
+	case reason == DropDeleted && s.Recreate != nil:
+		h, err := s.Recreate(ctx, gone)
+		if err != nil {
+			return err
+		}
+		recreated[h.ID] = true
+		s.mu.Lock()
+		s.current[i] = h
+		s.mu.Unlock()
+		s.tc.Replace(gone.ID, h.ID)
+		s.emit(Event{Kind: EventHookChanged, Hook: h, OldID: gone.ID, Recreated: true})
+		return nil
+	case !resume:
+		return err
 	}
 	s.mu.Lock()
-	s.current[i] = h
+	s.current = slices.Delete(s.current, i, i+1)
+	left := len(s.current)
 	s.mu.Unlock()
-	s.tc.Replace(gone.ID, h.ID)
-	s.emit(Event{Kind: EventHookChanged, Hook: h, OldID: gone.ID, Recreated: true})
-	return h, nil
+	s.tc.Remove(id)
+	s.emit(Event{Kind: EventHookDropped, Hook: gone, Reason: reason})
+	if left == 0 {
+		return tunnel.ErrNoHooks
+	}
+	return nil
 }
 
 // refusal returns the hook a tunnel-attach refusal names and what dropping

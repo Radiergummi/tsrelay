@@ -274,7 +274,7 @@ func (b *bgChild) hookChanged(oldID string, h api.Hook) {
 	b.updateHooks(func(hs []runHook) []runHook {
 		for i := range hs {
 			if hs[i].ID == oldID {
-				hs[i] = runHook{ID: h.ID, Path: h.Path, URL: h.URL}
+				hs[i] = runHookOf(h)
 			}
 		}
 		return hs
@@ -336,7 +336,9 @@ func (b *bgChild) send(m backgroundMessage) {
 func (c *cli) runRecord(hs []api.Hook, target string) runRecord {
 	r := runRecord{ID: c.bg.id, PID: os.Getpid(), Args: c.args, Relay: c.base, Target: target, Started: time.Now().UTC()}
 	for _, h := range hs {
-		r.Hooks = append(r.Hooks, runHook{ID: h.ID, Path: h.Path, URL: h.URL})
+		r.Hooks = append(r.Hooks, runHookOf(h))
 	}
 	return r
 }
+
+func runHookOf(h api.Hook) runHook { return runHook{ID: h.ID, Path: h.Path, URL: h.URL} }

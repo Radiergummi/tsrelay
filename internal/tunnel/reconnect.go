@@ -123,11 +123,9 @@ func (c *Client) Remove(id string) {
 
 func (c *Client) handleControl(ctl Control) {
 	if ctl.Type == ControlReplaced || ctl.Type == ControlRevoked || ctl.Type == ControlHookDeleted {
-		c.mu.Lock()
 		for _, h := range ctl.Hooks {
-			c.hooks = slices.DeleteFunc(c.hooks, func(x string) bool { return x == h.ID })
+			c.Remove(h.ID)
 		}
-		c.mu.Unlock()
 	}
 	if c.OnControl != nil {
 		c.OnControl(ctl)
