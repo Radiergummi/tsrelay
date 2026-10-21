@@ -1,10 +1,14 @@
 import type { ReactNode } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 
+/** errorText is what an error says, whatever was thrown. */
+export const errorText = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 export function PageError({ error }: { error: unknown }) {
   return (
     <p role="alert" className="text-destructive">
-      {error instanceof Error ? error.message : String(error)}
+      {errorText(error)}
     </p>
   );
 }

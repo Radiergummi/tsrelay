@@ -60,7 +60,6 @@ const mark = { same: "  ", add: "+ ", del: "- " };
  */
 export const DiffView = memo(function DiffView({ call }: { call: Call }) {
   const original = useCall(call.hookId, call.replayOf);
-  // Only a 404 means expired; a failed refetch keeps showing the diff.
   return (
     <QueryView
       query={original}

@@ -30,7 +30,6 @@ function Edit({ id }: { id: string }) {
   const me = useViewer();
   const hook = useHook(id);
   const notYours = <EmptyState title="There is no hook with this ID, or it is not yours." />;
-  // A failed refetch keeps the form and its edits, unless the hook is gone.
   return (
     <QueryView query={hook} gone={notYours}>
       {(h) => (owns(me, h) ? <HookForm me={me} hook={h} /> : notYours)}

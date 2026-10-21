@@ -4,7 +4,7 @@ import { ApiError } from "@/api/client";
 import { PageError, TableSkeleton } from "./PageState";
 
 /** isGone: the relay answered 404, so what the query asked for no longer exists (or isn't the viewer's). */
-export function isGone(error: unknown): boolean {
+function isGone(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404;
 }
 

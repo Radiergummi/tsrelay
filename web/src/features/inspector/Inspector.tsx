@@ -37,7 +37,6 @@ export function Inspector({
   onSelect: (callId: string) => void;
 }) {
   const call = useCall(hook.id, callId);
-  // A failed refetch keeps showing the call, unless it has expired.
   return (
     <QueryView
       query={call}

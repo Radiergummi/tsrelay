@@ -10,7 +10,7 @@ import { NoAccessPage } from "@/pages/NoAccessPage";
 import { Footer } from "./Footer";
 import { Header } from "./Header";
 import { LiveBar } from "./LiveBar";
-import { TableSkeleton } from "./PageState";
+import { errorText, TableSkeleton } from "./PageState";
 import { QueryView } from "./QueryView";
 import { Button } from "./ui/button";
 
@@ -83,9 +83,7 @@ function NotIdentified({ error }: { error: unknown }) {
         <p className="mb-4 text-muted-foreground">
           {unidentified
             ? "The relay could not identify your device on the tailnet. Reload the page; if this keeps happening, the relay may have lost its Tailscale connection."
-            : error instanceof Error
-              ? error.message
-              : String(error)}
+            : errorText(error)}
         </p>
         <Button onClick={() => window.location.reload()}>Reload</Button>
       </main>
