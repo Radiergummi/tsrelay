@@ -1,18 +1,13 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { callReturned, hookDeleted, hookSaved } from "./cache";
 import { paths, request, requestVoid } from "./client";
-import { keys } from "./queries";
 import * as s from "./schemas";
 
 export function useCreateHook() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: s.HookRequest) => request(s.hook, "POST", paths.hooks(), body),
-    onSuccess: (h) => {
-      qc.setQueryData(keys.hook(h.id), h);
-      void qc.invalidateQueries({ queryKey: keys.allHooks });
-      void qc.invalidateQueries({ queryKey: keys.allChannels });
-      void qc.invalidateQueries({ queryKey: keys.me });
-    },
+    onSuccess: (h) => hookSaved(qc, h),
   });
 }
 
@@ -20,11 +15,7 @@ export function useUpdateHook(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: s.HookRequest) => request(s.hook, "PATCH", paths.hook(id), body),
-    onSuccess: (h) => {
-      qc.setQueryData(keys.hook(h.id), h);
-      void qc.invalidateQueries({ queryKey: keys.allHooks });
-      void qc.invalidateQueries({ queryKey: keys.allChannels });
-    },
+    onSuccess: (h) => hookSaved(qc, h),
   });
 }
 
@@ -33,10 +24,7 @@ export function useRotatePublicUrl(hookId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => request(s.hook, "POST", paths.rotatePublicUrl(hookId)),
-    onSuccess: (h) => {
-      qc.setQueryData(keys.hook(h.id), h);
-      void qc.invalidateQueries({ queryKey: keys.allHooks });
-    },
+    onSuccess: (h) => hookSaved(qc, h),
   });
 }
 
@@ -44,13 +32,7 @@ export function useDeleteHook() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => requestVoid("DELETE", paths.hook(id)),
-    onSuccess: (_, id) => {
-      qc.removeQueries({ queryKey: keys.hook(id) });
-      qc.removeQueries({ queryKey: keys.calls(id) });
-      void qc.invalidateQueries({ queryKey: keys.allHooks });
-      void qc.invalidateQueries({ queryKey: keys.allChannels });
-      void qc.invalidateQueries({ queryKey: keys.me });
-    },
+    onSuccess: (_, id) => hookDeleted(qc, id),
   });
 }
 
@@ -59,10 +41,7 @@ export function useReplay(hookId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (callId: string) => request(s.call, "POST", paths.replay(hookId, callId)),
-    onSuccess: (c) => {
-      qc.setQueryData(keys.call(hookId, c.id), c);
-      void qc.invalidateQueries({ queryKey: keys.calls(hookId) });
-    },
+    onSuccess: (c) => callReturned(qc, c),
   });
 }
 
@@ -71,10 +50,7 @@ export function useTestRequest(hookId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: s.TestRequest) => request(s.call, "POST", paths.test(hookId), req),
-    onSuccess: (c) => {
-      qc.setQueryData(keys.call(hookId, c.id), c);
-      void qc.invalidateQueries({ queryKey: keys.calls(hookId) });
-    },
+    onSuccess: (c) => callReturned(qc, c),
   });
 }
 
