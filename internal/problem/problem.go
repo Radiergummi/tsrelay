@@ -80,6 +80,7 @@ type Problem struct {
 	Detail string `json:"detail,omitempty"`
 	Code   string `json:"code"`
 	Errors any    `json:"errors,omitempty"`
+	Hook   string `json:"hook,omitempty"` // for a refused tunnel attach, the hook it was refused for
 }
 
 func New(status int, code, detail string) *Problem {

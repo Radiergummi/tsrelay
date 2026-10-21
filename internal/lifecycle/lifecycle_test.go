@@ -318,7 +318,7 @@ func TestHookInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 	info := l.hookInfo(h)
-	if info.ID != string(h.ID) || info.URL != "https://relay"+h.Route() || info.Public || info.PublicURL != "" {
+	if info.ID != string(h.ID) || info.URL != "https://relay"+h.Route() || info.Path != "cb" || info.Public || info.PublicURL != "" {
 		t.Fatalf("hookInfo = %+v", info)
 	}
 	h.Public, h.PublicToken = true, "tok"

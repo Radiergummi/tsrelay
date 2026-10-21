@@ -76,16 +76,20 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 	tk.Attach(attachCtx, t, func(d time.Duration) { a.traceDetach(attachCtx, t, d) })
 }
 
-// attachRefused is the problem the client gets for ae.
+// attachRefused is the problem the client gets for ae. It names the hook
+// the attach was refused for, if any, so a client can drop just that one.
 func attachRefused(ae *lifecycle.AdmitError) *problem.Problem {
+	var p *problem.Problem
 	switch ae.Kind {
 	case lifecycle.HookNotFound:
-		return problem.New(http.StatusNotFound, problem.NotFound, ae.Error())
+		p = problem.New(http.StatusNotFound, problem.NotFound, ae.Error())
 	case lifecycle.Superseded, lifecycle.Rejected:
-		return problem.New(http.StatusConflict, problem.Conflict, ae.Error())
+		p = problem.New(http.StatusConflict, problem.Conflict, ae.Error())
 	default: // ChannelDenied, TooManyTunnels
-		return problem.New(http.StatusForbidden, problem.Forbidden, ae.Error())
+		p = problem.New(http.StatusForbidden, problem.Forbidden, ae.Error())
 	}
+	p.Hook = string(ae.Hook)
+	return p
 }
 
 // localTarget returns s if it is an http(s) URL without credentials, else

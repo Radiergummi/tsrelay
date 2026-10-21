@@ -395,6 +395,10 @@ func TestTunnelRejections(t *testing.T) {
 		if !errors.As(err, &p) || p.Status != c.status {
 			t.Errorf("%s: err = %v, want status %d", name, err, c.status)
 		}
+		wantHook := map[string]string{"someone else's hook": h.ID, "unknown hook": "h_nope"} // tagged node: refused for its role, no hook
+		if p != nil && p.Hook != wantHook[name] {
+			t.Errorf("%s: problem hook = %q, want %q", name, p.Hook, wantHook[name])
+		}
 	}
 	if resp := e.call(moritz, "GET", "/tunnel?hook="+h.ID, nil, nil); resp.StatusCode != 400 {
 		t.Errorf("non-upgrade request = %d, want 400", resp.StatusCode)
@@ -416,7 +420,7 @@ func TestResumeCannotTakeOverOtherSessions(t *testing.T) {
 	}
 	_, _, err := e.openTunnelQ(moritz, "session=s_old&resume=1", h.ID)
 	var p *problem.Problem
-	if !errors.As(err, &p) || p.Status != 409 || p.Code != problem.Conflict {
+	if !errors.As(err, &p) || p.Status != 409 || p.Code != problem.Conflict || p.Hook != h.ID {
 		t.Fatalf("replaced session resuming: err = %v, want 409 conflict", err)
 	}
 	var got Hook
@@ -541,7 +545,7 @@ func TestMaxTunnels(t *testing.T) {
 
 	_, _, err := e.openTunnelQ(limited, "session=s2", c.ID)
 	var p *problem.Problem
-	if !errors.As(err, &p) || p.Status != 403 || p.Code != problem.Forbidden || !strings.Contains(p.Detail, "maxTunnels 2") {
+	if !errors.As(err, &p) || p.Status != 403 || p.Code != problem.Forbidden || !strings.Contains(p.Detail, "maxTunnels 2") || p.Hook != "" {
 		t.Fatalf("third tunnel: err = %v, want 403 naming the limit", err)
 	}
 	// Taking over your own tunnel's only hook orphans it, so it does not count.
