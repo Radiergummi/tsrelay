@@ -18,7 +18,9 @@ import (
 func get(t *testing.T, h *Handler, p string) *httptest.ResponseRecorder {
 	t.Helper()
 	mux := http.NewServeMux()
-	h.Register(mux)
+	mux.Handle("GET /install.sh", h.Shell())
+	mux.Handle("GET /install.ps1", h.PowerShell())
+	mux.Handle("GET /download/{os}/{arch}", h.Download())
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, p, nil))
 	return rec

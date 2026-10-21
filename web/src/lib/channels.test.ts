@@ -32,6 +32,9 @@ test("channel names are validated like authz.ValidChannel, and the allowing patt
   expect(validChannel("Team")).toBe(false);
   expect(validChannel("a..b")).toBe(false);
   expect(validChannel("a".repeat(65))).toBe(false);
+  expect(validChannel("billing.events.json")).toBe(false);
+  expect(validChannel("a.html")).toBe(false);
+  expect(validChannel("json")).toBe(true);
   expect(allowingPattern(["*", "prod"], "prod")).toBe("prod");
   expect(allowingPattern(["staging.*"], "staging.eu")).toBe("staging.*");
   expect(allowingPattern(["staging.*"], "prod")).toBeUndefined();

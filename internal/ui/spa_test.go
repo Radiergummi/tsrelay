@@ -25,17 +25,15 @@ var built = fstest.MapFS{
 	}`)},
 }
 
-// serve sends one request through a mux with the UI registered. header
+// serve sends one request to the UI's fallback. header
 // holds name, value pairs.
 func serve(fsys fstest.MapFS, method, path string, header ...string) (*http.Response, string) {
-	mux := http.NewServeMux()
-	New(nil, fsys).Register(mux)
 	req := httptest.NewRequest(method, path, nil)
 	for i := 0; i+1 < len(header); i += 2 {
 		req.Header.Set(header[i], header[i+1])
 	}
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	New(nil, fsys).Fallback().ServeHTTP(rec, req)
 	resp := rec.Result()
 	b, _ := io.ReadAll(resp.Body)
 	return resp, string(b)

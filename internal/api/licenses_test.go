@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/Radiergummi/tsrelay/internal/identify"
-	"github.com/Radiergummi/tsrelay/internal/negotiate"
 	"github.com/Radiergummi/tsrelay/internal/sbom"
 )
 
@@ -50,7 +49,6 @@ func TestAttributionWithoutSBOM(t *testing.T) {
 func TestLicenses(t *testing.T) {
 	requireSBOM(t)
 	e := newEnv(t)
-	e.srv.Config.Handler = negotiate.Extensions(e.srv.Config.Handler)
 	var doc sbom.Document
 	if resp := e.call(nobody, "GET", "/licenses", nil, &doc); resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "application/json" {
 		t.Fatalf("GET /licenses = %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
@@ -89,9 +87,6 @@ func TestLicenseText(t *testing.T) {
 func TestNoticesAndSBOM(t *testing.T) {
 	requireSBOM(t)
 	e := newEnv(t)
-	// Through the extension handling the server uses: .json must not be
-	// stripped from /sbom.cdx.json.
-	e.srv.Config.Handler = negotiate.Extensions(e.srv.Config.Handler)
 	for _, tc := range []struct{ path, contentType, contains string }{
 		{"/notices.txt", "text/plain; charset=utf-8", "github.com/spf13/cobra"},
 		{"/sbom.cdx.json", "application/vnd.cyclonedx+json; version=1.6", `"bomFormat": "CycloneDX"`},

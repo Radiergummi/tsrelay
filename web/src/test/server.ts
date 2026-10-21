@@ -1,7 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import type { ChannelDetail, Channels, Hook } from "@/api/schemas";
-import { matchChannel } from "@/lib/channels";
+import { matchChannel, validChannel } from "@/lib/channels";
 import { fixtures } from "./fixtures";
 
 const byId = (list: { id: string }[], id: unknown) => list.find((x) => x.id === id);
@@ -59,7 +59,7 @@ export const handlers = [
   ),
   http.get("/channels/:name", ({ request, params }) => {
     const name = String(params.name);
-    if (!/^[a-z0-9-]+(\.[a-z0-9-]+)*$/.test(name))
+    if (!validChannel(name))
       return HttpResponse.json(
         { title: "Not Found", status: 404, code: "not_found", detail: "no such channel" },
         { status: 404, headers: { "Content-Type": "application/problem+json" } },

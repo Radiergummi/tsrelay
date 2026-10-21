@@ -14,7 +14,6 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
@@ -32,19 +31,30 @@ var targets = map[string][]string{
 	"windows": {"amd64", "arm64"},
 }
 
+// DefaultRelayHost is the relay's default MagicDNS host name, where the CLI
+// looks for it unless told otherwise.
+const DefaultRelayHost = "tsrelay"
+
 type Handler struct {
 	Version  string // the relay's version, or "dev" for a build without one
 	BaseURL  string // the relay's URL on the tailnet, no trailing slash
 	Releases string // base URL of the release assets; "" means GitHub's
 }
 
-// Register renders the install scripts once; nothing in them changes for
-// the relay's lifetime.
-func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /install.sh", h.script("install.sh.tmpl", "text/x-shellscript; charset=utf-8"))
-	mux.HandleFunc("GET /install.ps1", h.script("install.ps1.tmpl", "text/plain; charset=utf-8"))
-	mux.HandleFunc("GET /download/{os}/{arch}", h.download)
+// Shell serves install.sh, rendered once: nothing in it changes for the
+// relay's lifetime.
+func (h *Handler) Shell() http.Handler {
+	return h.script("install.sh.tmpl", "text/x-shellscript; charset=utf-8")
 }
+
+// PowerShell serves install.ps1, rendered once.
+func (h *Handler) PowerShell() http.Handler {
+	return h.script("install.ps1.tmpl", "text/plain; charset=utf-8")
+}
+
+// Download redirects GET /download/{os}/{arch} to that build of the
+// relay's release.
+func (h *Handler) Download() http.Handler { return http.HandlerFunc(h.download) }
 
 func (h *Handler) dev() bool { return h.Version == "dev" }
 
@@ -65,7 +75,7 @@ func (h *Handler) assetBase() string {
 func (h *Handler) relayHint() string {
 	u, err := url.Parse(h.BaseURL)
 	if err == nil && u.Scheme == "https" {
-		if label, _, _ := strings.Cut(u.Hostname(), "."); label == client.DefaultRelayHost {
+		if label, _, _ := strings.Cut(u.Hostname(), "."); label == DefaultRelayHost {
 			return ""
 		}
 	}

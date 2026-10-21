@@ -115,27 +115,26 @@ func encodedSlashIn(u *url.URL, n int) bool {
 	return false
 }
 
-// recorder captures the status, size and start of a response for the audit
+// recorder captures the status and size of a response for the audit
 // log and the inspector. It unwraps so http.ResponseController can still
 // flush streamed responses.
 type recorder struct {
 	http.ResponseWriter
 	status  int
 	bytes   int64
-	wrote   time.Time       // when the status was written
 	capture *inspect.Buffer // receives the body as it is written; may be nil
 }
 
 func (r *recorder) WriteHeader(code int) {
 	if r.status == 0 && code >= 200 {
-		r.status, r.wrote = code, time.Now()
+		r.status = code
 	}
 	r.ResponseWriter.WriteHeader(code)
 }
 
 func (r *recorder) Write(b []byte) (int, error) {
 	if r.status == 0 {
-		r.status, r.wrote = http.StatusOK, time.Now()
+		r.status = http.StatusOK
 	}
 	n, err := r.ResponseWriter.Write(b)
 	r.bytes += int64(n)

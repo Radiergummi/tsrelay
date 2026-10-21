@@ -248,7 +248,7 @@ func (c *call) tunnelUnavailable(detail string) *refusal {
 func (c *call) hold() error {
 	holdStart := time.Now()
 	ht := c.trace.child(c.h.Tracer, "tsrelay.hold")
-	_, err := c.h.hold(c.ctx, c.hook, c.eff.HoldTimeout.Std())
+	err := c.h.hold(c.ctx, c.hook, c.eff.HoldTimeout.Std())
 	c.waited = time.Since(holdStart)
 	result := "attached" // the span's tsrelay.hold.result
 	switch {
@@ -481,7 +481,7 @@ func (c *call) finish(res Result, d delivered) {
 // was read to the end.
 func (c *call) delivered(aborted, bodyEOF bool) delivered {
 	return delivered{
-		delivery: c.delivery, wrote: c.rec.wrote, header: c.rec.Header(), tunnel: c.tunnel,
+		delivery: c.delivery, header: c.rec.Header(), tunnel: c.tunnel,
 		bodyRead: bodyEOF || c.r.ContentLength == 0,
 		// The response went out in full unless the call broke off or its
 		// sender left first; a sender that leaves after the last byte does

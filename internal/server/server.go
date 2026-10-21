@@ -5,10 +5,7 @@ import (
 	"cmp"
 	"context"
 	"net/http"
-	"net/url"
 	"runtime/debug"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/api"
@@ -18,9 +15,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
-	"github.com/Radiergummi/tsrelay/internal/install"
 	"github.com/Radiergummi/tsrelay/internal/lifecycle"
-	"github.com/Radiergummi/tsrelay/internal/negotiate"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/release"
 	"github.com/Radiergummi/tsrelay/internal/telemetry"
@@ -47,6 +42,7 @@ type Config struct {
 	Inspect        inspect.Config
 	Telemetry      *telemetry.Telemetry // nil: Prometheus metrics only, no tracing
 	Releases       *release.Checker     // the latest release, named to admins in GET /; nil: none (--update-check=false)
+	ReleaseAssets  string               // base URL of the release assets /download redirects to; "" means GitHub's
 
 	NoTracePropagation bool // don't join senders' traces or pass the relay's to apps (--trace-propagation=false)
 }
@@ -57,9 +53,7 @@ type Server struct {
 	tunnels *lifecycle.Lifecycle
 	audit   *audit.Logger
 	relay   *relay.Handler // serves callbacks; its Held() feeds the held-calls gauge
-	handler http.Handler
-	public  http.Handler // nil unless cfg.PublicBaseURL is set
-	routes  []string     // the API's patterns and the UI's inspect redirect
+	router  *api.Router
 	inspect *inspect.Inspector
 	events  *events.Hub
 
@@ -97,7 +91,6 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	s.relay = &relay.Handler{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Audit: al, HoldQueue: cfg.HoldQueue, Inspect: s.inspect, PublicMaxBody: cfg.PublicMaxBody, OnCall: onCall}
 
 	version := cmp.Or(cfg.Version, "dev")
-	mux := http.NewServeMux()
 	a := &api.API{Identifier: id, Hooks: mgr, Tunnels: s.tunnels, Inspect: s.inspect, Relay: s.relay, Events: s.events, Audit: al, BaseURL: cfg.BaseURL, PublicBaseURL: cfg.PublicBaseURL, CapName: cfg.CapName, Version: version, Commit: cmp.Or(cfg.Commit, commit()), Releases: cfg.Releases, Tunnel: cfg.Tunnel, Meter: s.tel.Meter.Meter(telemetry.ScopeName), ReidentifyEvery: cfg.Revalidate}
 	if s.tel.Tracing {
 		s.relay.Tracer = s.tel.Tracer.Tracer(telemetry.ScopeName)
@@ -108,54 +101,25 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	}
 	u := ui.New(a, web.Dist)
 	a.HTML = u.Index()
-	a.Register(mux)
-	u.Register(mux)
-	s.routes = slices.Concat(a.Routes(), []string{ui.InspectRoute})
-	(&install.Handler{Version: version, BaseURL: cfg.BaseURL}).Register(mux)
-
-	// Callbacks bypass the mux, whose path cleaning would rewrite paths
-	// such as "/~m/cb//x" that must reach the local app unchanged. They
-	// also go without the version header: their responses stay exactly
-	// what the receiver's app returned.
-	resources := negotiate.Extensions(mux)
-	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/~") {
-			s.relay.ServeHTTP(w, r)
-			return
-		}
-		w.Header().Set(api.VersionHeader, version)
-		resources.ServeHTTP(w, r)
+	s.router = api.NewRouter(api.RouterConfig{
+		API:           a,
+		Inspect:       u.Inspect(),
+		Fallback:      u.Fallback(),
+		ReleaseAssets: cfg.ReleaseAssets,
+		AllowedHosts:  cfg.AllowedHosts,
 	})
-	s.handler = api.Guard(cfg.AllowedHosts, root)
-
-	if cfg.PublicBaseURL != "" {
-		u, err := url.Parse(cfg.PublicBaseURL)
-		if err != nil {
-			panic("server: invalid PublicBaseURL: " + err.Error())
-		}
-		guarded := api.Guard([]string{u.Hostname()}, http.HandlerFunc(s.relay.ServePublic))
-		s.public = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Nothing but public hooks: the UI, the API and tailnet hooks
-			// must not be reachable from the internet, not even as errors.
-			if !strings.HasPrefix(r.URL.Path, "/+") {
-				http.NotFound(w, r)
-				return
-			}
-			guarded.ServeHTTP(w, r)
-		})
-	}
 	return s
 }
 
-func (s *Server) Handler() http.Handler { return s.handler }
+func (s *Server) Handler() http.Handler { return s.router.Tailnet }
 
-// Routes are the patterns that answer with what the caller may see or do,
-// for proving each one against the access rules.
-func (s *Server) Routes() []string { return s.routes }
+// Routes are every pattern the relay serves, for proving each one against
+// the access rules.
+func (s *Server) Routes() []string { return s.router.Routes }
 
 // PublicHandler serves the hooks made public, for the Funnel listener. It
 // is nil when Config.PublicBaseURL is empty.
-func (s *Server) PublicHandler() http.Handler { return s.public }
+func (s *Server) PublicHandler() http.Handler { return s.router.Public }
 
 // commit is the revision this binary was built from, as the Go toolchain
 // stamped it, or "" when it was built outside a checkout (as in Docker).

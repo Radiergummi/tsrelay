@@ -40,6 +40,9 @@ func TestValidChannel(t *testing.T) {
 		"default": true, "prod.eu": true, "a-b.c-d": true, "x1": true,
 		"Prod": false, "prod..eu": false, ".prod": false, "prod.": false,
 		"": false, "pr*d": false, "prod/eu": false, strings.Repeat("a", 65): false,
+		// A last segment that is a representation would make the channel's
+		// URL name another channel: /channels/a.json is channel a as JSON.
+		"billing.events.json": false, "a.html": false, "json": true, "a.jsonx": true, "a.json.b": true,
 	} {
 		if got := ValidChannel(name); got != want {
 			t.Errorf("ValidChannel(%q) = %v, want %v", name, got, want)
