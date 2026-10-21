@@ -10,9 +10,8 @@ on:
       - "website/**"
       # The API reference is rendered from this.
       - "internal/api/openapi.yaml"
-      # The /errors/<code> pages are checked against these.
-      - "internal/problem/problem.go"
       - ".github/workflows/pages.yml"
+      - ".github/actions/node/**"
   pull_request:
     paths: *paths
   workflow_dispatch:
@@ -42,11 +41,9 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+      - uses: ./.github/actions/node
         with:
           working-directory: website
-          cache: true
-          require-lockfile: true
 
       - name: Lint, format and types
         working-directory: website

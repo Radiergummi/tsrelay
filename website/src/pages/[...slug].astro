@@ -15,10 +15,9 @@ export async function getStaticPaths() {
 const { entry } = Astro.props;
 const { Content, headings } = await render(entry);
 
-// The collection is loaded from `../docs`, so the loader reports paths relative
-// to this project; the edit link and the modified date both want them relative
-// to the repository root.
-const sourcePath = entry.filePath?.replace(/^\.\.\//, "");
+// Relative to the repository root, as the edit link and the modified date want
+// it; every doc is a `.md` file directly in `docs/`.
+const sourcePath = `docs/${entry.id}.md`;
 ---
 <DocsLayout
   title={entry.data.title}

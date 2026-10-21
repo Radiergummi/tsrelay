@@ -1,4 +1,4 @@
-import { latestVersion } from "./docs";
+import { latestVersion } from "./git";
 import { allPages, siteResources } from "./manifest";
 
 interface Route {
@@ -10,7 +10,7 @@ interface Route {
 
 /**
  * `get` plus the path's words, so every operation has a stable, unique id
- * without a table to maintain: `/api/errors.md` is `getApiErrorsMd`.
+ * without a table to maintain: `/errors.md` is `getErrorsMd`.
  */
 function operationId(path: string): string {
   const words = path.split(/[^A-Za-z0-9]+/).filter(Boolean);

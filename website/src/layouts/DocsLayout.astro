@@ -20,21 +20,14 @@ interface Props {
     headings: Heading[];
     markdownUrl?: string;
 
-    /**
-     * Overrides the `rel="alternate"` this page advertises, which otherwise
-     * names `markdownUrl`. Only the API explorer needs it: the machine-readable
-     * form of a specification playground is the specification.
-     */
-    alternate?: { href: string; type?: string; title?: string };
     category?: string;
     tags?: string[];
 
     /**
-     * The page's source file, relative to the repository root. Pages generated
-     * from Go source have none, and get neither an edit link nor a modified
-     * date rather than a link to a file that was never written.
+     * The page's source file, relative to the repository root, which the edit
+     * link points at and the modified date is read from.
      */
-    sourcePath?: string;
+    sourcePath: string;
 }
 
 const {
@@ -43,16 +36,14 @@ const {
     slug,
     headings,
     markdownUrl,
-    alternate,
     category,
     tags,
     sourcePath,
 } = Astro.props;
-// `undefined` rather than `null`: every component below models an absent date
-// or edit link as an omitted prop, and a page generated from Go source has
-// neither.
-const lastModified = (sourcePath ? await getLastModified(sourcePath) : null) ?? undefined;
-const editUrl = sourcePath ? `${repoUrl}/edit/main/${sourcePath}` : undefined;
+// `undefined` rather than `null`: the components below model an absent date as
+// an omitted prop, and a file not yet committed has none.
+const lastModified = getLastModified(sourcePath) ?? undefined;
+const editUrl = `${repoUrl}/edit/main/${sourcePath}`;
 ---
 
 <BaseLayout
@@ -60,7 +51,7 @@ const editUrl = sourcePath ? `${repoUrl}/edit/main/${sourcePath}` : undefined;
     description={description}
     slug={slug}
     lastModified={lastModified}
-    alternate={alternate ?? (markdownUrl ? {href: markdownUrl} : undefined)}
+    alternate={markdownUrl ? {href: markdownUrl} : undefined}
 >
     <main
         id="main-content"
@@ -116,15 +107,6 @@ const editUrl = sourcePath ? `${repoUrl}/edit/main/${sourcePath}` : undefined;
         }
 
         document.addEventListener("astro:page-load", () => {
-            // Hide HTTP request separators (###).
-            document
-                .querySelectorAll("pre[data-language=\"http\"] .line")
-                .forEach((line) => {
-                    if (line.textContent.trim() === "###") {
-                        line.style.display = "none";
-                    }
-                });
-
             document
                 .querySelectorAll(".prose table:not([data-initialized])")
                 .forEach((table) => {

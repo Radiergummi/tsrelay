@@ -1,17 +1,18 @@
 ---
 import DocsLayout from "../layouts/DocsLayout.astro";
-import {latestVersion} from "../lib/docs";
-import {repoUrl} from "../lib/navigation";
+import {latestVersion} from "../lib/git";
+import {releaseUrl, repoSlug, repoUrl} from "../lib/navigation";
 import {generatedPage} from "../lib/pages";
 
 const {description, sourcePath, title} = generatedPage("/download");
 const version = latestVersion();
-const releaseUrl = `${repoUrl}/releases/tag/${version}`;
-const image = `ghcr.io/radiergummi/tsrelay:${version.slice(1)}`;
+const image = `ghcr.io/${repoSlug.toLowerCase()}:${version.slice(1)}`;
+const binaryUrl = (file: string) => `${repoUrl}/releases/download/${version}/${file}`;
 
 /**
  * One entry per binary the release workflow builds: its goos × goarch matrix,
- * named `tsrelay_<os>_<arch>`, with `.exe` on Windows.
+ * named `tsrelay_<os>_<arch>`, with `.exe` on Windows. The relay's installers
+ * (`internal/install`) list the same platforms.
  */
 const platforms = [
     {name: "macOS", builds: [{arch: "arm64", label: "Apple silicon"}, {arch: "amd64", label: "Intel"}], os: "darwin"},
@@ -25,8 +26,8 @@ const platforms = [
         return {
             label,
             file,
-            url: `${repoUrl}/releases/download/${version}/${file}`,
-            checksumUrl: `${repoUrl}/releases/download/${version}/tsrelay_${os}_${arch}.sha256`,
+            url: binaryUrl(file),
+            checksumUrl: binaryUrl(`tsrelay_${os}_${arch}.sha256`),
         };
     }),
 }));
@@ -39,7 +40,7 @@ const headings = [
 ---
 <DocsLayout title={title} description={description} slug="download" headings={headings} sourcePath={sourcePath}>
     <p>
-        The latest release is <a href={releaseUrl}>{version}</a>. One binary is both the relay
+        The latest release is <a href={releaseUrl(version)}>{version}</a>. One binary is both the relay
         (<code>tsrelay serve</code>) and the CLI developers use to receive callbacks.
     </p>
 
@@ -71,7 +72,7 @@ const headings = [
 
     <p>On macOS and Linux, put the binary on your <code>PATH</code> and make it executable:</p>
 
-    <pre><code>{`curl -fsSLo tsrelay ${platforms[1].builds[0].url}
+    <pre><code>{`curl -fsSLo tsrelay ${binaryUrl("tsrelay_linux_amd64")}
 chmod +x tsrelay
 sudo mv tsrelay /usr/local/bin/`}</code></pre>
 
@@ -92,7 +93,8 @@ sudo mv tsrelay /usr/local/bin/`}</code></pre>
     <pre><code>{`docker pull ${image}`}</code></pre>
 
     <p>
-        Ready-made deployments are in the repository, for <a href={`${repoUrl}/tree/main/deploy/kubernetes`}>Kubernetes</a> and <a href={`${repoUrl}/blob/main/deploy/compose.yaml`}>Docker Compose</a>.
+        Ready-made deployments for <a href={`${repoUrl}/tree/main/deploy/kubernetes`}>Kubernetes</a> and
+        <a href={`${repoUrl}/blob/main/deploy/compose.yaml`}>Docker Compose</a> are in the repository.
     </p>
 
     <h2 id="verifying-a-download">Verifying a download</h2>
@@ -102,8 +104,8 @@ sudo mv tsrelay /usr/local/bin/`}</code></pre>
         CycloneDX SBOM listing the modules it was built from. With the GitHub CLI:
     </p>
 
-    <pre><code>{`gh attestation verify tsrelay_linux_amd64 -R Radiergummi/tsrelay                              # provenance
-gh attestation verify tsrelay_linux_amd64 -R Radiergummi/tsrelay --predicate-type https://cyclonedx.org/bom`}</code></pre>
+    <pre><code>{`gh attestation verify tsrelay_linux_amd64 -R ${repoSlug}                              # provenance
+gh attestation verify tsrelay_linux_amd64 -R ${repoSlug} --predicate-type https://cyclonedx.org/bom`}</code></pre>
 
     <p>
         Without access to GitHub's API, verify against the bundles attached to the release: add

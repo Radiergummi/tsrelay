@@ -2,6 +2,13 @@ import packageJson from "../../package.json" with { type: "json" };
 
 export const repoUrl: string = packageJson.repository;
 
+/** The repository as `owner/name`, as `gh -R` and the container registry name it. */
+export const repoSlug = new URL(repoUrl).pathname.slice(1);
+
+export function releaseUrl(version: string): string {
+  return `${repoUrl}/releases/tag/${version}`;
+}
+
 export interface NavItem {
   slug: string;
   title: string;
@@ -15,23 +22,6 @@ export interface NavItem {
 export interface NavGroup {
   label: string;
   items: NavItem[];
-}
-
-const allPages: NavItem[] = [];
-
-export function getPrevNext(slug: string): { prev: NavItem | null; next: NavItem | null } {
-  if (!allPages.length) {
-    for (const { items } of sidebarGroups) {
-      allPages.push(...items);
-    }
-  }
-
-  const index = allPages.findIndex((item) => item.slug === slug);
-
-  return {
-    prev: index > 0 ? allPages[index - 1] : null,
-    next: index >= 0 && index < allPages.length - 1 ? allPages[index + 1] : null,
-  };
 }
 
 export const sidebarGroups: NavGroup[] = [
@@ -65,3 +55,14 @@ export const sidebarGroups: NavGroup[] = [
     ],
   },
 ];
+
+const allPages = sidebarGroups.flatMap(({ items }) => items);
+
+export function getPrevNext(slug: string): { prev: NavItem | null; next: NavItem | null } {
+  const index = allPages.findIndex((item) => item.slug === slug);
+
+  return {
+    prev: index > 0 ? allPages[index - 1] : null,
+    next: index >= 0 && index < allPages.length - 1 ? allPages[index + 1] : null,
+  };
+}

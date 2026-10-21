@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join } from "node:path";
 import type { APIContext } from "astro";
 import { markdownResponse } from "@/lib/markdown";
+import { docsDir } from "@/lib/pages";
 
 /**
  * The home page as Markdown. `[...slug].md.ts` cannot serve it: it drops
@@ -9,7 +10,7 @@ import { markdownResponse } from "@/lib/markdown";
  * duplicate `/index` HTML page beside `/`.
  */
 export async function GET({ site }: APIContext) {
-  const body = await readFile(resolve("../docs/index.md"), "utf-8");
+  const body = await readFile(join(docsDir, "index.md"), "utf-8");
 
   return markdownResponse(body, "/", site);
 }

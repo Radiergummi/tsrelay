@@ -1,38 +1,18 @@
 ---
 import {readFileSync} from "node:fs";
-import {resolve} from "node:path";
+import {join} from "node:path";
+import {docsDir} from "../../lib/pages";
 
 /**
  * The relay's problem documents name their code's entry as their `type`,
  * `https://tsrelay.mazetti.me/errors/<code>` (`internal/problem`), so each code
- * gets a URL here that forwards to its entry in the error reference.
- *
- * The codes are read from the Go source, and a code without an entry in
- * `docs/errors.md`, or an entry without a code, fails the build: a `type` a
- * client follows must never land on nothing.
+ * documented in the error reference gets a URL here that forwards to its entry.
+ * That every code is documented is checked by `internal/problem`'s tests.
  */
 export function getStaticPaths() {
-    const source = readFileSync(resolve("../internal/problem/problem.go"), "utf-8");
-    const block = source.match(/\/\/ Error codes\.[^\n]*\nconst \(([\s\S]*?)\n\)/)?.[1];
-    const codes = [...(block ?? "").matchAll(/=\s*"([a-z_]+)"/g)].map(([, code]) => code);
+    const reference = readFileSync(join(docsDir, "errors.md"), "utf-8");
 
-    if (codes.length === 0) {
-        throw new Error("no error codes found in internal/problem/problem.go");
-    }
-
-    const reference = readFileSync(resolve("../docs/errors.md"), "utf-8");
-    const documented = [...reference.matchAll(/^### `([a-z_]+)`$/gm)].map(([, code]) => code);
-    const missing = codes.filter((code) => !documented.includes(code));
-    const unknown = documented.filter((code) => !codes.includes(code));
-
-    if (missing.length > 0 || unknown.length > 0) {
-        throw new Error(
-            `docs/errors.md is out of step with internal/problem: ` +
-            `missing ${missing.join(", ") || "none"}; unknown ${unknown.join(", ") || "none"}`,
-        );
-    }
-
-    return codes.map((code) => ({params: {code}}));
+    return [...reference.matchAll(/^### `([a-z_]+)`$/gm)].map(([, code]) => ({params: {code}}));
 }
 
 const {code} = Astro.params;

@@ -31,7 +31,6 @@
   --muted: oklch(0.965 0.004 75);
   --muted-foreground: oklch(0.5 0.01 60);
   --accent: oklch(0.955 0.012 290);
-  --accent-foreground: oklch(0.35 0.12 290);
   --border: oklch(0.915 0.005 75);
   --active: oklch(0.52 0.2 290);
   --active-foreground: oklch(0.99 0 0);
@@ -58,7 +57,6 @@
   --muted: oklch(0.22 0.005 60);
   --muted-foreground: oklch(0.66 0.008 70);
   --accent: oklch(0.27 0.05 290);
-  --accent-foreground: oklch(0.86 0.08 290);
   --border: oklch(0.29 0.005 60);
   --active: oklch(0.72 0.15 290);
   --active-foreground: oklch(0.16 0.01 290);
@@ -83,7 +81,6 @@
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
   --color-border: var(--border);
   --color-link: var(--link);
   --color-active: var(--active);
@@ -194,10 +191,6 @@
       @apply mt-0;
     }
 
-    h1 {
-      @apply text-2xl font-semibold tracking-tight mt-0 mb-6;
-    }
-
     h2 {
       @apply text-lg font-semibold tracking-tight mt-12 mb-4;
     }
@@ -251,10 +244,6 @@
 
     hr {
       @apply my-10;
-    }
-
-    img {
-      @apply rounded-lg my-6;
     }
 
     /* region Inline code */
@@ -425,11 +414,7 @@
     }
 
     .definition-row {
-      @apply py-3 border-b-0;
-
-      &:last-child {
-        @apply border-b-0;
-      }
+      @apply py-3;
     }
 
     /* Short values sit beside their term rather than under it, and the caption
@@ -646,7 +631,7 @@
 
   container-type: inline-size;
 
-  /* The dot grid the topology view draws behind React Flow, at its 20px gap. */
+  /* A dot grid behind the diagram, at a 20px gap. */
   background-image: radial-gradient(circle, var(--mermaid-dot) 1px, transparent 1px);
   background-size: 20px 20px;
 }

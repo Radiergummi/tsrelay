@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { getLastModifiedSync, isShallowSync } from "./git";
+import { getLastModified, isShallow } from "./git";
 
 /**
  * A page this site serves that is not a doc in the content collection: the home
@@ -24,9 +24,10 @@ export interface GeneratedPage {
 
   /**
    * The file whose last commit dates this page, relative to the repository
-   * root. For a generated page that is the source it is generated from, not the
-   * `.astro` file that renders it — a wording change to the page's own prose is
-   * not what a reader means by "when did this last change".
+   * root. For a page generated from another file that is the source it is
+   * generated from, not the `.astro` file that renders it — a wording change to
+   * the page's own prose is not what a reader means by "when did this last
+   * change". A page written in its `.astro` file is dated by that file.
    */
   sourcePath: string;
 }
@@ -78,7 +79,11 @@ export function markdownFor(path: string): string {
   return markdown;
 }
 
-const docsDir = resolve("../docs");
+/**
+ * Where the docs live. Declared here rather than beside the content collection
+ * because `astro.config.ts` imports this module before the content layer exists.
+ */
+export const docsDir = resolve("../docs");
 
 /**
  * The source file behind a doc slug, relative to the repository root. It is
@@ -93,7 +98,7 @@ function docsSourcePath(slug: string): string | null {
 /**
  * The source file behind a rendered path, relative to the repository root.
  */
-export function sourceForPath(pathname: string): string {
+function sourceForPath(pathname: string): string {
   const page = generatedPages.find((candidate) => candidate.path === pathname);
 
   if (page) {
@@ -117,7 +122,7 @@ export function sourceForPath(pathname: string): string {
  * integration itself catches and logs whatever `serialize` raises.
  */
 export function lastModifiedFor(url: string): string {
-  if (isShallowSync()) {
+  if (isShallow()) {
     throw new Error(
       "a shallow clone dates every page from its one commit; check out with fetch-depth: 0",
     );
@@ -125,7 +130,7 @@ export function lastModifiedFor(url: string): string {
 
   const { pathname } = new URL(url);
   const source = sourceForPath(pathname === "/" ? "/" : pathname.replace(/\/$/, ""));
-  const modified = getLastModifiedSync(source);
+  const modified = getLastModified(source);
 
   if (!modified) {
     throw new Error(`no commit in this clone touches ${source}; commit it before building`);

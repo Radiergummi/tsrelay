@@ -66,21 +66,6 @@ function remarkDocsLinks() {
   };
 }
 
-const defaultTabLabels: Record<string, string> = {
-  http: "HTTP",
-  bash: "cURL",
-  sh: "cURL",
-  shell: "Shell",
-  javascript: "JavaScript",
-  js: "JavaScript",
-  typescript: "TypeScript",
-  ts: "TypeScript",
-  python: "Python",
-  go: "Go",
-  json: "JSON",
-  yaml: "YAML",
-};
-
 function remarkCodeTabs() {
   return (tree: Root) => {
     const { children } = tree;
@@ -116,7 +101,7 @@ function remarkCodeTabs() {
 
       const labels = group.map((node) => {
         const language = node.lang ?? "";
-        const label = parseTabLabel(node.meta) || defaultTabLabels[language] || language || "Code";
+        const label = parseTabLabel(node.meta) || language || "Code";
 
         stripTabMeta(node);
 
@@ -438,6 +423,9 @@ const rehypePlugins: RehypePlugins = [rehypeMermaid];
 
 export default defineConfig({
   site: "https://tsrelay.mazetti.me",
+  // Astro's default, "jsx", drops whitespace that spans a line break next to an
+  // element, so prose wrapped beside a link or code loses its spaces.
+  compressHTML: true,
   srcDir: "./src",
   trailingSlash: "never",
   build: { format: "file" },

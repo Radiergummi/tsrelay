@@ -21,19 +21,19 @@ import IconButton from "./IconButton.astro";
 
     const states = ["light", "dark", "system"];
 
-    window.__getTheme = () => localStorage.getItem("theme") || "system";
+    const getTheme = () => localStorage.getItem("theme") || "system";
 
-    window.__applyTheme = (theme) => {
+    const applyTheme = (theme) => {
       const dark = theme === "dark" ||
         (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
       document.documentElement.classList.toggle("dark", dark);
     };
 
-    window.__applyTheme(window.__getTheme());
+    applyTheme(getTheme());
 
     const themeLabels = { light: "Light theme", dark: "Dark theme", system: "System theme" };
 
-    window.__updateThemeUI = function(theme) {
+    const updateThemeUI = (theme) => {
       const toggle = document.getElementById("theme-toggle");
       toggle.dataset.theme = theme;
       toggle.setAttribute("aria-label", "Toggle theme, current: " + themeLabels[theme]);
@@ -41,26 +41,26 @@ import IconButton from "./IconButton.astro";
 
     window.matchMedia("(prefers-color-scheme: dark)")
       .addEventListener("change", () => {
-        if (window.__getTheme() === "system") {
-          window.__applyTheme("system");
-          window.__updateThemeUI("system");
+        if (getTheme() === "system") {
+          applyTheme("system");
+          updateThemeUI("system");
         }
       });
 
     document.addEventListener("click", (e) => {
       if (!e.target.closest("#theme-toggle")) return;
-      const current = window.__getTheme();
+      const current = getTheme();
       const next = states[(states.indexOf(current) + 1) % states.length];
       localStorage.setItem("theme", next);
-      window.__applyTheme(next);
-      window.__updateThemeUI(next);
+      applyTheme(next);
+      updateThemeUI(next);
       document.getElementById("theme-status").textContent = themeLabels[next];
     });
 
     document.addEventListener("astro:page-load", () => {
-      var theme = window.__getTheme();
-      window.__applyTheme(theme);
-      window.__updateThemeUI(theme);
+      var theme = getTheme();
+      applyTheme(theme);
+      updateThemeUI(theme);
     });
   }
 </script>
