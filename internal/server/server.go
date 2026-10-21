@@ -56,7 +56,7 @@ type Server struct {
 	relay   *relay.Handler // serves callbacks; its Held() feeds the held-calls gauge
 	handler http.Handler
 	public  http.Handler // nil unless cfg.PublicBaseURL is set
-	routes  []string     // the API's patterns and the UI's inspect redirect
+	routes  []string     // every pattern the router registered
 	inspect *inspect.Inspector
 	events  *events.Hub
 
@@ -117,8 +117,8 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 
 func (s *Server) Handler() http.Handler { return s.handler }
 
-// Routes are the patterns that answer with what the caller may see or do,
-// for proving each one against the access rules.
+// Routes are every pattern the relay serves, for proving each one against
+// the access rules.
 func (s *Server) Routes() []string { return s.routes }
 
 // PublicHandler serves the hooks made public, for the Funnel listener. It
