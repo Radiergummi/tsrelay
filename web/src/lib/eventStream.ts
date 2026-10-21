@@ -6,8 +6,9 @@ import { backoffDelay } from "./backoff";
 
 /**
  * LiveStatus: crowded is reconnecting because the viewer's device has too
- * many streams open (429); refused is given up, because the relay won't
- * stream to the viewer (403).
+ * many streams open (429); refused is no more retries, because the relay
+ * won't stream to the viewer (403), until the tab is shown again or the
+ * stream it wants changes.
  */
 export type LiveStatus = "off" | "connecting" | "live" | "reconnecting" | "crowded" | "refused";
 
@@ -167,6 +168,7 @@ export class LiveStream {
   private close(): void {
     this.source?.close();
     this.source = null;
+    this.failed = null; // a status check still out answers for nothing now
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.url = null;

@@ -175,7 +175,7 @@ test("too many streams (429) keeps retrying and says why", async () => {
   latest().onerror?.();
   await vi.advanceTimersByTimeAsync(0);
   expect(stream.snapshot()).toEqual({ status: "crowded" });
-  await vi.advanceTimersByTimeAsync(1000);
+  await vi.advanceTimersByTimeAsync(1250); // the first backoff, at its most jittered
   expect(open()).toHaveLength(1);
 });
 
@@ -202,9 +202,23 @@ test("a status check that arrives after the stream is back changes nothing", asy
   probe.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
   stream.setUser(true);
   latest().onerror?.();
-  await vi.advanceTimersByTimeAsync(1000);
+  await vi.advanceTimersByTimeAsync(1250); // the first backoff, at its most jittered
+  expect(open()).toHaveLength(1);
   latest().onopen?.();
   answer(new Response(JSON.stringify({ detail: "x" }), { status: 403 }));
   await vi.advanceTimersByTimeAsync(0);
   expect(stream.snapshot()).toEqual({ status: "live" });
+});
+
+test("a status check that arrives after the stream stopped changes nothing", async () => {
+  let answer!: (r: Response) => void;
+  probe.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+  stream.setUser(true);
+  latest().onerror?.();
+  stream.setUser(false); // e.g. the viewer lost their role
+  const spy = vi.spyOn(qc, "invalidateQueries");
+  answer(Response.json({ detail: "event streams need a relay role" }, { status: 403 }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(stream.snapshot()).toEqual({ status: "off" });
+  expect(spy).not.toHaveBeenCalled();
 });
