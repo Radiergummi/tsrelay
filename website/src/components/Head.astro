@@ -110,4 +110,20 @@ const ldScripts = [jsonLd, breadcrumbLd].filter(Boolean).map(
     const dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
     if (dark) document.documentElement.classList.add("dark");
   })();
+
+  /**
+   * The API reference is a Scalar app with its own scripts and styles, which a
+   * client-side swap would strip or never run again, so every way there —
+   * a sidebar link, Prev/Next, a link in a doc, back and forward — becomes a
+   * full page load. Cancelling the preparation hands the URL to the browser.
+   */
+  if (!window.__explorerReloadInitialized) {
+    window.__explorerReloadInitialized = true;
+
+    document.addEventListener("astro:before-preparation", (event) => {
+      if (event.to.pathname.replace(/\.html$/, "") === "/api/explorer") {
+        event.preventDefault();
+      }
+    });
+  }
 </script>

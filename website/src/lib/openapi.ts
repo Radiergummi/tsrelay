@@ -1,4 +1,4 @@
-import { latestVersion } from "./git";
+import { latestVersion } from "./release";
 import { allPages, siteResources } from "./manifest";
 
 interface Route {
@@ -82,10 +82,11 @@ export async function buildSiteSpec(site: URL | undefined) {
     openapi: "3.1.0",
     info: {
       title: "tsrelay documentation site",
-      version: latestVersion(),
+      version: await latestVersion(),
       description:
-        "The URLs served by the tsrelay documentation site. Every page has a Markdown " +
-        "representation at the same path with `.md` appended, and a summary of the whole site " +
+        "The URLs served by the tsrelay documentation site. Every documentation page has a " +
+        "Markdown representation at the same path with `.md` appended, listed below beside it, " +
+        "and a summary of the whole site " +
         "is at `/llms.txt`.\n\nThis document describes the documentation site itself. The HTTP " +
         "API of the relay — the product documented here — is described separately by " +
         "`/api/openapi.yaml`.",

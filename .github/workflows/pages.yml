@@ -3,8 +3,6 @@ name: Website
 on:
   push:
     branches: [main]
-    # A release changes the version the site offers for download.
-    tags: ["v*"]
     paths: &paths
       - "docs/**"
       - "website/**"
@@ -14,6 +12,8 @@ on:
       - ".github/actions/node/**"
   pull_request:
     paths: *paths
+  # The release workflow dispatches this on main once a release is
+  # published, since that changes the version the site offers for download.
   workflow_dispatch:
 
 # Read-only by default: the build installs dependencies and runs the Astro
@@ -22,9 +22,11 @@ on:
 permissions:
   contents: read
 
+# A newer pull request push makes an older check moot, but a deploy that is
+# under way is left to finish rather than cut off halfway.
 concurrency:
   group: pages-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -35,11 +37,9 @@ jobs:
         with:
           persist-credentials: false
           # Every page's modified date comes from the last commit that touched
-          # its source, and the download version from the latest release tag,
-          # so the build needs the whole history and the tags; it refuses a
+          # its source, so the build needs the whole history; it refuses a
           # shallow clone rather than date every page by the deploy.
           fetch-depth: 0
-          fetch-tags: true
 
       - uses: ./.github/actions/node
         with:
@@ -54,6 +54,9 @@ jobs:
 
       - name: Build
         working-directory: website
+        env:
+          # Read once, for the latest release's version.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm build
 
       - if: github.event_name != 'pull_request'

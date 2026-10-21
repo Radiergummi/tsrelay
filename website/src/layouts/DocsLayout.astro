@@ -149,9 +149,11 @@ const editUrl = `${repoUrl}/edit/main/${sourcePath}`;
                     wrapper.appendChild(button);
                 });
 
-            // Code tabs: switch panels and persist preference.
+            // Code tabs: switch panels and persist preference. The labels a
+            // reader picked are kept most recent first, so each group opens on
+            // the latest pick it has.
             const tabPrefs = JSON.parse(
-                localStorage.getItem("code-tab-prefs") || "{}",
+                localStorage.getItem("code-tab-prefs") || "[]",
             );
 
             document
@@ -184,7 +186,7 @@ const editUrl = `${repoUrl}/edit/main/${sourcePath}`;
                         ({textContent}) => textContent,
                     );
 
-                    const preferred = labels.find((label) => tabPrefs[label]);
+                    const preferred = tabPrefs.find((label) => labels.includes(label));
 
                     if (preferred) {
                         activateGroup(tabs, labels.indexOf(preferred));
@@ -201,11 +203,11 @@ const editUrl = `${repoUrl}/edit/main/${sourcePath}`;
 
                         activateGroup(tabs, index);
 
-                        tabPrefs[buttons[index].textContent] = true;
+                        const label = buttons[index].textContent;
+
+                        tabPrefs.splice(0, tabPrefs.length, label, ...tabPrefs.filter((other) => other !== label));
 
                         localStorage.setItem("code-tab-prefs", JSON.stringify(tabPrefs));
-
-                        const label = buttons[index].textContent;
 
                         document
                             .querySelectorAll(".code-tabs")

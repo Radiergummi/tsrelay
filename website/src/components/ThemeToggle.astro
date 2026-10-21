@@ -57,8 +57,13 @@ import IconButton from "./IconButton.astro";
       document.getElementById("theme-status").textContent = themeLabels[next];
     });
 
-    document.addEventListener("astro:page-load", () => {
-      var theme = getTheme();
+    updateThemeUI(getTheme());
+
+    // The client router replaces <html>'s attributes with the new page's,
+    // dropping the class; restoring it here, before the transition captures
+    // the new page, is what keeps a dark page from flashing light.
+    document.addEventListener("astro:after-swap", () => {
+      const theme = getTheme();
       applyTheme(theme);
       updateThemeUI(theme);
     });

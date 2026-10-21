@@ -1,11 +1,11 @@
 ---
 import DocsLayout from "../layouts/DocsLayout.astro";
-import {latestVersion} from "../lib/git";
+import {latestVersion} from "../lib/release";
 import {releaseUrl, repoSlug, repoUrl} from "../lib/navigation";
 import {generatedPage} from "../lib/pages";
 
 const {description, sourcePath, title} = generatedPage("/download");
-const version = latestVersion();
+const version = await latestVersion();
 const image = `ghcr.io/${repoSlug.toLowerCase()}:${version.slice(1)}`;
 const binaryUrl = (file: string) => `${repoUrl}/releases/download/${version}/${file}`;
 

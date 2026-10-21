@@ -35,25 +35,47 @@ const filtered = headings.filter(({depth}) => depth >= 2 && depth <= 3);
 )}
 
 <script is:inline>
-  (function() {
-    const links = document.querySelectorAll("#toc-list a[data-heading]");
-    if (!links.length) return;
-    const headings = Array.from(links).map(function(link) {
-      return { link: link, target: document.getElementById(link.dataset.heading) };
-    }).filter(function(h) { return h.target; });
-    let current = null;
-    const observer = new IntersectionObserver(function(entries) {
-      entries.forEach(function(entry) {
-        if (entry.isIntersecting) {
-          if (current) { current.removeAttribute("data-active"); }
-          const match = headings.find(function(h) { return h.target === entry.target; });
+  // The client router runs this once, so it watches each page's headings from
+  // `astro:page-load` and lets go of the previous page's.
+  if (!window.__tocInitialized) {
+    window.__tocInitialized = true;
+
+    let observer = null;
+
+    document.addEventListener("astro:page-load", () => {
+      observer?.disconnect();
+      observer = null;
+
+      const links = document.querySelectorAll("#toc-list a[data-heading]");
+      const headings = Array.from(links)
+        .map((link) => ({ link, target: document.getElementById(link.dataset.heading) }))
+        .filter(({ target }) => target);
+
+      if (!headings.length) {
+        return;
+      }
+
+      let current = null;
+
+      observer = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) {
+            continue;
+          }
+
+          const match = headings.find(({ target }) => target === entry.target);
+
           if (match) {
+            current?.removeAttribute("data-active");
             match.link.setAttribute("data-active", "");
             current = match.link;
           }
         }
-      });
-    }, { rootMargin: "-80px 0px -80% 0px" });
-    headings.forEach(function(h) { observer.observe(h.target); });
-  })();
+      }, { rootMargin: "-80px 0px -80% 0px" });
+
+      for (const { target } of headings) {
+        observer.observe(target);
+      }
+    });
+  }
 </script>

@@ -5,7 +5,7 @@ import Search from "./Search.astro";
 import SkipLink from "./SkipLink.astro";
 import IconButton from "./IconButton.astro";
 import {releaseUrl, repoUrl} from "../lib/navigation";
-import {latestVersion} from "../lib/git";
+import {latestVersion} from "../lib/release";
 
 interface Props {
     currentPath: string;
@@ -19,7 +19,7 @@ const navLinks = [
     {href: "/download", label: "Download"},
 ];
 
-const version = latestVersion();
+const version = await latestVersion();
 ---
 <SkipLink />
 

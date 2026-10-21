@@ -1,13 +1,13 @@
 ---
 import {Activity, Globe, KeyRound, Network, RotateCcw, Waypoints} from "@lucide/astro";
-import {latestVersion} from "../lib/git";
+import {latestVersion} from "../lib/release";
 
 interface Props {
     description: string;
 }
 
 const {description} = Astro.props;
-const version = latestVersion();
+const version = await latestVersion();
 
 const secondaryButtonClass =
     "inline-flex items-center rounded-lg border px-4 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors";

@@ -49,6 +49,31 @@ import {Search} from "@lucide/astro";
     if (!window.__searchInitialized) {
         window.__searchInitialized = true;
 
+        /**
+         * The overlay lives under <body>: inside the header, whose backdrop
+         * filter makes it the containing block for `fixed`, it would be
+         * clipped to the header. `transition:persist` puts it back where each
+         * new page's header has it, so it moves on every swap, and the new
+         * header's shortcut hint is filled in then too. The client router
+         * never runs this script twice, so both happen from these listeners.
+         */
+        const placeOverlay = () => {
+            const overlay = document.getElementById("search-overlay");
+
+            if (overlay && overlay.parentElement !== document.body) {
+                document.body.appendChild(overlay);
+            }
+
+            const label = document.getElementById("search-shortcut-label");
+
+            if (label) {
+                label.textContent = /Mac|iPod|iPhone|iPad/.test(navigator.platform || "") ? "⌘K" : "Ctrl+K";
+            }
+        };
+
+        placeOverlay();
+        document.addEventListener("astro:after-swap", placeOverlay);
+
         const rowClass = "data-active:bg-accent";
         const linkClass = "flex flex-col gap-0.5 px-3 py-2 text-foreground no-underline";
         const titleClass = "text-sm font-medium";
@@ -263,16 +288,4 @@ import {Search} from "@lucide/astro";
         };
     }
 
-    // Move overlay to body on initial load (persists across navigations via transition:persist).
-    const overlay = document.getElementById("search-overlay");
-
-    if (overlay && overlay.parentElement !== document.body) {
-        document.body.appendChild(overlay);
-    }
-
-    const label = document.getElementById("search-shortcut-label");
-
-    if (label) {
-        label.textContent = /Mac|iPod|iPhone|iPad/.test(navigator.platform || "") ? "⌘K" : "Ctrl+K";
-    }
 </script>

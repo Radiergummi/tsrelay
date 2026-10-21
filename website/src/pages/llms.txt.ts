@@ -22,7 +22,7 @@ export async function GET({ site }: APIContext) {
     "",
     "tsrelay is a single Go binary. Run as `tsrelay serve`, it is a relay node on a Tailscale tailnet that tailnet services send HTTP callbacks to; run as `tsrelay http <port>` on a developer's machine, it dials out to the relay and forwards those callbacks to a local app. Who may send and receive is decided by the tailnet policy.",
     "",
-    "Every page on this site has a Markdown representation at the same path with `.md` appended, which is what the links below point at. The site's own URLs are described by an OpenAPI document at " +
+    "Every documentation page on this site also has a Markdown representation at the same path with `.md` appended, which is what the links below point at; the download page and the interactive API reference are HTML only. The site's own URLs are described by an OpenAPI document at " +
       url("/openapi.json") +
       "; the HTTP API of the relay itself is described separately at " +
       url("/api/openapi.yaml") +

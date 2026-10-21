@@ -12,11 +12,6 @@ export function releaseUrl(version: string): string {
 export interface NavItem {
   slug: string;
   title: string;
-
-  /**
-   * Force full page reload when navigating to this page (skips View Transitions).
-   */
-  reload?: boolean;
 }
 
 export interface NavGroup {
@@ -50,7 +45,7 @@ export const sidebarGroups: NavGroup[] = [
     items: [
       { slug: "configuration", title: "Configuration" },
       { slug: "errors", title: "Errors" },
-      { slug: "api/explorer", title: "API Reference", reload: true },
+      { slug: "api/explorer", title: "API Reference" },
       { slug: "download", title: "Download" },
     ],
   },

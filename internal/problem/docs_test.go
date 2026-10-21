@@ -5,11 +5,9 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
-	"strings"
 	"testing"
 )
 
@@ -41,44 +39,43 @@ func TestCodesDocumented(t *testing.T) {
 	}
 }
 
-// errorCodes returns the package's error codes: its string constants whose
-// values are snake_case, as codes are and HeaderError and typeBase are not.
+// errorCodes returns the package's error codes: the values of the const
+// block that declares them, found by one of its names so that no comment or
+// naming pattern decides what counts.
 func errorCodes(t *testing.T) []string {
 	t.Helper()
-	files, err := filepath.Glob("*.go")
+	f, err := parser.ParseFile(token.NewFileSet(), "problem.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	isCode := regexp.MustCompile(`^[a-z]+(_[a-z]+)*$`)
-	var codes []string
-	for _, name := range files {
-		if strings.HasSuffix(name, "_test.go") {
+	for _, decl := range f.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST || !declares(gen, "SenderForbidden") {
 			continue
 		}
-		f, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, decl := range f.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok || gen.Tok != token.CONST {
-				continue
-			}
-			for _, spec := range gen.Specs {
-				for _, v := range spec.(*ast.ValueSpec).Values {
-					lit, ok := v.(*ast.BasicLit)
-					if !ok || lit.Kind != token.STRING {
-						continue
-					}
-					if s, _ := strconv.Unquote(lit.Value); isCode.MatchString(s) {
-						codes = append(codes, s)
-					}
+		var codes []string
+		for _, spec := range gen.Specs {
+			for _, v := range spec.(*ast.ValueSpec).Values {
+				code, err := strconv.Unquote(v.(*ast.BasicLit).Value)
+				if err != nil {
+					t.Fatal(err)
 				}
+				codes = append(codes, code)
+			}
+		}
+		return codes
+	}
+	t.Fatal("problem.go declares no SenderForbidden")
+	return nil
+}
+
+func declares(gen *ast.GenDecl, name string) bool {
+	for _, spec := range gen.Specs {
+		for _, ident := range spec.(*ast.ValueSpec).Names {
+			if ident.Name == name {
+				return true
 			}
 		}
 	}
-	if len(codes) == 0 {
-		t.Fatal("found no error codes")
-	}
-	return codes
+	return false
 }
