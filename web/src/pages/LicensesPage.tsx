@@ -3,7 +3,8 @@ import { useMemo, useState } from "react";
 import { paths } from "@/api/client";
 import { useLicenses } from "@/api/queries";
 import type { LicenseComponent } from "@/api/schemas";
-import { EmptyState, PageError, TableSkeleton } from "@/components/PageState";
+import { EmptyState } from "@/components/PageState";
+import { QueryView } from "@/components/QueryView";
 import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -43,10 +44,13 @@ function browserURL(url: string | undefined): string | null {
 /** LicensesPage lists the open-source components built into the relay (GET /licenses). */
 export function LicensesPage() {
   const licenses = useLicenses();
+  return <QueryView query={licenses}>{(l) => <Licenses components={l.components} />}</QueryView>;
+}
+
+function Licenses({ components }: { components: LicenseComponent[] }) {
   const [query, setQuery] = useState("");
   const [ecosystem, setEcosystem] = useState<Ecosystem>("all");
   const [license, setLicense] = useState("all");
-  const components = useMemo(() => licenses.data?.components ?? [], [licenses.data]);
   const needle = query.trim().toLowerCase();
 
   // Each control counts against every filter but its own, so it shows
@@ -80,9 +84,6 @@ export function LicensesPage() {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [byLicenseAndSearch, ecosystem],
   );
-
-  if (licenses.isPending) return <TableSkeleton />;
-  if (licenses.data === undefined) return <PageError error={licenses.error} />;
 
   // Which chips exist depends on the inventory, not the filters: a chip
   // that vanished while typing would take its selection with it.

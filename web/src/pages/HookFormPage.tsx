@@ -1,8 +1,8 @@
 import { lazy, Suspense } from "react";
 import { useParams } from "react-router";
-import { ApiError } from "@/api/client";
 import { useHook } from "@/api/queries";
-import { EmptyState, PageError, TableSkeleton } from "@/components/PageState";
+import { EmptyState, TableSkeleton } from "@/components/PageState";
+import { QueryView } from "@/components/QueryView";
 import { useViewer } from "@/lib/useViewer";
 import { isReceiver, owns } from "@/lib/viewer";
 import { NoAccessPage } from "./NoAccessPage";
@@ -29,11 +29,11 @@ export function HookFormPage() {
 function Edit({ id }: { id: string }) {
   const me = useViewer();
   const hook = useHook(id);
-  if (hook.isPending) return <TableSkeleton />;
+  const notYours = <EmptyState title="There is no hook with this ID, or it is not yours." />;
   // A failed refetch keeps the form and its edits, unless the hook is gone.
-  const gone = hook.error instanceof ApiError && hook.error.status === 404;
-  if (gone || (hook.data !== undefined && !owns(me, hook.data)))
-    return <EmptyState title="There is no hook with this ID, or it is not yours." />;
-  if (hook.data === undefined) return <PageError error={hook.error} />;
-  return <HookForm me={me} hook={hook.data} />;
+  return (
+    <QueryView query={hook} gone={notYours}>
+      {(h) => (owns(me, h) ? <HookForm me={me} hook={h} /> : notYours)}
+    </QueryView>
+  );
 }

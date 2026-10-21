@@ -10,6 +10,7 @@ import { NoAccessPage } from "@/pages/NoAccessPage";
 import { Footer } from "./Footer";
 import { Header } from "./Header";
 import { LiveBar } from "./LiveBar";
+import { QueryView } from "./QueryView";
 
 /**
  * Layout loads the entry document (GET /) before any page: who the viewer
@@ -19,25 +20,32 @@ import { LiveBar } from "./LiveBar";
  */
 export function Layout() {
   const me = useMe();
+  // A failed refetch keeps the app on the last entry document.
+  return (
+    <QueryView
+      query={me}
+      pending={
+        <Page>
+          <main className="mx-auto w-full max-w-[1400px] px-6 py-6">
+            <LoadingSkeleton />
+          </main>
+        </Page>
+      }
+      error={(e) => (
+        <Page>
+          <NotIdentified error={e} />
+        </Page>
+      )}
+    >
+      {(viewer) => <Viewer viewer={viewer} />}
+    </QueryView>
+  );
+}
+
+/** Viewer is the app for an identified viewer: their header, live events and the page. */
+function Viewer({ viewer }: { viewer: Me }) {
   const client = useQueryClient();
   const location = useLocation();
-  if (me.isPending) {
-    return (
-      <Page>
-        <main className="mx-auto w-full max-w-[1400px] px-6 py-6">
-          <LoadingSkeleton />
-        </main>
-      </Page>
-    );
-  }
-  // A failed refetch keeps the app on the last entry document.
-  if (me.data === undefined)
-    return (
-      <Page>
-        <NotIdentified error={me.error} />
-      </Page>
-    );
-  const viewer = me.data;
   const allowed = isReceiver(viewer) || isAdmin(viewer);
   if (allowed && !isReceiver(viewer) && location.pathname === "/hooks")
     return <Navigate to="/admin" replace />;

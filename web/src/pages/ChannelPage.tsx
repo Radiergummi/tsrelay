@@ -1,7 +1,8 @@
 import { Link, useParams, useSearchParams } from "react-router";
 import { useChannel } from "@/api/queries";
 import type { Hook } from "@/api/schemas";
-import { EmptyState, PageError, TableSkeleton } from "@/components/PageState";
+import { EmptyState } from "@/components/PageState";
+import { QueryView } from "@/components/QueryView";
 import {
   Table,
   TableBody,
@@ -37,24 +38,22 @@ export function ChannelPage() {
           </Link>
         )}
       </div>
-      {channel.isPending ? (
-        <TableSkeleton />
-      ) : channel.data === undefined ? (
-        <PageError error={channel.error} />
-      ) : (
-        <>
-          <p className="mb-6 text-muted-foreground">
-            You {channel.data.canReceive ? "may" : "may not"} receive on this channel, and{" "}
-            {channel.data.canSend ? "may" : "may not"} send on it. Who else may send on it is up to
-            the tailnet policy.
-          </p>
-          {channel.data.hooks.length === 0 ? (
-            <EmptyState title={all ? "No hooks use this channel" : "You have no hooks here"} />
-          ) : (
-            <ChannelHooks hooks={channel.data.hooks} all={all} />
-          )}
-        </>
-      )}
+      <QueryView query={channel}>
+        {(c) => (
+          <>
+            <p className="mb-6 text-muted-foreground">
+              You {c.canReceive ? "may" : "may not"} receive on this channel, and{" "}
+              {c.canSend ? "may" : "may not"} send on it. Who else may send on it is up to the
+              tailnet policy.
+            </p>
+            {c.hooks.length === 0 ? (
+              <EmptyState title={all ? "No hooks use this channel" : "You have no hooks here"} />
+            ) : (
+              <ChannelHooks hooks={c.hooks} all={all} />
+            )}
+          </>
+        )}
+      </QueryView>
     </section>
   );
 }

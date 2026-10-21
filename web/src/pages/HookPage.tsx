@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { ApiError } from "@/api/client";
 import { useCalls, useHook } from "@/api/queries";
 import type { Hook, Me } from "@/api/schemas";
-import { EmptyState, PageError, TableSkeleton } from "@/components/PageState";
+import { EmptyState } from "@/components/PageState";
+import { QueryView } from "@/components/QueryView";
 import { ShortcutsDialog } from "@/components/ShortcutsDialog";
 import { HookHeader } from "@/features/hooks/HookHeader";
 import { SettingsTable } from "@/features/hooks/SettingsTable";
@@ -30,12 +30,14 @@ export function HookPage() {
   const hook = useHook(id);
   const owner = hook.data ? owns(me, hook.data) : true;
   useAllEvents(hook.data !== undefined && !owner);
-  if (hook.isPending) return <TableSkeleton />;
-  // A failed refetch keeps showing the hook, unless it is gone.
-  if (hook.error instanceof ApiError && hook.error.status === 404)
-    return <EmptyState title="There is no hook with this ID, or it is not yours." />;
-  if (hook.data === undefined) return <PageError error={hook.error} />;
-  return <Loaded hook={hook.data} me={me} owner={owner} callId={callId} />;
+  return (
+    <QueryView
+      query={hook}
+      gone={<EmptyState title="There is no hook with this ID, or it is not yours." />}
+    >
+      {(h) => <Loaded hook={h} me={me} owner={owner} callId={callId} />}
+    </QueryView>
+  );
 }
 
 function Loaded({
@@ -99,19 +101,19 @@ function Loaded({
             onChange={(f) => setParams(writeFilters(f, params), { replace: true })}
             searchRef={search}
           />
-          {calls.isPending ? (
-            <TableSkeleton />
-          ) : calls.data === undefined ? (
-            <PageError error={calls.error} />
-          ) : calls.data.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">
-              No calls yet. They appear here as they arrive.
-            </p>
-          ) : (
-            <div className="max-h-[calc(100vh-16rem)] overflow-y-auto">
-              <CallList calls={visible} hookId={hookId} selected={callId} search={qs} />
-            </div>
-          )}
+          <QueryView query={calls}>
+            {(list) =>
+              list.length === 0 ? (
+                <p className="py-8 text-center text-muted-foreground">
+                  No calls yet. They appear here as they arrive.
+                </p>
+              ) : (
+                <div className="max-h-[calc(100vh-16rem)] overflow-y-auto">
+                  <CallList calls={visible} hookId={hookId} selected={callId} search={qs} />
+                </div>
+              )
+            }
+          </QueryView>
         </section>
         <section
           className={cn("min-w-0", !callId && "hidden min-[900px]:block")}
