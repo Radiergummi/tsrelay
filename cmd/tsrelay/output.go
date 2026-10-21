@@ -59,12 +59,12 @@ type jsonEvent struct {
 	ExitCode *int   `json:"exitCode,omitempty"`
 }
 
-// drops names the control messages that end a hook's delivery here: the
-// --json reason, and the text phrase with %s for the hook's URL.
-var drops = map[tunnel.ControlType]struct{ reason, text string }{
-	tunnel.ControlReplaced:    {"replaced", "%s is now served by another tsrelay process"},
-	tunnel.ControlRevoked:     {"revoked", "your grants no longer allow serving %s"},
-	tunnel.ControlHookDeleted: {"deleted", "%s was deleted"},
+// drops phrases why a hook is no longer served, with %s for its URL; the
+// reason itself is the --json reason.
+var drops = map[client.DropReason]string{
+	client.DropReplaced: "%s is now served by another tsrelay process",
+	client.DropRevoked:  "your grants no longer allow serving %s",
+	client.DropDeleted:  "%s was deleted",
 }
 
 func newOutput(c *cli) *output {
@@ -253,20 +253,13 @@ func statusStyle(code int) lipgloss.Style {
 	}
 }
 
-// dropped reports the hooks a control message ends delivery of; urlOf
-// names them. Other control messages are ignored.
-func (o *output) dropped(c tunnel.Control, urlOf func(hookID string) string) {
-	d, ok := drops[c.Type]
-	if !ok {
+// dropped reports that h is no longer served, and why.
+func (o *output) dropped(h api.Hook, reason client.DropReason) {
+	if o.json {
+		o.emit(jsonEvent{Event: "stopped", Hook: h.ID, URL: h.URL, Reason: string(reason)})
 		return
 	}
-	for _, h := range c.Hooks {
-		if o.json {
-			o.emit(jsonEvent{Event: "stopped", Hook: h.ID, URL: urlOf(h.ID), Reason: d.reason})
-			continue
-		}
-		o.status(styleWarn, fmt.Sprintf(d.text, urlOf(h.ID)))
-	}
+	o.status(styleWarn, fmt.Sprintf(drops[reason], h.URL))
 }
 
 // upstreamError logs why the local app could not be reached; the sender
@@ -314,35 +307,6 @@ func (o *output) finish(err error) int {
 		return o.stopped("no-hooks", nil, 1)
 	default:
 		return o.fail(err)
-	}
-}
-
-// updateSeqs remembers the newest hook-updated sequence number per hook,
-// because control messages can arrive out of order.
-type updateSeqs map[string]uint64
-
-// fresh reports whether an update numbered seq for hook is newer than any
-// seen so far, and records it. A relay without sequence numbers sends 0,
-// which always counts as fresh.
-func (s updateSeqs) fresh(hook string, seq uint64) bool {
-	if seq == 0 {
-		return true
-	}
-	if seq <= s[hook] {
-		return false
-	}
-	s[hook] = seq
-	return true
-}
-
-// observe forgets every sequence number when c is attached: a new
-// connection starts its own sequence, and attached precedes any
-// hook-updated on it. A number remembered from before a reconnect (e.g. a
-// relay restart, whose counter starts over at 0) must not suppress an
-// update that is actually new.
-func (s updateSeqs) observe(c tunnel.Control) {
-	if c.Type == tunnel.ControlAttached {
-		clear(s)
 	}
 }
 

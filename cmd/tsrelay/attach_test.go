@@ -73,34 +73,44 @@ func TestAttachFollowsHookUpdate(t *testing.T) {
 	waitOutput(t, r.stderr, moved.URL+" was deleted")
 }
 
-// Fix round 1 (Task 3): same as TestHTTPAppliesLowerSeqAfterReconnect, for
-// the attach command's own OnControl.
-func TestAttachAppliesLowerSeqAfterReconnect(t *testing.T) {
+// A hook deleted while the tunnel is down is dropped on the redial; the
+// others keep being served.
+func TestAttachKeepsServingAfterRefusedRedial(t *testing.T) {
 	e := newCLIEnv(t)
 	ctx := context.Background()
-	a, err := e.api().CreateHook(ctx, hooks.CreateRequest{Path: "pay"})
+	pay, err := e.api().CreateHook(ctx, hooks.CreateRequest{Path: "pay"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := e.startCmd("attach", a.ID, "--to", e.local.URL, "--relay", e.relayURL)
-	waitOutput(t, r.stdout, a.URL)
+	ship, err := e.api().CreateHook(ctx, hooks.CreateRequest{Path: "ship"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := e.startCmd("attach", "pay", "ship", "--to", e.local.URL, "--relay", e.relayURL)
 	waitOutput(t, r.stderr, "connected")
-
-	for _, p := range []string{"a", "b", "c"} {
-		if _, err := e.api().UpdateHook(ctx, a.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new(p)}}); err != nil {
-			t.Fatal(err)
-		}
+	if code := e.send(ship.URL); code != http.StatusAccepted { // the relay has registered the tunnel
+		t.Fatalf("send = %d", code)
 	}
-	waitOutput(t, r.stdout, "/c")
 
-	e.restartRelay()
-	waitOutput(t, r.stderr, "reconnected")
-
-	h, err := e.api().UpdateHook(ctx, a.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new("new")}})
-	if err != nil {
+	e.offline.Store(true)
+	r.hc.CloseIdleConnections()
+	e.srv.Close() // drops the tunnel; the CLI cannot redial while offline
+	waitOutput(t, r.stderr, "tunnel lost")
+	if err := e.api().DeleteHook(ctx, pay.ID); err != nil {
 		t.Fatal(err)
 	}
-	waitOutput(t, r.stdout, h.URL)
+	e.offline.Store(false)
+
+	waitOutput(t, r.stderr, pay.URL+" was deleted")
+	waitOutput(t, r.stderr, "reconnected")
+	if code := e.send(ship.URL); code != http.StatusAccepted {
+		t.Fatalf("send to the remaining hook = %d", code)
+	}
+	select {
+	case code := <-r.exit:
+		t.Fatalf("CLI exited with %d; stderr:\n%s", code, r.stderr)
+	default:
+	}
 }
 
 func TestAttachRefusals(t *testing.T) {

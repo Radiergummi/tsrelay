@@ -268,9 +268,29 @@ func (b *bgChild) ready(r runRecord) {
 	})
 }
 
-// hookChanged updates the recorded hook id, after it was renamed or
-// recreated as newID at url, so ps, stop and logs find it by its new path.
-func (b *bgChild) hookChanged(id, newID, url string) {
+// hookChanged updates the recorded hook oldID to h, after it was renamed or
+// recreated, so ps, stop and logs find it by its new path.
+func (b *bgChild) hookChanged(oldID string, h api.Hook) {
+	b.updateHooks(func(hs []runHook) []runHook {
+		for i := range hs {
+			if hs[i].ID == oldID {
+				hs[i] = runHook{ID: h.ID, Path: h.Path, URL: h.URL}
+			}
+		}
+		return hs
+	})
+}
+
+// hookDropped removes the recorded hook id once the tunnel no longer
+// serves it.
+func (b *bgChild) hookDropped(id string) {
+	b.updateHooks(func(hs []runHook) []runHook {
+		return slices.DeleteFunc(hs, func(h runHook) bool { return h.ID == id })
+	})
+}
+
+// updateHooks rewrites the record's hooks with f, if there is a record yet.
+func (b *bgChild) updateHooks(f func([]runHook) []runHook) {
 	if b == nil {
 		return
 	}
@@ -279,13 +299,7 @@ func (b *bgChild) hookChanged(id, newID, url string) {
 	if b.rec == nil {
 		return
 	}
-	for i, h := range b.rec.Hooks {
-		if h.ID == id {
-			// Only the path can change the URL; the prefix before it stays.
-			path := strings.TrimPrefix(url, strings.TrimSuffix(h.URL, h.Path))
-			b.rec.Hooks[i] = runHook{ID: newID, Path: path, URL: url}
-		}
-	}
+	b.rec.Hooks = f(b.rec.Hooks)
 	_ = b.write(*b.rec) // best effort: the tunnel keeps running either way
 }
 
@@ -317,22 +331,12 @@ func (b *bgChild) send(m backgroundMessage) {
 	}
 }
 
-// whenAttached wraps a tunnel.Client.OnState callback: in a background
-// tunnel, it also records the tunnel and reports it attached once it first
-// connects. hs are the hooks served, and target is where calls go.
-func (c *cli) whenAttached(onState func(bool, error), hs []api.Hook, target string) func(bool, error) {
-	if c.bg == nil {
-		return onState
+// runRecord describes this process as a background tunnel serving hs;
+// target is where calls go.
+func (c *cli) runRecord(hs []api.Hook, target string) runRecord {
+	r := runRecord{ID: c.bg.id, PID: os.Getpid(), Args: c.args, Relay: c.base, Target: target, Started: time.Now().UTC()}
+	for _, h := range hs {
+		r.Hooks = append(r.Hooks, runHook{ID: h.ID, Path: h.Path, URL: h.URL})
 	}
-	return func(connected bool, err error) {
-		onState(connected, err)
-		if !connected {
-			return
-		}
-		r := runRecord{ID: c.bg.id, PID: os.Getpid(), Args: c.args, Relay: c.base, Target: target, Started: time.Now().UTC()}
-		for _, h := range hs {
-			r.Hooks = append(r.Hooks, runHook{ID: h.ID, Path: h.Path, URL: h.URL})
-		}
-		c.bg.ready(r)
-	}
+	return r
 }

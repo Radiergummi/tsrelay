@@ -1,14 +1,11 @@
 package main
 
 import (
-	"context"
-	"net"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/Radiergummi/tsrelay/internal/api"
-	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/spf13/cobra"
 )
 
@@ -58,44 +55,15 @@ func newAttachCmd(c *cli) *cobra.Command {
 				list = append(list, h)
 			}
 		}
-		ids := make([]string, len(list))
-		infoOf := make(map[string]tunnel.HookInfo, len(list)) // guarded by mu once the tunnel runs
-		seqs := updateSeqs{}                                  // guarded by mu
-		var mu sync.Mutex
 		hold := list[0].Effective.HoldTimeout.Std()
 		out.headline(target.String())
-		for i, h := range list {
-			ids[i] = h.ID
-			infoOf[h.ID] = tunnel.HookInfo{ID: h.ID, URL: h.URL, Public: h.Public, PublicURL: h.PublicURL}
+		for _, h := range list {
 			hold = min(hold, h.Effective.HoldTimeout.Std())
 			out.url(h, false)
 		}
-
-		tc := &tunnel.Client{
-			Hooks:  ids,
-			Target: target.Redacted(),
-			Dial: func(ctx context.Context, ids []string, a tunnel.Attach) (net.Conn, error) {
-				return tunnel.Dial(ctx, relayAPI.HTTP, relayAPI.TunnelURL(a, ids...))
-			},
-			Handler: callHandler(target, *insecure, out),
-			OnState: c.whenAttached(out.onState(target.String(), hold), list, target.Redacted()),
-			OnControl: func(ctl tunnel.Control) {
-				mu.Lock() // control messages arrive concurrently
-				defer mu.Unlock()
-				seqs.observe(ctl)
-				if ctl.Type == tunnel.ControlHookUpdated {
-					for _, h := range ctl.Hooks {
-						if cur, ok := infoOf[h.ID]; ok && seqs.fresh(h.ID, ctl.Seq) && cur != h {
-							infoOf[h.ID] = h
-							c.bg.hookChanged(h.ID, h.ID, h.URL)
-							out.url(api.Hook{ID: h.ID, URL: h.URL, Public: h.Public, PublicURL: h.PublicURL}, false)
-						}
-					}
-				}
-				out.dropped(ctl, func(id string) string { return infoOf[id].URL })
-			},
-		}
-		return exitWith(out.finish(tc.Run(ctx)))
+		s := &client.Session{API: relayAPI, Hooks: list, Target: target, Insecure: *insecure}
+		s.OnEvent = c.sessionEvents(s, out, hold, nil)
+		return exitWith(out.finish(s.Run(ctx)))
 	}
 	return cmd
 }

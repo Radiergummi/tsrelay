@@ -17,8 +17,6 @@ import (
 
 const testURL = "https://r/~m/cb"
 
-func urlOfTest(string) string { return testURL }
-
 // testOutput returns an output writing to buffers, with a fixed clock.
 func testOutput(t *testing.T, asJSON bool) (o *output, stdout, stderr *syncBuf) {
 	t.Helper()
@@ -43,8 +41,7 @@ func sampleEvents(o *output) {
 	state(true, nil)
 	o.onState("", 0)(false, errors.New("boom"))
 	o.upstreamError(errors.New("could not reach http://localhost:8080: connection refused"))
-	o.dropped(tunnel.Control{Type: tunnel.ControlRevoked, Hooks: []tunnel.HookInfo{{ID: "h_1"}}}, urlOfTest)
-	o.dropped(tunnel.Control{Type: tunnel.ControlAttached, Hooks: []tunnel.HookInfo{{ID: "h_1"}}}, urlOfTest)
+	o.dropped(api.Hook{ID: "h_1", URL: testURL}, client.DropRevoked)
 	o.finish(tunnel.ErrNoHooks)
 }
 
@@ -130,7 +127,7 @@ func TestOutputJSON(t *testing.T) {
 	o.url(api.Hook{ID: "h_1", URL: testURL}, false)
 	o.onState("http://localhost:8080", time.Second)(true, nil)
 	o.call(client.Call{Hook: "h_1", Method: "POST", Path: "/done", Status: 200, Duration: 1500 * time.Microsecond, Sender: "tag:ci"})
-	o.dropped(tunnel.Control{Type: tunnel.ControlReplaced, Hooks: []tunnel.HookInfo{{ID: "h_1"}}}, urlOfTest)
+	o.dropped(api.Hook{ID: "h_1", URL: testURL}, client.DropReplaced)
 	if code := o.finish(tunnel.ErrNoHooks); code != 1 {
 		t.Fatalf("finish = %d, want 1", code)
 	}
@@ -161,22 +158,6 @@ func TestOutputJSON(t *testing.T) {
 	}
 	if stderr.String() != "" {
 		t.Errorf("JSON mode wrote to stderr: %q", stderr.String())
-	}
-}
-
-func TestUpdateSeqs(t *testing.T) {
-	s := updateSeqs{}
-	if !s.fresh("h_1", 2) {
-		t.Fatal("first update must be fresh")
-	}
-	if s.fresh("h_1", 1) || s.fresh("h_1", 2) {
-		t.Fatal("an older or repeated update must not be fresh")
-	}
-	if !s.fresh("h_2", 1) {
-		t.Fatal("sequence numbers are tracked per hook")
-	}
-	if !s.fresh("h_1", 0) || !s.fresh("h_1", 0) {
-		t.Fatal("0 (a relay without sequence numbers) is always fresh")
 	}
 }
 
