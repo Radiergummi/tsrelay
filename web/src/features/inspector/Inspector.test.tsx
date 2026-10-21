@@ -35,6 +35,17 @@ test("the owner sees the request, the response and the actions", async () => {
   expect(screen.queryByRole("tab", { name: "Diff" })).not.toBeInTheDocument();
 });
 
+test("a call refused by channel says so", async () => {
+  show("c_refused");
+  expect(await screen.findByText(/may not use this hook's channel/)).toBeInTheDocument();
+});
+
+test("a delivered call isn't marked refused", async () => {
+  show("c_json");
+  await screen.findByRole("heading", { name: /POST/ });
+  expect(screen.queryByText(/may not use this hook's channel/)).not.toBeInTheDocument();
+});
+
 test("replay is disabled with the server's reason", async () => {
   show("c_cut");
   const replay = await screen.findByRole("button", { name: "Replay" });

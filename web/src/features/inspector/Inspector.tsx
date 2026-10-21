@@ -125,6 +125,11 @@ function CallView({
             </span>
           )}
         </h2>
+        {call.refused && (
+          <p className="text-destructive">
+            Refused: the sender may not use this hook's channel, so the call was never delivered.
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <StatusText call={call} />
           {call.outcome !== "pending" && (

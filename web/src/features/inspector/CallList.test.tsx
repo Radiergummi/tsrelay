@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
 import { fixtures } from "@/test/fixtures";
@@ -27,4 +27,20 @@ test("re-selecting or unmounting doesn't throw when scrollIntoView returns a pro
   const { rerender, unmount } = render(list(first!.id));
   expect(() => rerender(list(second!.id))).not.toThrow();
   expect(() => unmount()).not.toThrow();
+});
+
+test("a refused call is marked", () => {
+  const [delivered] = fixtures.calls;
+  const refused = { ...delivered!, id: "c_refused", refused: true };
+  render(
+    <MemoryRouter>
+      <CallList
+        calls={[refused, delivered!]}
+        hookId={fixtures.hook.id}
+        selected={undefined}
+        search=""
+      />
+    </MemoryRouter>,
+  );
+  expect(screen.getAllByText("refused")).toHaveLength(1);
 });
