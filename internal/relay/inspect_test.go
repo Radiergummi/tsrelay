@@ -233,3 +233,27 @@ func TestRefusedCallsDoNotEvict(t *testing.T) {
 		t.Fatalf("next real call: %d", resp.StatusCode)
 	}
 }
+
+// The inspector's TTFB is the call's: from forwarding to the app's
+// response headers, the same value the audit log and metrics report.
+func TestInspectorTTFBMatchesResult(t *testing.T) {
+	e := newEnv(t)
+	results := make(chan Result, 1)
+	e.h.OnCall = func(res Result) { results <- res }
+	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		time.Sleep(30 * time.Millisecond)
+		io.WriteString(w, "late body")
+	}), tunnel.Options{})
+	resp := e.do(sender, "POST", "/~moritz/cb/x", strings.NewReader("{}"), nil)
+	io.ReadAll(resp.Body)
+	c := e.finished(resp)
+	res := <-results
+	if !res.HasTTFB || len(c.Attempts) != 1 {
+		t.Fatalf("result %+v, attempts %+v", res, c.Attempts)
+	}
+	if got := c.Attempts[0].TTFB; got != hooks.Duration(res.TTFB) {
+		t.Fatalf("inspector TTFB = %v, result TTFB = %v", got, res.TTFB)
+	}
+}
