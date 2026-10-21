@@ -7,11 +7,11 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { LiveStream, type LiveStatus } from "./eventStream";
+import { LiveStream, type LiveSnapshot } from "./eventStream";
 
 const Live = createContext<LiveStream | null>(null);
 
-/** LiveProvider owns the tab's one event stream. user: the viewer is a user (tagged nodes get no events). */
+/** LiveProvider owns the tab's one event stream. user: the viewer may have their own (see mayStream). */
 export function LiveProvider({
   client,
   user,
@@ -30,11 +30,13 @@ export function LiveProvider({
   return <Live.Provider value={stream}>{children}</Live.Provider>;
 }
 
-export function useLiveStatus(): LiveStatus {
+const off: LiveSnapshot = { status: "off" };
+
+export function useLiveStatus(): LiveSnapshot {
   const stream = useContext(Live);
   return useSyncExternalStore(
     (fn) => stream?.subscribe(fn) ?? (() => {}),
-    () => stream?.status() ?? "off",
+    () => stream?.snapshot() ?? off,
   );
 }
 

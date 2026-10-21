@@ -5,7 +5,7 @@ import { ApiError } from "@/api/client";
 import { useMe } from "@/api/queries";
 import type { Me } from "@/api/schemas";
 import { LiveProvider } from "@/lib/live";
-import { isAdmin, isReceiver, isUser } from "@/lib/viewer";
+import { isAdmin, isReceiver, mayStream } from "@/lib/viewer";
 import { NoAccessPage } from "@/pages/NoAccessPage";
 import { Footer } from "./Footer";
 import { Header } from "./Header";
@@ -50,7 +50,7 @@ function Viewer({ viewer }: { viewer: Me }) {
   // The licenses page needs no role, so the footer's link works for everyone.
   const open = allowed || location.pathname === "/licenses";
   return (
-    <LiveProvider client={client} user={isUser(viewer)}>
+    <LiveProvider client={client} user={mayStream(viewer)}>
       <Page me={viewer}>
         <Header me={viewer} />
         <LiveBar />

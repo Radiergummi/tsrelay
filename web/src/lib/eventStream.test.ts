@@ -38,6 +38,8 @@ let doc: {
 };
 let qc: QueryClient;
 let stream: LiveStream;
+// probe answers the status check after a failed connect; a 200 by default.
+let probe: ReturnType<typeof vi.fn<typeof fetch>>;
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -49,8 +51,10 @@ beforeEach(() => {
     removeEventListener: () => {},
   };
   qc = new QueryClient();
+  probe = vi.fn<typeof fetch>(async () => new Response(null, { status: 200 }));
   stream = new LiveStream(qc, {
     EventSource: FakeSource as never,
+    fetch: probe,
     document: doc as never,
     base: 1000,
     max: 30_000,
@@ -141,4 +145,66 @@ test("malformed events are ignored", () => {
     fn(new MessageEvent("call", { data: "not json" }));
   latest().emit("call", { id: 1 });
   expect(stream.status()).not.toBe("off");
+});
+
+const problem = (status: number, detail: string) => async () =>
+  Response.json(
+    { status, detail },
+    { status, headers: { "Content-Type": "application/problem+json" } },
+  );
+
+test("a stream the relay refuses (403) stops retrying and says why", async () => {
+  probe.mockImplementation(problem(403, "event streams need a relay role"));
+  stream.setUser(true);
+  const spy = vi.spyOn(qc, "invalidateQueries");
+  latest().onerror?.();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(stream.snapshot()).toEqual({
+    status: "refused",
+    detail: "event streams need a relay role",
+  });
+  expect(spy).toHaveBeenCalledWith({ type: "active" }); // the viewer may have lost their role
+  const before = FakeSource.all.length;
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(FakeSource.all).toHaveLength(before);
+});
+
+test("too many streams (429) keeps retrying and says why", async () => {
+  probe.mockImplementation(problem(429, "this node has too many event streams open"));
+  stream.setUser(true);
+  latest().onerror?.();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(stream.snapshot()).toEqual({ status: "crowded" });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(open()).toHaveLength(1);
+});
+
+test("other failures reconnect without a reason", async () => {
+  probe.mockImplementation(async () => new Response(null, { status: 502 }));
+  stream.setUser(true);
+  latest().onerror?.();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(stream.snapshot()).toEqual({ status: "reconnecting" });
+});
+
+test("the status check asks for the stream and lets go of it at once", async () => {
+  stream.setUser(true);
+  latest().onerror?.();
+  await vi.advanceTimersByTimeAsync(0);
+  const [url, init] = probe.mock.calls[0]!;
+  expect(url).toBe("/hooks");
+  expect(new Headers(init?.headers).get("Accept")).toBe("text/event-stream");
+  expect(init?.signal?.aborted).toBe(true);
+});
+
+test("a status check that arrives after the stream is back changes nothing", async () => {
+  let answer!: (r: Response) => void;
+  probe.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+  stream.setUser(true);
+  latest().onerror?.();
+  await vi.advanceTimersByTimeAsync(1000);
+  latest().onopen?.();
+  answer(new Response(JSON.stringify({ detail: "x" }), { status: 403 }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(stream.snapshot()).toEqual({ status: "live" });
 });
