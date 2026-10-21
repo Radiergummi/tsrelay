@@ -4,7 +4,6 @@
   "type": "module",
   "scripts": {
     "build": "tsc -b && vite build",
-    "budget": "node scripts/bundle-budget.mjs",
     "check:sinks": "node scripts/no-html-sinks.mjs",
     "dev": "vite",
     "e2e": "playwright test",

@@ -1,29 +1,12 @@
-interface ToastOptions {
-  title: string;
-  type: "success" | "error";
-  timeout?: number;
-  description?: string;
-}
+import { toastManager } from "@/components/ui/toast";
 
-async function show(opts: ToastOptions): Promise<void> {
-  // A toast is never worth an unhandled rejection: if the chunk fails to
-  // load (offline, blocked), the toast is silently dropped instead.
-  const mod = await import("./toastRuntime").catch(() => undefined);
-  mod?.toastManager.add(opts);
-}
-
-/**
- * toast lets code outside React (mutation callbacks) show toasts, without
- * statically pulling in the Base UI toast runtime. A toast shown before the
- * <Toaster/> has mounted and subscribed is queued by toastManager (see
- * toastRuntime.ts) and replayed to it once it does.
- */
+/** toast lets code outside React (mutation callbacks) show toasts in the <Toaster/>. */
 export const toast = {
   success(title: string) {
-    void show({ title, type: "success" });
+    toastManager.add({ title, type: "success" });
   },
   error(title: string, description?: string) {
-    void show({
+    toastManager.add({
       title,
       type: "error",
       timeout: 8000,

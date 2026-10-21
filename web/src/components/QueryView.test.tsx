@@ -57,9 +57,13 @@ test("shows the error when there is no data", () => {
   expect(screen.getByRole("alert")).toHaveTextContent("answered 500");
 });
 
+function Custom({ error }: { error: unknown }) {
+  return <p>custom {String(error)}</p>;
+}
+
 test("a custom error view gets the error", () => {
   render(
-    <QueryView query={query({ error: apiError(503) })} error={(e) => <p>custom {String(e)}</p>}>
+    <QueryView query={query({ error: apiError(503) })} error={Custom}>
       {show}
     </QueryView>,
   );

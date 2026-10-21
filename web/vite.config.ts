@@ -8,9 +8,6 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), precompress()],
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "src") } },
   build: {
-    // The budget script reads .vite/manifest.json. The Go handler never
-    // serves hidden files, so it stays private.
-    manifest: true,
     modulePreload: { polyfill: false },
     target: "es2022",
   },

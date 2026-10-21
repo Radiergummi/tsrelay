@@ -1,5 +1,5 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { ApiError } from "@/api/client";
 import { PageError, TableSkeleton } from "./PageState";
 
@@ -18,17 +18,17 @@ export function QueryView<T>({
   query,
   pending = <TableSkeleton />,
   gone,
-  error = (e) => <PageError error={e} />,
+  error: Failed = PageError,
   children,
 }: {
   query: UseQueryResult<T>;
   pending?: ReactNode;
   gone?: ReactNode;
-  error?: (error: unknown) => ReactNode;
+  error?: ComponentType<{ error: unknown }>;
   children: (data: T) => ReactNode;
 }): ReactNode {
   if (query.isPending) return pending;
   if (gone !== undefined && isGone(query.error)) return gone;
-  if (query.data === undefined) return error(query.error);
+  if (query.data === undefined) return <Failed error={query.error} />;
   return children(query.data);
 }
