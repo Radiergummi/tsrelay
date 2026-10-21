@@ -4,6 +4,7 @@ import { http, HttpResponse } from "msw";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { expect, test } from "vitest";
 import { routes } from "@/routes";
+import { FakeEventSource } from "@/test/eventSource";
 import { fixtures } from "@/test/fixtures";
 import { server } from "@/test/server";
 
@@ -44,6 +45,20 @@ test("a user without a role sees what is missing and an example grant", async ()
   const grant = screen.getByText(/"grants"/);
   expect(grant.textContent).toContain('"nobody@example.com"');
   expect(grant.textContent).toContain('"mazetti.me/cap/relay"');
+});
+
+// The relay refuses event streams without a role (403), so asking would
+// only retry forever.
+test("a user without a role opens no event stream", async () => {
+  meIs(fixtures.meNobody);
+  renderAt("/hooks");
+  expect(await screen.findByText(/grants you no access to this relay/)).toBeInTheDocument();
+  expect(FakeEventSource.instances).toHaveLength(0);
+});
+
+test("a user with a role opens one", async () => {
+  renderAt("/hooks");
+  await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
 });
 
 test("the footer names the relay's version and commit", async () => {

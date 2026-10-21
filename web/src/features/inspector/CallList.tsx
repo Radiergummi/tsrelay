@@ -54,6 +54,11 @@ export function CallList({
                     {c.kind}
                   </span>
                 )}
+                {c.refused && (
+                  <span className="ml-1.5 rounded-sm bg-destructive/10 px-1 text-[0.7rem] text-destructive">
+                    refused
+                  </span>
+                )}
               </span>
               <span className="text-right">
                 <StatusText call={c} short />
