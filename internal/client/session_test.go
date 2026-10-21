@@ -17,6 +17,7 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/audit"
+	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
@@ -41,6 +42,7 @@ type sessionEnv struct {
 	local   *httptest.Server
 	api     *client.API
 	offline atomic.Bool
+	who     atomic.Pointer[authz.Identity] // what the session's new connections are identified as
 
 	mu  sync.Mutex
 	srv *server.Server
@@ -64,12 +66,12 @@ func newSessionEnv(t *testing.T) *sessionEnv {
 	t.Cleanup(func() { e.mu.Lock(); e.srv.Close(); e.mu.Unlock(); ts.Close() })
 	e.local = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusAccepted) }))
 	t.Cleanup(e.local.Close)
-	dial := e.fake.Dial(receiver)
+	e.who.Store(&receiver)
 	e.hc = tunnel.NewHTTPClient(func(ctx context.Context, network, addr string) (net.Conn, error) {
 		if e.offline.Load() {
 			return nil, errors.New("offline")
 		}
-		return dial(ctx, network, addr)
+		return e.fake.Dial(*e.who.Load())(ctx, network, addr)
 	})
 	e.api = &client.API{BaseURL: e.relay, HTTP: e.hc}
 	return e
@@ -367,5 +369,76 @@ func TestSessionFirstDialRefusal(t *testing.T) {
 	next(t, events, client.EventConnected)
 	if cur := ids(s.Current()); !slices.Equal(cur, []string{ev.Hook.ID}) {
 		t.Fatalf("Current = %v, want the recreated hook", cur)
+	}
+}
+
+// A recreated hook the relay refuses again ends the session, rather than
+// recreating it over and over.
+func TestSessionRecreatesOncePerDial(t *testing.T) {
+	e := newSessionEnv(t)
+	pay := e.create("pay")
+	e.delete(pay)
+	var calls atomic.Int32
+	s := e.session(pay)
+	s.Recreate = func(_ context.Context, gone api.Hook) (api.Hook, error) {
+		calls.Add(1)
+		return gone, nil // still gone
+	}
+	_, done := start(t, s)
+	var p *problem.Problem
+	if err := wait(t, done); !errors.As(err, &p) || p.Status != http.StatusNotFound {
+		t.Fatalf("Run = %v, want the relay's 404", err)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("Recreate called %d times, want 1", n)
+	}
+}
+
+// Hooks whose channel the receiver may no longer serve are refused one by
+// one on the redial, each dropped as revoked.
+func TestSessionDropsRevokedHooksOnRedial(t *testing.T) {
+	e := newSessionEnv(t)
+	pay, ship := e.create("pay"), e.create("ship")
+	events, done := start(t, e.session(pay, ship))
+	e.served(events, pay)
+	e.goOffline()
+	next(t, events, client.EventLost)
+	other := identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"channels":["elsewhere"]}`)
+	e.who.Store(&other)
+	e.goOnline()
+	if err := wait(t, done); !errors.Is(err, tunnel.ErrNoHooks) {
+		t.Fatalf("Run = %v, want ErrNoHooks", err)
+	}
+	reasons := map[string]client.DropReason{}
+	for _, ev := range drain(events) {
+		if ev.Kind == client.EventHookDropped {
+			reasons[ev.Hook.ID] = ev.Reason
+		}
+	}
+	if len(reasons) != 2 || reasons[pay.ID] != client.DropRevoked || reasons[ship.ID] != client.DropRevoked {
+		t.Fatalf("drops = %v, want both revoked", reasons)
+	}
+}
+
+// Losing the receiver role is not about one hook: the redial's refusal
+// ends the session, and no hook is dropped.
+func TestSessionEndsWhenRoleLost(t *testing.T) {
+	e := newSessionEnv(t)
+	pay := e.create("pay")
+	events, done := start(t, e.session(pay))
+	e.served(events, pay)
+	e.goOffline()
+	next(t, events, client.EventLost)
+	nobody := identify.User("laptop", "moritz@example.com", 1, `{"roles":["sender"]}`)
+	e.who.Store(&nobody)
+	e.goOnline()
+	var p *problem.Problem
+	if err := wait(t, done); !errors.As(err, &p) || p.Status != http.StatusForbidden || p.Hook != "" {
+		t.Fatalf("Run = %v, want the relay's hookless 403", err)
+	}
+	for _, ev := range drain(events) {
+		if ev.Kind == client.EventHookDropped {
+			t.Fatalf("dropped %+v", ev)
+		}
 	}
 }

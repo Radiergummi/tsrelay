@@ -175,9 +175,11 @@ func sameHook(a, b api.Hook) bool {
 }
 
 // dial attaches the current hooks. A redial refused for one of them
-// recreates it (a 404 with Recreate set) or, once the session has been
-// connected, drops it, and dials again. Any other refusal is returned.
+// recreates it (a 404 with Recreate set, once per hook and dial) or, once
+// the session has been connected, drops it, and dials again. Any other
+// refusal is returned.
 func (s *Session) dial(ctx context.Context, _ []string, a tunnel.Attach) (net.Conn, error) {
+	recreated := map[string]bool{} // a recreated hook refused again is not recreated again
 	for {
 		s.mu.Lock()
 		ids := s.ids()
@@ -196,8 +198,12 @@ func (s *Session) dial(ctx context.Context, _ []string, a tunnel.Attach) (net.Co
 		case i < 0: // not one of ours: nothing to drop
 			s.emitMu.Unlock()
 			return nil, err
-		case reason == DropDeleted && s.Recreate != nil:
-			err = s.recreate(ctx, i)
+		case reason == DropDeleted && s.Recreate != nil && !recreated[id]:
+			var h api.Hook
+			if h, err = s.recreate(ctx, i); err == nil {
+				recreated[h.ID] = true
+			}
+		case reason == DropDeleted && recreated[id]: // gone again right away: recreating won't help
 		case !connected: // the hooks were named on purpose; don't serve fewer quietly
 		default:
 			s.mu.Lock()
@@ -219,22 +225,22 @@ func (s *Session) dial(ctx context.Context, _ []string, a tunnel.Attach) (net.Co
 	}
 }
 
-// recreate replaces the current hook at i, which the relay no longer has.
-// The caller holds emitMu.
-func (s *Session) recreate(ctx context.Context, i int) error {
+// recreate replaces the current hook at i, which the relay no longer has,
+// and returns its replacement. The caller holds emitMu.
+func (s *Session) recreate(ctx context.Context, i int) (api.Hook, error) {
 	s.mu.Lock()
 	gone := s.current[i]
 	s.mu.Unlock()
 	h, err := s.Recreate(ctx, gone)
 	if err != nil {
-		return err
+		return api.Hook{}, err
 	}
 	s.mu.Lock()
 	s.current[i] = h
 	s.mu.Unlock()
 	s.tc.Replace(gone.ID, h.ID)
 	s.emit(Event{Kind: EventHookChanged, Hook: h, OldID: gone.ID, Recreated: true})
-	return nil
+	return h, nil
 }
 
 // refusal returns the hook a tunnel-attach refusal names and what dropping
