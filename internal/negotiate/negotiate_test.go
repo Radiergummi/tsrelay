@@ -41,7 +41,7 @@ func TestPick(t *testing.T) {
 			var got Type
 			var ok bool
 			var path string
-			h := Extensions(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := Extensions(nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				path = r.URL.Path
 				got, ok = Pick(w, r, tc.offers...)
 			}))
@@ -65,12 +65,71 @@ func TestPick(t *testing.T) {
 }
 
 func TestExtensionsKeepsOtherPaths(t *testing.T) {
-	for _, p := range []string{"/", "/assets/index-abc.js", "/hooks/.json", "/openapi.yaml", "/hooks/h_1", "/sbom.cdx.json"} {
+	for _, p := range []string{"/", "/assets/index-abc.js", "/hooks/.json", "/.json", "/openapi.yaml", "/hooks/h_1", "/sbom.cdx.json"} {
 		var got string
-		h := Extensions(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got = r.URL.Path }))
+		h := Extensions([]string{"/sbom.cdx.json"}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got = r.URL.Path }))
 		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, p, nil))
 		if got != p {
 			t.Errorf("%s became %s", p, got)
+		}
+	}
+}
+
+// serveExt sends p through Extensions with literal and reports the path the
+// next handler saw, whether a suffix was stripped, and what Pick chose.
+func serveExt(literal []string, p string) (path string, stripped bool, picked Type) {
+	h := Extensions(literal, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path, stripped = r.URL.Path, Stripped(r)
+		picked, _ = Pick(w, r, JSON, HTML)
+	}))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, p, nil))
+	return path, stripped, picked
+}
+
+// A dot in a name is part of the name: the suffix after it still selects
+// the representation.
+func TestExtensionsStripsDottedNames(t *testing.T) {
+	for _, tc := range []struct {
+		in, want string
+		stripped bool
+		picked   Type
+	}{
+		{"/channels/team.payments.json", "/channels/team.payments", true, JSON},
+		{"/channels/team.payments.html", "/channels/team.payments", true, HTML},
+		{"/channels/team.payments", "/channels/team.payments", false, JSON},
+		{"/channels/x.json.json", "/channels/x.json", true, JSON},
+	} {
+		path, stripped, picked := serveExt(nil, tc.in)
+		if path != tc.want || stripped != tc.stripped || picked != tc.picked {
+			t.Errorf("%s = %s stripped %v picked %v; want %s %v %v", tc.in, path, stripped, picked, tc.want, tc.stripped, tc.picked)
+		}
+	}
+}
+
+// A literal document is a file name: its suffix is kept, and only a
+// suffix after it is a representation.
+func TestExtensionsKeepsLiteralDocuments(t *testing.T) {
+	literal := []string{"/sbom.cdx.json"}
+	if path, stripped, _ := serveExt(literal, "/sbom.cdx.json"); path != "/sbom.cdx.json" || stripped {
+		t.Errorf("/sbom.cdx.json = %s stripped %v", path, stripped)
+	}
+	if path, stripped, picked := serveExt(literal, "/sbom.cdx.json.json"); path != "/sbom.cdx.json" || !stripped || picked != JSON {
+		t.Errorf("/sbom.cdx.json.json = %s stripped %v picked %v", path, stripped, picked)
+	}
+}
+
+func TestMidPath(t *testing.T) {
+	for p, want := range map[string]bool{
+		"/hooks.json/calls":         true,
+		"/hooks/x.html/calls":       true,
+		"/hooks.json":               false,
+		"/channels/team.payments/x": false,
+		"/sbom.cdx.json":            false,
+		"/hooks/jsonish/x":          false,
+		"/hooks/a.jsonx/calls":      false,
+	} {
+		if got := MidPath(p); got != want {
+			t.Errorf("MidPath(%s) = %v, want %v", p, got, want)
 		}
 	}
 }

@@ -117,7 +117,7 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	// such as "/~m/cb//x" that must reach the local app unchanged. They
 	// also go without the version header: their responses stay exactly
 	// what the receiver's app returned.
-	resources := negotiate.Extensions(mux)
+	resources := negotiate.Extensions([]string{"/sbom.cdx.json"}, mux)
 	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/~") {
 			s.relay.ServeHTTP(w, r)

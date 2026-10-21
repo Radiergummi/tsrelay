@@ -36,7 +36,7 @@ func (e *env) get(path, accept string) (*http.Response, string) {
 
 func TestResourcesAreNegotiated(t *testing.T) {
 	e := newEnv(t)
-	e.srv.Config.Handler = negotiate.Extensions(e.srv.Config.Handler)
+	e.srv.Config.Handler = negotiate.Extensions([]string{"/sbom.cdx.json"}, e.srv.Config.Handler)
 	var h Hook
 	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
 	const browser = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
