@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://tsrelay.mazetti.me/sitemap-index.xml
+
+# Every page is also served as Markdown at the same path with `.md` appended.
+# https://tsrelay.mazetti.me/llms.txt lists them all.
+# https://tsrelay.mazetti.me/openapi.json describes every URL this site serves.

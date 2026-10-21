@@ -1,0 +1,114 @@
+---
+import DocsLayout from "../layouts/DocsLayout.astro";
+import {latestVersion} from "../lib/docs";
+import {repoUrl} from "../lib/navigation";
+import {generatedPage} from "../lib/pages";
+
+const {description, sourcePath, title} = generatedPage("/download");
+const version = latestVersion();
+const releaseUrl = `${repoUrl}/releases/tag/${version}`;
+const image = `ghcr.io/radiergummi/tsrelay:${version.slice(1)}`;
+
+/**
+ * One entry per binary the release workflow builds: its goos × goarch matrix,
+ * named `tsrelay_<os>_<arch>`, with `.exe` on Windows.
+ */
+const platforms = [
+    {name: "macOS", builds: [{arch: "arm64", label: "Apple silicon"}, {arch: "amd64", label: "Intel"}], os: "darwin"},
+    {name: "Linux", builds: [{arch: "amd64", label: "x86-64"}, {arch: "arm64", label: "ARM64"}], os: "linux"},
+    {name: "Windows", builds: [{arch: "amd64", label: "x86-64"}, {arch: "arm64", label: "ARM64"}], os: "windows"},
+].map(({builds, name, os}) => ({
+    name,
+    builds: builds.map(({arch, label}) => {
+        const file = `tsrelay_${os}_${arch}${os === "windows" ? ".exe" : ""}`;
+
+        return {
+            label,
+            file,
+            url: `${repoUrl}/releases/download/${version}/${file}`,
+            checksumUrl: `${repoUrl}/releases/download/${version}/tsrelay_${os}_${arch}.sha256`,
+        };
+    }),
+}));
+
+const headings = [
+    {depth: 2, slug: "binaries", text: "Binaries"},
+    {depth: 2, slug: "container-image", text: "Container image"},
+    {depth: 2, slug: "verifying-a-download", text: "Verifying a download"},
+];
+---
+<DocsLayout title={title} description={description} slug="download" headings={headings} sourcePath={sourcePath}>
+    <p>
+        The latest release is <a href={releaseUrl}>{version}</a>. One binary is both the relay
+        (<code>tsrelay serve</code>) and the CLI developers use to receive callbacks.
+    </p>
+
+    <div class="callout callout-tip">
+        <div class="callout-header">Using a relay someone else runs?</div>
+        <p>
+            Install the CLI from your relay instead, as <a href="/getting-started">Getting started</a> describes:
+            you get the version your relay runs, and <code>tsrelay update</code> keeps the two
+            in step.
+        </p>
+    </div>
+
+    <h2 id="binaries">Binaries</h2>
+
+    <table>
+        <thead>
+            <tr><th>Platform</th><th>Binary</th><th>Checksum</th></tr>
+        </thead>
+        <tbody>
+            {platforms.flatMap(({name, builds}) => builds.map(({checksumUrl, file, label, url}) => (
+                <tr>
+                    <td>{name}, {label}</td>
+                    <td><a href={url} download>{file}</a></td>
+                    <td><a href={checksumUrl}>SHA-256</a></td>
+                </tr>
+            )))}
+        </tbody>
+    </table>
+
+    <p>On macOS and Linux, put the binary on your <code>PATH</code> and make it executable:</p>
+
+    <pre><code>{`curl -fsSLo tsrelay ${platforms[1].builds[0].url}
+chmod +x tsrelay
+sudo mv tsrelay /usr/local/bin/`}</code></pre>
+
+    <p>
+        The macOS binaries are signed with a Developer ID and notarized. Every release, with its notes and
+        older versions, is on <a href={`${repoUrl}/releases`}>GitHub</a>. To run the relay, continue
+        with <a href="/running-a-relay">Running a relay</a>.
+    </p>
+
+    <h2 id="container-image">Container image</h2>
+
+    <p>
+        The relay is also published as a container image for <code>linux/amd64</code> and
+        <code>linux/arm64</code>. Its tags follow the release: <code>{version.slice(1)}</code>, the
+        minor and major versions, and <code>latest</code>.
+    </p>
+
+    <pre><code>{`docker pull ${image}`}</code></pre>
+
+    <p>
+        Ready-made deployments are in the repository, for <a href={`${repoUrl}/tree/main/deploy/kubernetes`}>Kubernetes</a> and <a href={`${repoUrl}/blob/main/deploy/compose.yaml`}>Docker Compose</a>.
+    </p>
+
+    <h2 id="verifying-a-download">Verifying a download</h2>
+
+    <p>
+        Each release binary comes with a SHA-256 checksum, a signed build provenance attestation, and a signed
+        CycloneDX SBOM listing the modules it was built from. With the GitHub CLI:
+    </p>
+
+    <pre><code>{`gh attestation verify tsrelay_linux_amd64 -R Radiergummi/tsrelay                              # provenance
+gh attestation verify tsrelay_linux_amd64 -R Radiergummi/tsrelay --predicate-type https://cyclonedx.org/bom`}</code></pre>
+
+    <p>
+        Without access to GitHub's API, verify against the bundles attached to the release: add
+        <code>--bundle tsrelay.provenance.sigstore.json</code> or
+        <code>--bundle tsrelay_linux_amd64.sbom.sigstore.json</code>. The SBOM itself is
+        <code>tsrelay_linux_amd64.cdx.json</code>.
+    </p>
+</DocsLayout>

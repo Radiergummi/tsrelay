@@ -1,0 +1,83 @@
+name: Website
+
+on:
+  push:
+    branches: [main]
+    # A release changes the version the site offers for download.
+    tags: ["v*"]
+    paths: &paths
+      - "docs/**"
+      - "website/**"
+      # The API reference is rendered from this.
+      - "internal/api/openapi.yaml"
+      # The /errors/<code> pages are checked against these.
+      - "internal/problem/problem.go"
+      - ".github/workflows/pages.yml"
+  pull_request:
+    paths: *paths
+  workflow_dispatch:
+
+# Read-only by default: the build installs dependencies and runs the Astro
+# build, and must not hold a scope that can publish. deploy takes the write
+# scopes on its own.
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Every page's modified date comes from the last commit that touched
+          # its source, and the download version from the latest release tag,
+          # so the build needs the whole history and the tags; it refuses a
+          # shallow clone rather than date every page by the deploy.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+        with:
+          working-directory: website
+          cache: true
+          require-lockfile: true
+
+      - name: Lint, format and types
+        working-directory: website
+        run: |
+          pnpm lint
+          pnpm fmt:check
+          pnpm check
+
+      - name: Build
+        working-directory: website
+        run: pnpm build
+
+      - if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: website/dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

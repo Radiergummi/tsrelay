@@ -36,6 +36,8 @@ A plain `go build` works without Node, pnpm and jq; its binary serves a placehol
 
 To work on the web UI, `make dev` serves it with hot reload on http://127.0.0.1:5173 against a dev relay with sample data. That relay also listens directly on 127.0.0.1:8098 (admin only), :8097 (no grant) and :8096 (another user), so you can open those to see the other identities' views.
 
+The website at https://tsrelay.mazetti.me lives in `website/` and builds its pages from the Markdown in `docs/` (except `DESIGN.md`). `cd website && pnpm install && pnpm dev` serves it on http://localhost:4321; `pnpm build` needs a clone with full history and the release tags, because every page is dated by its last commit and the download page offers the latest release. When you add an error code to `internal/problem`, document it in `docs/errors.md`: the build fails otherwise, since each code's problem `type` links to its entry there.
+
 ## Performance
 
 ```bash

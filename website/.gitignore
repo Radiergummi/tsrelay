@@ -1,0 +1,7 @@
+# Copied at build time (the sync-assets script)
+public/api/openapi.yaml
+public/scalar.js
+
+dist/
+.astro/
+node_modules/
