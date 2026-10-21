@@ -26,6 +26,10 @@ var errTunnelLost = errors.New("tunnel lost")
 // dropped from later attach attempts.
 type Client struct {
 	Hooks []string
+	// List, if set, is the hooks to dial instead of Hooks, owned by the
+	// caller: it is asked before every dial, and the caller follows the
+	// control messages that take hooks away (OnControl).
+	List func() []string
 	// Target is the local target reported to the relay for display.
 	Target     string
 	Dial       func(ctx context.Context, hooks []string, a Attach) (net.Conn, error)
@@ -50,7 +54,7 @@ func (c *Client) Run(ctx context.Context) error {
 	backoff := minB
 	attach := Attach{Session: ids.New("s_"), Target: c.Target}
 	for {
-		hooks := c.Current()
+		hooks := c.current()
 		if len(hooks) == 0 {
 			return ErrNoHooks
 		}
@@ -59,7 +63,7 @@ func (c *Client) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
-			if len(c.Current()) == 0 { // Dial removed the last hook
+			if len(c.current()) == 0 { // Dial removed the last hook
 				return ErrNoHooks
 			}
 			var p *problem.Problem
@@ -80,7 +84,7 @@ func (c *Client) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		if len(c.Current()) == 0 {
+		if len(c.current()) == 0 {
 			return ErrNoHooks
 		}
 		c.state(false, errTunnelLost)
@@ -97,36 +101,22 @@ func (c *Client) Run(ctx context.Context) error {
 	}
 }
 
-// Current returns the hooks the next dial attaches.
-func (c *Client) Current() []string {
+func (c *Client) current() []string {
+	if c.List != nil {
+		return c.List()
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return slices.Clone(c.hooks)
 }
 
-// Replace swaps oldID for newID in the hooks later dials attach, e.g. after
-// the caller recreated a hook the relay had deleted. Unknown IDs are ignored.
-func (c *Client) Replace(oldID, newID string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if i := slices.Index(c.hooks, oldID); i >= 0 {
-		c.hooks[i] = newID
-	}
-}
-
-// Remove drops id from the hooks later dials attach, e.g. after the relay
-// refused a redial for it. Unknown IDs are ignored.
-func (c *Client) Remove(id string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.hooks = slices.DeleteFunc(c.hooks, func(x string) bool { return x == id })
-}
-
 func (c *Client) handleControl(ctl Control) {
-	if ctl.Type == ControlReplaced || ctl.Type == ControlRevoked || ctl.Type == ControlHookDeleted {
+	if c.List == nil && (ctl.Type == ControlReplaced || ctl.Type == ControlRevoked || ctl.Type == ControlHookDeleted) {
+		c.mu.Lock()
 		for _, h := range ctl.Hooks {
-			c.Remove(h.ID)
+			c.hooks = slices.DeleteFunc(c.hooks, func(id string) bool { return id == h.ID })
 		}
+		c.mu.Unlock()
 	}
 	if c.OnControl != nil {
 		c.OnControl(ctl)
