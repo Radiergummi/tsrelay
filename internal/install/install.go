@@ -14,7 +14,6 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
@@ -31,6 +30,10 @@ var targets = map[string][]string{
 	"darwin":  {"amd64", "arm64"},
 	"windows": {"amd64", "arm64"},
 }
+
+// DefaultRelayHost is the relay's default MagicDNS host name, where the CLI
+// looks for it unless told otherwise.
+const DefaultRelayHost = "tsrelay"
 
 type Handler struct {
 	Version  string // the relay's version, or "dev" for a build without one
@@ -72,7 +75,7 @@ func (h *Handler) assetBase() string {
 func (h *Handler) relayHint() string {
 	u, err := url.Parse(h.BaseURL)
 	if err == nil && u.Scheme == "https" {
-		if label, _, _ := strings.Cut(u.Hostname(), "."); label == client.DefaultRelayHost {
+		if label, _, _ := strings.Cut(u.Hostname(), "."); label == DefaultRelayHost {
 			return ""
 		}
 	}

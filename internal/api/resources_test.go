@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -14,23 +13,10 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 )
 
-// get GETs path as id with the given Accept header, through the same
-// extension handling the server uses.
+// get GETs path as moritz with the given Accept header.
 func (e *env) get(path, accept string) (*http.Response, string) {
 	e.t.Helper()
-	req, _ := http.NewRequest("GET", e.srv.URL+path, nil)
-	if accept != "" {
-		req.Header.Set("Accept", accept)
-	}
-	c := e.fake.Client(moritz)
-	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := c.Do(req)
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	return resp, string(b)
+	return e.send("GET", path, accept)
 }
 
 func TestResourcesAreNegotiated(t *testing.T) {

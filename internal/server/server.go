@@ -15,7 +15,6 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
-	"github.com/Radiergummi/tsrelay/internal/install"
 	"github.com/Radiergummi/tsrelay/internal/lifecycle"
 	"github.com/Radiergummi/tsrelay/internal/relay"
 	"github.com/Radiergummi/tsrelay/internal/release"
@@ -54,9 +53,7 @@ type Server struct {
 	tunnels *lifecycle.Lifecycle
 	audit   *audit.Logger
 	relay   *relay.Handler // serves callbacks; its Held() feeds the held-calls gauge
-	handler http.Handler
-	public  http.Handler // nil unless cfg.PublicBaseURL is set
-	routes  []string     // every pattern the router registered
+	router  *api.Router
 	inspect *inspect.Inspector
 	events  *events.Hub
 
@@ -104,26 +101,25 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 	}
 	u := ui.New(a, web.Dist)
 	a.HTML = u.Index()
-	r := api.NewRouter(api.RouterConfig{
-		API:          a,
-		Inspect:      u.Inspect(),
-		Fallback:     u.Fallback(),
-		Install:      &install.Handler{Version: version, BaseURL: cfg.BaseURL, Releases: cfg.ReleaseAssets},
-		AllowedHosts: cfg.AllowedHosts,
+	s.router = api.NewRouter(api.RouterConfig{
+		API:           a,
+		Inspect:       u.Inspect(),
+		Fallback:      u.Fallback(),
+		ReleaseAssets: cfg.ReleaseAssets,
+		AllowedHosts:  cfg.AllowedHosts,
 	})
-	s.handler, s.public, s.routes = r.Tailnet, r.Public, r.Routes
 	return s
 }
 
-func (s *Server) Handler() http.Handler { return s.handler }
+func (s *Server) Handler() http.Handler { return s.router.Tailnet }
 
 // Routes are every pattern the relay serves, for proving each one against
 // the access rules.
-func (s *Server) Routes() []string { return s.routes }
+func (s *Server) Routes() []string { return s.router.Routes }
 
 // PublicHandler serves the hooks made public, for the Funnel listener. It
 // is nil when Config.PublicBaseURL is empty.
-func (s *Server) PublicHandler() http.Handler { return s.public }
+func (s *Server) PublicHandler() http.Handler { return s.router.Public }
 
 // commit is the revision this binary was built from, as the Go toolchain
 // stamped it, or "" when it was built outside a checkout (as in Docker).

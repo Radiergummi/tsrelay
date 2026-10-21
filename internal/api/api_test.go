@@ -75,7 +75,6 @@ func newEnv(t *testing.T) *env {
 		API:          a,
 		Inspect:      http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "inspect") }),
 		Fallback:     http.HandlerFunc(stubApp),
-		Install:      stubInstaller{},
 		AllowedHosts: []string{"127.0.0.1"},
 	})
 	e.srv = httptest.NewServer(e.router.Tailnet)
@@ -92,22 +91,6 @@ func stubApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	problem.New(http.StatusNotFound, problem.NotFound, "not found").Write(w)
-}
-
-// stubInstaller stands in for package install, which api cannot import.
-type stubInstaller struct{}
-
-func (stubInstaller) Shell() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
-		io.WriteString(w, "#!/bin/sh")
-	})
-}
-func (stubInstaller) PowerShell() http.Handler { return http.NotFoundHandler() }
-func (stubInstaller) Download() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "https://example.com/tsrelay", http.StatusFound)
-	})
 }
 
 func (e *env) call(id authz.Identity, method, path string, in any, out any) *http.Response {

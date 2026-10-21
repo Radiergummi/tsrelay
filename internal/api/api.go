@@ -182,6 +182,10 @@ func (a *API) entry(h http.Handler) http.Handler {
 }
 
 func notAcceptable(w http.ResponseWriter, offers []negotiate.Type) {
+	if len(offers) == 0 {
+		problem.New(http.StatusNotAcceptable, problem.NotAcceptable, "this document has no other representation").Write(w)
+		return
+	}
 	types := make([]string, len(offers))
 	for i, t := range offers {
 		types[i] = t.String()

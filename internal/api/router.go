@@ -3,28 +3,22 @@ package api
 import (
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/Radiergummi/tsrelay/internal/authz"
+	"github.com/Radiergummi/tsrelay/internal/install"
 	"github.com/Radiergummi/tsrelay/internal/negotiate"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
 // RouterConfig is what NewRouter serves besides the API itself.
 type RouterConfig struct {
-	API          *API
-	Inspect      http.Handler // the redirect for the CLI's inspect links
-	Fallback     http.Handler // every GET no route claims: the web UI and its assets
-	Install      Installer
-	AllowedHosts []string // Host header values the tailnet handler answers to
-}
-
-// Installer serves the install scripts and the binaries' downloads
-// (package install, which imports this one through the client).
-type Installer interface {
-	Shell() http.Handler
-	PowerShell() http.Handler
-	Download() http.Handler
+	API           *API
+	Inspect       http.Handler // the redirect for the CLI's inspect links
+	Fallback      http.Handler // every request no route claims: the web UI and its assets
+	ReleaseAssets string       // base URL of the release assets /download redirects to; "" means GitHub's
+	AllowedHosts  []string     // Host header values the tailnet handler answers to
 }
 
 // Router is the relay's whole URL space (DESIGN.md §10.1).
@@ -46,16 +40,14 @@ func (m *routeRecorder) Handle(pattern string, h http.Handler) {
 	m.mux.Handle(pattern, h)
 }
 
-func (m *routeRecorder) ServeHTTP(w http.ResponseWriter, r *http.Request) { m.mux.ServeHTTP(w, r) }
-
 // allows lists the methods a route of its own answers at r's path, rather
 // than the catch-all behind every path.
 func (m *routeRecorder) allows(r *http.Request) []string {
 	var methods []string
+	probe := *r
 	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPatch, http.MethodDelete} {
-		probe := r.Clone(r.Context())
 		probe.Method = method
-		if _, pattern := m.mux.Handler(probe); pattern != "" && pattern != "/" {
+		if _, pattern := m.mux.Handler(&probe); pattern != "" && pattern != "/" {
 			methods = append(methods, method)
 		}
 	}
@@ -68,18 +60,27 @@ func NewRouter(cfg RouterConfig) *Router {
 	a := cfg.API
 	m := &routeRecorder{mux: http.NewServeMux()}
 	latency := a.latencyHistogram()
+	observed := func(pattern string, f func(http.ResponseWriter, *http.Request, authz.Identity)) http.Handler {
+		return a.observed(latency, pattern, a.authed(f))
+	}
 	route := func(pattern string, f func(http.ResponseWriter, *http.Request, authz.Identity)) {
-		m.Handle(pattern, a.observed(latency, pattern, a.authed(f)))
+		m.Handle(pattern, observed(pattern, f))
 	}
 	// A resource also answers as the web UI and, with stream, as events.
 	resource := func(pattern string, f, stream func(http.ResponseWriter, *http.Request, authz.Identity)) {
-		m.Handle(pattern, a.negotiated(a.observed(latency, pattern, a.authed(f)), stream))
+		m.Handle(pattern, a.negotiated(observed(pattern, f), stream))
 	}
-	// A document has one type, which an extension cannot change.
-	document := func(pattern, contentType string, h http.Handler) {
-		m.Handle(pattern, only(contentType, h))
+	// A document has the representations it offers and no other; a file
+	// name that ends like one, such as /sbom.cdx.json, keeps its extension.
+	var literal []string
+	document := func(pattern string, h http.Handler, offers ...negotiate.Type) {
+		if path, ok := strings.CutPrefix(pattern, "GET "); ok && negotiate.Extension(path) {
+			literal = append(literal, path)
+		}
+		m.Handle(pattern, only(h, offers...))
 	}
-	m.Handle("GET /{$}", a.entry(a.observed(latency, "GET /", a.authed(a.me))))
+	in := &install.Handler{Version: a.Version, BaseURL: a.BaseURL, Releases: cfg.ReleaseAssets}
+	m.Handle("GET /{$}", a.entry(observed("GET /", a.me)))
 	resource("GET /hooks", a.listHooks, a.hooksStream)
 	route("POST /hooks", a.createHook)
 	resource("GET /hooks/{id}", a.getHook, a.hookStream)
@@ -94,32 +95,23 @@ func NewRouter(cfg RouterConfig) *Router {
 	resource("GET /channels/{name}", a.getChannel, nil)
 	// Long-lived: not observed (the tunnel traces its own attach and detach).
 	m.Handle("GET /tunnel", a.authed(a.tunnel))
-	document("GET /openapi", "application/json", http.HandlerFunc(serveOpenAPI))
-	document("GET /openapi.yaml", "application/yaml", http.HandlerFunc(serveOpenAPIYAML))
+	document("GET /openapi", http.HandlerFunc(serveOpenAPI), negotiate.JSON)
+	document("GET /openapi.yaml", http.HandlerFunc(serveOpenAPIYAML))
 	resource("GET /licenses", a.licenses, nil)
-	document("GET /licenses/{textId}", "text/plain", a.observed(latency, "GET /licenses/{textId}", a.authed(a.licenseText)))
-	document("GET /notices.txt", "text/plain", a.observed(latency, "GET /notices.txt", a.authed(a.notices)))
-	document("GET /sbom.cdx.json", "application/vnd.cyclonedx+json", a.observed(latency, "GET /sbom.cdx.json", a.authed(a.sbomDocument)))
+	document("GET /licenses/{textId}", observed("GET /licenses/{textId}", a.licenseText))
+	document("GET /notices.txt", observed("GET /notices.txt", a.notices))
+	document("GET /sbom.cdx.json", observed("GET /sbom.cdx.json", a.sbomDocument))
 	m.Handle("GET /inspect/{callID}", cfg.Inspect)
-	document("GET /install.sh", "text/x-shellscript", cfg.Install.Shell())
-	document("GET /install.ps1", "text/plain", cfg.Install.PowerShell())
-	document("GET /download/{os}/{arch}", "application/octet-stream", cfg.Install.Download())
+	document("GET /install.sh", in.Shell())
+	document("GET /install.ps1", in.PowerShell())
+	document("GET /download/{os}/{arch}", in.Download())
 	m.Handle("/", catchAll(m, cfg.Fallback))
-
-	// File names that end like a representation, such as /sbom.cdx.json,
-	// keep their extension.
-	var literal []string
-	for _, p := range m.patterns {
-		if path, ok := strings.CutPrefix(p, "GET "); ok && !strings.Contains(path, "{") && negotiate.Extension(path) {
-			literal = append(literal, path)
-		}
-	}
 
 	// Callbacks bypass the mux, whose path cleaning would rewrite paths
 	// such as "/~m/cb//x" that must reach the local app unchanged. They
 	// also go without the version header: their responses stay exactly
 	// what the receiver's app returned.
-	resources := negotiate.Extensions(literal, m)
+	resources := negotiate.Extensions(literal, m.mux)
 	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/~") {
 			a.Relay.ServeHTTP(w, r)
@@ -168,12 +160,12 @@ func catchAll(m *routeRecorder, fallback http.Handler) http.Handler {
 	})
 }
 
-// only serves a document of one type, and refuses an extension that asks
-// for another: /install.sh.json is not the script.
-func only(contentType string, h http.Handler) http.Handler {
+// only serves a document in the representations it offers, and refuses an
+// extension asking for another: /install.sh.json is not the script.
+func only(h http.Handler, offers ...negotiate.Type) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if t, ok := negotiate.Forced(r); ok && t.String() != contentType {
-			problem.New(http.StatusNotAcceptable, problem.NotAcceptable, "this resource is available as "+contentType).Write(w)
+		if t, ok := negotiate.Forced(r); ok && !slices.Contains(offers, t) {
+			notAcceptable(w, offers)
 			return
 		}
 		h.ServeHTTP(w, r)

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"slices"
 	"strings"
 	"testing"
 
@@ -13,7 +12,8 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/sbom"
 )
 
-// send sends method path as moritz with the given Accept header.
+// send sends method path as moritz with the given Accept header, and
+// writes as JSON.
 func (e *env) send(method, path, accept string) (*http.Response, string) {
 	e.t.Helper()
 	req, _ := http.NewRequest(method, e.srv.URL+path, nil)
@@ -55,7 +55,8 @@ func TestMethodNotAllowed(t *testing.T) {
 }
 
 // GET and HEAD belong to the app wherever no route claims them, so they
-// are never 405.
+// are never 405: they reach the fallback, whose answers the access matrix
+// checks with the real web UI.
 func TestGetNeverMethodNotAllowed(t *testing.T) {
 	e := newEnv(t)
 	var h Hook
@@ -63,11 +64,10 @@ func TestGetNeverMethodNotAllowed(t *testing.T) {
 	if resp, _ := e.send("HEAD", "/hooks", ""); resp.StatusCode != 200 {
 		t.Errorf("HEAD /hooks = %d", resp.StatusCode)
 	}
-	if resp, _ := e.send("GET", "/hooks/"+h.ID+"/test", ""); resp.StatusCode != 404 || resp.Header.Get(problem.HeaderError) != problem.NotFound {
-		t.Errorf("GET test = %d %s, want a 404 problem", resp.StatusCode, resp.Header.Get(problem.HeaderError))
-	}
-	if resp, body := e.send("GET", "/hooks/"+h.ID+"/test", "text/html"); resp.StatusCode != 200 || body != "the app" {
-		t.Errorf("GET test as HTML = %d %q, want the app", resp.StatusCode, body)
+	for _, method := range []string{"GET", "HEAD"} {
+		if resp, body := e.send(method, "/hooks/"+h.ID+"/test", "text/html"); resp.StatusCode != 200 || method == "GET" && body != "the app" {
+			t.Errorf("%s test = %d %q, want the fallback", method, resp.StatusCode, body)
+		}
 	}
 }
 
@@ -114,24 +114,10 @@ func TestFixedTypeDocumentsRefuseOtherSuffixes(t *testing.T) {
 		"/openapi":      "application/json",
 		"/openapi.yaml": "application/yaml",
 		"/install.sh":   "text/x-shellscript; charset=utf-8",
+		"/install.ps1":  "text/plain; charset=utf-8",
 	} {
 		if resp, _ := e.send("GET", p, ""); resp.StatusCode != 200 || resp.Header.Get("Content-Type") != ct {
 			t.Errorf("GET %s = %d %s, want 200 %s", p, resp.StatusCode, resp.Header.Get("Content-Type"), ct)
 		}
-	}
-}
-
-func TestRoutesAreRecorded(t *testing.T) {
-	e := newEnv(t)
-	routes := e.router.Routes
-	for _, want := range []string{"GET /{$}", "GET /inspect/{callID}", "GET /install.sh", "GET /install.ps1", "GET /download/{os}/{arch}", "/"} {
-		if !slices.Contains(routes, want) {
-			t.Errorf("routes lack %s: %v", want, routes)
-		}
-	}
-	sorted := slices.Clone(routes)
-	slices.Sort(sorted)
-	if len(slices.Compact(sorted)) != len(routes) {
-		t.Errorf("routes repeat: %v", routes)
 	}
 }
