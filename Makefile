@@ -1,6 +1,6 @@
 # The web UI is built into web/dist, which the binary embeds. A plain
 # `go build` works without Node and serves a placeholder page instead.
-.PHONY: ui build dev check e2e sbom
+.PHONY: ui build dev check e2e sbom lint-docs lint-site
 
 ui:
 	cd web && pnpm install --frozen-lockfile && pnpm build
@@ -33,3 +33,31 @@ e2e: ui
 sbom:
 	cd web && pnpm install --frozen-lockfile
 	./scripts/build-sbom.sh
+
+# Vale over the prose: the published docs and the pages a contributor reads
+# first, then the site's own pages, whose copy lives in components rather
+# than in docs/ and is checked as built (lint-site needs a website build).
+DOCS := $(filter-out docs/DESIGN.md,$(wildcard docs/*.md)) README.md CONTRIBUTING.md SECURITY.md
+SITE_PAGES := website/dist/index.html website/dist/download.html website/dist/404.html
+VALE_FLAGS ?=
+
+lint-docs: .vale/styles/.synced
+	vale $(VALE_FLAGS) $(DOCS)
+
+lint-site: .vale/styles/.synced
+	vale $(VALE_FLAGS) $(SITE_PAGES)
+
+# The style packages .vale.ini names, by URL and SHA-256. Fetched here rather
+# than by `vale sync`, which checks nothing it downloads.
+VALE_PACKAGES := \
+	https://github.com/errata-ai/Google/releases/download/v0.7.0/Google.zip=dddb3dca035a067fe9ab13a1d8d8f89cb63e8b83ab4cf1934a935d60cd91d697 \
+	https://github.com/errata-ai/proselint/releases/download/v0.3.4/proselint.zip=48b1fb481ba44f6505d44346b283f6cdc74efd234f913bbdb09bf34420fab81c
+
+.vale/styles/.synced: Makefile
+	@set -e; for package in $(VALE_PACKAGES); do \
+		url=$${package%=*}; zip=$$(mktemp); \
+		curl -fsSL -o "$$zip" "$$url"; \
+		echo "$${package##*=}  $$zip" | sha256sum -c - >/dev/null || { echo "checksum mismatch: $$url" >&2; rm -f "$$zip"; exit 1; }; \
+		unzip -qo "$$zip" -d .vale/styles; rm -f "$$zip"; \
+	done
+	touch $@

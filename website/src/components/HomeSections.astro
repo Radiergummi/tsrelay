@@ -1,0 +1,173 @@
+---
+import {ArrowLeft, ArrowRight} from "@lucide/astro";
+
+/**
+ * The home page below the fold: how a call travels, why this rather than the
+ * two usual workarounds, and the two ways in. `docs/index.md` says the same in
+ * prose, as the page's Markdown representation; keep the two in step.
+ */
+
+const nodes = [
+    {
+        name: "Your production service",
+        detail: "tag:prod-worker",
+        text: "Calls the hook's URL like any other webhook. Its grant says which channels it may send to.",
+    },
+    {
+        name: "The relay",
+        detail: "tag:tsrelay",
+        text: "Its own node on your tailnet. It checks the sender's grant, then hands the call down the tunnel.",
+        accent: true,
+    },
+    {
+        name: "Your laptop",
+        detail: "tsrelay http 8080",
+        text: "Dials out to the relay, so nothing ever connects to it. Your app answers on localhost.",
+    },
+];
+
+/**
+ * The traffic between two neighbouring nodes, each line one direction. The
+ * first link carries the call and its answer; the second is the tunnel the
+ * laptop opened, which the call travels back down.
+ */
+const links = [
+    [
+        {direction: "right", label: "POST /~moritz/amber-otter-lamp"},
+        {direction: "left", label: "your app's response"},
+    ],
+    [
+        {direction: "left", label: "tunnel, dialed out"},
+        {direction: "right", label: "the call, down the tunnel"},
+    ],
+];
+
+const approaches = [
+    {
+        name: "A reverse grant",
+        points: [
+            "Production gets a standing route to every developer device it's granted.",
+            "Your policy has to name developer machines, and keep up as they change.",
+            "Calls belong to no hook and no owner, so there is nothing to inspect or replay.",
+        ],
+    },
+    {
+        name: "A public tunnel",
+        hint: "such as ngrok or Cloudflare Tunnel",
+        points: [
+            "Internal callbacks leave your tailnet and cross the internet.",
+            "Who may call is the tunnel provider's to decide, not your policy's.",
+            "Each developer runs and secures their own.",
+        ],
+    },
+    {
+        name: "tsrelay",
+        points: [
+            "Laptops dial out, and production reaches only the hooks their owners made.",
+            "Traffic stays on your tailnet; a hook is public only when its owner and the operator opt in.",
+            "Your grants decide who sends and receives, and every call is audited.",
+        ],
+        accent: true,
+    },
+];
+
+const paths = [
+    {
+        href: "/getting-started",
+        title: "Your tailnet already runs a relay",
+        text: "Install the CLI from it, and forward your first callback.",
+        command: "tsrelay http 8080",
+        action: "Get started",
+    },
+    {
+        href: "/running-a-relay",
+        title: "You run the tailnet",
+        text: "Add the relay, and grant who may send and receive.",
+        command: "tsrelay serve",
+        action: "Run a relay",
+    },
+];
+---
+<section class="border-t px-6 py-16 md:px-12 lg:px-16" aria-labelledby="how-heading">
+    <h2 id="how-heading" class="text-2xl font-semibold tracking-tight">How a call travels</h2>
+    <p class="mt-2 max-w-2xl text-base leading-relaxed text-muted-foreground">
+        Production never connects to a developer machine. Both sides connect to the relay, and the relay
+        only forwards to hooks that someone created.
+    </p>
+
+    <ol class="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)] lg:items-start">
+        {nodes.map(({accent, detail, name, text}, index) => (
+            <>
+                <li class="contents">
+                    <div>
+                        <div
+                            class:list={[
+                                "rounded-lg border px-4 py-3",
+                                accent ? "border-active bg-accent" : "bg-code-background",
+                            ]}
+                        >
+                            <p class="text-base font-semibold">{name}</p>
+                            <p class="mt-0.5"><code class="font-mono text-xs text-muted-foreground">{detail}</code></p>
+                        </div>
+                        <p class="mt-3 text-sm leading-relaxed text-muted-foreground">{text}</p>
+                    </div>
+                </li>
+                {links[index] && (
+                    <li aria-hidden="true" class="flex flex-col justify-center gap-2 py-1 lg:h-16">
+                        {links[index].map(({direction, label}) => (
+                            <span class="flex items-center gap-2 font-mono text-2xs text-muted-foreground">
+                                {direction === "left" && <ArrowLeft class="size-3.5 shrink-0 max-lg:rotate-90" />}
+                                <span class="min-w-0 flex-1 truncate border-b border-dashed pb-0.5 text-center">{label}</span>
+                                {direction === "right" && <ArrowRight class="size-3.5 shrink-0 max-lg:rotate-90" />}
+                            </span>
+                        ))}
+                    </li>
+                )}
+            </>
+        ))}
+    </ol>
+</section>
+
+<section class="border-t px-6 py-16 md:px-12 lg:px-16" aria-labelledby="why-heading">
+    <h2 id="why-heading" class="text-2xl font-semibold tracking-tight">Why not a reverse grant, or a public tunnel?</h2>
+    <p class="mt-2 max-w-2xl text-base leading-relaxed text-muted-foreground">
+        Calls from a laptop to a tailnet service take one grant. Calls the other way have had two answers,
+        and neither is one you'd want for production.
+    </p>
+
+    <div class="mt-10 grid gap-8 md:grid-cols-3">
+        {approaches.map(({accent, hint, name, points}) => (
+            <div class:list={["border-t-2 pt-4", accent ? "border-active" : "border-border"]}>
+                <h3 class="text-base font-semibold">
+                    {name}
+                    {hint && <span class="block text-sm font-normal text-muted-foreground">{hint}</span>}
+                </h3>
+                <ul class="mt-3 flex flex-col gap-2.5 text-sm leading-relaxed text-muted-foreground">
+                    {points.map((point) => <li>{point}</li>)}
+                </ul>
+            </div>
+        ))}
+    </div>
+</section>
+
+<section class="border-t px-6 py-16 md:px-12 lg:px-16" aria-labelledby="start-heading">
+    <h2 id="start-heading" class="text-2xl font-semibold tracking-tight">Where to start</h2>
+
+    <div class="mt-8 grid gap-6 md:grid-cols-2">
+        {paths.map(({action, command, href, text, title}) => (
+            <div class="group relative flex flex-col rounded-lg border p-6 transition-colors hover:border-active has-[a:focus-visible]:border-active">
+                <h3 class="text-lg font-semibold">
+                    <a href={href} class="after:absolute after:inset-0 focus-visible:outline-none">{title}</a>
+                </h3>
+                <p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">{text}</p>
+                <p class="mt-5 self-start rounded-md bg-code-background px-3 py-2 font-mono text-sm text-code-foreground">
+                    <span class="text-muted-foreground select-none">$ </span><code>{command}</code>
+                </p>
+                <span class="mt-5 text-sm font-medium text-active">
+                    {action}
+                    <span class="inline-block transition-transform group-hover:translate-x-0.5" aria-hidden="true">›</span>
+                </span>
+            </div>
+        ))}
+    </div>
+</section>

@@ -1,12 +1,12 @@
 # Contributing to tsrelay
 
-Thanks for helping. Bug reports, fixes and improvements are all welcome. For a larger change, open an issue first, so we can agree on the approach before you spend time on it.
+Thanks for helping. Bug reports, fixes and improvements are all welcome. For a larger change, open an issue first, to agree on the approach before you spend time on it.
 
 Report security problems privately, as described in [SECURITY.md](SECURITY.md), not in an issue.
 
 ## Design
 
-[docs/DESIGN.md](docs/DESIGN.md) describes what tsrelay does and why. Changes in behaviour should fit it, or update it in the same pull request.
+[docs/DESIGN.md](docs/DESIGN.md) describes what tsrelay does and why. Changes in behavior should fit it, or update it in the same pull request.
 
 tsrelay is meant to work for any tailnet. Don't hard-code names, tags, domains, ports or limits. Make them configurable, and give them a default that works without configuration.
 
@@ -19,6 +19,7 @@ Before you send a pull request, run the same checks CI runs:
 ```bash
 make check                                         # Go and web UI checks
 make e2e                                           # the web UI's end-to-end tests
+make lint-docs                                     # Vale over the docs, README, CONTRIBUTING and SECURITY
 go test -race -tags tailnet ./internal/server      # real tsnet nodes against an in-process control server
 ```
 
@@ -28,6 +29,7 @@ Other useful targets:
 make ui        # build the web UI into web/dist, which the binary embeds
 make build     # make ui and make sbom, then build ./tsrelay
 make sbom      # build the SBOM and license texts into internal/sbom/generated (needs jq)
+make lint-site # Vale over the website's home, download and 404 pages, after a website build
 ```
 
 The binary embeds a software bill of materials, its components' license and notice texts, and the notices built from them (`internal/sbom`), which the licenses page and `tsrelay licenses` show. They are built, not committed: `make build` builds them, and CI builds them for the release. The output is the same on every machine: the Go part is pinned to linux/amd64 and to the Go version go.mod names.
@@ -35,6 +37,8 @@ The binary embeds a software bill of materials, its components' license and noti
 A plain `go build` works without Node, pnpm and jq; its binary serves a placeholder page instead of the UI, and has no licenses page or `tsrelay licenses`.
 
 To work on the web UI, `make dev` serves it with hot reload on http://127.0.0.1:5173 against a dev relay with sample data. That relay also listens directly on 127.0.0.1:8098 (admin only), :8097 (no grant) and :8096 (another user), so you can open those to see the other identities' views.
+
+The website at https://tsrelay.mazetti.me lives in `website/` and builds its pages from the Markdown in `docs/` (except `DESIGN.md`). `cd website && pnpm install && pnpm dev` serves it on http://localhost:4321; `pnpm build` needs a clone with full history, because every page is dated by its last commit, and access to GitHub's API, from which the download page reads the latest release. When you add an error code to `internal/problem`, document it in `docs/errors.md`: each code's problem `type` links to its entry there, and the package's tests fail until it has one.
 
 ## Performance
 
@@ -53,7 +57,7 @@ TSRELAY_LOAD=1 go test ./internal/server -run TestLoad -count=1 -v      # add -c
 - Add or update tests for what you change. Bug fixes come with a test that fails without the fix.
 - For changes on the request path (relay, tunnel, inspector), compare benchmarks against `docs/perf/baseline.txt` with benchstat (see [Performance](#performance)) and include the result.
 - Keep each pull request to one change, and match the style of the code around it.
-- Write commit messages as a plain imperative sentence that says what the change does, for example "Refuse replays of pending calls". No prefixes like `feat:`.
+- Write commit messages as a plain imperative sentence that says what the change does, for example `Refuse replays of pending calls`. No prefixes like `feat:`.
 - tsrelay's direct dependencies are Tailscale, a few `golang.org/x` modules, OpenTelemetry (with the Prometheus client its exporter needs), `go.yaml.in/yaml` (to serve the OpenAPI document as JSON), and for the CLI cobra, fang and lipgloss (with the Charm modules they bring); anything else needs a good reason. The web UI is a React and Tailwind app under `web/`, whose dependencies are listed in `web/package.json`; new ones need a good reason too, and anything that injects inline scripts or styles is ruled out by the UI's CSP.
 - GitHub Actions are pinned to a full commit SHA, with the version in a comment. Only actions owned by GitHub and the Docker actions already in use are allowed to run.
 
@@ -75,7 +79,7 @@ The automated tests cover everything except real certificates. Before a release:
 2. On a laptop with the receiver grant, run `tsrelay http 8080` against `python3 -m http.server 8080`. Expect the URL on stdout.
 3. From a node with the sender grant, run `curl -i <url>/`. Expect `200` and a line in the CLI.
 4. From a node without grants, run `curl -i <url>/`. Expect `403 sender_forbidden`.
-5. Run the relay with `--tls=false` and repeat steps 2–3 with an `http://` relay URL.
+5. Run the relay with `--tls=false` and repeat steps 2 and 3 with an `http://` relay URL.
 
 ## License
 

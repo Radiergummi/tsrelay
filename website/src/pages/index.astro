@@ -1,0 +1,24 @@
+---
+import Head from "../components/Head.astro";
+import Header from "../components/Header.astro";
+import Hero from "../components/Hero.astro";
+import HomeSections from "../components/HomeSections.astro";
+import {generatedPage} from "../lib/pages";
+import "../styles/global.css";
+
+const {description, markdown} = generatedPage("/");
+---
+<html lang="en">
+<head>
+    <Head title="tsrelay" description={description} isHome alternate={markdown ? {href: markdown} : undefined} />
+</head>
+<body class="min-h-screen">
+<Header currentPath="/" />
+<div class="mx-auto max-w-shell">
+    <main id="main-content" class="min-w-0" data-pagefind-ignore>
+        <Hero description={description} />
+        <HomeSections />
+    </main>
+</div>
+</body>
+</html>

@@ -1,10 +1,14 @@
 name: Node and pnpm
-description: Sets up pnpm from web/package.json's packageManager and Node from web/.nvmrc, with a cached store, and installs web/'s dependencies.
+description: Sets up pnpm from a package's packageManager and Node from its .nvmrc, with a cached store, and installs its dependencies.
+inputs:
+  working-directory:
+    description: The package to set up.
+    default: web
 runs:
   using: composite
   steps:
     - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
       with:
-        working-directory: web
+        working-directory: ${{ inputs.working-directory }}
         cache: true
         require-lockfile: true

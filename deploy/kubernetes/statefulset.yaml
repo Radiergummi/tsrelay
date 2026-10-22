@@ -32,7 +32,7 @@ spec:
           args:
             - --ops-listen=:9090
             # --ops-pprof and --otel are left off here; enable them
-            # temporarily (see README.md's Profiling and Tracing sections).
+            # temporarily (see https://tsrelay.mazetti.me/observability).
           ports:
             - name: metrics
               containerPort: 9090

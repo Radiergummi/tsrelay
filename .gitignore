@@ -8,3 +8,7 @@
 .superpowers
 /internal/sbom/generated/*
 !/internal/sbom/generated/.gitkeep
+# Vale packages, fetched by `make lint-docs` at the versions the Makefile pins.
+/.vale/styles/*
+!/.vale/styles/Tsrelay/
+!/.vale/styles/config/

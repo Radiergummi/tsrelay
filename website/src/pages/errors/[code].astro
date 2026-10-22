@@ -1,0 +1,33 @@
+---
+import {readFileSync} from "node:fs";
+import {join} from "node:path";
+import {docsDir} from "../../lib/pages";
+
+/**
+ * The relay's problem documents name their code's entry as their `type`,
+ * `https://tsrelay.mazetti.me/errors/<code>` (`internal/problem`), so each code
+ * documented in the error reference gets a URL here that forwards to its entry.
+ * That every code is documented is checked by `internal/problem`'s tests.
+ */
+export function getStaticPaths() {
+    const reference = readFileSync(join(docsDir, "errors.md"), "utf-8");
+
+    return [...reference.matchAll(/^### `([a-z_]+)`$/gm)].map(([, code]) => ({params: {code}}));
+}
+
+const {code} = Astro.params;
+const target = `/errors#${code}`;
+---
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>{code} | tsrelay</title>
+    <meta name="robots" content="noindex" />
+    <link rel="canonical" href={new URL(target, Astro.site).href} />
+    <meta http-equiv="refresh" content={`0; url=${target}`} />
+</head>
+<body>
+    <p><a href={target}>{code}</a> is described in the tsrelay error reference.</p>
+</body>
+</html>

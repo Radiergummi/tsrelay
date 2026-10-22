@@ -1,0 +1,33 @@
+---
+import { render } from "astro:content";
+import DocsLayout from "../layouts/DocsLayout.astro";
+import { getDocPaths } from "../lib/docs";
+
+export async function getStaticPaths() {
+  const docs = await getDocPaths();
+
+  return docs.map((doc) => ({
+    params: { slug: doc.id },
+    props: { entry: doc },
+  }));
+}
+
+const { entry } = Astro.props;
+const { Content, headings } = await render(entry);
+
+// Relative to the repository root, as the edit link and the modified date want
+// it; every doc is a `.md` file directly in `docs/`.
+const sourcePath = `docs/${entry.id}.md`;
+---
+<DocsLayout
+  title={entry.data.title}
+  description={entry.data.description}
+  slug={entry.id}
+  headings={headings}
+  markdownUrl={`/${entry.id}.md`}
+  sourcePath={sourcePath}
+  category={entry.data.category}
+  tags={entry.data.tags}
+>
+  <Content />
+</DocsLayout>
