@@ -23,20 +23,20 @@ export const sidebarGroups: NavGroup[] = [
   {
     label: "Using tsrelay",
     items: [
-      { slug: "getting-started", title: "Getting Started" },
+      { slug: "getting-started", title: "Getting started" },
       { slug: "hooks", title: "Hooks" },
-      { slug: "background-tunnels", title: "Background Tunnels" },
-      { slug: "receiving-calls", title: "Receiving Calls" },
-      { slug: "web-ui", title: "Web UI and Inspector" },
+      { slug: "background-tunnels", title: "Background tunnels" },
+      { slug: "receiving-calls", title: "Receiving calls" },
+      { slug: "web-ui", title: "Web UI and inspector" },
       { slug: "api", title: "API" },
-      { slug: "cli", title: "Command Line" },
+      { slug: "cli", title: "Command line" },
     ],
   },
   {
     label: "Running a relay",
     items: [
-      { slug: "running-a-relay", title: "Running a Relay" },
-      { slug: "access-control", title: "Access Control" },
+      { slug: "running-a-relay", title: "Running a relay" },
+      { slug: "access-control", title: "Access control" },
       { slug: "observability", title: "Observability" },
     ],
   },
@@ -45,7 +45,7 @@ export const sidebarGroups: NavGroup[] = [
     items: [
       { slug: "configuration", title: "Configuration" },
       { slug: "errors", title: "Errors" },
-      { slug: "api/explorer", title: "API Reference" },
+      { slug: "api/explorer", title: "API reference" },
       { slug: "download", title: "Download" },
     ],
   },

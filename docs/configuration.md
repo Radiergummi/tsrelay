@@ -18,7 +18,7 @@ Every flag can also be set as an environment variable: `--ephemeral-grace` becom
 | `--funnel-max-body-bytes` | `26214400` (25 MiB) | Largest request body of a call from the internet |
 | `--advertise-tags` | `tag:tsrelay` | |
 | `--cap-name` | `mazetti.me/cap/relay` | Capability that carries grants |
-| `--user-slug` | `local-part` | `moritz@example.com` → `~moritz`; `login` uses the full login |
+| `--user-slug` | `local-part` | `moritz@example.com` becomes `~moritz`; `login` uses the full login |
 | `--user-slug-override` | | `alice@b.com=alice-b`, for collisions |
 | `--max-hooks-default` / `--max-tunnels-default` | `10` / `5` | Per user; grants can raise them with `maxHooks` / `maxTunnels` |
 | `--max-hook-ttl-default` | unlimited | Longest a persistent hook may live; grants can raise it with `maxHookTTL` |
@@ -29,8 +29,8 @@ Every flag can also be set as an environment variable: `--ephemeral-grace` becom
 | `--capture-calls` | `100` | Calls per hook the inspector keeps in memory |
 | `--capture-limit` | `65536` | Bytes the inspector keeps of each body, of each call's headers, and of its query string |
 | `--capture-bodies` | `true` | `false` keeps no bodies for any hook |
-| `--redact-headers` | `Authorization,Proxy-Authorization,Cookie,Set-Cookie,X-Api-Key` | Headers whose values are never kept; an empty value keeps these defaults, so redaction cannot be turned off |
-| `--ops-listen` | off | Host address (e.g. `:9090`) for `/healthz`, `/readyz` and `/metrics`; never on the tailnet |
+| `--redact-headers` | `Authorization,Proxy-Authorization,Cookie,Set-Cookie,X-Api-Key` | Headers whose values are never kept; an empty value keeps these defaults, so redaction can't be turned off |
+| `--ops-listen` | off | Host address (for example `:9090`) for `/healthz`, `/readyz` and `/metrics`; never on the tailnet |
 | `--ops-pprof` | `false` | Serve Go's profiler under `/debug/pprof/` on the ops listener |
 | `--otel` | `false` | Export traces and metrics over OTLP/HTTP; see [Tracing](observability.md#tracing) |
 | `--trace-propagation` | `true` | With `--otel`: continue a sender's `traceparent` and pass the relay's own to the app, so one trace spans sender, relay and app; `false` forwards trace headers untouched |
@@ -51,4 +51,4 @@ Each [hook setting](hooks.md#hook-settings) has a relay-wide default, `--hook-<s
 | `rateLimit` | `100/200` | none |
 | `capture` | `false` | |
 
-For example `--hook-rate-limit-default=100/200`, or `--hook-max-body-bytes-default=1048576 --hook-max-body-bytes-max=10485760` (the default body size is unlimited, which a maximum would not allow, so set both). A hook may only set a value within the maximum.
+For example `--hook-rate-limit-default=100/200`, or `--hook-max-body-bytes-default=1048576 --hook-max-body-bytes-max=10485760` (the default body size is unlimited, which a maximum wouldn't allow, so set both). A hook may only set a value within the maximum.

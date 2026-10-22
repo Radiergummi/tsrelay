@@ -19,7 +19,7 @@ Only the latest release gets security fixes.
 
 ## In scope
 
-- Anything that lets a caller act beyond its grants: receive or replay another user's callbacks, see their headers or bodies, attach a tunnel to someone else's hook, or reach the relay's API or UI without the right role.
+- Anything that lets a caller act beyond its grants: receive or replay another user's callbacks, see their headers or bodies, attach a tunnel to a hook someone else owns, or reach the relay's API or UI without the right role.
 - Ways around the inspector's redaction, or captured data rendered as markup in the web UI.
 - Ways to reach a developer's machine other than through a tunnel it dialled.
 
@@ -33,6 +33,6 @@ Only the latest release gets security fixes.
 With `--funnel`, hooks their owners have marked `public` accept anonymous traffic from the internet, through Tailscale Funnel.
 
 - The `/+{token}` URL is a bearer secret: anyone who has it can call the hook. Rotate it with `tsrelay hooks rotate-url` or the UI if it leaks.
-- The relay does not verify webhook signatures. Your app must verify each provider's signature itself.
+- The relay doesn't verify webhook signatures. Your app must verify each provider's signature itself.
 - Only paths starting with `/+` are served on the internet. If any other path is reachable through Funnel, report it as a vulnerability.
 - Turning `--funnel` off doesn't guarantee Tailscale stops advertising the node as Funnel-capable: tsnet persists that flag in the node's serve config and clears it only on a clean shutdown, so a crash or a restart without `--funnel` can leave it set. The relay still fails closed either way (no listener, no traffic), but don't rely on `--funnel=false` alone as proof the node is unreachable from the internet.

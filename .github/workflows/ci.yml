@@ -170,3 +170,13 @@ jobs:
           name: playwright-report
           path: web/playwright-report
           retention-days: 7
+
+  lint-docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/vale
+
+      - run: make lint-docs VALE_FLAGS=--output=.vale/github.tmpl

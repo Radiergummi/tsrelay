@@ -15,7 +15,7 @@ Bodies arrive exactly as sent, byte for byte, so signatures from Stripe, GitHub,
 |---|---|
 | `Tsrelay-Sender-Node` | The calling machine's name |
 | `Tsrelay-Sender-Tags` | Its tags, comma-separated |
-| `Tsrelay-Sender-Login` | Its user, if it is not a tagged machine |
+| `Tsrelay-Sender-Login` | Its user, if it isn't a tagged machine |
 | `Tsrelay-Sender-Public` | `true` for a call from the internet to a [public hook](hooks.md#public-hooks); such a call has no `Tsrelay-Sender-Node`, `-Tags` or `-Login` |
 | `Tsrelay-Hook` | `user/path` of the hook |
 | `Tsrelay-Call-Id` | Also returned to the caller, for matching logs |
@@ -35,7 +35,7 @@ Your app's response goes back to the sender as it is. Errors produced by the rel
 | [`tunnel_unavailable`](errors.md#tunnel_unavailable) | 561 | No tunnel attached within `holdTimeout`, or too many calls are already waiting; `Retry-After` is `holdTimeout`, but never less than 5 s |
 | [`tunnel_overloaded`](errors.md#tunnel_overloaded) | 562 | Too many concurrent calls on the tunnel; `Retry-After: 1` |
 | [`tunnel_lost`](errors.md#tunnel_lost) | 563 | The tunnel dropped mid-call |
-| [`upstream_unreachable`](errors.md#upstream_unreachable) | 564 | The tunnel is up but your app is not listening |
-| [`upstream_timeout`](errors.md#upstream_timeout) | 565 | Your app did not answer within the hook's `responseTimeout` |
+| [`upstream_unreachable`](errors.md#upstream_unreachable) | 564 | The tunnel is up but your app isn't listening |
+| [`upstream_timeout`](errors.md#upstream_timeout) | 565 | Your app didn't answer within the hook's `responseTimeout` |
 
 Every response a sender gets carries `Tsrelay-Call-Id`, which names the call in the [inspector](web-ui.md#inspecting-calls).

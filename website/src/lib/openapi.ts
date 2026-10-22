@@ -88,7 +88,7 @@ export async function buildSiteSpec(site: URL | undefined) {
         "Markdown representation at the same path with `.md` appended, listed below beside it, " +
         "and a summary of the whole site " +
         "is at `/llms.txt`.\n\nThis document describes the documentation site itself. The HTTP " +
-        "API of the relay — the product documented here — is described separately by " +
+        "API of the relay, the product documented here, is described separately by " +
         "`/api/openapi.yaml`.",
       "x-canonical": new URL("/openapi.json", site).href,
     },

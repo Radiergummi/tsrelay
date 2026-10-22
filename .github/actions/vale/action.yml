@@ -1,0 +1,18 @@
+name: Vale
+description: Installs Vale's published Linux build, checked against a pinned digest.
+runs:
+  using: composite
+  steps:
+    # vale-action wraps the same binary in reviewdog; .vale/github.tmpl gets
+    # the inline annotations without it.
+    - shell: bash
+      env:
+        VERSION: 3.22.0
+        SHA256: 52f5cd0314a1b7384cac6aa102a68193977312f6ba9c9f3ae001b5deec8e3a10
+      run: |
+        curl -fsSL -o vale.tar.gz \
+          "https://github.com/vale-cli/vale/releases/download/v$VERSION/vale_${VERSION}_Linux_64-bit.tar.gz"
+        echo "$SHA256  vale.tar.gz" | sha256sum -c -
+        tar -xzf vale.tar.gz vale
+        sudo install -m 0755 vale /usr/local/bin/vale
+        rm vale vale.tar.gz

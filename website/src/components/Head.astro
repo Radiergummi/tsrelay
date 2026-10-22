@@ -29,7 +29,7 @@ interface Props {
 const { title, description, isHome = false, lastModified, alternate } = Astro.props;
 
 const siteName = "tsrelay";
-const fullTitle = isHome ? `${siteName} — ${description}` : `${title} — ${siteName}`;
+const fullTitle = isHome ? `${siteName} | ${description}` : `${title} | ${siteName}`;
 
 // `build.format` is `file`, so at build time the pathname carries the `.html`
 // the published URL does not: `/getting-started.html` for a page every link,

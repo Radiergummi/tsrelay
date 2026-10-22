@@ -10,15 +10,15 @@ tsrelay is deliberately narrow. It forwards only to hooks you create explicitly.
 
 ## Why
 
-Communication from a local device and a tailnet service is easy: You grant a user group permission to connect to a tag, and it works.
-The reverse, however, is more complicated: While you can obviously just create the reverse policy and allow a tag to connect to all devices of a user, or a whole user group, that opens up a lot of security issues, is not auditable, and grants any service in prod a permanent backdoor into your endpoints.
+Communication from a local device and a tailnet service is easy: you grant a user group permission to connect to a tag, and it works.
+The reverse, however, is more complicated: while you can obviously just create the reverse policy and allow a tag to connect to all devices of a user, or a whole user group, that opens up a lot of security issues, isn't auditable, and grants any service in prod a permanent backdoor into your endpoints.
 It also encodes details about your local developer's environments into your ACL policy, which is annoying to maintain and keep track of.  
 To avoid all of this, you could reach for a tool like [ngrok](https://ngrok.com/) or [Cloudflare Tunnel](https://developers.cloudflare.com/tunnel/), but that tunnels internal traffic via the internet.
 
-Instead, you can also set up tsrelay: It adds a tiny relay service to your tailnet that can be configured using standard ACLs and [app capabilities](https://tailscale.com/docs/features/access-control/grants/grants-app-capabilities) to control who can send and receive callbacks in your tailnet.
+Instead, you can also set up tsrelay: it adds a tiny relay service to your tailnet that can be configured using standard ACLs and [app capabilities](https://tailscale.com/docs/features/access-control/grants/grants-app-capabilities) to control who can send and receive callbacks in your tailnet.
 Users can set up hooks that are fully configurable, can be routed to multiple user devices, buffer requests on unreliable lines, have a full request log, include Tailscale authorization headers, and more. In turn, the relay service itself has a full audit log, OpenTelemetry traces and metrics, as well as global control over all hooks.
 
-A web interface lets users manage their hooks and view the request log, which also offers manual calls, replays, and access to all details. Everything is updated in realtime.
+A web interface lets users manage their hooks and view the request log, which also offers manual calls, replays, and access to all details. Everything updates live.
 
 ## Quick start
 
@@ -39,9 +39,9 @@ TS_CLIENT_SECRET=tskey-client-… tsrelay serve
 
 Full documentation is at <https://tsrelay.mazetti.me>, and in [`docs/`](docs) in this repository:
 
-- Using tsrelay: [Getting started](docs/getting-started.md) · [Hooks](docs/hooks.md) · [Background tunnels](docs/background-tunnels.md) · [Receiving calls](docs/receiving-calls.md) · [Web UI and inspector](docs/web-ui.md) · [API](docs/api.md) · [Command line](docs/cli.md)
-- Running a relay: [Running a relay](docs/running-a-relay.md) · [Access control](docs/access-control.md) · [Observability](docs/observability.md)
-- Reference: [Configuration](docs/configuration.md) · [Errors](docs/errors.md)
+- Using tsrelay: [getting started](docs/getting-started.md), [hooks](docs/hooks.md), [background tunnels](docs/background-tunnels.md), [receiving calls](docs/receiving-calls.md), [web UI and inspector](docs/web-ui.md), [API](docs/api.md) and the [command line](docs/cli.md).
+- Running a relay: [running a relay](docs/running-a-relay.md), [access control](docs/access-control.md) and [observability](docs/observability.md).
+- Reference: [configuration](docs/configuration.md) and [errors](docs/errors.md).
 
 Binaries for macOS, Linux and Windows, and the container image, are on the [download page](https://tsrelay.mazetti.me/download).
 

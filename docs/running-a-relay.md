@@ -34,7 +34,7 @@ Run exactly one relay per state directory (`--state-dir`); the [design document]
 
 ## Serving public hooks
 
-To let users make hooks reachable from the internet (see [Public hooks](hooks.md#public-hooks)), run the relay with `--funnel`. The tailnet policy also needs the `funnel` node attribute for the relay, and `"public": true` on the grants of the users who may make hooks public — see [`deploy/policy.example.hujson`](https://github.com/Radiergummi/tsrelay/blob/main/deploy/policy.example.hujson) for both.
+To let users make hooks reachable from the internet (see [Public hooks](hooks.md#public-hooks)), run the relay with `--funnel`. The tailnet policy also needs the `funnel` node attribute for the relay, and `"public": true` on the grants of the users who may make hooks public; [`deploy/policy.example.hujson`](https://github.com/Radiergummi/tsrelay/blob/main/deploy/policy.example.hujson) shows both.
 
 ```bash
 tsrelay serve --funnel          # serve public hooks through Tailscale Funnel

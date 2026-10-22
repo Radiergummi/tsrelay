@@ -29,7 +29,7 @@ Each capability value is an object with these fields:
 
 | Field | |
 |---|---|
-| `roles` | Any of `receiver`, `sender`, `admin` (see below) |
+| `roles` | Any of `receiver`, `sender`, `admin` (see [Roles](#roles)) |
 | `channels` | Channel patterns the roles apply to; `*` matches anything, dots included. Default `["*"]` |
 | `maxHooks` | Receivers: hooks owned at once (relay default 10) |
 | `maxTunnels` | Receivers: tunnels attached at once (relay default 5) |
@@ -42,7 +42,7 @@ Each capability value is an object with these fields:
 |---|---|
 | `receiver` | Create and manage their own hooks in channels their patterns match, attach tunnels, inspect and replay their own calls |
 | `sender` | Call any hook whose channel their patterns match. Tagged machines can only ever be senders |
-| `admin` | List, view the metadata of, and delete everyone's hooks and tunnels. Admins **cannot** see other users' captured queries, headers or bodies, and cannot replay their calls |
+| `admin` | List, view the metadata of, and delete everyone's hooks and tunnels. Admins **can't** see other users' captured queries, headers or bodies, and can't replay their calls |
 
 ## Channels
 

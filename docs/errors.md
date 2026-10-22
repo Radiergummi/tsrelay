@@ -79,7 +79,7 @@ The [API](api.md), the web UI and the CLI see these. Where one says the relay ma
 
 ### `invalid`
 
-**422.** Something sent is not valid, such as a hook setting above the relay's maximum. The problem's `errors` field names each one; correct them, then retry.
+**422.** Something sent isn't valid, such as a hook setting above the relay's maximum. The problem's `errors` field names each one; correct them, then retry.
 
 ### `bad_request`
 

@@ -96,7 +96,7 @@ export const siteResources: SiteResource[] = [
     mediaType: "application/yaml",
     title: "tsrelay API specification",
     description:
-      "The OpenAPI specification of the relay's HTTP API — the product this site documents, not this site.",
+      "The OpenAPI specification of the relay's HTTP API (the product this site documents, not this site).",
   },
   {
     path: "/llms.txt",

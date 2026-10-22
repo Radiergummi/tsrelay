@@ -451,7 +451,9 @@ export default defineConfig({
     preview: { strictPort: true },
   },
   markdown: {
-    processor: unified({ remarkPlugins }),
+    // Without SmartyPants: the pages keep the straight quotes and plain dashes
+    // the docs are written with, as Tsrelay.Typography in .vale/ wants.
+    processor: unified({ remarkPlugins, smartypants: false }),
     syntaxHighlight: "shiki",
     shikiConfig: {
       themes: {

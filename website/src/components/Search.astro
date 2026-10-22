@@ -9,7 +9,7 @@ import {Search} from "@lucide/astro";
     >
         <span class="flex items-center gap-2">
             <Search class="size-4" aria-hidden="true" />
-            Search…
+            Search
         </span>
         <kbd class="pointer-events-none text-2xs font-medium text-muted-foreground/70" id="search-shortcut-label"></kbd>
     </button>
@@ -33,7 +33,7 @@ import {Search} from "@lucide/astro";
             <input
                 id="search-input"
                 type="text"
-                placeholder="Search documentation…"
+                placeholder="Search documentation"
                 autocomplete="off"
                 aria-label="Search"
                 class="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
@@ -234,7 +234,7 @@ import {Search} from "@lucide/astro";
 
             if (!pagefind) {
                 resultsContainer.innerHTML =
-                    `<div class="${emptyClass}">Search unavailable — run <code>pnpm build</code> to generate the index.</div>`;
+                    `<div class="${emptyClass}">Search unavailable: run <code>pnpm build</code> to generate the index.</div>`;
 
                 return;
             }

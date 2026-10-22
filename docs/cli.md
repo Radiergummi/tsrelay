@@ -13,7 +13,7 @@ tags: [cli, completion, json, environment]
 
 ## Environment
 
-Every flag can also be set in the environment as `TSRELAY_<FLAG>`, with dashes as underscores (`--relay` ← `TSRELAY_RELAY`, `--hold-timeout` ← `TSRELAY_HOLD_TIMEOUT`); the command line wins. Flags that act rather than configure (`--all`, `--yes`, `--check`, `--follow`, `--background`) have no such variable.
+Every flag can also be set in the environment as `TSRELAY_<FLAG>`, with dashes as underscores (`TSRELAY_RELAY` for `--relay`, `TSRELAY_HOLD_TIMEOUT` for `--hold-timeout`); the command line wins. Flags that act rather than configure (`--all`, `--yes`, `--check`, `--follow`, `--background`) have no such variable.
 
 ## Output
 

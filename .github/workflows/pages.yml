@@ -59,6 +59,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm build
 
+      # The pages whose copy is in components rather than docs/, as built;
+      # make lint-docs in CI checks the docs themselves.
+      - uses: ./.github/actions/vale
+
+      - run: make lint-site
+
       - if: github.event_name != 'pull_request'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 

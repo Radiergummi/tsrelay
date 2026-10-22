@@ -27,7 +27,7 @@ To keep a tunnel running without holding on to a terminal, see [Background tunne
 
 ## Public hooks
 
-A hook can also be made reachable from the internet, for third-party webhooks (Stripe, GitHub, Twilio…) that can't reach your tailnet. It's opt-in twice over: the operator runs the relay with `--funnel` and grants you `"public": true` (see [Serving public hooks](running-a-relay.md#serving-public-hooks)), and you mark the hook `public`:
+A hook can also be made reachable from the internet, for third-party webhooks (such as Stripe, GitHub or Twilio) that can't reach your tailnet. It's opt-in twice over: the operator runs the relay with `--funnel` and grants you `"public": true` (see [Serving public hooks](running-a-relay.md#serving-public-hooks)), and you mark the hook `public`:
 
 ```bash
 tsrelay http 3000 --public      # make this hook's URL reachable from the internet
@@ -36,7 +36,7 @@ tsrelay http 3000 --public      # make this hook's URL reachable from the intern
 Without the `public` grant, turning a hook public fails. The relay prints both URLs; the public one is a secret, so treat it like one, and rotate it with `tsrelay hooks rotate-url <hook>` if it leaks. An ephemeral `tsrelay http --public` hook gets a new public URL once it's reaped (after the relay's `--ephemeral-grace`, 10 minutes by default, without a tunnel), so use `-p`/`--persistent` (or `tsrelay hooks create --public`) for a stable URL to give to a provider.
 
 > [!WARNING]
-> The relay does not verify provider signatures. Your app has to, as it would without tsrelay; see the [security policy](https://github.com/Radiergummi/tsrelay/blob/main/SECURITY.md).
+> The relay doesn't verify provider signatures. Your app has to, as it would without tsrelay; see the [security policy](https://github.com/Radiergummi/tsrelay/blob/main/SECURITY.md).
 
 ## Channels
 
@@ -85,4 +85,4 @@ tsrelay hooks update payments/v1 --hold-timeout 0s
 
 `tsrelay http` takes the same flags; they apply when it creates the hook, not to a hook it reuses. `tsrelay hooks show <hook>` lists the effective values, defaults included.
 
-A hook's `public` flag is also a setting (`--public`), but it has no relay-wide default or maximum: it's governed by the `public` grant and `--funnel` instead — see [Public hooks](#public-hooks). Unlike the other settings, `tsrelay http --public` also changes a hook it reuses.
+A hook's `public` flag is also a setting (`--public`), but it has no relay-wide default or maximum: it's governed by the `public` grant and `--funnel` instead (see [Public hooks](#public-hooks)). Unlike the other settings, `tsrelay http --public` also changes a hook it reuses.
