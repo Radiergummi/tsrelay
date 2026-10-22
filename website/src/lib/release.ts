@@ -8,7 +8,8 @@ let latest: Promise<string> | undefined;
  * is still being built, or one whose release failed. Asked once per build.
  *
  * In CI the workflow's token is sent along, to stay clear of the API's limit
- * for anonymous requests.
+ * for anonymous requests. Every page waits on this, so a request that hangs
+ * is cut off rather than left to stall the build until the job times out.
  */
 export function latestVersion(): Promise<string> {
   latest ??= fetchLatestVersion();
@@ -23,6 +24,7 @@ async function fetchLatestVersion(): Promise<string> {
       Accept: "application/vnd.github+json",
       ...(token && { Authorization: `Bearer ${token}` }),
     },
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!response.ok) {

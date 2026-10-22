@@ -1,6 +1,23 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { parse } from "yaml";
 import { getLastModified, isShallow } from "./git";
+
+/**
+ * Where the docs live. Declared here rather than beside the content collection
+ * because `astro.config.ts` imports this module before the content layer exists.
+ */
+export const docsDir = resolve("../docs");
+
+/**
+ * The home page's title and description, from the frontmatter of
+ * `docs/index.md`. The page renders components rather than that file, but the
+ * file is its Markdown representation, so the copy is written there once.
+ */
+const home = parse(readFileSync(resolve(docsDir, "index.md"), "utf-8").split(/^---$/m)[1]) as {
+  title: string;
+  description: string;
+};
 
 /**
  * A page this site serves that is not a doc in the content collection: the home
@@ -35,9 +52,8 @@ export interface GeneratedPage {
 export const generatedPages: GeneratedPage[] = [
   {
     path: "/",
-    title: "Home",
-    description:
-      "Deliver HTTP callbacks from your tailnet to apps running locally, without letting production connect to developer machines.",
+    title: home.title,
+    description: home.description,
     markdown: "/index.md",
     sourcePath: "docs/index.md",
   },
@@ -65,25 +81,6 @@ export function generatedPage(path: string): GeneratedPage {
 
   return page;
 }
-
-/**
- * The Markdown representation of a generated page, for the pages that have one.
- */
-export function markdownFor(path: string): string {
-  const { markdown } = generatedPage(path);
-
-  if (!markdown) {
-    throw new Error(`${path} has no Markdown representation`);
-  }
-
-  return markdown;
-}
-
-/**
- * Where the docs live. Declared here rather than beside the content collection
- * because `astro.config.ts` imports this module before the content layer exists.
- */
-export const docsDir = resolve("../docs");
 
 /**
  * The source file behind a doc slug, relative to the repository root. It is

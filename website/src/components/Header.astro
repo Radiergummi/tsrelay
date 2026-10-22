@@ -19,6 +19,15 @@ const navLinks = [
     {href: "/download", label: "Download"},
 ];
 
+// The section the page belongs to. The docs are every page that is not the
+// API's or the download page; at build time the path carries the `.html` the
+// published URL does not.
+const path = currentPath.replace(/\.html$/, "");
+const section = !path || path === "/" ? undefined
+    : path === "/api" || path.startsWith("/api/") ? "/api"
+    : path === "/download" ? "/download"
+    : "/getting-started";
+
 const version = await latestVersion();
 ---
 <SkipLink />
@@ -35,7 +44,7 @@ const version = await latestVersion();
                 <a
                     href={href}
                     class="rounded-md px-3 py-1.5 text-sm transition-colors current:font-medium current:text-active inactive:text-muted-foreground inactive:hover:text-foreground"
-                    aria-current={currentPath.startsWith(href) ? "page" : undefined}
+                    aria-current={href === section ? "page" : undefined}
                 >
                     {label}
                 </a>

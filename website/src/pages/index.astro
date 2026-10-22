@@ -1,29 +1,22 @@
 ---
-import {getEntry} from "astro:content";
 import Head from "../components/Head.astro";
 import Header from "../components/Header.astro";
 import Hero from "../components/Hero.astro";
 import HomeSections from "../components/HomeSections.astro";
-import {markdownFor} from "../lib/pages";
+import {generatedPage} from "../lib/pages";
 import "../styles/global.css";
 
-const home = await getEntry("docs", "index");
-
-if (!home) {
-    throw new Error("no docs/index entry; the home page takes its description from it");
-}
-
-const markdownUrl = markdownFor("/");
+const {description, markdown} = generatedPage("/");
 ---
 <html lang="en">
 <head>
-    <Head title="tsrelay" description={home.data.description} isHome alternate={{href: markdownUrl}} />
+    <Head title="tsrelay" description={description} isHome alternate={markdown ? {href: markdown} : undefined} />
 </head>
 <body class="min-h-screen">
 <Header currentPath="/" />
 <div class="mx-auto max-w-shell">
     <main id="main-content" class="min-w-0" data-pagefind-ignore>
-        <Hero description={home.data.description} />
+        <Hero description={description} />
         <HomeSections />
     </main>
 </div>

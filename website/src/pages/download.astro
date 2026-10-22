@@ -70,9 +70,14 @@ const headings = [
         </tbody>
     </table>
 
-    <p>On macOS and Linux, put the binary on your <code>PATH</code> and make it executable:</p>
+    <p>
+        On macOS and Linux, this downloads the binary for your machine, makes it executable and puts it on
+        your <code>PATH</code>:
+    </p>
 
-    <pre><code>{`curl -fsSLo tsrelay ${binaryUrl("tsrelay_linux_amd64")}
+    <pre><code>{`os=$(uname -s | tr '[:upper:]' '[:lower:]')
+arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+curl -fsSLo tsrelay "${binaryUrl("tsrelay_")}\${os}_\${arch}"
 chmod +x tsrelay
 sudo mv tsrelay /usr/local/bin/`}</code></pre>
 
