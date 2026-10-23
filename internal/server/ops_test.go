@@ -70,6 +70,8 @@ func TestOps(t *testing.T) {
 		`tsrelay_hooks{ephemeral="false"} 1`,
 		`tsrelay_hooks{ephemeral="true"} 0`,
 		"\ntsrelay_held_calls 0\n",
+		"# TYPE tsrelay_inspector_bytes gauge",
+		"\ntsrelay_build_info{version=",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics lack %q:\n%s", want, body)

@@ -52,8 +52,11 @@ func TestPrometheusNames(t *testing.T) {
 			t.Errorf("metrics contain %q:\n%s", bad, body)
 		}
 	}
-	if !strings.Contains(body, "go_goroutine") {
-		t.Errorf("metrics lack Go runtime metrics:\n%s", body)
+	// Standard dashboards and alerts look for these names.
+	for _, want := range []string{"go_goroutine", "go_goroutines ", "go_memstats_heap_inuse_bytes ", "process_start_time_seconds "} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics lack %q:\n%s", want, body)
+		}
 	}
 }
 
