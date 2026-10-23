@@ -255,7 +255,7 @@ func (a *API) listHooks(w http.ResponseWriter, r *http.Request, id authz.Identit
 
 func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 	var req hooks.CreateRequest
-	if !decodeRequest(w, r, &req) {
+	if !decodeRequest(w, r, &req, 64<<10) {
 		return
 	}
 	dry := queryBool(r, "dryRun")
@@ -299,7 +299,7 @@ func (a *API) getHook(w http.ResponseWriter, r *http.Request, id authz.Identity)
 
 func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 	var req hooks.UpdateRequest
-	if !decodeRequest(w, r, &req) {
+	if !decodeRequest(w, r, &req, 64<<10) {
 		return
 	}
 	// The store answers not found to anyone but the owner, so decide 404

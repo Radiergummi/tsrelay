@@ -235,6 +235,10 @@ func TestTestRequest(t *testing.T) {
 			t.Errorf("%s: %d %+v, want 422 naming the field", field, resp.StatusCode, p)
 		}
 	}
+	// A test body may be larger than a hook's settings: up to 1 MiB.
+	if resp := e.call(moritz, "POST", "/hooks/"+h.ID+"/test", TestRequest{Body: strings.Repeat("x", 200<<10)}, nil); resp.StatusCode != 201 {
+		t.Errorf("200 KiB test body = %d, want 201", resp.StatusCode)
+	}
 	if resp := e.call(admin, "POST", "/hooks/"+h.ID+"/test", TestRequest{}, nil); resp.StatusCode != 403 {
 		t.Errorf("admin test request = %d, want 403", resp.StatusCode)
 	}

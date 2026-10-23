@@ -147,7 +147,7 @@ func (a *API) testCall(w http.ResponseWriter, r *http.Request, id authz.Identity
 		return
 	}
 	var req TestRequest
-	if !decodeRequest(w, r, &req) {
+	if !decodeRequest(w, r, &req, 1<<20) {
 		return
 	}
 	var errs hooks.ValidationError

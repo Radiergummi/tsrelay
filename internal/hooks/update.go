@@ -54,7 +54,7 @@ type UpdateRequest struct {
 	Ephemeral   Opt[bool]      `json:"ephemeral,omitzero"`
 	Public      Opt[bool]      `json:"public,omitzero"`
 	ExpiresAt   Opt[time.Time] `json:"expiresAt,omitzero"`
-	Settings    SettingsPatch  `json:"settings"`
+	Settings    SettingsPatch  `json:"settings,omitzero"`
 }
 
 // apply sets dst from o if o was given.

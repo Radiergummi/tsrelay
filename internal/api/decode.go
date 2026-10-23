@@ -10,14 +10,12 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
-const maxRequestBody = 64 << 10
-
 // decodeRequest reads a JSON request body into v. An unknown field is not
 // malformed JSON but a newer client talking to an older relay, so it is
 // answered 422 unsupported_field, naming the field the way invalid does.
-// It returns false once it has written a response.
-func decodeRequest(w http.ResponseWriter, r *http.Request, v any) bool {
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBody))
+// The body may be at most limit bytes. It returns false once it has written a response.
+func decodeRequest(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	dec.DisallowUnknownFields()
 	err := dec.Decode(v)
 	if err == nil {

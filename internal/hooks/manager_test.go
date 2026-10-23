@@ -254,3 +254,13 @@ func TestCreateRequestOmitsZeroFields(t *testing.T) {
 		t.Fatalf("got %s, want {\"path\":\"x\"}", b)
 	}
 }
+
+func TestUpdateRequestOmitsZeroFields(t *testing.T) {
+	b, err := json.Marshal(UpdateRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != `{}` {
+		t.Fatalf("got %s, want {}", b)
+	}
+}
