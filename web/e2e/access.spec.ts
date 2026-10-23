@@ -4,7 +4,7 @@ test("a user without a role sees the no-access page with a grant", async ({ page
   await page.goto(`${users.nobody}/`);
   await expect(page.getByText(/grants you no access to this relay/)).toBeVisible();
   await expect(page.locator("pre")).toContainText('"nobody@example.com"');
-  await expect(page.locator("pre")).toContainText('"mazetti.me/cap/relay"');
+  await expect(page.locator("pre")).toContainText('"tsrelay.mazetti.me/cap/relay"');
 });
 
 test("the CLI's inspect links redirect, and expired ones say so", async ({ page }) => {

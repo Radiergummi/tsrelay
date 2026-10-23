@@ -31,7 +31,7 @@ import (
 	"tailscale.com/types/logger"
 )
 
-const capName peercap.Cap = "mazetti.me/cap/relay"
+const capName peercap.Cap = "tsrelay.mazetti.me/cap/relay"
 
 func startNode(t *testing.T, ctx context.Context, controlURL, hostname string) *tsnet.Server {
 	t.Helper()

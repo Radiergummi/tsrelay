@@ -17,7 +17,7 @@ Every flag can also be set as an environment variable: `--ephemeral-grace` becom
 | `--funnel-port` | `443` | The Funnel port for public hooks: `443`, `8443` or `10000` |
 | `--funnel-max-body-bytes` | `26214400` (25 MiB) | Largest request body of a call from the internet |
 | `--advertise-tags` | `tag:tsrelay` | |
-| `--cap-name` | `mazetti.me/cap/relay` | Capability that carries grants |
+| `--cap-name` | `tsrelay.mazetti.me/cap/relay` | Capability that carries grants |
 | `--user-slug` | `local-part` | `moritz@example.com` becomes `~moritz`; `login` uses the full login |
 | `--user-slug-override` | | `alice@b.com=alice-b`, for collisions |
 | `--max-hooks-default` / `--max-tunnels-default` | `10` / `5` | Per user; grants can raise them with `maxHooks` / `maxTunnels` |

@@ -44,7 +44,7 @@ test("a user without a role sees what is missing and an example grant", async ()
   expect(await screen.findByText(/grants you no access to this relay/)).toBeInTheDocument();
   const grant = screen.getByText(/"grants"/);
   expect(grant.textContent).toContain('"nobody@example.com"');
-  expect(grant.textContent).toContain('"mazetti.me/cap/relay"');
+  expect(grant.textContent).toContain('"tsrelay.mazetti.me/cap/relay"');
 });
 
 // The relay refuses event streams without a role (403), so asking would

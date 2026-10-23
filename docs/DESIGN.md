@@ -119,7 +119,7 @@ For a tagged node, `UserProfile` is Tailscale's generic "tagged-devices" placeho
 
 ### 5.2 Capability schema
 
-The capability name is configurable with `--cap-name`. The default is **`mazetti.me/cap/relay`**. Each grant contributes one JSON object:
+The capability name is configurable with `--cap-name`. The default is **`tsrelay.mazetti.me/cap/relay`**. Each grant contributes one JSON object:
 
 ```jsonc
 {
@@ -146,9 +146,9 @@ A minimal policy that matches the zero-config defaults:
 "tagOwners": { "tag:tsrelay": ["autogroup:admin"] },
 "grants": [
   { "src": ["autogroup:member"], "dst": ["tag:tsrelay"], "ip": ["tcp:443"],
-    "app": { "mazetti.me/cap/relay": [{ "roles": ["receiver"] }] } },
+    "app": { "tsrelay.mazetti.me/cap/relay": [{ "roles": ["receiver"] }] } },
   { "src": ["tag:prod-worker"],  "dst": ["tag:tsrelay"], "ip": ["tcp:443"],
-    "app": { "mazetti.me/cap/relay": [{ "roles": ["sender"] }] } }
+    "app": { "tsrelay.mazetti.me/cap/relay": [{ "roles": ["sender"] }] } }
 ]
 ```
 
@@ -314,7 +314,7 @@ Every setting has a relay-wide default and a relay-wide maximum. Settings that a
 | `channel` | `default` | Must match one of the owner's receiver patterns |
 | `description` | empty | Free text, at most 280 characters |
 | `ephemeral` | `true` from `tsrelay http`, `false` from the UI or `hooks create` | Deleted after `ephemeralGrace` with no tunnel attached |
-| `expiresAt` | none | Capped by `maxHookTTL` |
+| `expiresAt` | none | Capped by `maxHookTtl` |
 | `attachPolicy` | `takeover` | Or `reject` |
 | `hostHeader` | `preserve` | Or `rewrite` |
 | `holdTimeout` | 30 s | 0 disables holding |
@@ -459,7 +459,7 @@ Relay-wide settings (flag / environment variable):
 | `--state-dir` / `TSRELAY_STATE_DIR` | `/var/lib/tsrelay` (binary: `$XDG_STATE_HOME/tsrelay`) |
 | `--tls` / `TSRELAY_TLS` | `true` (443 via `ListenTLS`); `false` uses plain HTTP on 80 |
 | `--advertise-tags` | `tag:tsrelay` |
-| `--cap-name` | `mazetti.me/cap/relay` |
+| `--cap-name` | `tsrelay.mazetti.me/cap/relay` |
 | `--user-slug` | `local-part` |
 | `--revalidate-interval` | 60 s |
 | `--max-tunnels-default` / `--max-hooks-default` | 5 / 10 per user |

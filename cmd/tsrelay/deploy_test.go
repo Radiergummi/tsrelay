@@ -124,7 +124,7 @@ func TestExamplePolicy(t *testing.T) {
 	s := readDeployFile(t, "deploy/policy.example.hujson")
 	for _, want := range []string{
 		"tag:tsrelay",
-		"mazetti.me/cap/relay",
+		"tsrelay.mazetti.me/cap/relay",
 		`"roles": ["receiver"]`,
 		`"roles": ["sender"]`,
 		"funnel",

@@ -46,7 +46,7 @@ func newServeCmd(c *cli) *cobra.Command {
 	useTLS := fs.Bool("tls", true, "serve HTTPS on 443 with a tailnet certificate; false serves plain HTTP on 80")
 	tags := listFlag{Values: []string{"tag:tsrelay"}}
 	fs.Var(&tags, "advertise-tags", "tags the relay node advertises (comma-separated)")
-	capName := fs.String("cap-name", "mazetti.me/cap/relay", "application capability carrying relay grants")
+	capName := fs.String("cap-name", "tsrelay.mazetti.me/cap/relay", "application capability carrying relay grants")
 	slugMode := fs.String("user-slug", string(hooks.SlugLocalPart), `how URL slugs derive from logins: "local-part" or "login"`)
 	overrides := mapFlag{}
 	fs.Var(overrides, "user-slug-override", "login=slug pairs that resolve slug collisions (repeatable)")

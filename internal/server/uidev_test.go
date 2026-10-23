@@ -74,7 +74,7 @@ func TestUIDev(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := "http://127.0.0.1:8099"
-	s := New(Config{BaseURL: base, PublicBaseURL: "https://tsrelay.example.ts.net", AllowedHosts: []string{"127.0.0.1", "localhost"}, CapName: "mazetti.me/cap/relay"},
+	s := New(Config{BaseURL: base, PublicBaseURL: "https://tsrelay.example.ts.net", AllowedHosts: []string{"127.0.0.1", "localhost"}, CapName: "tsrelay.mazetti.me/cap/relay"},
 		byListener{}, mgr, audit.New(slog.New(slog.NewTextHandler(os.Stderr, nil))))
 	defer s.Close()
 

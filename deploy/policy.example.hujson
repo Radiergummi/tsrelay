@@ -16,7 +16,7 @@
       "app": {
         // public lets these users make hooks reachable from the internet
         // (only with --funnel); drop it to keep hooks tailnet-only.
-        "mazetti.me/cap/relay": [{"roles": ["receiver"], "public": true}],
+        "tsrelay.mazetti.me/cap/relay": [{"roles": ["receiver"], "public": true}],
       },
     },
     // Who may send callbacks to a hook.
@@ -25,7 +25,7 @@
       "dst": ["tag:tsrelay"],
       "ip": ["tcp:443"],
       "app": {
-        "mazetti.me/cap/relay": [{"roles": ["sender"]}],
+        "tsrelay.mazetti.me/cap/relay": [{"roles": ["sender"]}],
       },
     },
   ],

@@ -18,7 +18,7 @@ import (
 
 var uiOther = identify.User("desk", "other@example.com", 2, `{"roles":["receiver"]}`)
 
-const testCap = "mazetti.me/cap/relay"
+const testCap = "tsrelay.mazetti.me/cap/relay"
 
 // page GETs path as id the way a browser does, without following
 // redirects, and returns the response with its body read into a string.
