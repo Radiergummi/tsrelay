@@ -59,8 +59,20 @@ type Manager struct {
 	policy Policy
 	now    func() time.Time
 
+	// Changes take wmu for their whole run, store write included, and mu
+	// only to change the fields below. So a slow store write, such as an
+	// fsync on a degraded volume, never holds up routing a call. Holding
+	// wmu, a change may read hooks and policy without mu: only it writes them.
+	wmu   sync.Mutex
 	mu    sync.RWMutex
 	hooks map[ID]Hook
+}
+
+// put records h in memory. The caller holds wmu.
+func (m *Manager) put(h Hook) {
+	m.mu.Lock()
+	m.hooks[h.ID] = h
+	m.mu.Unlock()
 }
 
 // NewManager loads all hooks from store.
@@ -81,6 +93,8 @@ func (m *Manager) Slug(login string) (string, error) { return m.slugs.Slug(login
 
 // SetPolicy replaces the relay-wide hook setting defaults and maxima.
 func (m *Manager) SetPolicy(p Policy) {
+	m.wmu.Lock()
+	defer m.wmu.Unlock()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.policy = p
@@ -167,8 +181,8 @@ func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRe
 		req.Channel = authz.DefaultChannel
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.wmu.Lock()
+	defer m.wmu.Unlock()
 	owned := m.ownedLocked(owner.UserID)
 	var errs ValidationError
 	if req.Path == "" {
@@ -216,7 +230,7 @@ func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRe
 	if err := m.store.PutHook(ctx, h); err != nil {
 		return Hook{}, err
 	}
-	m.hooks[h.ID] = h
+	m.put(h)
 	return h, nil
 }
 
@@ -243,6 +257,7 @@ func (m *Manager) freePathLocked(owned []Hook) string {
 	}
 }
 
+// ownedLocked needs mu or wmu.
 func (m *Manager) ownedLocked(user tailcfg.UserID) []Hook {
 	var out []Hook
 	for _, h := range m.hooks {
@@ -286,13 +301,14 @@ func sortHooks(hs []Hook) []Hook {
 }
 
 // DeleteIf deletes the hook id if cond holds for it as stored, deciding
-// and deleting under one lock so a concurrent update cannot slip between
-// the two. It returns the stored hook and whether it was deleted. Only the
-// lifecycle's Delete and Reap may call it: they keep the tunnels serving the
-// hook and the calls waiting for it consistent with the store.
+// and deleting under one lock so a concurrent change cannot slip between
+// the two. cond runs without mu held, so it may take locks that are held
+// while calling Get. It returns the stored hook and whether it was deleted.
+// Only the lifecycle's Delete and Reap may call it: they keep the tunnels
+// serving the hook and the calls waiting for it consistent with the store.
 func (m *Manager) DeleteIf(ctx context.Context, id ID, cond func(Hook) bool) (Hook, bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.wmu.Lock()
+	defer m.wmu.Unlock()
 	h, ok := m.hooks[id]
 	if !ok {
 		return Hook{}, false, ErrNotFound
@@ -303,7 +319,9 @@ func (m *Manager) DeleteIf(ctx context.Context, id ID, cond func(Hook) bool) (Ho
 	if err := m.store.DeleteHook(ctx, id); err != nil {
 		return h, false, err
 	}
+	m.mu.Lock()
 	delete(m.hooks, id)
+	m.mu.Unlock()
 	return h, true, nil
 }
 

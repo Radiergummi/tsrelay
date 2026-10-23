@@ -28,12 +28,17 @@ func (l *Lifecycle) Reap(ctx context.Context, grace time.Duration) error {
 		}
 	}
 
-	l.mu.Lock()
 	var removed []removal
 	var err error
-	// Decide under l.mu, not on the listing: a tunnel may have attached
-	// since.
-	reapable := func(h hooks.Hook) bool { return h.Expired(now) || l.idleLocked(h, now, grace) }
+	// Decide on the stored hook, not on the listing: a tunnel may have
+	// attached since. l.mu is not held across the store delete, which may be
+	// slow, so a tunnel can still attach before the hook is forgotten; the
+	// forgetting detaches it again.
+	reapable := func(h hooks.Hook) bool {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		return h.Expired(now) || l.idleLocked(h, now, grace)
+	}
 	for _, id := range candidates {
 		var cur hooks.Hook
 		var ok bool
@@ -46,10 +51,11 @@ func (l *Lifecycle) Reap(ctx context.Context, grace time.Duration) error {
 			break
 		}
 		if ok {
+			l.mu.Lock()
 			removed = append(removed, l.forgetLocked(cur))
+			l.mu.Unlock()
 		}
 	}
-	l.mu.Unlock()
 
 	for _, r := range removed {
 		l.finishRemoval(ctx, r, audit.HookExpire)

@@ -54,8 +54,8 @@ func (m *Manager) RoutePublic(token string) (Hook, bool) {
 // RotatePublicToken gives the public hook id owned by owner a new token, so
 // its old public URL stops working.
 func (m *Manager) RotatePublicToken(ctx context.Context, owner authz.Identity, id ID) (Hook, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.wmu.Lock()
+	defer m.wmu.Unlock()
 	h, ok := m.hooks[id]
 	if !ok || access.View(owner, h.Access()) != access.Owner {
 		return Hook{}, ErrNotFound
@@ -67,6 +67,6 @@ func (m *Manager) RotatePublicToken(ctx context.Context, owner authz.Identity, i
 	if err := m.store.PutHook(ctx, h); err != nil {
 		return Hook{}, err
 	}
-	m.hooks[id] = h
+	m.put(h)
 	return h, nil
 }

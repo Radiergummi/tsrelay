@@ -130,8 +130,8 @@ func (m *Manager) CheckUpdate(ctx context.Context, owner authz.Identity, id ID, 
 }
 
 func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req UpdateRequest, dry bool) (Hook, []string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.wmu.Lock()
+	defer m.wmu.Unlock()
 	cur, ok := m.hooks[id]
 	if !ok || access.View(owner, cur.Access()) != access.Owner {
 		return Hook{}, nil, ErrNotFound
@@ -204,6 +204,6 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 	if err := m.store.PutHook(ctx, h); err != nil {
 		return Hook{}, nil, err
 	}
-	m.hooks[id] = h
+	m.put(h)
 	return h, changed, nil
 }

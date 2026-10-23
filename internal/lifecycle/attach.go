@@ -138,7 +138,8 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 	for _, h := range tk.requested {
 		cur, ok := l.cfg.Hooks.Get(h.ID)
 		if !ok {
-			// Delete and Reap detach under l.mu, so a deleted hook is served by no tunnel.
+			// Delete and Reap forget a hook under l.mu once it left the store,
+			// detaching any tunnel attached meanwhile, so it stays served by none.
 			goneIDs = append(goneIDs, h.ID)
 			continue
 		}

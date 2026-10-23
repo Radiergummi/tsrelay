@@ -39,12 +39,14 @@ type Config struct {
 // most one tunnel; attaching a newer tunnel replaces the older one
 // ("takeover"). mu guards the registry state and detached-since.
 //
-// Locks are taken in the order announce → owner attach lock → mu →
-// hooks.Manager.mu; nothing is sent, logged or published while mu is held.
+// Locks are taken in the order announce → owner attach lock → the hook
+// store's write lock → mu → hooks.Manager.mu; nothing is sent, logged or
+// published while mu is held, and mu is never held across a store write.
 // announce is held across a hook's change in the store and its
 // announcement, so changes are announced in the order they were made. Under
 // mu:
-//   - byHook only names stored hooks, because hooks are deleted under mu;
+//   - byHook only names stored hooks, except for a hook just deleted from
+//     the store and not yet forgotten (see forgetLocked);
 //   - detached only names stored hooks that no tunnel serves.
 type Lifecycle struct {
 	announce  sync.Mutex // see above; held by Create, Update, RotatePublicToken, Delete and Reap
@@ -88,8 +90,9 @@ func (l *Lifecycle) Lookup(id hooks.ID) (*tunnel.Tunnel, bool) {
 // necessary. Only an attach for id itself wakes it. It fails with
 // ErrHookGone if the hook does not exist, or is deleted while waiting, and
 // with the context's cause when ctx is done. The wait registers and checks
-// the hook under the same lock a delete takes, so a delete cannot slip
-// between the two and strand the waiter.
+// the hook under l.mu, and a delete forgets the hook under l.mu after it
+// left the store, so a delete cannot slip between the two and strand the
+// waiter.
 func (l *Lifecycle) Wait(ctx context.Context, id hooks.ID) (*tunnel.Tunnel, error) {
 	for {
 		l.mu.Lock()
