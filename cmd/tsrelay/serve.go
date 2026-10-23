@@ -57,7 +57,7 @@ func newServeCmd(c *cli) *cobra.Command {
 	concurrency := fs.Int("tunnel-concurrency", tunnel.DefaultConcurrency, "concurrent calls per tunnel")
 	revalidate := fs.Duration("revalidate-interval", time.Minute, "how often attached tunnels and open event streams are re-authorized")
 	shutdownTimeout := fs.Duration("shutdown-timeout", 20*time.Second, "how long calls already delivered get to finish when the relay stops; keep it below the pod's termination grace period")
-	opsListen := fs.String("ops-listen", "", "host address for /healthz, /readyz and /metrics, e.g. :9090; never on the tailnet (empty: off)")
+	opsListen := fs.String("ops-listen", "", "host address for /healthz, /readyz and /metrics, e.g. :9090, unauthenticated; never on the relay's tailnet node (empty: off)")
 	opsPprof := fs.Bool("ops-pprof", false, "serve /debug/pprof/ on the ops listener")
 	funnel := fs.Bool("funnel", false, "serve hooks their owners made public on the internet, through Tailscale Funnel")
 	funnelPort := fs.Int("funnel-port", 443, "the Funnel port for public hooks: 443, 8443 or 10000")
@@ -287,7 +287,10 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 	hs := &http.Server{
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
-		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
+		// Idle keep-alive connections of senders; tunnels are hijacked and
+		// event streams are requests, so neither is cut by it.
+		IdleTimeout: 60 * time.Second,
+		ErrorLog:    slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
 	var ps *http.Server
 	if publicLn != nil {

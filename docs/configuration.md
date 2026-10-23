@@ -45,7 +45,7 @@ Flag names follow one scheme, so a prefix tells you what a flag governs:
 | `--funnel` | `false` | Serve hooks their owners made public on the internet, through Tailscale Funnel; requires `--tls` |
 | `--funnel-port` | `443` | The Funnel port for public hooks: `443`, `8443` or `10000` |
 | `--funnel-max-body-bytes` | `26214400` (25 MiB) | Largest request body of a call from the internet |
-| `--ops-listen` | off | Host address (for example `:9090`) for `/healthz`, `/readyz` and `/metrics`; never on the tailnet |
+| `--ops-listen` | off | Address for `/healthz`, `/readyz` and `/metrics` (for example `:9090`), without authentication. Never on the relay's tailnet node; on a host that runs `tailscaled`, bind to a specific address such as `127.0.0.1:9090`, since `:9090` includes the host's tailnet address |
 | `--ops-pprof` | `false` | Serve Go's profiler under `/debug/pprof/` on the ops listener |
 | `--otel` | `false` | Export traces and metrics over OTLP/HTTP; see [Tracing](observability.md#tracing) |
 | `--otel-propagation` | `true` | With `--otel`: continue a sender's `traceparent` and pass the relay's own to the app, so one trace spans sender, relay and app; `false` forwards trace headers untouched |
