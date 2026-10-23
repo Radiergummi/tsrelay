@@ -129,7 +129,7 @@ func validateDescription(description string) []FieldError {
 	return nil
 }
 
-// validateExpiry checks expiresAt against now and the owner's maxHookTTL.
+// validateExpiry checks expiresAt against now and the owner's maxHookTtl.
 // Ephemeral hooks need no expiry, because they end with their tunnel.
 func validateExpiry(expiresAt *time.Time, ephemeral bool, now time.Time, maxTTL time.Duration) []FieldError {
 	switch {
@@ -140,7 +140,7 @@ func validateExpiry(expiresAt *time.Time, ephemeral bool, now time.Time, maxTTL 
 	case !expiresAt.After(now):
 		return []FieldError{{"expiresAt", "must be in the future"}}
 	case maxTTL > 0 && expiresAt.Sub(now) > maxTTL:
-		return []FieldError{{"expiresAt", fmt.Sprintf("must be within %s from now (your grants' maxHookTTL)", maxTTL)}}
+		return []FieldError{{"expiresAt", fmt.Sprintf("must be within %s from now (your grants' maxHookTtl)", maxTTL)}}
 	}
 	return nil
 }

@@ -33,7 +33,7 @@ Each capability value is an object with these fields:
 | `channels` | Channel patterns the roles apply to; `*` matches anything, dots included. Default `["*"]` |
 | `maxHooks` | Receivers: hooks owned at once (relay default 10) |
 | `maxTunnels` | Receivers: tunnels attached at once (relay default 5) |
-| `maxHookTTL` | Receivers: the longest a persistent hook may live, as a Go duration like `720h` (relay default: unlimited) |
+| `maxHookTtl` | Receivers: the longest a persistent hook may live, as a Go duration like `720h` (relay default: unlimited) |
 | `public` | Receivers: `true` lets them make their hooks reachable from the internet; see [Serving public hooks](running-a-relay.md#serving-public-hooks) |
 
 ## Roles

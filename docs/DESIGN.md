@@ -127,7 +127,7 @@ The capability name is configurable with `--cap-name`. The default is **`mazetti
   "channels":   ["prod", "staging.*"], // channel patterns; default ["*"]
   "maxHooks":   10,                    // receiver: hooks owned at once
   "maxTunnels": 5,                     // receiver: tunnels attached at once
-  "maxHookTTL": "720h",                // receiver: cap on a hook's expiry; Go duration
+  "maxHookTtl": "720h",                // receiver: cap on a hook's expiry; Go duration
   "public": true                       // receiver: may make hooks in these channels public (§19)
 }
 ```

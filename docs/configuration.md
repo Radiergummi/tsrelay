@@ -21,7 +21,7 @@ Every flag can also be set as an environment variable: `--ephemeral-grace` becom
 | `--user-slug` | `local-part` | `moritz@example.com` becomes `~moritz`; `login` uses the full login |
 | `--user-slug-override` | | `alice@b.com=alice-b`, for collisions |
 | `--max-hooks-default` / `--max-tunnels-default` | `10` / `5` | Per user; grants can raise them with `maxHooks` / `maxTunnels` |
-| `--max-hook-ttl-default` | unlimited | Longest a persistent hook may live; grants can raise it with `maxHookTTL` |
+| `--max-hook-ttl-default` | unlimited | Longest a persistent hook may live; grants can raise it with `maxHookTtl` |
 | `--ephemeral-grace` | `10m` | How long an ephemeral hook survives without its tunnel |
 | `--tunnel-concurrency` | `32` | Concurrent calls per tunnel |
 | `--hold-queue` | `100` | Calls per hook that may wait for a tunnel to attach at once |

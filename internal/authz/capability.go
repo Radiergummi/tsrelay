@@ -72,9 +72,17 @@ type grantValue struct {
 	Channels   []string  `json:"channels"`
 	MaxHooks   *int      `json:"maxHooks"`
 	MaxTunnels *int      `json:"maxTunnels"`
-	MaxHookTTL *duration `json:"maxHookTTL"`
+	MaxHookTTL *duration `json:"maxHookTtl"`
 	Public     bool      `json:"public"`
+	// Requires names the features a relay must support to apply this value
+	// correctly. A relay that lacks one skips the value rather than apply it
+	// with a narrower meaning than the policy author intended.
+	Requires []string `json:"requires"`
 }
+
+// grantFeatures are the features of the grant format this relay supports,
+// for values to name in "requires". There are none yet.
+var grantFeatures = map[string]bool{}
 
 type duration time.Duration
 
@@ -95,23 +103,31 @@ func (d *duration) UnmarshalJSON(b []byte) error {
 }
 
 // Parse merges the raw JSON values of the relay capability. Each value is
-// parsed on its own: an invalid value is skipped and reported in errs while
-// the others still apply. Roles and channels are combined by union, per role.
-// A limit a value does not set counts as the default; the largest limit wins,
-// so grants can raise limits above the defaults but never lower them.
+// parsed on its own: an invalid value, or one that "requires" a feature this
+// relay lacks, is skipped and reported in errs while the others still apply.
+// Unknown roles are reported too, but the rest of their value applies. Roles
+// and channels are combined by union, per role. An absent "channels" means
+// every channel; an empty one matches none. Limits are per user and come from
+// values that grant the receiver role only. A limit a value does not set
+// counts as the default; the largest limit wins, so grants can raise limits
+// above the defaults but never lower them.
 func Parse(values []tailcfg.RawMessage, defaults Limits) (eff Effective, errs []error) {
 	eff.Patterns = map[Role][]string{}
 	eff.Limits = defaults
 	for i, rv := range values {
-		v, err := parseValue(rv)
+		v, notes, err := parseValue(rv)
+		for _, note := range notes {
+			errs = append(errs, fmt.Errorf("capability value %d: %w", i, note))
+		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("capability value %d: %w", i, err))
 			continue
 		}
 		channels := v.Channels
-		if len(channels) == 0 {
+		if channels == nil {
 			channels = []string{"*"}
 		}
+		isReceiver := slices.Contains(v.Roles, RoleReceiver)
 		for _, r := range v.Roles {
 			for _, c := range channels {
 				if !slices.Contains(eff.Patterns[r], c) {
@@ -119,16 +135,16 @@ func Parse(values []tailcfg.RawMessage, defaults Limits) (eff Effective, errs []
 				}
 			}
 		}
-		if v.MaxHooks != nil {
+		if isReceiver && v.MaxHooks != nil {
 			eff.Limits.MaxHooks = max(eff.Limits.MaxHooks, *v.MaxHooks)
 		}
-		if v.MaxTunnels != nil {
+		if isReceiver && v.MaxTunnels != nil {
 			eff.Limits.MaxTunnels = max(eff.Limits.MaxTunnels, *v.MaxTunnels)
 		}
-		if v.MaxHookTTL != nil && eff.Limits.MaxHookTTL != 0 {
+		if isReceiver && v.MaxHookTTL != nil && eff.Limits.MaxHookTTL != 0 {
 			eff.Limits.MaxHookTTL = max(eff.Limits.MaxHookTTL, time.Duration(*v.MaxHookTTL))
 		}
-		if v.Public && slices.Contains(v.Roles, RoleReceiver) {
+		if v.Public && isReceiver {
 			for _, c := range channels {
 				if !slices.Contains(eff.PublicPatterns, c) {
 					eff.PublicPatterns = append(eff.PublicPatterns, c)
@@ -139,24 +155,37 @@ func Parse(values []tailcfg.RawMessage, defaults Limits) (eff Effective, errs []
 	return eff, errs
 }
 
-func parseValue(rv tailcfg.RawMessage) (grantValue, error) {
-	var v grantValue
+// parseValue decodes one value. notes are non-fatal findings: the value still
+// applies, without the offending part.
+func parseValue(rv tailcfg.RawMessage) (v grantValue, notes []error, err error) {
 	if err := json.Unmarshal([]byte(rv), &v); err != nil {
-		return v, err
+		return v, nil, err
 	}
+	for _, f := range v.Requires {
+		if !grantFeatures[f] {
+			return v, nil, fmt.Errorf("requires unknown feature %q", f)
+		}
+	}
+	v.Roles = slices.DeleteFunc(v.Roles, func(r Role) bool {
+		if r == RoleReceiver || r == RoleSender || r == RoleAdmin {
+			return false
+		}
+		notes = append(notes, fmt.Errorf("unknown role %q", r))
+		return true
+	})
 	if len(v.Roles) == 0 {
-		return v, errors.New("no roles")
+		return v, notes, errors.New("no roles")
 	}
 	for _, c := range v.Channels {
 		if !ValidPattern(c) {
-			return v, fmt.Errorf("invalid channel pattern %q", c)
+			return v, notes, fmt.Errorf("invalid channel pattern %q", c)
 		}
 	}
 	if v.MaxHooks != nil && *v.MaxHooks < 0 {
-		return v, errors.New("maxHooks must not be negative")
+		return v, notes, errors.New("maxHooks must not be negative")
 	}
 	if v.MaxTunnels != nil && *v.MaxTunnels < 0 {
-		return v, errors.New("maxTunnels must not be negative")
+		return v, notes, errors.New("maxTunnels must not be negative")
 	}
-	return v, nil
+	return v, notes, nil
 }
