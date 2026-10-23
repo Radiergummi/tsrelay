@@ -275,3 +275,18 @@ func TestDescriptionRefusesControls(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Every timestamp the API returns is UTC, also one the client sent with
+// an offset.
+func TestExpiresAtIsUTC(t *testing.T) {
+	m := newManager(t, t.TempDir())
+	at := time.Now().Add(time.Hour).In(time.FixedZone("CEST", 2*3600))
+	h, err := m.Create(ctx, receiver, CreateRequest{ExpiresAt: &at})
+	if err != nil || h.ExpiresAt.Location() != time.UTC || !h.ExpiresAt.Equal(at) {
+		t.Fatalf("create: %v %v", h.ExpiresAt, err)
+	}
+	h, _, err = m.Update(ctx, receiver, h.ID, UpdateRequest{ExpiresAt: Opt[time.Time]{Set: true, Value: &at}})
+	if err != nil || h.ExpiresAt.Location() != time.UTC {
+		t.Fatalf("update: %v %v", h.ExpiresAt, err)
+	}
+}

@@ -186,6 +186,9 @@ func (s schemas) check(schema, v any, path string) []string {
 	if enum, ok := sc["enum"].([]any); ok && !slices.ContainsFunc(enum, func(e any) bool { return fmt.Sprint(e) == fmt.Sprint(v) || e == nil && v == nil }) {
 		problems = append(problems, fmt.Sprintf("%s: %v is not one of %v", path, v, enum))
 	}
+	if ts, ok := v.(string); ok && sc["format"] == "date-time" && !strings.HasSuffix(ts, "Z") {
+		problems = append(problems, fmt.Sprintf("%s: %s is not in UTC", path, ts))
+	}
 	switch v := v.(type) {
 	case map[string]any:
 		props, _ := sc["properties"].(map[string]any)

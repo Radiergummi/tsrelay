@@ -183,7 +183,10 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 	if h.Public {
 		errs = append(errs, validatePublic(owner.Grants, h.Channel)...)
 	}
-	if apply(&h.ExpiresAt, req.ExpiresAt); req.ExpiresAt.Set || req.Ephemeral.Set {
+	if apply(&h.ExpiresAt, req.ExpiresAt); h.ExpiresAt != nil && req.ExpiresAt.Set {
+		h.ExpiresAt = new(h.ExpiresAt.UTC()) // timestamps are UTC, whatever offset the client sent
+	}
+	if req.ExpiresAt.Set || req.Ephemeral.Set {
 		errs = append(errs, validateExpiry(h.ExpiresAt, h.Ephemeral, m.now(), owner.Grants.Limits.MaxHookTTL)...)
 	}
 

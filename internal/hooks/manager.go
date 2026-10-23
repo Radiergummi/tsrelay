@@ -191,6 +191,9 @@ func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRe
 	if req.Channel == "" {
 		req.Channel = authz.DefaultChannel
 	}
+	if req.ExpiresAt != nil {
+		req.ExpiresAt = new(req.ExpiresAt.UTC()) // timestamps are UTC, whatever offset the client sent
+	}
 
 	m.wmu.Lock()
 	defer m.wmu.Unlock()
