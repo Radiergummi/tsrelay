@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/authz"
@@ -140,7 +141,17 @@ func validateDescription(description string) []FieldError {
 	if len(description) > maxDescription {
 		return []FieldError{{"description", fmt.Sprintf("must be at most %d characters", maxDescription)}}
 	}
+	if strings.ContainsFunc(description, Unprintable) {
+		return []FieldError{{"description", "must be one line without control or bidirectional formatting characters"}}
+	}
 	return nil
+}
+
+// Unprintable reports whether r may change how a terminal shows the text
+// around it: a control character (C0, DEL, C1, which start escape
+// sequences) or a bidirectional formatting character.
+func Unprintable(r rune) bool {
+	return unicode.IsControl(r) || r >= '\u202a' && r <= '\u202e' || r >= '\u2066' && r <= '\u2069' || r == '\u200e' || r == '\u200f' || r == '\u061c'
 }
 
 // validateExpiry checks expiresAt against now and the owner's maxHookTtl.

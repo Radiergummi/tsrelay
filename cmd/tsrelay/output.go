@@ -8,10 +8,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/client"
+	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"github.com/charmbracelet/x/ansi"
@@ -184,6 +186,7 @@ func (o *output) call(c client.Call) {
 // with a clickable call ID when fancy. A status from the relay's 56x range
 // is followed by its name, and a response that broke off by "aborted".
 func (o *output) callLine(s stream, c client.Call, link string) string {
+	c.Path, c.Sender = printable(c.Path), printable(c.Sender) // senders choose these
 	ts := o.now().Format("15:04:05")
 	dur := c.Duration.Round(time.Millisecond).String()
 	status := fmt.Sprintf("%3d", c.Status)
@@ -332,4 +335,30 @@ func errText(err error) string {
 	default:
 		return err.Error()
 	}
+}
+
+// printable escapes the characters of s that a terminal would act on, such
+// as the escape sequences a sender may put in a call's path, as \xNN or
+// \uNNNN. A byte that isn't UTF-8 is escaped too: some terminals read 0x9b
+// as the start of a control sequence.
+func printable(s string) string {
+	if utf8.ValidString(s) && !strings.ContainsFunc(s, hooks.Unprintable) {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		r, n := utf8.DecodeRuneInString(s[i:])
+		switch {
+		case r == utf8.RuneError && n == 1:
+			fmt.Fprintf(&b, "\\x%02x", s[i])
+		case !hooks.Unprintable(r):
+			b.WriteRune(r)
+		case r < 0x80:
+			fmt.Fprintf(&b, "\\x%02x", r)
+		default:
+			fmt.Fprintf(&b, "\\u%04x", r)
+		}
+		i += n
+	}
+	return b.String()
 }

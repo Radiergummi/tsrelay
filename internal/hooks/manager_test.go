@@ -264,3 +264,14 @@ func TestUpdateRequestOmitsZeroFields(t *testing.T) {
 		t.Fatalf("got %s, want {}", b)
 	}
 }
+
+func TestDescriptionRefusesControls(t *testing.T) {
+	m := newManager(t, t.TempDir())
+	for _, d := range []string{"a\x1b[2Jb", "line\nbreak", "bidi \u202e", "c1 \u009b"} {
+		_, err := m.Create(ctx, receiver, CreateRequest{Description: d})
+		fieldErr(t, err, "description")
+	}
+	if _, err := m.Create(ctx, receiver, CreateRequest{Description: "Stripe – live 🚀"}); err != nil {
+		t.Fatal(err)
+	}
+}

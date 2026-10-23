@@ -53,7 +53,7 @@ func (c *cli) completeHooks(max int) cobra.CompletionFunc {
 			if slices.ContainsFunc(args, func(a string) bool { return a == h.ID || strings.Trim(a, "/") == h.Path }) {
 				continue
 			}
-			help := h.Description
+			help := printable(h.Description)
 			if help == "" {
 				help = "channel " + h.Channel
 			}

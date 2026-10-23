@@ -204,3 +204,19 @@ func TestOutputCallLinks(t *testing.T) {
 		t.Fatalf("call event = %+v, %v", e, err)
 	}
 }
+
+// A sender controls the path and may put terminal escapes in it, such as
+// OSC 52, which writes the clipboard. They are printed escaped.
+func TestCallLineEscapesControls(t *testing.T) {
+	for _, fancy := range []string{"0", "1"} {
+		t.Setenv("TTY_FORCE", fancy)
+		o, _, stderr := testOutput(t, false)
+		o.call(client.Call{Method: "POST", Path: "/\x1b]52;c;aGk=\a\x1b[2J\u202e", Status: 200, Sender: "tag:ci\x9b"})
+		// The fancy line has escapes of its own, for styling; none is an OSC.
+		got := stderr.String()
+		if strings.Contains(got, "\x1b]") || strings.ContainsAny(got, "\a\u202e") || strings.Contains(got, "\x9b") ||
+			!strings.Contains(got, `/\x1b]52;c;aGk=\x07\x1b[2J\u202e`) || !strings.Contains(got, `tag:ci\x9b`) {
+			t.Fatalf("TTY_FORCE=%s: line = %q", fancy, got)
+		}
+	}
+}
