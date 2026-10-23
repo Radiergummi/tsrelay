@@ -20,6 +20,7 @@ import (
 	"charm.land/fang/v2"
 	"github.com/Radiergummi/tsrelay/internal/atomicfile"
 	"github.com/Radiergummi/tsrelay/internal/client"
+	"github.com/Radiergummi/tsrelay/internal/install"
 	"github.com/spf13/cobra"
 	"golang.org/x/mod/semver"
 )
@@ -86,9 +87,13 @@ func (c *cli) update(ctx context.Context, check, yes, force bool) error {
 		return &cliError{Title: "The relay is a dev build", Code: "relay_dev",
 			Reason: "It runs no release, so there is no version of tsrelay to match.",
 			Fixes:  []string{"Ask the relay's operator to run a release"}}
+	case !semver.IsValid(me.Version):
+		return &cliError{Title: "The relay's version is unknown", Code: "relay_version_unknown",
+			Reason: fmt.Sprintf("The relay says it runs %q, which is no release version, so there is no release to install.", me.Version),
+			Fixes:  []string{"Ask the relay's operator to run a release"}}
 	case me.Version == version:
 		return report(errStream.glyph(errStream.style(styleOK, "●")) + fmt.Sprintf("tsrelay %s is the relay's version already", version))
-	case check && semver.IsValid(me.Version) && semver.Compare(version, me.Version) > 0:
+	case check && semver.Compare(version, me.Version) > 0:
 		// This tsrelay is the newer one: nothing to update to.
 		return report(fmt.Sprintf("Relay is %s, you have %s, which is newer", me.Version, version))
 	case check:
@@ -96,7 +101,7 @@ func (c *cli) update(ctx context.Context, check, yes, force bool) error {
 			return err
 		}
 		return exitCodeError(exitUpdateAvailable)
-	case !force && semver.IsValid(me.Version) && semver.Compare(version, me.Version) > 0:
+	case !force && semver.Compare(version, me.Version) > 0:
 		return &cliError{Title: "This tsrelay is newer than the relay", Code: "downgrade",
 			Reason: fmt.Sprintf("This tsrelay (%s) is newer than the relay (%s); updating would replace it with an older version.", version, me.Version),
 			Fixes:  []string{c.updateCommand() + " --force"}}
@@ -125,7 +130,7 @@ func (c *cli) update(ctx context.Context, check, yes, force bool) error {
 			return report(fmt.Sprintf("Left tsrelay %s as it is", version))
 		}
 	}
-	err = download(ctx, relayAPI.HTTP, c.base, f)
+	err = download(ctx, relayAPI.HTTP, me.Version, f)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -178,10 +183,9 @@ func installCommand(base string) string {
 	return "curl -fsSL " + base + "/install.sh | sh"
 }
 
-// download writes the relay's tsrelay for this platform to f, and checks
-// it against the release's checksum. The relay redirects
-// /download/{os}/{arch} to the release asset; the checksum is next to it,
-// at checksumURL(asset).
+// releases is where tsrelay update downloads from; tests point it elsewhere.
+var releases = install.Releases
+
 // checksumURL is where a release keeps asset's checksum: its URL without
 // ".exe", plus ".sha256", as the release workflow names it and install.sh
 // and install.ps1 fetch it.
@@ -189,11 +193,13 @@ func checksumURL(asset string) string {
 	return strings.TrimSuffix(asset, ".exe") + ".sha256"
 }
 
-func download(ctx context.Context, hc *http.Client, base string, f *os.File) error {
-	asset, err := assetURL(ctx, hc, base+"/download/"+runtime.GOOS+"/"+runtime.GOARCH)
-	if err != nil {
-		return err
-	}
+// download writes the release ver of tsrelay for this platform to f, and
+// checks it against the release's checksum. Both come from the releases,
+// not from the relay: a compromised relay can then only offer a genuine
+// release, and the version checks before this one keep it from being an
+// older one.
+func download(ctx context.Context, hc *http.Client, ver string, f *os.File) error {
+	asset := releases + "/download/" + ver + "/" + install.AssetName(runtime.GOOS, runtime.GOARCH)
 	resp, err := fetch(ctx, hc, asset)
 	if err != nil {
 		return err
@@ -220,28 +226,6 @@ func download(ctx context.Context, hc *http.Client, base string, f *os.File) err
 			Fixes:  []string{"Retry; if it keeps failing, the download is being altered on its way"}}
 	}
 	return nil
-}
-
-// assetURL is where the relay's download link redirects. GitHub redirects
-// that URL on to a signed one, which has no checksum next to it, so only
-// the relay's redirect is followed here.
-func assetURL(ctx context.Context, hc *http.Client, url string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	noFollow := *hc
-	noFollow.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := noFollow.Do(req)
-	if err != nil {
-		return "", downloadFailed(url, err)
-	}
-	resp.Body.Close()
-	loc, err := resp.Location()
-	if err != nil {
-		return "", downloadFailed(url, fmt.Errorf("it answered %s", resp.Status))
-	}
-	return loc.String(), nil
 }
 
 func fetch(ctx context.Context, hc *http.Client, url string) (*http.Response, error) {

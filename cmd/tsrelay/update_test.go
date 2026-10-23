@@ -61,12 +61,46 @@ func newAssetServer(t *testing.T, version string) *assetServer {
 	return a
 }
 
-// relayWithAssets restarts the relay at version, with its downloads
-// redirecting to a fake asset server instead of GitHub.
+// relayWithAssets restarts the relay at version, and serves the releases
+// from a fake asset server instead of GitHub.
 func (e *cliEnv) relayWithAssets(version string) *assetServer {
 	a := newAssetServer(e.t, version)
 	e.restartRelayWith(server.Config{Version: version, ReleaseAssets: a.URL})
+	setReleases(e.t, a.URL)
 	return a
+}
+
+func setReleases(t *testing.T, url string) {
+	old := releases
+	releases = url
+	t.Cleanup(func() { releases = old })
+}
+
+// The relay only says which version to install. It may be compromised, so
+// the binary and its checksum come from the releases, never from wherever
+// the relay's download link points.
+func TestUpdateDownloadsFromTheReleasesOnly(t *testing.T) {
+	e := newCLIEnv(t)
+	relays := newAssetServer(t, "v0.3.0")
+	e.restartRelayWith(server.Config{Version: "v0.3.0", ReleaseAssets: relays.URL})
+	releases := newAssetServer(t, "v0.3.0")
+	setReleases(t, releases.URL)
+	setVersion(t, "v0.2.2")
+	if code, _, errOut := e.update(oldExecutable(t), "--yes"); code != 0 || relays.hits.Load() != 0 || releases.hits.Load() != 1 {
+		t.Fatalf("exit %d, relay's assets fetched %d times, releases %d\n%s", code, relays.hits.Load(), releases.hits.Load(), errOut)
+	}
+}
+
+func TestUpdateRefusesAnUnknownRelayVersion(t *testing.T) {
+	e := newCLIEnv(t)
+	a := e.relayWithAssets("1.0")
+	setVersion(t, "v0.2.2")
+	exe := oldExecutable(t)
+	code, _, errOut := e.update(exe, "--yes", "--json")
+	if code != 1 || jsonErrorCode(t, errOut) != "relay_version_unknown" || a.hits.Load() != 0 {
+		t.Fatalf("exit %d, %d downloads\n%s", code, a.hits.Load(), errOut)
+	}
+	assertUnchanged(t, exe)
 }
 
 // oldExecutable is a stand-in for this tsrelay's executable, in a
