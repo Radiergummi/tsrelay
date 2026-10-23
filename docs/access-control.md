@@ -33,7 +33,7 @@ Each capability value is an object with these fields:
 | `channels` | Channel patterns the roles apply to; `*` matches anything, dots included. Absent means `["*"]`; an empty list `[]` matches nothing (see [Channels](#channels)) |
 | `maxHooks` | Receivers: hooks owned at once (relay default 10) |
 | `maxTunnels` | Receivers: tunnels attached at once (relay default 5) |
-| `maxHookTtl` | Receivers: the longest a persistent hook may live, as a Go duration like `720h` (relay default: unlimited) |
+| `maxHookTtl` | Receivers: the longest a persistent hook may live, as a Go duration like `720h`. Takes effect only when the relay sets a default lifetime with `--max-hook-ttl-default` (default: unlimited, and then this field does nothing); the grant then raises that default |
 | `public` | Receivers: `true` lets them make their hooks reachable from the internet; see [Serving public hooks](running-a-relay.md#serving-public-hooks) |
 | `requires` | Names of grant features a relay must know to apply this value (see [Combining grants](#combining-grants)). No features exist at 1.0 |
 
@@ -60,7 +60,7 @@ Leaving `channels` out grants every channel, the same as `["*"]`. An explicit em
 
 ## Combining grants
 
-When several grants match a device, the relay combines them: roles and channels are unioned (channels per role, so a sender grant never widens what the same device may do as a receiver), and each limit is the highest any grant sets, falling back to the relay default. Limits count per user, and only from values that grant the `receiver` role: a limit on a sender-only or admin-only value is ignored. A grant can therefore only raise a limit; to restrict most users, lower the relay default and raise it for specific groups.
+When several grants match a device, the relay combines them: roles and channels are unioned (channels per role, so a sender grant never widens what the same device may do as a receiver), and each limit is the highest any grant sets, falling back to the relay default. Limits count per user, and only from values that grant the `receiver` role: a limit on a sender-only or admin-only value is ignored. A grant can therefore only raise a limit, and `maxHookTtl` can't even do that while the relay has no default lifetime; to restrict most users, lower the relay default and raise it for specific groups.
 
 Each value is checked on its own, and the relay logs why it skips or trims one:
 
