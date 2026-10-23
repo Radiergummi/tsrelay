@@ -513,8 +513,8 @@ func TestUpdateCheckExitsZeroWhenThereIsNothingNewer(t *testing.T) {
 	exe := oldExecutable(t)
 	for _, cli := range []string{"v0.3.0", "v0.4.0"} { // the same, and a newer tsrelay
 		setVersion(t, cli)
-		if code, _, errOut := e.update(exe, "--check"); code != 0 {
-			t.Errorf("tsrelay %s, relay v0.3.0: exit %d, want 0\n%s", cli, code, errOut)
+		if code, _, errOut := e.update(exe, "--check"); code != 0 || strings.Contains(errOut, "Update with") {
+			t.Errorf("tsrelay %s, relay v0.3.0: exit %d, want 0 and no update advice\n%s", cli, code, errOut)
 		}
 	}
 }

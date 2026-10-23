@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"time"
@@ -22,8 +23,11 @@ func (o *Opt[T]) UnmarshalJSON(b []byte) error {
 		o.Value = nil
 		return nil
 	}
+	// A request refuses fields it doesn't know, also inside a value.
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
 	var v T
-	if err := json.Unmarshal(b, &v); err != nil {
+	if err := dec.Decode(&v); err != nil {
 		return err
 	}
 	o.Value = &v

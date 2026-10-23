@@ -83,6 +83,14 @@ func TestServeRejectsBadRevalidateInterval(t *testing.T) {
 	}
 }
 
+func TestServeRejectsNegativeLimits(t *testing.T) {
+	for _, arg := range []string{"--user-max-hooks=-1", "--user-max-tunnels=-1", "--user-max-hook-ttl=-1s", "--tunnel-concurrency=-1"} {
+		if code, out := serveExit(t, arg); code != 2 || !strings.Contains(out, "negative") {
+			t.Errorf("%s: exit %d, stderr %q", arg, code, out)
+		}
+	}
+}
+
 func TestServeFlagNames(t *testing.T) {
 	fs := newServeCmd(&cli{}).Flags()
 	for _, name := range []string{"user-max-hooks", "user-max-tunnels", "user-max-hook-ttl", "hook-hold-queue", "capture-limit-bytes", "otel-propagation"} {

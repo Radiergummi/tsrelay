@@ -194,7 +194,7 @@ func runTunnel(ctx context.Context, run func(context.Context) error, command []s
 			switch {
 			case errors.Is(err, exec.ErrNotFound), errors.Is(err, fs.ErrNotExist):
 				code = exitNotFound
-			case errors.Is(err, fs.ErrPermission):
+			case errors.Is(err, fs.ErrPermission), errors.Is(err, syscall.ENOEXEC):
 				code = exitNotExecutable
 			}
 			return out.stopped("error", &cliError{Title: "Couldn't start " + command[0], Reason: sentence(err.Error()), Code: "command_failed", err: err,

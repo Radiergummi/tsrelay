@@ -63,10 +63,6 @@ var envFlags = map[string]bool{
 	"user-slug": true, "user-slug-override": true, "verbose-tailscale": true,
 }
 
-// reservedEnv are the variables tsrelay sets for the commands it starts or
-// supervises. No flag may be named so that its twin is one of them.
-var reservedEnv = []string{"TSRELAY_URL", backgroundIDEnv}
-
 // envName is the variable that sets the flag called name.
 func envName(name string) string {
 	return "TSRELAY_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_"))

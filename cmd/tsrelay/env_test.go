@@ -157,7 +157,10 @@ func TestNoTwinForPublicAndInsecure(t *testing.T) {
 	}
 }
 
+// TestNoFlagClaimsReservedEnv checks that no flag's twin is a variable
+// tsrelay sets for the commands it starts or supervises.
 func TestNoFlagClaimsReservedEnv(t *testing.T) {
+	reservedEnv := []string{"TSRELAY_URL", backgroundIDEnv}
 	everyFlag(func(cmd *cobra.Command, f *pflag.Flag) {
 		if slices.Contains(reservedEnv, envName(f.Name)) {
 			t.Errorf("--%s (%s) would have the twin %s, which tsrelay sets itself", f.Name, cmd.CommandPath(), envName(f.Name))

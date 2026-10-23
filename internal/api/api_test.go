@@ -524,6 +524,10 @@ func TestPatchHook(t *testing.T) {
 	if resp := e.call(moritz, "PATCH", "/hooks/"+h.ID, map[string]any{"bogus": 1}, nil); resp.StatusCode != 422 {
 		t.Fatalf("unknown field = %d", resp.StatusCode)
 	}
+	nested := map[string]any{"settings": map[string]any{"rateLimit": map[string]any{"perSecond": 1, "burst": 1, "bogus": 1}}}
+	if resp := e.call(moritz, "PATCH", "/hooks/"+h.ID, nested, &p); resp.StatusCode != 422 || p.Code != problem.UnsupportedField {
+		t.Fatalf("unknown nested field = %d %+v", resp.StatusCode, p)
+	}
 	if resp := e.call(other, "PATCH", "/hooks/"+h.ID, map[string]any{"description": "x"}, nil); resp.StatusCode != 404 {
 		t.Fatalf("other user patch = %d", resp.StatusCode)
 	}

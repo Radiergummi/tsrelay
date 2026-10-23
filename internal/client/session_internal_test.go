@@ -30,7 +30,9 @@ func TestRefusalByCode(t *testing.T) {
 		"rejected":       {&problem.Problem{Status: 409, Code: problem.AttachRejected, Hook: "h_1"}, "h_1", DropReplaced, true},
 		"no hook named":  {&problem.Problem{Status: 403, Code: problem.TunnelLimit}, "", "", false},
 		"bad request":    {&problem.Problem{Status: 400, Code: problem.BadRequest, Hook: "h_1"}, "", "", false},
-		"other conflict": {&problem.Problem{Status: 409, Code: problem.CallPending, Hook: "h_1"}, "", "", false},
+		"newer 404 code": {&problem.Problem{Status: 404, Code: "from_a_newer_relay", Hook: "h_1"}, "h_1", DropDeleted, true},
+		"newer 403 code": {&problem.Problem{Status: 403, Code: "from_a_newer_relay", Hook: "h_1"}, "h_1", DropRevoked, true},
+		"newer 409 code": {&problem.Problem{Status: 409, Code: "from_a_newer_relay", Hook: "h_1"}, "h_1", DropReplaced, true},
 		"network":        {errors.New("down"), "", "", false},
 	}
 	for name, c := range cases {

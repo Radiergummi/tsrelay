@@ -88,12 +88,12 @@ func (c *cli) update(ctx context.Context, check, yes, force bool) error {
 			Fixes:  []string{"Ask the relay's operator to run a release"}}
 	case me.Version == version:
 		return report(errStream.glyph(errStream.style(styleOK, "●")) + fmt.Sprintf("tsrelay %s is the relay's version already", version))
+	case check && semver.IsValid(me.Version) && semver.Compare(version, me.Version) > 0:
+		// This tsrelay is the newer one: nothing to update to.
+		return report(fmt.Sprintf("Relay is %s, you have %s, which is newer", me.Version, version))
 	case check:
 		if err := report(fmt.Sprintf("Relay is %s, you have %s. Update with: %s", me.Version, version, c.updateCommand())); err != nil {
 			return err
-		}
-		if semver.IsValid(me.Version) && semver.Compare(version, me.Version) > 0 {
-			return nil // this tsrelay is the newer one: nothing to update to
 		}
 		return exitCodeError(exitUpdateAvailable)
 	case !force && semver.IsValid(me.Version) && semver.Compare(version, me.Version) > 0:

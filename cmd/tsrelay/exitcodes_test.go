@@ -87,6 +87,10 @@ func TestExitCodesWithChild(t *testing.T) {
 	if err := os.WriteFile(notExecutable, []byte("#!/bin/sh\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	noShebang := filepath.Join(t.TempDir(), "script")
+	if err := os.WriteFile(noShebang, []byte("exit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		name    string
 		command []string
@@ -97,6 +101,7 @@ func TestExitCodesWithChild(t *testing.T) {
 		{"not found", []string{"/nonexistent/tsrelay-test"}, exitNotFound},
 		{"not on the PATH", []string{"tsrelay-no-such-command"}, exitNotFound},
 		{"not executable", []string{notExecutable}, exitNotExecutable},
+		{"no interpreter line", []string{noShebang}, exitNotExecutable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := e.start(append([]string{"--"}, tc.command...)...)

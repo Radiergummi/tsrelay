@@ -91,6 +91,11 @@ func newServeCmd(c *cli) *cobra.Command {
 			return usage("--revalidate-interval must be positive", "It says how often attached tunnels are re-authorized.",
 				"tsrelay serve --revalidate-interval 1m")
 		}
+		if *maxHooks < 0 || *maxTunnels < 0 || *maxTTL < 0 || *concurrency < 0 {
+			return usage("--user-max-hooks, --user-max-tunnels, --user-max-hook-ttl and --tunnel-concurrency can't be negative",
+				"0 allows no hooks or tunnels, sets no lifetime limit, or picks the default concurrency.",
+				"tsrelay serve --user-max-hooks 10 --user-max-tunnels 5")
+		}
 		if *holdQueue < 1 {
 			return usage("--hook-hold-queue must be at least 1", "It says how many calls per hook may wait for a tunnel at once.",
 				"tsrelay serve --hook-hold-queue 16", "To disable holding: tsrelay serve --hook-hold-timeout-default=0s")
