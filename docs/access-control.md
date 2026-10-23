@@ -23,9 +23,11 @@ The relay is a tailnet node tagged `tag:tsrelay`. Access to it comes from [grant
 ]
 ```
 
+Senders have to be tailnet devices themselves; [How senders reach the relay](running-a-relay.md#how-senders-reach-the-relay) lists the ways, and what identity the relay sees for each.
+
 ## Capability values
 
-Each capability value is an object with these fields:
+Each capability value is an object with these fields. Keys are parsed leniently: a key the relay doesn't know is ignored, and the relay logs a warning naming it. Check your grants for typos, because a misspelled key is the same as a missing one: `"channel": ["staging"]` leaves `channels` out, which grants **every** channel.
 
 | Field | |
 |---|---|
@@ -43,7 +45,7 @@ Each capability value is an object with these fields:
 |---|---|
 | `receiver` | Create and manage their own hooks in channels their patterns match, attach tunnels, inspect and replay their own calls |
 | `sender` | Call any hook whose channel their patterns match. Tagged machines can only ever be senders |
-| `admin` | List, view the metadata of, and delete everyone's hooks and tunnels. Admins **can't** see other users' captured queries, headers or bodies, and can't replay their calls |
+| `admin` | List and view the metadata of other users' hooks, and their tunnels, in channels their patterns match, and delete those hooks, which detaches their tunnels. Admins **can't** edit those hooks, see their public URLs or their calls' queries, headers or bodies, or replay or test them. Only users can be admins: the role does nothing for a tagged machine |
 
 ## Channels
 
@@ -82,4 +84,4 @@ Admin is a role like the others: grant it to a group in its own grant, or add it
 ]
 ```
 
-Admins get an **Admin** page in the web UI listing every hook and tunnel, as metadata only. An admin without the `receiver` role starts on the admin page and can't create hooks. The role takes effect on the admin's next request; no relay restart is needed.
+Admins get an **Admin** page in the web UI listing the hooks and tunnels in their channels, as metadata only. An admin without the `receiver` role starts on the admin page and can't create hooks. The role takes effect on the admin's next request; no relay restart is needed.

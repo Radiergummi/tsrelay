@@ -1,6 +1,6 @@
 # tsrelay design
 
-Status: draft for review · 2026-10-12
+Status: describes tsrelay 1.0
 
 tsrelay is a callback relay for tailnets. It lets services in one part of a tailnet (typically production) deliver HTTP callbacks to applications running on developer machines, without ever opening a connection to those machines and without anything being publicly reachable.
 
@@ -65,22 +65,32 @@ There is one binary, `tsrelay`, and it has two roles:
 - **`tsrelay serve`** runs the relay. It embeds `tsnet`.
 - **Every other subcommand** is a client: `http`, `attach`, `hooks`, `url` (§15). Clients do **not** embed `tsnet`. They reach the relay through the machine's own Tailscale connection, so the relay's `WhoIs` sees the developer's real user and node.
 
-### 3.1 Package layout (proposed)
+### 3.1 Package layout
 
 ```
 cmd/tsrelay/            main, subcommand wiring
+internal/server/        composes the relay: callback handler, API, guard, reaper, revalidator, ops listener
+internal/access/        every authorization rule, as pure functions (§5.8)
 internal/authz/         capability parsing, merging, channel matching, Identity
 internal/identify/      Identifier interface; tsnet WhoIs implementation; test fake
 internal/hooks/         Hook model, validation, name generation, Store interface + JSON store
 internal/tunnel/        tunnel protocol: relay side (round-tripper) and client side
 internal/lifecycle/     hook–tunnel transitions: attach, detach, delete, expire, revoke
 internal/relay/         callback handler, forwarding, hold-for-reconnect, limits
-internal/inspect/       call/attempt capture, ring buffers, replay, event fan-out
-internal/api/           JSON API handlers, problem responses, CSRF/host checks
-internal/ui/            server-rendered pages, embedded static assets
+internal/inspect/       call/attempt capture, ring buffers, redaction
+internal/events/        fan-out of hook and call changes to event streams
+internal/api/           JSON API handlers, routing, CSRF/host checks, OpenAPI document
+internal/negotiate/     content negotiation between the API and the UI
+internal/problem/       RFC 9457 problem responses and error codes
+internal/ui/            the web UI: a single-page app built from web/, embedded
+internal/install/       install scripts and /download redirects for the CLI
+internal/release/       the latest-release check against GitHub
+internal/sbom/          the embedded CycloneDX SBOM, for licenses
 internal/client/        CLI-side API client, local state, forwarding target
 internal/audit/         audit event types and slog emission
 internal/telemetry/     OpenTelemetry setup: metrics (Prometheus, OTLP), tracing
+internal/atomicfile/    crash-safe file replacement
+internal/ids/           random identifiers for hooks, calls and tunnels
 ```
 
 The relay core (`relay`, `api`, `tunnel`) receives a `net.Listener` and an `Identifier`. It never touches `tsnet` directly. This boundary is what makes the design testable without a tailnet (§16).
@@ -234,7 +244,7 @@ The protocol version lives in the `Upgrade` token. An incompatible change gets a
 
 ### 6.2 Streams
 
-- **Forwarded calls:** each call attempt is one HTTP/2 request from the relay to the CLI. It carries a `Tsrelay-Hook: {id}` header, which the CLI uses to choose that hook's local target. The CLI removes all `Tsrelay-*` tunnel headers before forwarding, except the identity headers (§7.2).
+- **Forwarded calls:** each call attempt is one HTTP/2 request from the relay to the CLI. It carries a `Tsrelay-Tunnel-Hook: {id}` header, which the CLI uses to choose that hook's local target. The relay sets headers meant for the CLI alone under the `Tsrelay-Tunnel-` prefix (also `Tsrelay-Tunnel-Host` for `hostHeader: rewrite`), and the CLI removes every header with that prefix before forwarding, including ones from a newer relay it doesn't know. The headers for the app, such as the identity headers and `Tsrelay-Hook` (§7.2), pass through.
 - **Control messages:** requests with the header `Tsrelay-Control: 1` and a JSON body. They are handled by the CLI itself and never forwarded. Types: `attached` (the hook URLs and paths, sent first), `replaced`, `revoked`, `hook-deleted`, `hook-updated` (a hook's new URL, path and public URL). Sender requests cannot forge them, because the relay strips every incoming `Tsrelay-*` header. `hook-updated` carries a sequence number `seq`. Messages are sent in the background and can arrive out of order, so a client ignores a `hook-updated` whose `seq` is not above the last it saw for that hook, and forgets that memory on each `attached` message, because the relay's sequence counter restarts with the relay.
 - **Status:** the CLI reports its local target, one per tunnel, as the `target` query parameter on the handshake. The relay keeps it only if it is an `http(s)` URL without credentials, with any query string and fragment stripped, and shows it with the hook's tunnel to the owner and to admins (UI, copy-as-curl). The relay never connects to it.
 
@@ -491,13 +501,13 @@ Relay-wide settings (flag / environment variable):
 
 Per-hook defaults and maxima are listed in §8. Each per-hook setting also has a relay-wide `--hook-<setting>-default` and `--hook-<setting>-max` flag.
 
-The Tailscale credential is `TS_AUTHKEY` (an auth key) or `TS_CLIENT_SECRET` (an OAuth client secret, recommended because auth keys expire). tsnet supports OAuth client secrets in `tailscale.com@v1.104.0`.
+The Tailscale credential is `TS_AUTHKEY` (an auth key) or `TS_CLIENT_SECRET` (an OAuth client secret with the `auth_keys` scope, allowed to assign the relay's tags). tsnet only uses it to join the tailnet: once the node key is in the state directory, the credential is ignored. An OAuth client secret is recommended because it never expires, so a relay whose state is lost can join again without a new key. tsnet's OAuth support (`tailscale.com/feature/oauthkey`, imported by `serve`) mints an ephemeral, not pre-authorized key unless the secret ends in `?ephemeral=false&preauthorized=true`; the docs and examples always show that suffix, because the control plane removes an ephemeral relay after it has been offline.
 
 v1 has **no config file**. Flags and environment variables cover binaries and containers alike, and a config file is on the backlog.
 
 ## 13. Observability
 
-**Audit log:** JSON via `log/slog` to stdout, one record per event.
+**Audit log:** JSON (or text, with `--log-format text`) via `log/slog` to stderr, one record per event, in the same stream as the relay's other logs. The record's message is the event name.
 
 | Event | Fields (in addition to time and level) |
 |---|---|
@@ -505,11 +515,11 @@ v1 has **no config file**. Flags and environment variables cover binaries and co
 | `hook.create` / `.update` / `.delete` / `.expire` | hook ID, owner, path, channel, actor (user or node), changed fields |
 | `call` | call ID, hook ID, kind, sender node and tags, method, path **without the query string**, status, `Tsrelay-Error`, bytes in/out, hold/ttfb/total durations |
 | `authz.deny` | caller node, user, tags, action, reason |
-| `cap.parse_error` | node, parse error (logged at most once per node and value) |
+| `cap.parse_error` | node, parse error (at `WARN`, logged at most once per node and error) |
 
 **Never logged:** request or response bodies, query strings, or header values. Header *names* may appear in debug-level logs.
 
-**Ops listener** (`--ops-listen=:9090`, off by default, **never** bound on the tailnet interface): `/healthz` (process alive), `/readyz` (tsnet up and the store loaded), `/metrics`. The shipped Kubernetes manifests enable it on the pod IP for probes. With `--ops-pprof` (off by default) it also serves `net/http/pprof` under `/debug/pprof/`; the shipped manifests leave it off.
+**Ops listener** (`--ops-listen=:9090`, off by default, unauthenticated, and on the host's network, **never** on the relay's tsnet node; on a host that also runs `tailscaled`, `:9090` includes that host's tailnet address, so bind a specific one there): `/healthz` (process alive), `/readyz` (tsnet up and the store loaded), `/metrics`. The shipped Kubernetes manifests enable it on the pod IP for probes. With `--ops-pprof` (off by default) it also serves `net/http/pprof` under `/debug/pprof/`; the shipped manifests leave it off.
 
 **Metrics:** OpenTelemetry instruments, served as Prometheus text on the ops listener's `/metrics` (and pushed over OTLP with `--otel`, §13.1). The exporter keeps the names below exactly: no unit suffixes, no `otel_scope_*` labels, no `target_info`. Counters and histograms are derived from audit events through an `audit.Logger` observer hook, so the request path gets no second instrumentation layer; gauges are read from the tunnel registry and the hook manager at collection time.
 - `tsrelay_calls_total{outcome}`
@@ -591,7 +601,7 @@ tsrelay --version                                 fang; there is no `version` su
   - **`logs`** prints the log; `-f` keeps polling it until interrupted.
   - **Limits:** a pid reused by another process counts as a running tunnel. `http --background -- cmd` is refused, as a command in the background would make stopping and logging ambiguous. Surviving a reboot and restarting on failure are left to service managers.
 - **Updating:** the CLI should run the relay's major version; a CLI and a relay of the same major version work together, whichever is newer. The `Tsrelay-Version` header on every response tells the CLI how the two relate (a `dev` build on either side, or a version that isn't semver, matches anything). Only a different major version is warned about, once per run with the fix `tsrelay update`, and blamed in errors. The CLI also sends `User-Agent: tsrelay/<version> (<os>/<arch>)` on every request, tunnel upgrade included.
-  - **`update`** reads the relay's version from the entry document and downloads `/download/{os}/{arch}`, which redirects to that release's asset. The checksum is that asset's URL plus `.sha256`, as for `install.sh`, not the signed URL GitHub redirects the asset on to. The download goes to a temporary file next to the executable (symlinks resolved), and only once it matches is it renamed over the executable. Windows can't replace a running executable but can rename it, so the old one moves aside to `<exe>.old`, which the next run deletes. Sigstore attestations are left to `gh attestation verify`.
+  - **`update`** reads the relay's version from the entry document, refuses one that isn't semver, and downloads that release's asset for its platform and the asset's `.sha256` checksum from GitHub's releases itself, not through the relay, so a compromised relay can at worst offer a genuine release. The download goes to a temporary file next to the executable (symlinks resolved), and only once it matches is it renamed over the executable. Windows can't replace a running executable but can rename it, so the old one moves aside to `<exe>.old`, which the next run deletes. Sigstore attestations are left to `gh attestation verify`.
   - **Refusals:** an unwritable directory (a package manager's, say) is refused before downloading, with `sudo <exe> update` and the install script as fixes. A `dev` build, or a dev relay, has no release to match. A CLI newer than the relay is not downgraded without `--force` (`downgrade`).
   - **Offering it:** after a command that saw a newer relay version (same major, or a newer major), on a terminal (stdin and stderr) without `--json`, the CLI asks "Relay is vX, you have vY. Update now? [Y/n]". Admins are told when the entry document names a newer release. Each happens at most once a day, by timestamps in `notices.json` next to `hooks.json`; never during completion, in a background tunnel, or after an interrupt; and nothing is updated without a yes.
 - **Finding the relay:** `--relay`, then `TSRELAY_RELAY`, then a default built from `https://tsrelay.` plus the tailnet's MagicDNS suffix, read from the local Tailscale API.
@@ -626,7 +636,7 @@ tsrelay --version                                 fang; there is no `version` su
   - CSRF and Host-header rejection
 - **Unit and fuzz tests:** capability parsing and merging, channel pattern matching, slug derivation, path validation and nesting, the JSON store (crash-safe writes), and redaction.
 - **Funnel confinement and public-surface tests** (§14, §19).
-- **`testcontrol`:** during planning, check whether `tstest/integration/testcontrol` can inject app-capability grants. If it can, add one or two tests that run real tsnet nodes against it to prove the `WhoIs`→`CapMap` path. If it can't, document a manual smoke test against a real tailnet.
+- **`testcontrol`:** `TestOverRealTailnet` (package `server`, build tag `tailnet`, run in CI) runs the relay and a client as real tsnet nodes against `tstest/integration/testcontrol`, which grants the relay capability, and proves the `WhoIs`→`CapMap` path.
 - **Performance:** benchmarks for a call through the whole relay (with and without tracing) against the app called directly, the tunnel's framing, and the inspector's capture and redaction; CI runs each once so they keep working. `TestLoad` (gated by `TSRELAY_LOAD=1`) is an in-process load harness reporting the latency the relay adds. `docs/perf/baseline.md` holds the reference numbers.
 
 ## 17. Backlog
@@ -640,12 +650,9 @@ tsrelay --version                                 fang; there is no `version` su
 - **Escape hatch:** `senderTags` in the capability, matching tags directly.
 - **Packaging:** a config file, a Helm chart.
 
-## 18. To verify during planning
+## 18. Open questions
 
-1. `testcontrol` support for app-capability grants (§16).
-2. Taking over the connection behind tsnet's `ListenTLS` listener, with the client forcing HTTP/1.1 through ALPN (§6.1).
-3. Whether `http2.Transport.NewClientConn` can be driven over a connection whose server-side TLS has already been negotiated, without wrapping it in a second TLS layer. Expected yes: the tunnel runs HTTP/2 without TLS (h2c framing) inside the already-encrypted connection.
-4. How tsnet advertises tags when it is given an OAuth client secret (`AdvertiseTags`).
+None at 1.0. The assumptions this section listed during planning hold: app-capability grants in `testcontrol` (§16), taking over connections behind `ListenTLS` with the client offering only HTTP/1.1 (§6.1), HTTP/2 without a second TLS layer inside them, and tags advertised with an OAuth client secret (§12).
 
 ## 19. Public hooks
 

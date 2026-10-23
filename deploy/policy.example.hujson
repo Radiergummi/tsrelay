@@ -1,3 +1,6 @@
+// A fragment to merge into your existing tailnet policy, not a whole policy
+// to paste over it: add these entries to your own nodeAttrs, tagOwners and
+// grants. tag:prod-worker stands for whichever tag your senders have.
 {
   // Only for `tsrelay serve --funnel`: lets the relay serve public hooks on
   // the internet. Leave it out to keep the relay tailnet-only.
@@ -6,6 +9,7 @@
   ],
   "tagOwners": {
     "tag:tsrelay": ["autogroup:admin"],
+    "tag:prod-worker": ["autogroup:admin"],
   },
   "grants": [
     // Who may receive callbacks: run `tsrelay http` or use the UI.

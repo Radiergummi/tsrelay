@@ -71,18 +71,21 @@ const headings = [
     </table>
 
     <p>
-        On macOS and Linux, this downloads the binary for your machine, makes it executable and puts it on
-        your <code>PATH</code>:
+        On macOS and Linux, this downloads the binary for your machine, checks it against its SHA-256
+        checksum, makes it executable and puts it on your <code>PATH</code>:
     </p>
 
     <pre><code>{`os=$(uname -s | tr '[:upper:]' '[:lower:]')
 arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-curl -fsSLo tsrelay "${binaryUrl("tsrelay_")}\${os}_\${arch}"
-chmod +x tsrelay
-sudo mv tsrelay /usr/local/bin/`}</code></pre>
+curl -fsSLo "tsrelay_\${os}_\${arch}" "${binaryUrl("tsrelay_")}\${os}_\${arch}"
+curl -fsSLO "${binaryUrl("tsrelay_")}\${os}_\${arch}.sha256"
+shasum -a 256 -c "tsrelay_\${os}_\${arch}.sha256"
+chmod +x "tsrelay_\${os}_\${arch}"
+sudo mv "tsrelay_\${os}_\${arch}" /usr/local/bin/tsrelay`}</code></pre>
 
     <p>
-        The macOS binaries are signed with a Developer ID and notarized. Every release, with its notes and
+        The macOS binaries are signed with a Developer ID and notarized. The Windows binaries aren't
+        code-signed, so Windows may warn before running one; check its checksum or attestation instead. Every release, with its notes and
         older versions, is on <a href={`${repoUrl}/releases`}>GitHub</a>. To run the relay, continue
         with <a href="/running-a-relay">Running a relay</a>.
     </p>
@@ -96,6 +99,17 @@ sudo mv tsrelay /usr/local/bin/`}</code></pre>
     </p>
 
     <pre><code>{`docker pull ${image}`}</code></pre>
+
+    <p>
+        Each image carries a signed build provenance attestation. To verify it with the GitHub CLI:
+    </p>
+
+    <pre><code>{`gh attestation verify oci://${image} --owner ${repoSlug.split("/")[0]}`}</code></pre>
+
+    <p>
+        In a deployment, pin the image to an exact version, or to the digest you verified, rather than
+        to <code>{version.slice(1).split(".")[0]}</code> or <code>latest</code>, which move with new releases.
+    </p>
 
     <p>
         Ready-made deployments for <a href={`${repoUrl}/tree/main/deploy/kubernetes`}>Kubernetes</a> and

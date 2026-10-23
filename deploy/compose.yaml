@@ -1,10 +1,28 @@
+# Start with the OAuth client secret in your environment (or in an .env file
+# next to this one), so it isn't written here:
+#
+#   TS_CLIENT_SECRET='tskey-client-...?ephemeral=false&preauthorized=true' docker compose up -d
+#
+# The client needs the auth_keys write scope and must be allowed to assign
+# tag:tsrelay; keep the ?ephemeral=false&preauthorized=true suffix, or the
+# relay joins as an ephemeral device that the tailnet removes once it has been
+# offline (https://tsrelay.mazetti.me/running-a-relay).
 services:
   tsrelay:
-    image: ghcr.io/radiergummi/tsrelay:1
+    # An exact version. The :1 tag moves to every 1.x release; pinning the
+    # digest (ghcr.io/radiergummi/tsrelay:1.0.0@sha256:...) is better still.
+    image: ghcr.io/radiergummi/tsrelay:1.0.0
     restart: unless-stopped
+    # /healthz, /readyz and /metrics, without authentication, only on this
+    # host's loopback. The image has no shell, so there is no healthcheck here.
+    command: ["--ops-listen=:9090"]
+    ports:
+      - "127.0.0.1:9090:9090"
     environment:
-      TS_CLIENT_SECRET: "tskey-client-REPLACE-ME"
+      TS_CLIENT_SECRET: ${TS_CLIENT_SECRET:?set TS_CLIENT_SECRET to the OAuth client secret}
     volumes:
+      # A named volume is writable by the image's user. If you bind-mount a
+      # host directory instead, it must be writable by uid 65532.
       - state:/var/lib/tsrelay
 
 volumes:

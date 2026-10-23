@@ -1,12 +1,14 @@
 # No Service is defined: the relay is its own tailnet node and is reached
 # at https://tsrelay.<your tailnet>.ts.net over the tailnet only. /healthz,
-# /readyz and /metrics are exposed on the pod IP (--ops-listen) for the
-# probes and for a PodMonitor, never on the tailnet interface.
+# /readyz and /metrics are served without authentication on the pod IP
+# (--ops-listen) for the probes and for a PodMonitor; they are never on the
+# relay's tailnet node.
+#
+# No namespace is set; apply with `kubectl apply -n <namespace>`.
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: tsrelay
-  namespace: default
   labels:
     app: tsrelay
 spec:
@@ -21,14 +23,24 @@ spec:
         app: tsrelay
     spec:
       serviceAccountName: tsrelay
+      # Must stay above the relay's --shutdown-timeout (20s), so calls in
+      # flight can finish before the kubelet kills the container.
+      terminationGracePeriodSeconds: 30
+      # tsrelay never talks to the Kubernetes API.
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 65532
         runAsNonRoot: true
         runAsUser: 65532
         runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: tsrelay
-          image: ghcr.io/radiergummi/tsrelay:1
+          # An exact version. The :1 tag moves to every 1.x release; pinning
+          # the digest (ghcr.io/radiergummi/tsrelay:1.0.0@sha256:...) is better
+          # still.
+          image: ghcr.io/radiergummi/tsrelay:1.0.0
           args:
             - --ops-listen=:9090
             # --ops-pprof and --otel are left off here; enable them
@@ -42,9 +54,31 @@ spec:
                 secretKeyRef:
                   name: tsrelay-tailscale
                   key: TS_CLIENT_SECRET
+            # The Go runtime's soft memory limit: about 90% of the memory
+            # limit below, so the runtime collects garbage harder before the
+            # kernel would kill the container. Change both together.
+            - name: GOMEMLIMIT
+              value: "460MiB"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
+            # The only path the relay writes to; /tmp is there for libraries
+            # that might, as the root filesystem is read-only.
             - name: state
               mountPath: /var/lib/tsrelay
+            - name: tmp
+              mountPath: /tmp
+          # Joining the tailnet can take a while; liveness and readiness
+          # start once /readyz first answers.
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+            periodSeconds: 5
+            failureThreshold: 60
           livenessProbe:
             httpGet:
               path: /healthz
@@ -62,7 +96,13 @@ spec:
               cpu: 50m
               memory: 64Mi
             limits:
-              memory: 256Mi
+              # Memory is mostly the inspector's; see "Sizing" in
+              # https://tsrelay.mazetti.me/running-a-relay.
+              memory: 512Mi
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
   volumeClaimTemplates:
     - metadata:
         name: state

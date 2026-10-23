@@ -3,7 +3,7 @@ import {ArrowLeft, ArrowRight} from "@lucide/astro";
 
 /**
  * The home page below the fold: how a call travels, why this rather than the
- * two usual workarounds, and the two ways in. `docs/index.md` says the same in
+ * usual workarounds, when you don't need it, and the two ways in. `docs/index.md` says the same in
  * prose, as the page's Markdown representation; keep the two in step.
  */
 
@@ -56,8 +56,25 @@ const approaches = [
         hint: "such as ngrok or Cloudflare Tunnel",
         points: [
             "Internal callbacks leave your tailnet and cross the internet.",
-            "Who may call is the tunnel provider's to decide, not your policy's.",
+            "You can restrict who may call, but in the provider's account, not in your tailnet policy.",
             "Each developer runs and secures their own.",
+        ],
+    },
+    {
+        name: "Funnel on the laptop",
+        hint: "Tailscale Funnel, run on each laptop",
+        points: [
+            "A local port becomes reachable from the whole internet.",
+            "Production calls it like any public URL, so the call carries no tailnet identity.",
+            "Your policy has to allow Funnel on developer devices.",
+        ],
+    },
+    {
+        name: "A webhook forwarder",
+        hint: "such as the Stripe CLI, the GitHub CLI or smee.io",
+        points: [
+            "Delivers one provider's events to localhost, through that provider or a hosted service.",
+            "Works well for that provider, but not for callbacks from your own services.",
         ],
     },
     {
@@ -65,10 +82,16 @@ const approaches = [
         points: [
             "Laptops dial out, and production reaches only the hooks their owners made.",
             "Traffic stays on your tailnet; a hook is public only when its owner and the operator opt in.",
-            "Your grants decide who sends and receives, and every call is audited.",
+            "Your grants decide who sends and receives, and calls are written to an audit log.",
         ],
         accent: true,
     },
+];
+
+const notNeeded = [
+    "You only receive webhooks from one provider that has a forwarder, such as Stripe or GitHub: use its forwarder.",
+    "You work alone and a public URL on your laptop is acceptable: Tailscale Funnel on your laptop needs no relay.",
+    "You need calls queued and retried until your app takes them: tsrelay holds a call only briefly while your tunnel reconnects and never retries one. Use a queue.",
 ];
 
 const paths = [
@@ -131,11 +154,11 @@ const paths = [
 <section class="border-t px-6 py-16 md:px-12 lg:px-16" aria-labelledby="why-heading">
     <h2 id="why-heading" class="text-2xl font-semibold tracking-tight">Why not a reverse grant, or a public tunnel?</h2>
     <p class="mt-2 max-w-2xl text-base leading-relaxed text-muted-foreground">
-        Calls from a laptop to a tailnet service take one grant. Calls the other way have had two answers,
-        and neither is one you'd want for production.
+        Calls from a laptop to a tailnet service take one grant. Calls the other way have had a few answers,
+        each with a catch for callbacks from production.
     </p>
 
-    <div class="mt-10 grid gap-8 md:grid-cols-3">
+    <div class="mt-10 grid gap-8 md:grid-cols-2 xl:grid-cols-3">
         {approaches.map(({accent, hint, name, points}) => (
             <div class:list={["border-t-2 pt-4", accent ? "border-active" : "border-border"]}>
                 <h3 class="text-base font-semibold">
@@ -148,6 +171,17 @@ const paths = [
             </div>
         ))}
     </div>
+</section>
+
+<section class="border-t px-6 py-16 md:px-12 lg:px-16" aria-labelledby="not-needed-heading">
+    <h2 id="not-needed-heading" class="text-2xl font-semibold tracking-tight">When you don't need tsrelay</h2>
+    <ul class="mt-6 flex max-w-2xl list-disc flex-col gap-2.5 pl-5 text-base leading-relaxed text-muted-foreground">
+        {notNeeded.map((point) => <li>{point}</li>)}
+    </ul>
+    <p class="mt-6 max-w-2xl text-base leading-relaxed text-muted-foreground">
+        The <a href="/security-model" class="text-active">security model</a> says what the relay guarantees,
+        and what it leaves to you.
+    </p>
 </section>
 
 <section class="border-t px-6 py-16 md:px-12 lg:px-16" aria-labelledby="start-heading">
