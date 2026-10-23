@@ -240,6 +240,8 @@ The protocol version lives in the `Upgrade` token. An incompatible change gets a
 
 ### 6.2.1 Compatibility within v1
 
+The promise for the whole product, not just the tunnel, is written down in [compatibility.md](compatibility.md).
+
 Every v1 relay serves `tsrelay-tunnel/1`. Within v1 the protocol only grows:
 
 - The attach parameters (`hook`, `session`, `resume`, `target`) keep their meaning. New ones are optional, and a relay ignores parameters it does not know.

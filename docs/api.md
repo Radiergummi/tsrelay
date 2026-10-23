@@ -19,4 +19,6 @@ curl -H 'Accept: text/event-stream' https://tsrelay.<your tailnet>/hooks  # live
 
 Durations you set (`holdTimeout`, `maxHookTtl`) are Go duration strings such as `30s`; `0s` means no limit. Durations the relay measures (`durationMs`, `ttfbMs`, `waitedForMs` on calls and attempts) are JSON numbers of milliseconds with microsecond precision, so a 412 µs response reads `0.412`.
 
+Lists are objects (`{"hooks": [...]}`, `{"calls": [...]}`), so they can gain siblings later. Within a major version the API only grows: clients must ignore unknown fields, enumeration values, event types and problem codes (falling back to the HTTP status for a code they don't know), and a request field the relay doesn't know is refused with `422` and the code `unsupported_field`. [Compatibility](compatibility.md) has the full promise.
+
 The calls endpoints are described under [Inspecting calls](web-ui.md#inspecting-calls), and the errors the API returns in the [error reference](errors.md).

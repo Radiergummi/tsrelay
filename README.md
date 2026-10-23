@@ -41,7 +41,7 @@ Full documentation is at <https://tsrelay.mazetti.me>, and in [`docs/`](docs) in
 
 - Using tsrelay: [getting started](docs/getting-started.md), [hooks](docs/hooks.md), [background tunnels](docs/background-tunnels.md), [receiving calls](docs/receiving-calls.md), [web UI and inspector](docs/web-ui.md), [API](docs/api.md) and the [command line](docs/cli.md).
 - Running a relay: [running a relay](docs/running-a-relay.md), [access control](docs/access-control.md) and [observability](docs/observability.md).
-- Reference: [configuration](docs/configuration.md) and [errors](docs/errors.md).
+- Reference: [configuration](docs/configuration.md), [errors](docs/errors.md) and [compatibility](docs/compatibility.md).
 
 Binaries for macOS, Linux and Windows, and the container image, are on the [download page](https://tsrelay.mazetti.me/download).
 

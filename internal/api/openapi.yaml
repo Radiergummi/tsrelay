@@ -16,6 +16,13 @@ info:
     `Cache-Control: no-store`. Every write without a `Sec-Fetch-Site` header
     must send `Content-Type: application/json`, even without a body (415
     otherwise).
+
+    Within a major version, changes are additive only. Clients must ignore
+    unknown fields, enum values, event types, control types and problem
+    codes, and fall back to the HTTP status for a code they don't know. A
+    request field the relay doesn't know is refused with `422` and the code
+    `unsupported_field`. `GET /` lists optional capabilities in `features`.
+    See https://tsrelay.mazetti.me/compatibility.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -38,6 +45,7 @@ paths:
           description: Redirect to `/hooks`, for HTML
         "403": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /hooks:
     get:
       operationId: listHooks
@@ -64,6 +72,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
     post:
       operationId: createHook
       summary: Create a hook
@@ -91,6 +100,7 @@ paths:
         "400": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
         "422": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /hooks/{id}:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -111,6 +121,7 @@ paths:
         "404": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
     patch:
       operationId: updateHook
       summary: Change a hook; only the given fields change
@@ -131,13 +142,16 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "422": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
     delete:
       operationId: deleteHook
       summary: Delete a hook
       responses:
         "204":
           description: Deleted
+        "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /hooks/{id}/rotate-public-url:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -153,6 +167,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /hooks/{id}/calls:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -173,6 +188,7 @@ paths:
         "404": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /hooks/{id}/calls/{callID}:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -190,6 +206,7 @@ paths:
             text/html: {}
         "404": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /hooks/{id}/calls/{callID}/replay:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -206,6 +223,8 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
+        "500": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /hooks/{id}/test:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -227,6 +246,8 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "422": { $ref: "#/components/responses/Problem" }
+        "500": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /channels:
     get:
       operationId: listChannels
@@ -248,6 +269,7 @@ paths:
             text/html: {}
         "403": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /channels/{name}:
     parameters:
       - name: name
@@ -274,6 +296,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /tunnel:
     get:
       operationId: attachTunnel
@@ -308,6 +331,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /openapi:
     get:
       operationId: getOpenAPI
@@ -317,6 +341,7 @@ paths:
           description: The OpenAPI document
           content:
             application/json: {}
+        default: { $ref: "#/components/responses/Problem" }
   /openapi.yaml:
     get:
       operationId: getOpenAPIYAML
@@ -326,6 +351,7 @@ paths:
           description: The OpenAPI document
           content:
             application/yaml: {}
+        default: { $ref: "#/components/responses/Problem" }
   /licenses:
     get:
       operationId: getLicenses
@@ -340,6 +366,7 @@ paths:
             text/html: {}
         "403": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /licenses/{textId}:
     parameters:
       - name: textId
@@ -358,6 +385,7 @@ paths:
             text/plain: {}
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /notices.txt:
     get:
       operationId: getNotices
@@ -369,6 +397,7 @@ paths:
           content:
             text/plain: {}
         "403": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /sbom.cdx.json:
     get:
       operationId: getSBOM
@@ -380,6 +409,7 @@ paths:
           content:
             application/vnd.cyclonedx+json: {}
         "403": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
 components:
   parameters:
     id:

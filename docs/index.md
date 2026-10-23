@@ -37,4 +37,5 @@ Calls from a laptop to a tailnet service take one grant. Calls the other way hav
 ## Where to start
 
 - If your tailnet already runs a relay, install the CLI from it and forward your first callback, as [Getting started](getting-started.md) shows.
+- If you build against the API, the CLI's JSON or the policy grants, [Compatibility](compatibility.md) says what stays the same within a major version.
 - If you run the tailnet, add the relay and grant who may send and receive, as [Running a relay](running-a-relay.md) describes.

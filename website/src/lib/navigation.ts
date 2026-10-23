@@ -45,6 +45,7 @@ export const sidebarGroups: NavGroup[] = [
     items: [
       { slug: "configuration", title: "Configuration" },
       { slug: "errors", title: "Errors" },
+      { slug: "compatibility", title: "Compatibility" },
       { slug: "api/explorer", title: "API reference" },
       { slug: "download", title: "Download" },
     ],
