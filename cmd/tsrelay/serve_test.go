@@ -84,7 +84,7 @@ func TestServeRejectsBadRevalidateInterval(t *testing.T) {
 }
 
 func TestServeRejectsNegativeLimits(t *testing.T) {
-	for _, arg := range []string{"--user-max-hooks=-1", "--user-max-tunnels=-1", "--user-max-hook-ttl=-1s", "--tunnel-concurrency=-1"} {
+	for _, arg := range []string{"--user-max-hooks=-1", "--user-max-tunnels=-1", "--user-max-hook-ttl=-1s"} {
 		if code, out := serveExit(t, arg); code != 2 || !strings.Contains(out, "negative") {
 			t.Errorf("%s: exit %d, stderr %q", arg, code, out)
 		}
@@ -120,3 +120,19 @@ func TestRedactHeadersAddsToDefaults(t *testing.T) {
 
 // Minor 3: fang capitalizes a flag description's first word, so a quoted
 // value (here "json" or "text") must never be first.
+
+// A value with no meaning is refused rather than replaced by a default.
+func TestServeRejectsMeaninglessValues(t *testing.T) {
+	for arg, want := range map[string]string{
+		"--tunnel-concurrency=0":  "--tunnel-concurrency must be at least 1",
+		"--tunnel-concurrency=-1": "--tunnel-concurrency must be at least 1",
+		"--ephemeral-grace=0s":    "--ephemeral-grace must be positive",
+		"--ephemeral-grace=-5m":   "--ephemeral-grace must be positive",
+		"--shutdown-timeout=0s":   "--shutdown-timeout must be positive",
+		"--hostname=":             "--hostname can't be empty",
+	} {
+		if code, out := serveExit(t, arg); code != 2 || !strings.Contains(out, want) {
+			t.Errorf("%s: exit %d, stderr %q", arg, code, out)
+		}
+	}
+}

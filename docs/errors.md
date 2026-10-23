@@ -45,6 +45,10 @@ Senders see these when they call a hook.
 
 **414.** The call's path, percent-encoded, is longer than 8 KiB. The relay refuses it before routing, like a server refusing an overlong request line, so it doesn't reach the inspector or the audit log. Shorten the path; send long data in the body.
 
+### `shutting_down`
+
+**503.** The relay is shutting down, usually for a restart, while the call waited for a tunnel; one arriving then gets it too. Calls already delivered to a tunnel finish first. `Retry-After` is 5: retry then, and the restarted relay holds the call until the tunnel is back.
+
 ### `rate_limited`
 
 **429.** The hook's `rateLimit` was exceeded. `Retry-After` is the limiter's wait, rounded up to whole seconds. Wait, then retry; the hook's owner can raise the limit with `tsrelay hooks update <hook> --rate-limit 100/200`.

@@ -260,6 +260,10 @@ func (c *call) hold() error {
 	c.waited = time.Since(holdStart)
 	result := "attached" // the span's tsrelay.hold.result
 	switch {
+	case errors.Is(err, errShuttingDown):
+		rf := refuse(http.StatusServiceUnavailable, problem.ShuttingDown, "the relay is restarting")
+		rf.retryAfter = "5"
+		result, err = "shutting_down", rf
 	case err != nil && c.ctx.Err() != nil:
 		result, err = "canceled", errSenderGone
 	case errors.Is(err, lifecycle.ErrHookGone), errors.Is(err, errHookExpired):

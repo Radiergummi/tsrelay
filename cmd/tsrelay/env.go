@@ -57,7 +57,7 @@ var envFlags = map[string]bool{
 	"hook-response-timeout-default": true, "hook-response-timeout-max": true,
 	"hostname": true, "log-format": true, "log-level": true, "ops-listen": true,
 	"ops-pprof": true, "otel": true, "otel-propagation": true,
-	"redact-headers": true, "revalidate-interval": true, "state-dir": true,
+	"redact-headers": true, "revalidate-interval": true, "shutdown-timeout": true, "state-dir": true,
 	"tls": true, "tunnel-concurrency": true, "update-check": true,
 	"user-max-hook-ttl": true, "user-max-hooks": true, "user-max-tunnels": true,
 	"user-slug": true, "user-slug-override": true, "verbose-tailscale": true,

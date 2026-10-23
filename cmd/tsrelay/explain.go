@@ -36,6 +36,8 @@ var problemExplanations = map[string]explanation{
 		[]string{"tsrelay hooks update <hook> --max-body-bytes 10485760"}},
 	problem.PathTooLong: {"The path is too long", "The relay refuses paths longer than 8 KiB.",
 		[]string{"Send long data in the body"}},
+	problem.ShuttingDown: {"The relay is restarting", "It shut down while the call waited for a tunnel.",
+		[]string{"Retry in a few seconds"}},
 	problem.RateLimited: {"Too many calls", "The hook's rate limit was exceeded.",
 		[]string{"Wait a moment, then retry", "tsrelay hooks update <hook> --rate-limit 100/200"}},
 	problem.TunnelUnavailable: {"No tunnel is serving the hook", "No tsrelay process attached to the hook within its hold timeout.",

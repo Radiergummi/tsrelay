@@ -35,6 +35,7 @@ Flag names follow one scheme, so a prefix tells you what a flag governs:
 | `--ephemeral-grace` | `10m` | How long an ephemeral hook survives without its tunnel |
 | `--tunnel-concurrency` | `32` | Concurrent calls per tunnel |
 | `--revalidate-interval` | `60s` | How often attached tunnels and open event streams are re-authorized |
+| `--shutdown-timeout` | `20s` | How long calls already delivered get to finish when the relay stops. Keep it below the pod's termination grace period; see [restarts](running-a-relay.md#restarts) |
 | `--hook-hold-queue` | `100` | Calls per hook that may wait for a tunnel to attach at once |
 | `--capture-calls` | `100` | Calls per hook the inspector keeps in memory |
 | `--capture-limit-bytes` | `65536` | Bytes the inspector keeps of each body, of each call's headers, and of its query string |

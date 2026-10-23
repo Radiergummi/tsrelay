@@ -53,6 +53,7 @@ var (
 	errHoldTimeout   = errors.New("no tunnel attached within the hold timeout")
 	errHoldQueueFull = errors.New("too many calls are waiting for a tunnel")
 	errHookExpired   = errors.New("the hook expired while the call was waiting")
+	errShuttingDown  = errors.New("the relay is shutting down")
 )
 
 // Handler serves callbacks. Each call uses the effective settings of its
@@ -75,6 +76,9 @@ type Handler struct {
 	Propagator propagation.TextMapPropagator // nil: don't join senders' traces or pass ours on
 
 	limiters  limiters
+	drainOnce sync.Once
+	draining  context.Context // done once Drain was called
+	drained   context.CancelFunc
 	heldMu    sync.Mutex
 	held      map[hooks.ID]int
 	heldTotal atomic.Int64
@@ -110,9 +114,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Drain ends every hold and refuses new ones, for a relay shutting down:
+// no tunnel can attach any more, so a held call is better answered now,
+// with a Retry-After that reaches the restarted relay. Calls already
+// delivered are not affected.
+func (h *Handler) Drain() { h.drainCtx(); h.drained() }
+
+// drainCtx is done once Drain was called.
+func (h *Handler) drainCtx() context.Context {
+	h.drainOnce.Do(func() { h.draining, h.drained = context.WithCancel(context.Background()) })
+	return h.draining
+}
+
 // hold waits up to timeout for a tunnel to attach to hook, but never past
 // the hook's expiry, and only while fewer than HoldQueue calls wait for it.
 func (h *Handler) hold(ctx context.Context, hook hooks.Hook, timeout time.Duration) error {
+	drain := h.drainCtx()
+	if drain.Err() != nil {
+		return errShuttingDown
+	}
 	if timeout <= 0 {
 		return errHoldTimeout
 	}
@@ -128,6 +148,8 @@ func (h *Handler) hold(ctx context.Context, hook hooks.Hook, timeout time.Durati
 	}
 	ctx, cancel := context.WithTimeoutCause(ctx, timeout, cause)
 	defer cancel()
+	ctx, stop := context.WithCancelCause(ctx)
+	defer context.AfterFunc(drain, func() { stop(errShuttingDown) })()
 	_, err := h.Tunnels.Wait(ctx, hook.ID)
 	return err
 }

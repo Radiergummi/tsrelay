@@ -30,6 +30,7 @@ const (
 	BodyStalled         = "body_stalled"
 	HoldQueueFull       = "hold_queue_full"
 	PathTooLong         = "path_too_long"
+	ShuttingDown        = "shutting_down"
 
 	Forbidden            = "forbidden"
 	NotIdentified        = "not_identified"

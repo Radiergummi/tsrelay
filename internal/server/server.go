@@ -157,6 +157,14 @@ func runEvery(ctx context.Context, interval time.Duration, f func()) {
 	}
 }
 
+// Drain prepares a shutdown: held calls are answered, as no tunnel can
+// attach any more, and event streams end, which http.Server.Shutdown would
+// otherwise wait for. Calls already delivered keep their tunnels until Close.
+func (s *Server) Drain() {
+	s.relay.Drain()
+	s.events.Close()
+}
+
 // Close ends the event streams and closes all tunnels. Neither hijacked
 // tunnel connections nor open streams are covered by http.Server.Shutdown.
 func (s *Server) Close() {

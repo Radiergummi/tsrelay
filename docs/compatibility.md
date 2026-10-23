@@ -69,8 +69,8 @@ Zero doesn't mean the same for every limit, and the meaning stays within a major
 | `--hook-max-body-bytes-default` and the `maxBodyBytes` setting | No limit on the body size. |
 | `--hook-hold-timeout-default` and the `holdTimeout` setting | No holding: a call without a tunnel fails at once. |
 | `responseTimeout` and `idleTimeout` | Invalid; they must be greater than zero. |
-| `--hook-hold-queue`, `--capture-calls`, `--capture-limit-bytes`, `--funnel-max-body-bytes` | Refused at startup; they must be at least 1. |
-| `--tunnel-concurrency` | The default of 32. |
+| `--hook-hold-queue`, `--capture-calls`, `--capture-limit-bytes`, `--funnel-max-body-bytes`, `--tunnel-concurrency` | Refused at startup; they must be at least 1. |
+| `--ephemeral-grace`, `--revalidate-interval`, `--shutdown-timeout` | Refused at startup; they must be greater than zero. |
 
 ## Shapes of lists and numbers
 

@@ -56,6 +56,7 @@ func newServeCmd(c *cli) *cobra.Command {
 	policyFlags := registerPolicyFlags(fs)
 	concurrency := fs.Int("tunnel-concurrency", tunnel.DefaultConcurrency, "concurrent calls per tunnel")
 	revalidate := fs.Duration("revalidate-interval", time.Minute, "how often attached tunnels and open event streams are re-authorized")
+	shutdownTimeout := fs.Duration("shutdown-timeout", 20*time.Second, "how long calls already delivered get to finish when the relay stops; keep it below the pod's termination grace period")
 	opsListen := fs.String("ops-listen", "", "host address for /healthz, /readyz and /metrics, e.g. :9090; never on the tailnet (empty: off)")
 	opsPprof := fs.Bool("ops-pprof", false, "serve /debug/pprof/ on the ops listener")
 	funnel := fs.Bool("funnel", false, "serve hooks their owners made public on the internet, through Tailscale Funnel")
@@ -91,10 +92,25 @@ func newServeCmd(c *cli) *cobra.Command {
 			return usage("--revalidate-interval must be positive", "It says how often attached tunnels are re-authorized.",
 				"tsrelay serve --revalidate-interval 1m")
 		}
-		if *maxHooks < 0 || *maxTunnels < 0 || *maxTTL < 0 || *concurrency < 0 {
-			return usage("--user-max-hooks, --user-max-tunnels, --user-max-hook-ttl and --tunnel-concurrency can't be negative",
-				"0 allows no hooks or tunnels, sets no lifetime limit, or picks the default concurrency.",
+		if *maxHooks < 0 || *maxTunnels < 0 || *maxTTL < 0 {
+			return usage("--user-max-hooks, --user-max-tunnels and --user-max-hook-ttl can't be negative",
+				"0 allows no hooks or tunnels, or sets no lifetime limit.",
 				"tsrelay serve --user-max-hooks 10 --user-max-tunnels 5")
+		}
+		if *concurrency < 1 {
+			return usage("--tunnel-concurrency must be at least 1", "It says how many calls one tunnel carries at once.",
+				fmt.Sprintf("tsrelay serve --tunnel-concurrency %d", tunnel.DefaultConcurrency))
+		}
+		if *grace <= 0 {
+			return usage("--ephemeral-grace must be positive", "It says how long an ephemeral hook survives without a tunnel.",
+				"tsrelay serve --ephemeral-grace "+server.DefaultEphemeralGrace.String())
+		}
+		if *shutdownTimeout <= 0 {
+			return usage("--shutdown-timeout must be positive", "It says how long calls already delivered get to finish when the relay stops.",
+				"tsrelay serve --shutdown-timeout 20s")
+		}
+		if *hostname == "" {
+			return usage("--hostname can't be empty", "It is the relay's machine name on the tailnet.", "tsrelay serve --hostname tsrelay")
 		}
 		if *holdQueue < 1 {
 			return usage("--hook-hold-queue must be at least 1", "It says how many calls per hook may wait for a tunnel at once.",
@@ -143,8 +159,8 @@ func newServeCmd(c *cli) *cobra.Command {
 				Inspect: inspect.Config{CallsPerHook: *captureCalls, CaptureLimit: *captureLimit, NoBodies: !*captureBodies, Redact: redact.Values},
 				CapName: *capName, NoTracePropagation: !*propagate, Revalidate: *revalidate,
 			},
-			opsListen: *opsListen,
-			otel:      *otlp, pprof: *opsPprof,
+			opsListen: *opsListen, shutdownTimeout: *shutdownTimeout,
+			otel: *otlp, pprof: *opsPprof,
 			updateCheck: *updateCheck,
 			funnel:      *funnel, funnelPort: *funnelPort, funnelMaxBody: *funnelMaxBody,
 		})
@@ -166,9 +182,10 @@ type relayConfig struct {
 	limits             authz.Limits
 	policy             hooks.Policy
 	server             server.Config
-	opsListen          string // host address of the ops listener; empty: off
-	otel, pprof        bool   // --otel, --ops-pprof
-	updateCheck        bool   // --update-check
+	opsListen          string        // host address of the ops listener; empty: off
+	shutdownTimeout    time.Duration // how long delivered calls get to finish on shutdown
+	otel, pprof        bool          // --otel, --ops-pprof
+	updateCheck        bool          // --update-check
 	funnel             bool
 	funnelPort         int
 	funnelMaxBody      int64
@@ -293,10 +310,13 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 		return err
 	case <-ctx.Done():
 	}
-	logger.Info("shutting down")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Held calls are answered now (no tunnel can attach any more) and event
+	// streams end; calls already delivered finish over their tunnels, which
+	// close last: hijacked, Shutdown doesn't cover them.
+	logger.Info("shutting down", "timeout", cfg.shutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.shutdownTimeout)
 	defer cancel()
-	srv.Close() // hijacked tunnels are not covered by Shutdown
+	srv.Drain()
 	// Both servers drain at once, so one cannot use up the other's time.
 	publicErr := make(chan error, 1)
 	go func() {
@@ -307,7 +327,9 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 		publicErr <- nil
 	}()
 	for _, err := range []error{hs.Shutdown(shutdownCtx), <-publicErr} {
-		if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(err, context.DeadlineExceeded) {
+			logger.Warn("calls were still running when the shutdown timeout ran out", "timeout", cfg.shutdownTimeout)
+		} else if err != nil {
 			return err
 		}
 	}
