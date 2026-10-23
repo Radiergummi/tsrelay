@@ -939,3 +939,23 @@ func TestWritesRefuseUnknownQueryParameters(t *testing.T) {
 		t.Errorf("a read ignores parameters it doesn't know: %d", resp.StatusCode)
 	}
 }
+
+// A newer client advertises what it supports with attach parameters a 1.0
+// relay doesn't know (compatibility.md), so the relay ignores them.
+func TestAttachIgnoresUnknownParameters(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	controls, _, err := e.openTunnelQ(moritz, "client-feature=x&future=1", h.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case c := <-controls:
+		if c.Type != tunnel.ControlAttached {
+			t.Fatalf("first control = %+v", c)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("not attached")
+	}
+}
