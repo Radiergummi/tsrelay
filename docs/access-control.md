@@ -33,7 +33,7 @@ Each capability value is an object with these fields:
 | `channels` | Channel patterns the roles apply to; `*` matches anything, dots included. Absent means `["*"]`; an empty list `[]` matches nothing (see [Channels](#channels)) |
 | `maxHooks` | Receivers: hooks owned at once (relay default 10) |
 | `maxTunnels` | Receivers: tunnels attached at once (relay default 5) |
-| `maxHookTtl` | Receivers: the longest a persistent hook may live, as a Go duration like `720h`. Takes effect only when the relay sets a default lifetime with `--max-hook-ttl-default` (default: unlimited, and then this field does nothing); the grant then raises that default |
+| `maxHookTtl` | Receivers: the longest a persistent hook may live, as a Go duration like `720h`. Takes effect only when the relay sets a limit with `--user-max-hook-ttl` (default: unlimited, and then this field does nothing); the grant then raises that limit |
 | `public` | Receivers: `true` lets them make their hooks reachable from the internet; see [Serving public hooks](running-a-relay.md#serving-public-hooks) |
 | `requires` | Names of grant features a relay must know to apply this value (see [Combining grants](#combining-grants)). No features exist at 1.0 |
 

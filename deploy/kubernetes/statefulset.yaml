@@ -28,7 +28,7 @@ spec:
         runAsGroup: 65532
       containers:
         - name: tsrelay
-          image: ghcr.io/radiergummi/tsrelay:latest
+          image: ghcr.io/radiergummi/tsrelay:1
           args:
             - --ops-listen=:9090
             # --ops-pprof and --otel are left off here; enable them

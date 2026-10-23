@@ -1,6 +1,6 @@
 services:
   tsrelay:
-    image: ghcr.io/radiergummi/tsrelay:latest
+    image: ghcr.io/radiergummi/tsrelay:1
     restart: unless-stopped
     environment:
       TS_CLIENT_SECRET: "tskey-client-REPLACE-ME"

@@ -12,7 +12,6 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -50,9 +49,9 @@ func newServeCmd(c *cli) *cobra.Command {
 	slugMode := fs.String("user-slug", string(hooks.SlugLocalPart), `how URL slugs derive from logins: "local-part" or "login"`)
 	overrides := mapFlag{}
 	fs.Var(overrides, "user-slug-override", "login=slug pairs that resolve slug collisions (repeatable)")
-	maxHooks := fs.Int("max-hooks-default", authz.DefaultLimits.MaxHooks, "hooks per user unless a grant allows more")
-	maxTunnels := fs.Int("max-tunnels-default", authz.DefaultLimits.MaxTunnels, "tunnels per user unless a grant allows more")
-	maxTTL := fs.Duration("max-hook-ttl-default", 0, "longest hook lifetime unless a grant allows more (0: unlimited)")
+	maxHooks := fs.Int("user-max-hooks", authz.DefaultLimits.MaxHooks, "hooks per user unless a grant allows more")
+	maxTunnels := fs.Int("user-max-tunnels", authz.DefaultLimits.MaxTunnels, "tunnels per user unless a grant allows more")
+	maxTTL := fs.Duration("user-max-hook-ttl", 0, "longest hook lifetime unless a grant allows more (0: unlimited)")
 	grace := fs.Duration("ephemeral-grace", server.DefaultEphemeralGrace, "how long an ephemeral hook survives without a tunnel")
 	policyFlags := registerPolicyFlags(fs)
 	concurrency := fs.Int("tunnel-concurrency", tunnel.DefaultConcurrency, "concurrent calls per tunnel")
@@ -63,13 +62,13 @@ func newServeCmd(c *cli) *cobra.Command {
 	funnelPort := fs.Int("funnel-port", 443, "the Funnel port for public hooks: 443, 8443 or 10000")
 	funnelMaxBody := fs.Int64("funnel-max-body-bytes", 25<<20, "largest request body of a call from the internet, in bytes")
 	otlp := fs.Bool("otel", false, "export traces and metrics over OTLP/HTTP, configured by the standard OTEL_* environment variables")
-	propagate := fs.Bool("trace-propagation", true, "with --otel: join senders' traces, and pass the relay's trace context on to apps")
-	holdQueue := fs.Int("hold-queue", relay.DefaultHoldQueue, "calls per hook that may wait for a tunnel at once")
-	captureLimit := fs.Int("capture-limit", inspect.DefaultCaptureLimit, "bytes the inspector keeps of each body, of each call's headers, and of its query string")
+	propagate := fs.Bool("otel-propagation", true, "with --otel: join senders' traces, and pass the relay's trace context on to apps")
+	holdQueue := fs.Int("hook-hold-queue", relay.DefaultHoldQueue, "calls per hook that may wait for a tunnel at once")
+	captureLimit := fs.Int("capture-limit-bytes", inspect.DefaultCaptureLimit, "bytes the inspector keeps of each body, of each call's headers, and of its query string")
 	captureCalls := fs.Int("capture-calls", inspect.DefaultCallsPerHook, "calls per hook the inspector keeps")
 	captureBodies := fs.Bool("capture-bodies", true, "keep bodies for the inspector; false records metadata and headers only, whatever hooks set")
-	redact := listFlag{Values: slices.Clone(inspect.DefaultRedact)}
-	fs.Var(&redact, "redact-headers", "headers whose values the inspector never keeps (comma-separated)")
+	redact := listFlag{}
+	fs.Var(&redact, "redact-headers", "headers whose values the inspector never keeps, in addition to the defaults (comma-separated)")
 	logFormat := fs.String("log-format", "json", `the log line format: "json" or "text"`)
 	logLevel := fs.String("log-level", "info", "debug, info, warn or error")
 	verbose := fs.Bool("verbose-tailscale", false, "include tsnet's own logs")
@@ -93,12 +92,12 @@ func newServeCmd(c *cli) *cobra.Command {
 				"tsrelay serve --revalidate-interval 1m")
 		}
 		if *holdQueue < 1 {
-			return usage("--hold-queue must be at least 1", "It says how many calls per hook may wait for a tunnel at once.",
-				"tsrelay serve --hold-queue 16", "To disable holding: tsrelay serve --hook-hold-timeout-default=0s")
+			return usage("--hook-hold-queue must be at least 1", "It says how many calls per hook may wait for a tunnel at once.",
+				"tsrelay serve --hook-hold-queue 16", "To disable holding: tsrelay serve --hook-hold-timeout-default=0s")
 		}
 		if *captureLimit < 1 || *captureCalls < 1 {
-			return usage("--capture-limit and --capture-calls must be at least 1", "The inspector keeps at least one call, and at least one byte of it.",
-				"tsrelay serve --capture-calls 50 --capture-limit 65536", "To keep no bodies: tsrelay serve --capture-bodies=false")
+			return usage("--capture-limit-bytes and --capture-calls must be at least 1", "The inspector keeps at least one call, and at least one byte of it.",
+				"tsrelay serve --capture-calls 50 --capture-limit-bytes 65536", "To keep no bodies: tsrelay serve --capture-bodies=false")
 		}
 		if *funnel && !*useTLS {
 			return usage("--funnel needs --tls", "Funnel only serves HTTPS.", "tsrelay serve --tls --funnel")

@@ -25,7 +25,7 @@ type Config struct {
 	CallsPerHook int      // calls kept per hook; 0 means DefaultCallsPerHook
 	CaptureLimit int      // bytes kept per body; 0 means DefaultCaptureLimit
 	NoBodies     bool     // turns body capture off relay-wide (--capture-bodies=false)
-	Redact       []string // headers never captured; nil means DefaultRedact
+	Redact       []string // headers never captured, in addition to DefaultRedact
 }
 
 // Inspector keeps the most recent calls of each hook in memory. Calls are
@@ -47,10 +47,7 @@ type Inspector struct {
 func New(cfg Config) *Inspector {
 	cfg.CallsPerHook = cmp.Or(cfg.CallsPerHook, DefaultCallsPerHook)
 	cfg.CaptureLimit = cmp.Or(cfg.CaptureLimit, DefaultCaptureLimit)
-	if cfg.Redact == nil {
-		cfg.Redact = DefaultRedact
-	}
-	return &Inspector{cfg: cfg, redact: NewRedactor(cfg.Redact), byHook: map[hooks.ID][]*Call{}, refused: map[hooks.ID][]*Call{}, byID: map[string]*Call{}}
+	return &Inspector{cfg: cfg, redact: NewRedactor(append(slices.Clone(DefaultRedact), cfg.Redact...)), byHook: map[hooks.ID][]*Call{}, refused: map[hooks.ID][]*Call{}, byID: map[string]*Call{}}
 }
 
 // CallsPerHook is how many calls the inspector keeps per hook.

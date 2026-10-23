@@ -44,7 +44,7 @@ type Config struct {
 	Releases       *release.Checker     // the latest release, named to admins in GET /; nil: none (--update-check=false)
 	ReleaseAssets  string               // base URL of the release assets /download redirects to; "" means GitHub's
 
-	NoTracePropagation bool // don't join senders' traces or pass the relay's to apps (--trace-propagation=false)
+	NoTracePropagation bool // don't join senders' traces or pass the relay's to apps (--otel-propagation=false)
 }
 
 type Server struct {

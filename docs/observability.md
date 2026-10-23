@@ -19,7 +19,7 @@ With `--ops-listen=:9090`, the relay serves `/healthz` (process alive), `/readyz
 
 With `--otel`, the relay exports traces and metrics over OTLP/HTTP. Everything else is configured with the standard OpenTelemetry variables: `OTEL_EXPORTER_OTLP_ENDPOINT` (default `http://localhost:4318`), `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_TRACES_SAMPLER`, `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES`. An unreachable collector never stops the relay; it logs a warning at most once a minute. Spans and metrics never contain bodies, query strings, or header values.
 
-Each call is a `tsrelay.call` span with children `tsrelay.authorize`, `tsrelay.hold` (only when the call waited for a tunnel) and `tsrelay.forward` (until the app's response headers). With `--trace-propagation` (the default), the relay joins the sender's trace and replaces `traceparent` on the way to the app, so the app's own spans nest under `tsrelay.forward`. Without `--otel`, trace headers pass through untouched.
+Each call is a `tsrelay.call` span with children `tsrelay.authorize`, `tsrelay.hold` (only when the call waited for a tunnel) and `tsrelay.forward` (until the app's response headers). With `--otel-propagation` (the default), the relay joins the sender's trace and replaces `traceparent` on the way to the app, so the app's own spans nest under `tsrelay.forward`. Without `--otel`, trace headers pass through untouched.
 
 ## Profiling
 

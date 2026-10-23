@@ -51,7 +51,7 @@ Senders see these when they call a hook.
 
 ### `hold_queue_full`
 
-**562 Tunnel Overloaded.** No tunnel is attached to the hook, and too many calls are already waiting for one (the relay's `--hold-queue`). `Retry-After` is the `holdTimeout`, but never less than 5 s. The hook's owner can attach a tunnel with `tsrelay attach <hook> --to 3000`.
+**562 Tunnel Overloaded.** No tunnel is attached to the hook, and too many calls are already waiting for one (the relay's `--hook-hold-queue`). `Retry-After` is the `holdTimeout`, but never less than 5 s. The hook's owner can attach a tunnel with `tsrelay attach <hook> --to 3000`.
 
 ### `tunnel_overloaded`
 

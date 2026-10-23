@@ -127,7 +127,7 @@ The capability name is configurable with `--cap-name`. The default is **`tsrelay
   "channels":   ["prod", "staging.*"], // channel patterns; default ["*"]
   "maxHooks":   10,                    // receiver: hooks owned at once
   "maxTunnels": 5,                     // receiver: tunnels attached at once
-  "maxHookTtl": "720h",                // receiver: cap on a hook's expiry; Go duration
+  "maxHookTtl": "720h",                // receiver: raises --user-max-hook-ttl; no effect while that is unlimited; Go duration
   "public": true                       // receiver: may make hooks in these channels public (§19)
 }
 ```
@@ -288,7 +288,7 @@ Delivery is **synchronous pass-through.** The sender receives the local applicat
 
 ### 7.3 Hold for reconnect
 
-If a call arrives while no tunnel is attached to its hook, the relay waits up to `holdTimeout` (30 s by default) for one to attach before it forwards anything. Nothing has been read from the request body at that point, so streamed bodies are safe to hold. Held calls count against `--hold-queue` per hook (100 by default); beyond that the call fails at once with `562 hold_queue_full`, and once `holdTimeout` elapses with `561 tunnel_unavailable`, both with `Retry-After: max(5s, holdTimeout)`, rounded up to whole seconds. A hook deleted, or expiring, while calls are held for it releases them at once with `404 hook_not_found`, rather than waiting out `holdTimeout`. When a tunnel does attach, each held call is routed and authorized again before it is delivered (§5.5): it goes to the hook it was addressed to, below that hook's current path and with its current settings, or not at all.
+If a call arrives while no tunnel is attached to its hook, the relay waits up to `holdTimeout` (30 s by default) for one to attach before it forwards anything. Nothing has been read from the request body at that point, so streamed bodies are safe to hold. Held calls count against `--hook-hold-queue` per hook (100 by default); beyond that the call fails at once with `562 hold_queue_full`, and once `holdTimeout` elapses with `561 tunnel_unavailable`, both with `Retry-After: max(5s, holdTimeout)`, rounded up to whole seconds. A hook deleted, or expiring, while calls are held for it releases them at once with `404 hook_not_found`, rather than waiting out `holdTimeout`. When a tunnel does attach, each held call is routed and authorized again before it is delivered (§5.5): it goes to the hook it was addressed to, below that hook's current path and with its current settings, or not at all.
 
 A call already **in flight** when its tunnel drops cannot be retried, because its body has been partly consumed. It fails with `563 tunnel_lost`. Buffered replay is on the backlog (§17).
 
@@ -324,7 +324,7 @@ Every setting has a relay-wide default and a relay-wide maximum. Settings that a
 | `channel` | `default` | Must match one of the owner's receiver patterns |
 | `description` | empty | Free text, at most 280 characters |
 | `ephemeral` | `true` from `tsrelay http`, `false` from the UI or `hooks create` | Deleted after `ephemeralGrace` with no tunnel attached |
-| `expiresAt` | none | Capped by `maxHookTtl` |
+| `expiresAt` | none | Capped by `--user-max-hook-ttl` (raised by a grant's `maxHookTtl`); no cap while that is unlimited |
 | `attachPolicy` | `takeover` | Or `reject` |
 | `hostHeader` | `preserve` | Or `rewrite` |
 | `holdTimeout` | 30 s | 0 disables holding |
@@ -349,10 +349,10 @@ Attempt  { id, startedAt, tunnelID, node, waitedForMs (hold), ttfbMs, durationMs
 Capture  { bytes (≤ captureLimit), size, truncated, captured }
 ```
 
-- `path` is the escaped path below the hook's route, as the local app sees it. `query` is kept up to `--capture-limit` bytes; `queryTruncated` says it was cut.
-- `redacted` (on the call and on each attempt) lists header names left out either because they are redacted or because the headers exceeded `--capture-limit`.
-- `status` and `duration` on the call are what the sender received and how long the call took.
-- `Capture.truncated` means the bytes are not the whole body: it was longer than `--capture-limit`, or was never read to the end, as for a call refused before delivery. `Capture.captured` is false when body capture was off.
+- `path` is the escaped path below the hook's route, as the local app sees it. `query` is kept up to `--capture-limit-bytes` bytes; `queryTruncated` says it was cut.
+- `redacted` (on the call and on each attempt) lists header names left out either because they are redacted or because the headers exceeded `--capture-limit-bytes`.
+- `status` and `durationMs` on the call are what the sender received and how long the call took.
+- `Capture.truncated` means the bytes are not the whole body: it was longer than `--capture-limit-bytes`, or was never read to the end, as for a call refused before delivery. `Capture.captured` is false when body capture was off.
 - `outcome` is `pending` while the call is delivered, then `ok` (delivered, whatever the local app answered), a `Tsrelay-Error` code, or `sender_canceled`.
 - An attempt starts when delivery starts, holding included. A call refused before that (rate limit, body limit, channel) has no attempts.
 
@@ -363,7 +363,7 @@ Every call has an attempts list from the start, even though v1 only ever creates
 - **Retention:** the last 100 calls per hook (configurable), in memory, gone on restart. Each captured body is held up to 64 KiB (configurable).
 - **Refused calls:** calls denied by channel are recorded on the hook they targeted, so the owner can see them, but kept apart so a sender without access can't crowd out real calls: the last 10 per hook, in their own ring, marked `refused: true`. They produce no events, are refused before the rate limit and never count against it, and are never a hook's `lastCall`, which is its newest delivered call.
 - **Visibility:** only the hook's owner sees query strings, headers and bodies. Admins whose patterns match the hook's channel see metadata only, path included (§5.8).
-- **Redaction:** `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and `X-Api-Key` are redacted by default. The list is configurable relay-wide. Redacted values are dropped at capture time and never held in memory.
+- **Redaction:** `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and `X-Api-Key` are redacted by default. `--redact-headers` adds to the list relay-wide; the defaults can't be removed. Redacted values are dropped at capture time and never held in memory.
 - **Opt-in bodies:** body capture is off unless the hook or the relay's default turns it on (§8). Operators can turn it off for the whole relay with `--capture-bodies=false`, whatever hooks set.
 
 ### 9.3 Actions
@@ -472,19 +472,19 @@ Relay-wide settings (flag / environment variable):
 | `--cap-name` | `tsrelay.mazetti.me/cap/relay` |
 | `--user-slug` | `local-part` |
 | `--revalidate-interval` | 60 s |
-| `--max-tunnels-default` / `--max-hooks-default` | 5 / 10 per user |
-| `--max-hook-ttl-default` | unlimited |
+| `--user-max-tunnels` / `--user-max-hooks` | 5 / 10 per user |
+| `--user-max-hook-ttl` | unlimited (a grant's `maxHookTtl` only raises a set limit) |
 | `--ephemeral-grace` | 10 min |
 | `--tunnel-concurrency` | 32 streams |
-| `--hold-queue` | 100 per hook |
-| `--capture-limit` / `--capture-calls` | 64 KiB / 100 per hook |
+| `--hook-hold-queue` | 100 per hook |
+| `--capture-limit-bytes` / `--capture-calls` | 64 KiB / 100 per hook |
 | `--capture-bodies` | `true` |
 | `--redact-headers` | `Authorization,Proxy-Authorization,Cookie,Set-Cookie,X-Api-Key` |
 | `--hook-capture-default` | `false` |
 | `--ops-listen` | empty (off) |
 | `--ops-pprof` | `false` |
 | `--otel` | `false` (OTLP/HTTP, configured by `OTEL_*`) |
-| `--trace-propagation` | `true` |
+| `--otel-propagation` | `true` |
 | `--log-format` / `--log-level` | `json` / `info` |
 
 Per-hook defaults and maxima are listed in §8. Each per-hook setting also has a relay-wide `--hook-<setting>-default` and `--hook-<setting>-max` flag.
@@ -536,7 +536,7 @@ With `--otel`, the relay records OpenTelemetry spans and exports them, and its m
 - `tsrelay.tunnel.detach`: a short span in its own trace, linked to the attach, with `tsrelay.tunnel.reason` (`disconnected`, `orphaned`, `revoked`, `shutdown`) and the tunnel's lifetime.
 - API requests (server): one span per request, named after the route pattern (`PATCH /hooks/{id}`), with the actor's login. Replays and test requests are children of their API request's span. The event stream and tunnel attaches get no request span.
 
-With `--trace-propagation` (the default), a sender's call joins the sender's trace, and `traceparent`/`tracestate` sent to the app are replaced by `tsrelay.forward`'s. With `false`, or without `--otel`, they pass through untouched. With tracing off no span code runs at all.
+With `--otel-propagation` (the default), a sender's call joins the sender's trace, and `traceparent`/`tracestate` sent to the app are replaced by `tsrelay.forward`'s. With `false`, or without `--otel`, they pass through untouched. With tracing off no span code runs at all.
 
 ## 14. Deployment
 
