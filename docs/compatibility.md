@@ -32,7 +32,7 @@ Additive means new things appear. A client that breaks on them breaks on the nex
 - **Ignore unknown enumeration values, event-stream event types and control types.** Skip an event you don't know; don't close the stream because of it.
 - **Fall back to the HTTP status for an unknown problem code.** The `code` field and the `Tsrelay-Error` header may name a code this page's [error reference](errors.md) doesn't have yet; the status says which class of failure it is.
 
-The relay is strict the other way round. It refuses a request field it doesn't know with status 422, the code `unsupported_field`, and the field's name in `errors[].field`, so a newer client can tell that a relay is too old for what it asked. The CLI sends only the fields you set, so an old relay only sees the fields you use.
+The relay is strict the other way round. It refuses a request field it doesn't know with status 422, the code `unsupported_field`, and one entry in `errors` per unknown field, named by its dotted path such as `settings.rateLimit.burstiness`, so a newer client can tell that a relay is too old for what it asked. The CLI sends only the fields you set, so an old relay only sees the fields you use.
 
 ## Which relay features exist
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"reflect"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/access"
@@ -35,6 +36,10 @@ func (o *Opt[T]) UnmarshalJSON(b []byte) error {
 }
 
 func (o Opt[T]) MarshalJSON() ([]byte, error) { return json.Marshal(o.Value) }
+
+// ValueType is the type a value of the field decodes into, so a request
+// decoder can look inside it for fields it doesn't know.
+func (Opt[T]) ValueType() reflect.Type { return reflect.TypeFor[T]() }
 
 // IsZero makes `omitzero` leave unset fields out of marshalled requests.
 func (o Opt[T]) IsZero() bool { return !o.Set }

@@ -28,7 +28,7 @@ func TestUnknownFieldIsUnsupported(t *testing.T) {
 	e := newEnv(t, Config{})
 	for name, tc := range map[string]struct{ body, field string }{
 		"top level": {`{"bogus":1}`, "bogus"},
-		"nested":    {`{"settings":{"bogus":1}}`, "bogus"},
+		"nested":    {`{"settings":{"bogus":1}}`, "settings.bogus"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			resp, p := e.postHooks(tc.body)
