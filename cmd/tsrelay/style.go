@@ -11,6 +11,7 @@ import (
 
 	"charm.land/fang/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/term"
 )
@@ -128,13 +129,16 @@ func formatError(s stream, e *cliError) string {
 	return b.String()
 }
 
-// jsonError is how an error is reported on stderr with --json.
+// jsonError is how an error is reported on stderr with --json. Problem is
+// the relay's problem document when the relay refused, which also tells
+// its codes from the CLI's own.
 type jsonError struct {
 	Error struct {
-		Title  string   `json:"title"`
-		Reason string   `json:"reason"`
-		Fixes  []string `json:"fixes"`
-		Code   string   `json:"code"`
+		Title   string           `json:"title"`
+		Reason  string           `json:"reason"`
+		Fixes   []string         `json:"fixes"`
+		Code    string           `json:"code"`
+		Problem *problem.Problem `json:"problem,omitempty"`
 	} `json:"error"`
 }
 
@@ -143,6 +147,9 @@ func newJSONError(e *cliError) jsonError {
 	je.Error.Title, je.Error.Reason, je.Error.Fixes, je.Error.Code = e.Title, e.Reason, e.Fixes, e.Code
 	if je.Error.Fixes == nil {
 		je.Error.Fixes = []string{}
+	}
+	if p := (*problem.Problem)(nil); errors.As(e.err, &p) {
+		je.Error.Problem = p
 	}
 	return je
 }

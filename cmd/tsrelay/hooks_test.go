@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -206,8 +207,12 @@ func TestJSONErrors(t *testing.T) {
 		if err := json.Unmarshal([]byte(errOut), &je); err != nil || je.Error.Title == "" || je.Error.Fixes == nil {
 			t.Errorf("%q: stderr is not a JSON error: %v\n%s", args, err, errOut)
 		}
-		if args[1] == "create" && je.Error.Code != problem.Invalid {
-			t.Errorf("%q: want the relay's problem code in the JSON error, got %+v", args, je.Error)
+		if args[1] == "create" && (je.Error.Code != problem.Invalid || je.Error.Problem == nil ||
+			je.Error.Problem.Status != 422 || !strings.Contains(fmt.Sprint(je.Error.Problem.Errors), "channel")) {
+			t.Errorf("%q: want the relay's problem, with the invalid field, in the JSON error, got %+v", args, je.Error)
+		}
+		if args[1] == "delete" && je.Error.Problem != nil {
+			t.Errorf("%q: a CLI error carries no problem: %+v", args, je.Error.Problem)
 		}
 	}
 }

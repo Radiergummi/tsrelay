@@ -64,7 +64,34 @@ Errors go to stderr and say what went wrong, why, and what to try instead:
     tsrelay attach stripe --to http://localhost:8080
 ```
 
-With `--json` they are `{"error": {"title": …, "reason": …, "fixes": […], "code": …}}`, where `code` is the relay's `Tsrelay-Error` code for a refusal (see the [error reference](errors.md)), `usage` for a mistake on the command line, or one of the CLI's own (such as `relay_unreachable`).
+With `--json` they are `{"error": {"title": …, "reason": …, "fixes": […], "code": …}}`. When the relay refused, `code` is its `Tsrelay-Error` code (see the [error reference](errors.md)) and `problem` holds the relay's whole problem document, with `status` and, for `invalid` and `unsupported_field`, the `errors` naming each field. Otherwise there is no `problem`, and `code` is `usage` for a mistake on the command line, or one of the CLI's own:
+
+| Code | Meaning |
+| --- | --- |
+| `background_failed` | A background tunnel didn't start or attach. |
+| `checksum_mismatch` | `update`: the download doesn't match the release's checksum. |
+| `command_failed` | The command after `--` couldn't be started. |
+| `dev_build` | `update`: this tsrelay was built from source. |
+| `downgrade` | `update`: this tsrelay is newer than the relay; `--force` replaces it anyway. |
+| `download_failed` | `update`: the release couldn't be downloaded. |
+| `error` | Anything else, with the cause in `reason`. |
+| `hook_mismatch` | `http`: the hook it would reuse is in another channel than `--channel` names, or is ephemeral while `--ephemeral=false` asks otherwise. |
+| `no_relay` | The CLI can't tell which relay to use. |
+| `no_remembered_hook` | `url`: no hook was used from this directory yet. |
+| `no_such_hook` | No hook of yours has that ID or path. |
+| `no_such_tunnel` | No background tunnel has that ID or serves that hook. |
+| `not_writable` | `update`: the executable can't be replaced. |
+| `relay_dev` | `update`: the relay runs a dev build, so there is no release to install. |
+| `relay_dns` | The relay's name doesn't resolve. |
+| `relay_tls` | The relay's certificate isn't trusted. |
+| `relay_unreachable` | The relay didn't answer. |
+| `relay_version_unknown` | `update`: the relay's version isn't a release version. |
+| `run_dir_unusable` | The directory for background tunnels can't be used. |
+| `state_unreadable` | The file of remembered hooks can't be read. |
+| `stop_failed` | A background tunnel couldn't be stopped. |
+| `tailscale_unavailable` | The local Tailscale can't be asked for the tailnet. |
+
+The CLI's codes can't collide with the relay's: an error with `problem` came from the relay.
 
 ## Exit codes
 

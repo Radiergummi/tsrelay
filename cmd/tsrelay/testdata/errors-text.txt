@@ -1,0 +1,23 @@
+✗ No target to forward calls to
+  attach needs to know where your local app listens.
+
+  Try:
+    tsrelay attach stripe --to 3000
+    tsrelay attach stripe --to http://localhost:8080
+
+✗ The relay refused
+  Your grants don't allow this. The relay says: Your grants no longer cover channel "prod".
+
+  Try:
+    Ask a relay admin to grant you the role or channel; the relay's web UI shows them the grant
+
+✗ Can't reach the relay
+  Tried https://tsrelay.example.ts.net (from --relay): connection refused.
+
+  Try:
+    tailscale status
+    Check that the relay is running
+    tsrelay hooks list --relay https://tsrelay.<your tailnet>.ts.net
+
+✗ No hook "nope"
+
