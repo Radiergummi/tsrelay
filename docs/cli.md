@@ -13,13 +13,13 @@ tags: [cli, completion, json, environment]
 
 ## Environment
 
-Every flag can also be set in the environment as `TSRELAY_<FLAG>`, with dashes as underscores (`TSRELAY_RELAY` for `--relay`, `TSRELAY_HOLD_TIMEOUT` for `--hold-timeout`); the command line wins. The rule is an explicit list, `envFlags` in `cmd/tsrelay/env.go`: the global flags (`--relay`, `--json`, `--no-color`, `--no-hyperlinks`), `attach --to`, the hook settings (`--attach-policy`, `--capture`, `--channel`, `--description`, `--ephemeral`, `--expires-in`, `--hold-timeout`, `--host-header`, `--idle-timeout`, `--max-body-bytes`, `--rate-limit`, `--response-timeout`) and every `serve` flag. Flags that act rather than configure (`--all`, `--yes`, `--check`, `--force`, `--follow`, `--background`, `--public`, `--insecure`) and flags that name what a command works on (`--path`) have no such variable. `TSRELAY_URL` and `TSRELAY_BACKGROUND_ID` are set by `tsrelay http` and the background supervisor for their children, so no flag may take those names.
+Every flag can also be set in the environment as `TSRELAY_<FLAG>`, with dashes as underscores (`TSRELAY_RELAY` for `--relay`, `TSRELAY_HOLD_TIMEOUT` for `--hold-timeout`); the command line wins. The rule is an explicit list, `envFlags` in `cmd/tsrelay/env.go`: the global flags (`--relay`, `--json`, `--no-color`, `--no-hyperlinks`), `attach --to`, the hook settings (`--attach-policy`, `--capture`, `--channel`, `--description`, `--ephemeral`, `--expires-in`, `--hold-timeout`, `--host-header`, `--idle-timeout`, `--max-body-bytes`, `--rate-limit`, `--response-timeout`) and every `serve` flag. Flags that act rather than configure (`--all`, `--yes`, `--check`, `--force`, `--follow`, `--background`, `--public`, `--insecure`) and flags that name what a command works on (`--path`) have no such variable. `hooks update` changes only what you type: a hook setting's variable, such as `TSRELAY_HOLD_TIMEOUT`, sets the setting for hooks that `http` and `hooks create` make, never for one you update. `TSRELAY_URL` and `TSRELAY_BACKGROUND_ID` are set by `tsrelay http` and the background supervisor for their children, so no flag may take those names.
 
 ## Output
 
 On a terminal, output is colored, call lines are aligned, and each call ends with its ID as a clickable link to the inspector. Output that isn't a terminal is plain text, as is output with `NO_COLOR` set or `--no-color` given. If your terminal doesn't support hyperlinks, `--no-hyperlinks` (or `TSRELAY_NO_HYPERLINKS=1`) prints the full inspector URL instead.
 
-`-j`/`--json` (on every command) prints JSON on stdout instead of text. `http` and `attach` print one event per line (see [Events](#events)), and the other commands print one object. On a terminal the JSON is indented; piped, it's compact. Consumers should ignore fields and event types they don't know: new ones are added without a new major version.
+`-j`/`--json` prints JSON instead of text: errors on stderr for every command, and on stdout the output of the commands listed under [JSON output](#json-output). `http` and `attach` print one event per line (see [Events](#events)), and the other commands print one object. `--version`, `licenses`, `logs` and `serve` print text whatever `--json` says. On a terminal the JSON is indented; piped, it's compact. Consumers should ignore fields and event types they don't know: new ones are added without a new major version.
 
 ### JSON output
 
@@ -45,9 +45,13 @@ Warnings and errors go to stderr, also one object each: `{"warning": …, "cliVe
 | `event` | When | Other fields |
 | --- | --- | --- |
 | `url` | a hook is served, or served again at a new URL | `hook` (ID), `url`, `publicUrl`, `recreated` |
-| `connected`, `disconnected` | the tunnel attached, or was lost | `target`, `restored` |
+| `connected` | the tunnel attached | `target`, `restored` (it had been lost before) |
+| `disconnected` | the tunnel was lost; it reconnects on its own | `error` |
 | `call` | a call was delivered | `hook`, `method`, `path`, `status`, `aborted`, `durationMs`, `sender`, `callId`, `inspect` |
-| `stopped` | a hook is no longer served (`hook`, and `reason`: `replaced`, `revoked` or `deleted`), or the command ends (`reason`: `interrupted`, `no-hooks`, `error` or `command-exited`, with `error` and `exitCode`) | |
+| `stopped` | a hook is no longer served | `hook`, `url`, and `reason`: `replaced`, `revoked` or `deleted` |
+| `stopped` | the command ends | `reason` (`interrupted`, `no-hooks`, `error` or `command-exited`), `exitCode`, and `error` when one ended it |
+
+In events, `error` is the error's text. When an error ends the command, it is also written to stderr as the error object described under [Errors](#errors), with its code.
 
 A command started after `--` has its stdout sent to stderr, so that stdout carries only events.
 
