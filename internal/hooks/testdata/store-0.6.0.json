@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "hooks": [
+    {
+      "id": "h_bare",
+      "owner": 8,
+      "ownerLogin": "bob@example.com",
+      "slug": "bob",
+      "path": "amber-otter-lamp",
+      "channel": "default",
+      "ephemeral": true,
+      "createdAt": "2026-10-02T10:00:00Z"
+    },
+    {
+      "id": "h_full",
+      "owner": 7,
+      "ownerLogin": "ada@example.com",
+      "slug": "ada",
+      "path": "stripe/live",
+      "channel": "payments",
+      "description": "Stripe live",
+      "ephemeral": false,
+      "public": true,
+      "publicToken": "tok_abcdefghijklmnop",
+      "settings": {
+        "attachPolicy": "reject",
+        "hostHeader": "rewrite",
+        "holdTimeout": "5s",
+        "responseTimeout": "1m0s",
+        "idleTimeout": "2m0s",
+        "maxBodyBytes": 0,
+        "rateLimit": {
+          "perSecond": 2.5,
+          "burst": 7
+        },
+        "capture": false
+      },
+      "expiresAt": "2027-01-02T03:04:05Z",
+      "createdAt": "2026-10-01T10:00:00Z"
+    }
+  ],
+  "slugs": {
+    "ada": 7,
+    "bob": 8
+  }
+}
