@@ -50,7 +50,7 @@ Flag names follow one scheme, so a prefix tells you what a flag governs:
 | `--otel` | `false` | Export traces and metrics over OTLP/HTTP; see [Tracing](observability.md#tracing) |
 | `--otel-propagation` | `true` | With `--otel`: continue a sender's `traceparent` and pass the relay's own to the app, so one trace spans sender, relay and app; `false` forwards trace headers untouched |
 | `--log-format` | `json` | `json` or `text` |
-| `--log-level` | `info` | `debug`, `info`, `warn` or `error` |
+| `--log-level` | `info` | `debug`, `info`, `warn` or `error`. The audit log is written at any level |
 | `--verbose-tailscale` | `false` | Include tsnet's own logs |
 | `--update-check` | `true` | Ask GitHub for the latest tsrelay release on startup and every 6 hours, and tell admins when it's newer than the relay; `false` for air-gapped relays |
 

@@ -9,7 +9,7 @@ tags: [operators, metrics, prometheus, opentelemetry, tracing, pprof]
 
 ## Audit log
 
-The audit log is part of the relay's log on stderr, one JSON object per line (or `key=value` text with `--log-format text`). An audit record's `msg` is its event name, and its `level` is `INFO`. Records never contain bodies, query strings, or header values.
+The audit log is part of the relay's log on stderr, one JSON object per line (or `key=value` text with `--log-format text`). An audit record's `msg` is its event name, and its `level` is `INFO`. It is written whatever `--log-level` says: `--log-level warn` quiets the relay's own messages, not the audit log. Records never contain bodies, query strings, or header values.
 
 `actor` is the node that caused the event: `{"node", "login", "tags"}`, with an empty `login` for a tagged machine. `hook` is `{"id", "owner", "path", "channel"}`, where `owner` is the owner's login.
 
