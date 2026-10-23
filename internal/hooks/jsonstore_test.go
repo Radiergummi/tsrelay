@@ -1,11 +1,14 @@
 package hooks
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -91,6 +94,58 @@ func TestJSONStoreRejectsBadFiles(t *testing.T) {
 				t.Fatal("expected an error")
 			}
 		})
+	}
+}
+
+func TestStoreRefusesNewerFormat(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hooks.json")
+	content := []byte(fmt.Sprintf(`{"version": %d, "hooks": []}`, jsonStoreVersion+1))
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := OpenJSON(dir)
+	if err == nil {
+		s.Close()
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), "newer tsrelay") {
+		t.Fatalf("error should say the store is from a newer tsrelay: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Fatalf("store file changed: %s", got)
+	}
+}
+
+// TestStoreReadsVersion1 pins the format 0.6.0 wrote: relays upgrade with
+// live hooks, so every release must keep reading it.
+func TestStoreReadsVersion1(t *testing.T) {
+	dir := t.TempDir()
+	v1 := `{"version": 1,
+		"hooks": [{"id": "h_1", "owner": 7, "ownerLogin": "ada@example.com", "slug": "ada",
+			"path": "stripe", "channel": "c_1", "ephemeral": false,
+			"settings": {"holdTimeout": "5s", "maxBodyBytes": 0, "capture": true},
+			"createdAt": "2026-10-01T10:00:00Z"}],
+		"slugs": {"ada": 7}}`
+	if err := os.WriteFile(filepath.Join(dir, "hooks.json"), []byte(v1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := openStore(t, dir)
+	h, err := s.GetHook(context.Background(), "h_1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.Path != "stripe" || h.OwnerLogin != "ada@example.com" || h.Slug != "ada" {
+		t.Fatalf("hook read wrong: %+v", h)
+	}
+	if h.Settings.HoldTimeout == nil || *h.Settings.HoldTimeout != Duration(5*time.Second) ||
+		h.Settings.MaxBodyBytes == nil || *h.Settings.MaxBodyBytes != 0 ||
+		h.Settings.Capture == nil || !*h.Settings.Capture {
+		t.Fatalf("settings read wrong: %+v", h.Settings)
 	}
 }
 
