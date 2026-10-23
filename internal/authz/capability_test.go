@@ -196,3 +196,12 @@ func TestParseReportsUnknownKeys(t *testing.T) {
 		t.Fatalf("errs = %v", errs)
 	}
 }
+
+// encoding/json reads "Channels" as "channels", so it isn't reported as
+// ignored, but its spelling is.
+func TestParseReportsMiscasedKeys(t *testing.T) {
+	eff, errs := Parse(raw(`{"roles":["sender"],"Channels":["staging"]}`), DefaultLimits)
+	if !eff.Allows(RoleSender, "staging") || eff.Allows(RoleSender, "prod") || len(errs) != 1 || !strings.Contains(errs[0].Error(), `read as "channels"`) {
+		t.Fatalf("errs = %v", errs)
+	}
+}

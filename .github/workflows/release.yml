@@ -274,6 +274,8 @@ jobs:
           # release never reaches those running a moving tag.
           tags: |
             type=semver,pattern={{version}}
+          # The action adds :latest to a semver tag on its own unless told not to.
+          flavor: latest=false
 
       - id: push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0

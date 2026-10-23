@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"tailscale.com/tailcfg"
@@ -170,8 +171,11 @@ func parseValue(rv tailcfg.RawMessage) (v grantValue, notes []error, err error) 
 	var keys map[string]json.RawMessage
 	if json.Unmarshal([]byte(rv), &keys) == nil {
 		for _, k := range slices.Sorted(maps.Keys(keys)) {
-			if !slices.Contains(grantKeys, k) {
+			switch i := slices.IndexFunc(grantKeys, func(g string) bool { return strings.EqualFold(g, k) }); {
+			case i < 0:
 				notes = append(notes, fmt.Errorf("unknown key %q, ignored", k))
+			case grantKeys[i] != k:
+				notes = append(notes, fmt.Errorf("key %q is read as %q; spell it so", k, grantKeys[i]))
 			}
 		}
 	}
