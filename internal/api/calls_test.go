@@ -162,8 +162,17 @@ func TestReplayRules(t *testing.T) {
 	replay := func(id authz.Identity, callID string) int {
 		return e.call(id, "POST", "/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, nil).StatusCode
 	}
+	replayCode := func(callID string) string {
+		return e.call(moritz, "POST", "/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, nil).Header.Get(problem.HeaderError)
+	}
+	if got := replayCode("c_cut"); got != problem.NotCaptured {
+		t.Errorf("replay of c_cut: Tsrelay-Error = %q, want %q", got, problem.NotCaptured)
+	}
 	if code := replay(moritz, "c_cut"); code != 409 {
 		t.Errorf("replay of a truncated body = %d, want 409", code)
+	}
+	if got := replayCode("c_uncaptured"); got != problem.NotCaptured {
+		t.Errorf("replay of c_uncaptured: Tsrelay-Error = %q, want %q", got, problem.NotCaptured)
 	}
 	if code := replay(moritz, "c_uncaptured"); code != 409 {
 		t.Errorf("replay of an uncaptured body = %d, want 409", code)
@@ -173,11 +182,20 @@ func TestReplayRules(t *testing.T) {
 	if got.Replay == nil || got.Replay.Allowed || !strings.Contains(got.Replay.Reason, "aren't captured for this hook") {
 		t.Errorf("uncaptured call replay = %+v", got.Replay)
 	}
+	if got := replayCode("c_refused"); got != problem.CallRefused {
+		t.Errorf("replay of c_refused: Tsrelay-Error = %q, want %q", got, problem.CallRefused)
+	}
 	if code := replay(moritz, "c_refused"); code != 409 {
 		t.Errorf("replay of a call refused by channel = %d, want 409", code)
 	}
+	if got := replayCode("c_pending"); got != problem.CallPending {
+		t.Errorf("replay of c_pending: Tsrelay-Error = %q, want %q", got, problem.CallPending)
+	}
 	if code := replay(moritz, "c_pending"); code != 409 {
 		t.Errorf("replay of a pending call = %d, want 409", code)
+	}
+	if got := replayCode("c_long"); got != problem.NotCaptured {
+		t.Errorf("replay of c_long: Tsrelay-Error = %q, want %q", got, problem.NotCaptured)
 	}
 	if code := replay(moritz, "c_long"); code != 409 {
 		t.Errorf("replay of a truncated query = %d, want 409", code)

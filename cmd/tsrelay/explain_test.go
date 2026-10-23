@@ -252,7 +252,7 @@ func TestRelayErrorSites(t *testing.T) {
 		defer e.fake.Fail(nil)
 		errorCase{args: []string{"hooks", "list"}, status: 1, title: "The relay couldn't identify you",
 			reason: "It asks Tailscale who is calling, and Tailscale didn't know this device.",
-			fixes:  []string{"tailscale status", "Reach the relay over Tailscale, not another network"}, code: problem.Forbidden,
+			fixes:  []string{"tailscale status", "Reach the relay over Tailscale, not another network"}, code: problem.NotIdentified,
 		}.check(t, d, "--relay", e.relayURL)
 	})
 	t.Run("version mismatch", func(t *testing.T) {
@@ -369,7 +369,11 @@ func TestExplainProblem(t *testing.T) {
 	for code, x := range problemExplanations {
 		p := &problem.Problem{Status: 400, Code: code, Detail: "something happened"}
 		got := c.explain(p)
-		if got.Title != x.title || got.Reason != x.reason+" The relay says: Something happened." || got.Code != code || !errors.Is(got, p) {
+		reason := x.reason + " The relay says: Something happened."
+		if code == problem.NotIdentified {
+			reason = x.reason // its detail only repeats the title
+		}
+		if got.Title != x.title || got.Reason != reason || got.Code != code || !errors.Is(got, p) {
 			t.Errorf("%s: got %#v", code, got)
 		}
 		for _, f := range got.Fixes {

@@ -128,7 +128,7 @@ func TestHoldQueueFull(t *testing.T) {
 	e.waitHeld(2)
 	start := time.Now()
 	resp := e.do(sender, "POST", "/~moritz/cb", nil, nil)
-	wantProblem(t, resp, 561, problem.TunnelUnavailable)
+	wantProblem(t, resp, 562, problem.HoldQueueFull)
 	if time.Since(start) > 2*time.Second || resp.Header.Get("Retry-After") != "30" {
 		t.Fatalf("a full queue must fail at once with Retry-After 30; took %v, Retry-After %q", time.Since(start), resp.Header.Get("Retry-After"))
 	}

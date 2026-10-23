@@ -27,7 +27,7 @@ func Guard(allowedHosts []string, next http.Handler) http.Handler {
 		if !isCallback(r.URL.Path) && !safeMethod(r.Method) {
 			site := r.Header.Get("Sec-Fetch-Site")
 			if site != "" && site != "same-origin" && site != "none" {
-				problem.New(http.StatusForbidden, problem.Forbidden, "cross-site requests to the API are not allowed").Write(w)
+				problem.New(http.StatusForbidden, problem.CrossSite, "cross-site requests to the API are not allowed").Write(w)
 				return
 			}
 			// Browsers without Sec-Fetch-Site could still submit a bodyless

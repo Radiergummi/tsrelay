@@ -67,7 +67,7 @@ Every hook has delivery settings. Your relay sets a default and, for most of the
 
 | Setting | Flag | |
 |---|---|---|
-| `attachPolicy` | `--attach-policy` | `takeover` replaces an attached tunnel with a new one; `reject` refuses the new one with `409` |
+| `attachPolicy` | `--attach-policy` | `takeover` replaces an attached tunnel with a new one; `reject` refuses the new one with `409 attach_rejected` |
 | `hostHeader` | `--host-header` | `preserve` passes the relay's host to your app; `rewrite` sets `Host` to your local target's host |
 | `holdTimeout` | `--hold-timeout` | How long a call waits for a tunnel to attach; `0s` disables holding |
 | `responseTimeout` | `--response-timeout` | How long to wait for your app's response headers |

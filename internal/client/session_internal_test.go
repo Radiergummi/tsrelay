@@ -15,19 +15,23 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
-func TestRefusal(t *testing.T) {
+func TestRefusalByCode(t *testing.T) {
 	cases := map[string]struct {
 		err    error
 		hook   string
 		reason DropReason
 		ok     bool
 	}{
-		"gone":             {&problem.Problem{Status: 404, Hook: "h_1"}, "h_1", DropDeleted, true},
-		"channel denied":   {&problem.Problem{Status: 403, Hook: "h_1"}, "h_1", DropRevoked, true},
-		"taken over":       {&problem.Problem{Status: 409, Hook: "h_1"}, "h_1", DropReplaced, true},
-		"too many tunnels": {&problem.Problem{Status: 403}, "", "", false},
-		"bad request":      {&problem.Problem{Status: 400, Hook: "h_1"}, "", "", false},
-		"network":          {errors.New("down"), "", "", false},
+		"gone":           {&problem.Problem{Status: 404, Code: problem.NotFound, Hook: "h_1"}, "h_1", DropDeleted, true},
+		"channel denied": {&problem.Problem{Status: 403, Code: problem.ChannelForbidden, Hook: "h_1"}, "h_1", DropRevoked, true},
+		"forbidden":      {&problem.Problem{Status: 403, Code: problem.Forbidden, Hook: "h_1"}, "h_1", DropRevoked, true},
+		"tunnel limit":   {&problem.Problem{Status: 403, Code: problem.TunnelLimit, Hook: "h_1"}, "h_1", DropRevoked, true},
+		"taken over":     {&problem.Problem{Status: 409, Code: problem.Superseded, Hook: "h_1"}, "h_1", DropReplaced, true},
+		"rejected":       {&problem.Problem{Status: 409, Code: problem.AttachRejected, Hook: "h_1"}, "h_1", DropReplaced, true},
+		"no hook named":  {&problem.Problem{Status: 403, Code: problem.TunnelLimit}, "", "", false},
+		"bad request":    {&problem.Problem{Status: 400, Code: problem.BadRequest, Hook: "h_1"}, "", "", false},
+		"other conflict": {&problem.Problem{Status: 409, Code: problem.CallPending, Hook: "h_1"}, "", "", false},
+		"network":        {errors.New("down"), "", "", false},
 	}
 	for name, c := range cases {
 		hook, reason, ok := refusal(c.err)

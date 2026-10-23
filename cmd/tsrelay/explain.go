@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
@@ -37,8 +36,10 @@ var problemExplanations = map[string]explanation{
 		[]string{"tsrelay hooks update <hook> --max-body-bytes 10485760"}},
 	problem.RateLimited: {"Too many calls", "The hook's rate limit was exceeded.",
 		[]string{"Wait a moment, then retry", "tsrelay hooks update <hook> --rate-limit 100/200"}},
-	problem.TunnelUnavailable: {"No tunnel is serving the hook", "No tsrelay process attached to the hook within its hold timeout, or too many calls were already waiting for one.",
+	problem.TunnelUnavailable: {"No tunnel is serving the hook", "No tsrelay process attached to the hook within its hold timeout.",
 		[]string{"tsrelay attach <hook> --to 3000", "tsrelay hooks update <hook> --hold-timeout 1m"}},
+	problem.HoldQueueFull: {"Too many calls are waiting for a tunnel", "No tsrelay process is attached to the hook, and the hold queue for it is full.",
+		[]string{"tsrelay attach <hook> --to 3000", "Retry in a moment"}},
 	problem.TunnelOverloaded: {"The tunnel is at its concurrency limit", "Too many calls are in flight on it at once.",
 		[]string{"Retry in a moment"}},
 	problem.TunnelLost: {"The tunnel dropped mid-call", "The tsrelay process serving the hook disconnected while delivering the call.",
@@ -47,13 +48,19 @@ var problemExplanations = map[string]explanation{
 		[]string{"Start your app, or check the port or URL tsrelay forwards to"}},
 	problem.UpstreamTimeout: {"Your local app didn't answer in time", "It took longer than the hook's response timeout, or its response stalled past the idle timeout.",
 		[]string{"tsrelay hooks update <hook> --response-timeout 1m"}},
-	// body_stalled is the code #33 adds for a request body that stalls past
-	// the idle timeout; keyed by its value until problem has a constant.
-	"body_stalled": {"The request body stalled", "The sender paused the body for longer than the hook's idle timeout.",
+	problem.BodyStalled: {"The request body stalled", "The sender paused the body for longer than the hook's idle timeout.",
 		[]string{"tsrelay hooks update <hook> --idle-timeout 1m"}},
 
 	problem.Forbidden: {"The relay refused", "Your grants don't allow this.",
 		[]string{"Ask a relay admin to grant you the role or channel; the relay's web UI shows them the grant"}},
+	problem.NotIdentified: {"The relay couldn't identify you", "It asks Tailscale who is calling, and Tailscale didn't know this device.",
+		[]string{"tailscale status", "Reach the relay over Tailscale, not another network"}},
+	problem.CrossSite: {"The relay refused a cross-site request", "API writes must come from the relay's own pages or from a tool, not from another site.",
+		[]string{"Send the request from the CLI, or from the relay's web UI"}},
+	problem.ChannelForbidden: {"Your grants don't cover the hook's channel", "The hook is in a channel your grants no longer match.",
+		[]string{"Ask a relay admin to grant you the channel; the relay's web UI shows them the grant"}},
+	problem.TunnelLimit: {"Too many tunnels", "You already have as many tunnels attached as your grants allow.",
+		[]string{"tsrelay ps", "Stop a tunnel you no longer need, or ask a relay admin to raise your limit"}},
 	problem.NotFound: {"Not found", "The relay has no such resource for you.",
 		[]string{"tsrelay hooks list"}},
 	problem.Invalid: {"The relay rejected the values", "Something sent is not valid.",
@@ -62,8 +69,18 @@ var problemExplanations = map[string]explanation{
 		[]string{"Ask the relay's operator to upgrade the relay"}},
 	problem.BadRequest: {"The relay couldn't read the request", "This tsrelay may not speak the relay's API.",
 		[]string{updateFix}},
-	problem.Conflict: {"Something is in the way", "The relay can't do this while something else holds on to it.",
-		[]string{"Resolve what the relay named, then retry"}},
+	problem.NotPublic: {"The hook isn't public", "Only a public hook has a public URL to rotate.",
+		[]string{"tsrelay hooks update <hook> --public"}},
+	problem.Superseded: {"Another tunnel took the hook over", "A newer tunnel replaced this one, and a resumed tunnel may not take its hook back.",
+		[]string{"Stop the other tunnel, or attach again to take the hook over"}},
+	problem.AttachRejected: {"The hook already has a tunnel", "Its attach policy is reject, so a second tunnel is refused.",
+		[]string{"Stop the tunnel that serves the hook", "tsrelay hooks update <hook> --attach-policy takeover"}},
+	problem.CallPending: {"The call is still being delivered", "A call can't be replayed before it has an outcome.",
+		[]string{"Retry once the call has finished"}},
+	problem.CallRefused: {"The call was never delivered", "The relay refused it by channel, so there is nothing to replay.",
+		[]string{"Send a new test request instead"}},
+	problem.NotCaptured: {"The call wasn't captured in full", "Replay needs the call's body and query string complete, and the hook captured less.",
+		[]string{"tsrelay hooks update <hook> --capture"}},
 	problem.MisdirectedRequest: {"Wrong host for the relay", "The relay doesn't answer to the host name tsrelay used.",
 		[]string{"Check --relay and TSRELAY_RELAY"}},
 	problem.UnsupportedMediaType: {"The relay rejected the request's format", "This tsrelay may not speak the relay's API.",
@@ -113,10 +130,7 @@ func (c *cli) explainProblem(p *problem.Problem) *cliError {
 	if !ok {
 		x = explanation{title: p.Title}
 	}
-	if p.Code == problem.Forbidden && p.Detail == api.NotIdentified {
-		x = explanation{"The relay couldn't identify you", "It asks Tailscale who is calling, and Tailscale didn't know this device.",
-			[]string{"tailscale status", "Reach the relay over Tailscale, not another network"}}
-	} else if p.Detail != "" {
+	if p.Detail != "" && p.Code != problem.NotIdentified {
 		x.reason = strings.TrimSpace(x.reason + " The relay says: " + sentence(p.Detail))
 	}
 	e := &cliError{Title: x.title, Reason: x.reason, Code: p.Code, err: p}

@@ -109,7 +109,7 @@ test("an unidentified viewer gets one message and a reload button", async () => 
     {
       title: "Forbidden",
       status: 403,
-      code: "forbidden",
+      code: "not_identified",
       detail: "could not identify you on the tailnet",
     },
     403,

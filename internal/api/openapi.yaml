@@ -642,7 +642,7 @@ components:
         path: { type: string }
         outcome:
           type: string
-          description: "`pending`, `ok`, or a `Tsrelay-Error` code"
+          description: "`pending`, `ok`, `sender_canceled` (the sender went away before the call finished), or a `Tsrelay-Error` code"
         status: { type: integer }
         duration: { $ref: "#/components/schemas/Duration" }
     Capture:

@@ -201,15 +201,11 @@ func notAcceptable(w http.ResponseWriter, offers []negotiate.Type) {
 	problem.New(http.StatusNotAcceptable, problem.NotAcceptable, "this resource is available as "+strings.Join(types, ", ")).Write(w)
 }
 
-// NotIdentified is the detail of the forbidden problem for a caller the
-// tailnet could not identify; the CLI explains it by this text.
-const NotIdentified = "could not identify you on the tailnet"
-
 func (a *API) authed(f func(http.ResponseWriter, *http.Request, authz.Identity)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, err := a.Identifier.Identify(r.Context(), r.RemoteAddr)
 		if err != nil {
-			problem.New(http.StatusForbidden, problem.Forbidden, NotIdentified).Write(w)
+			problem.New(http.StatusForbidden, problem.NotIdentified, "could not identify you on the tailnet").Write(w)
 			return
 		}
 		if span := trace.SpanFromContext(r.Context()); span.IsRecording() {
@@ -357,7 +353,7 @@ func (a *API) rotatePublicURL(w http.ResponseWriter, r *http.Request, id authz.I
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 		return
 	case errors.Is(err, hooks.ErrNotPublic):
-		problem.New(http.StatusConflict, problem.Conflict, "the hook is not public; make it public first").Write(w)
+		problem.New(http.StatusConflict, problem.NotPublic, "the hook is not public; make it public first").Write(w)
 		return
 	case err != nil:
 		a.Audit.Slog().Error("hook.update failed", "error", err)

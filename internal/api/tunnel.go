@@ -83,10 +83,14 @@ func attachRefused(ae *lifecycle.AdmitError) *problem.Problem {
 	switch ae.Kind {
 	case lifecycle.HookNotFound:
 		p = problem.New(http.StatusNotFound, problem.NotFound, ae.Error())
-	case lifecycle.Superseded, lifecycle.Rejected:
-		p = problem.New(http.StatusConflict, problem.Conflict, ae.Error())
-	default: // ChannelDenied, TooManyTunnels
-		p = problem.New(http.StatusForbidden, problem.Forbidden, ae.Error())
+	case lifecycle.Superseded:
+		p = problem.New(http.StatusConflict, problem.Superseded, ae.Error())
+	case lifecycle.Rejected:
+		p = problem.New(http.StatusConflict, problem.AttachRejected, ae.Error())
+	case lifecycle.ChannelDenied:
+		p = problem.New(http.StatusForbidden, problem.ChannelForbidden, ae.Error())
+	default: // TooManyTunnels
+		p = problem.New(http.StatusForbidden, problem.TunnelLimit, ae.Error())
 	}
 	p.Hook = string(ae.Hook)
 	return p

@@ -143,7 +143,7 @@ func (h *Handler) dequeue(id hooks.ID) {
 	h.heldTotal.Add(-1)
 }
 
-// holdRetryAfter is the Retry-After of tunnel_unavailable: the hold
+// holdRetryAfter is the Retry-After of tunnel_unavailable and hold_queue_full: the hold
 // timeout rounded up to seconds, but at least 5 seconds.
 func holdRetryAfter(hold time.Duration) string { return retryAfter(max(5*time.Second, hold)) }
 

@@ -74,7 +74,7 @@ func TestRotatePublicURL(t *testing.T) {
 	var plain Hook
 	e.call(publicMoritz, "POST", "/hooks", map[string]any{"path": "plain"}, &plain)
 	var p problem.Problem
-	if resp := e.call(publicMoritz, "POST", "/hooks/"+plain.ID+"/rotate-public-url", nil, &p); resp.StatusCode != 409 || p.Code != problem.Conflict {
+	if resp := e.call(publicMoritz, "POST", "/hooks/"+plain.ID+"/rotate-public-url", nil, &p); resp.StatusCode != 409 || p.Code != problem.NotPublic {
 		t.Fatalf("rotate private: %d %+v", resp.StatusCode, p)
 	}
 	if resp := e.call(other, "POST", "/hooks/"+h.ID+"/rotate-public-url", nil, nil); resp.StatusCode != 404 {

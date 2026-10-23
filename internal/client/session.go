@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"net/http"
 	"net/url"
 	"slices"
 	"sync"
@@ -240,12 +239,12 @@ func refusal(err error) (hook string, reason DropReason, ok bool) {
 	if !errors.As(err, &p) || p.Hook == "" {
 		return "", "", false
 	}
-	switch p.Status {
-	case http.StatusNotFound:
+	switch p.Code {
+	case problem.NotFound:
 		return p.Hook, DropDeleted, true
-	case http.StatusForbidden:
+	case problem.ChannelForbidden, problem.TunnelLimit, problem.Forbidden:
 		return p.Hook, DropRevoked, true
-	case http.StatusConflict:
+	case problem.Superseded, problem.AttachRejected:
 		return p.Hook, DropReplaced, true
 	}
 	return "", "", false

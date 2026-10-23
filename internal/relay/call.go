@@ -244,6 +244,14 @@ func (c *call) tunnelUnavailable(detail string) *refusal {
 	return rf
 }
 
+// holdQueueFull is the answer when too many calls are already waiting for a
+// tunnel to attach to the hook.
+func (c *call) holdQueueFull() *refusal {
+	rf := refuse(problem.StatusTunnelOverloaded, problem.HoldQueueFull, "no tunnel is attached to this hook, and too many calls are waiting for one")
+	rf.retryAfter = holdRetryAfter(c.eff.HoldTimeout.Std())
+	return rf
+}
+
 // hold waits for a tunnel to attach to the hook.
 func (c *call) hold() error {
 	holdStart := time.Now()
@@ -257,7 +265,7 @@ func (c *call) hold() error {
 	case errors.Is(err, lifecycle.ErrHookGone), errors.Is(err, errHookExpired):
 		result, err = "hook_gone", errNoHook
 	case errors.Is(err, errHoldQueueFull):
-		result, err = "queue_full", c.tunnelUnavailable("no tunnel is attached to this hook, and too many calls are waiting for one")
+		result, err = "queue_full", c.holdQueueFull()
 	case err != nil:
 		result, err = "timeout", c.tunnelUnavailable("no tunnel is attached to this hook")
 	}

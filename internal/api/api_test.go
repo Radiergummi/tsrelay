@@ -450,8 +450,8 @@ func TestResumeCannotTakeOverOtherSessions(t *testing.T) {
 	}
 	_, _, err := e.openTunnelQ(moritz, "session=s_old&resume=1", h.ID)
 	var p *problem.Problem
-	if !errors.As(err, &p) || p.Status != 409 || p.Code != problem.Conflict || p.Hook != h.ID {
-		t.Fatalf("replaced session resuming: err = %v, want 409 conflict", err)
+	if !errors.As(err, &p) || p.Status != 409 || p.Code != problem.Superseded || p.Hook != h.ID {
+		t.Fatalf("replaced session resuming: err = %v, want 409 superseded", err)
 	}
 	var got Hook
 	e.call(moritz, "GET", "/hooks/"+h.ID, nil, &got)
@@ -548,8 +548,8 @@ func TestAttachPolicyReject(t *testing.T) {
 
 	_, _, err = e.openTunnelQ(moritz, "session=s_b", h.ID)
 	var p *problem.Problem
-	if !errors.As(err, &p) || p.Status != 409 || p.Code != problem.Conflict || !strings.Contains(p.Detail, `"reject"`) {
-		t.Fatalf("second session under reject: err = %v, want 409 conflict naming the policy", err)
+	if !errors.As(err, &p) || p.Status != 409 || p.Code != problem.AttachRejected || !strings.Contains(p.Detail, `"reject"`) {
+		t.Fatalf("second session under reject: err = %v, want 409 attach_rejected naming the policy", err)
 	}
 	// The serving session may still replace its own stale tunnel.
 	if _, _, err := e.openTunnelQ(moritz, "session=s_a&resume=1", h.ID); err != nil {
@@ -575,7 +575,7 @@ func TestMaxTunnels(t *testing.T) {
 
 	_, _, err := e.openTunnelQ(limited, "session=s2", c.ID)
 	var p *problem.Problem
-	if !errors.As(err, &p) || p.Status != 403 || p.Code != problem.Forbidden || !strings.Contains(p.Detail, "maxTunnels 2") || p.Hook != "" {
+	if !errors.As(err, &p) || p.Status != 403 || p.Code != problem.TunnelLimit || !strings.Contains(p.Detail, "maxTunnels 2") || p.Hook != "" {
 		t.Fatalf("third tunnel: err = %v, want 403 naming the limit", err)
 	}
 	// Taking over your own tunnel's only hook orphans it, so it does not count.
@@ -827,5 +827,15 @@ func TestAdminOwnerActions403(t *testing.T) {
 		if resp := e.call(admin, c.method, c.path, c.body, nil); resp.StatusCode != 403 {
 			t.Errorf("admin %s = %d, want 403", c.name, resp.StatusCode)
 		}
+	}
+}
+
+func TestNotIdentified(t *testing.T) {
+	e := newEnv(t)
+	e.fake.Fail(errors.New("whois failed"))
+	defer e.fake.Fail(nil)
+	var p problem.Problem
+	if resp := e.call(moritz, "GET", "/hooks", nil, &p); resp.StatusCode != 403 || p.Code != problem.NotIdentified || resp.Header.Get(problem.HeaderError) != problem.NotIdentified {
+		t.Fatalf("unidentified caller = %d %+v", resp.StatusCode, p)
 	}
 }
