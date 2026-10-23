@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -79,6 +80,9 @@ type grantValue struct {
 	// with a narrower meaning than the policy author intended.
 	Requires []string `json:"requires"`
 }
+
+// grantKeys are the keys of a grant value, as grantValue names them.
+var grantKeys = []string{"roles", "channels", "maxHooks", "maxTunnels", "maxHookTtl", "public", "requires"}
 
 // grantFeatures are the features of the grant format this relay supports,
 // for values to name in "requires". There are none yet.
@@ -160,6 +164,16 @@ func Parse(values []tailcfg.RawMessage, defaults Limits) (eff Effective, errs []
 func parseValue(rv tailcfg.RawMessage) (v grantValue, notes []error, err error) {
 	if err := json.Unmarshal([]byte(rv), &v); err != nil {
 		return v, nil, err
+	}
+	// encoding/json ignores keys it doesn't know. One is most likely a
+	// typo, and a misspelled "channels" grants every channel, so say so.
+	var keys map[string]json.RawMessage
+	if json.Unmarshal([]byte(rv), &keys) == nil {
+		for _, k := range slices.Sorted(maps.Keys(keys)) {
+			if !slices.Contains(grantKeys, k) {
+				notes = append(notes, fmt.Errorf("unknown key %q, ignored", k))
+			}
+		}
 	}
 	for _, f := range v.Requires {
 		if !grantFeatures[f] {

@@ -66,8 +66,8 @@ func TestParseSkipsInvalidValues(t *testing.T) {
 		`{"roles":["receiver"],"maxHookTtl":"-1h"}`,
 		`{"roles":["receiver"],"channels":["prod"],"futureField":true}`,
 	), DefaultLimits)
-	if len(errs) != 5 {
-		t.Fatalf("got %d errors (%v), want 5", len(errs), errs)
+	if len(errs) != 6 { // five skipped values, and a note on futureField, whose value applies
+		t.Fatalf("got %d errors (%v), want 6", len(errs), errs)
 	}
 	if eff.Has(RoleSender) {
 		t.Fatal("invalid sender value must be ignored entirely")
@@ -184,5 +184,15 @@ func TestParseReportsUnknownRoles(t *testing.T) {
 	eff, errs := Parse(raw(`{"roles":["receiver","recevier"]}`), DefaultLimits)
 	if !eff.Has(RoleReceiver) || len(errs) != 1 || !strings.Contains(errs[0].Error(), "recevier") {
 		t.Fatalf("errs = %v; unknown role must be reported, value still applied", errs)
+	}
+}
+
+// A misspelled key is reported: "channel" for "channels" leaves channels
+// absent, which grants every channel. The value still applies as written,
+// so a key a newer relay adds doesn't break an older one.
+func TestParseReportsUnknownKeys(t *testing.T) {
+	eff, errs := Parse(raw(`{"roles":["sender"],"channel":["staging"],"maxHooks":3}`), DefaultLimits)
+	if !eff.Has(RoleSender) || len(errs) != 1 || !strings.Contains(errs[0].Error(), `unknown key "channel"`) {
+		t.Fatalf("errs = %v", errs)
 	}
 }
