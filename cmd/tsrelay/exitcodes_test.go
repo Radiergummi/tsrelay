@@ -98,6 +98,7 @@ func TestExitCodesWithChild(t *testing.T) {
 	}{
 		{"fails", []string{"false"}, 1},
 		{"exits 7", []string{"sh", "-c", "exit 7"}, 7},
+		{"killed by a signal", []string{"sh", "-c", "kill -KILL $$"}, 128 + 9},
 		{"not found", []string{"/nonexistent/tsrelay-test"}, exitNotFound},
 		{"not on the PATH", []string{"tsrelay-no-such-command"}, exitNotFound},
 		{"not executable", []string{notExecutable}, exitNotExecutable},

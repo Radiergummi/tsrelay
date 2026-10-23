@@ -223,17 +223,22 @@ func runTunnel(ctx context.Context, run func(context.Context) error, command []s
 	}
 }
 
-// exitCode is the exit status of a finished command; 1 if a signal ended it.
+// exitCode is the exit status of a finished command; 128+N if signal N
+// ended it, as shells report it.
 func exitCode(err error) int {
 	var ee *exec.ExitError
 	switch {
 	case err == nil:
 		return 0
-	case errors.As(err, &ee) && ee.ExitCode() >= 0:
-		return ee.ExitCode()
-	default:
+	case !errors.As(err, &ee):
 		return 1
+	case ee.ExitCode() >= 0:
+		return ee.ExitCode()
 	}
+	if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+		return 128 + int(ws.Signal())
+	}
+	return 1
 }
 
 // relayBase finds the relay: --relay (envDefaults already applies

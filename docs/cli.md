@@ -76,7 +76,7 @@ With `--json` they are `{"error": {"title": …, "reason": …, "fixes": […], 
 | 3 | `http` or `attach` has no hook left to serve: the last one was deleted, its grants were revoked, or another tsrelay process took it over. |
 | 4 | `update --check` found a newer relay version than yours. |
 
-With a command after `--` (`tsrelay http 8080 -- npm run dev`), `http` exits with the command's own status, so tsrelay's failures there use the codes shells use for the same: **125** when tsrelay itself fails (any error, including no hook left), **126** when the command can't be run (not executable) and **127** when it isn't found. A usage error is still 2.
+With a command after `--` (`tsrelay http 8080 -- npm run dev`), `http` exits with the command's own status (128 plus the signal number if a signal killed it, as shells report it), so tsrelay's failures there use the codes shells use for the same: **125** when tsrelay itself fails (any error, including no hook left), **126** when the command can't be run (not executable) and **127** when it isn't found. A usage error is still 2.
 
 ## Updating
 
