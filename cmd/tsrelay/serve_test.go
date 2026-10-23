@@ -83,9 +83,6 @@ func TestServeRejectsBadRevalidateInterval(t *testing.T) {
 	}
 }
 
-// Minor 3: fang capitalizes a flag description's first word, so a quoted
-// value (here "json" or "text") must never be first.
-
 func TestServeFlagNames(t *testing.T) {
 	fs := newServeCmd(&cli{}).Flags()
 	for _, name := range []string{"user-max-hooks", "user-max-tunnels", "user-max-hook-ttl", "hook-hold-queue", "capture-limit-bytes", "otel-propagation"} {
@@ -112,3 +109,6 @@ func TestRedactHeadersAddsToDefaults(t *testing.T) {
 		t.Fatalf("redacted %v, kept %v", redacted, kept)
 	}
 }
+
+// Minor 3: fang capitalizes a flag description's first word, so a quoted
+// value (here "json" or "text") must never be first.

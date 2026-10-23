@@ -479,7 +479,7 @@ Relay-wide settings (flag / environment variable):
 | `--hook-hold-queue` | 100 per hook |
 | `--capture-limit-bytes` / `--capture-calls` | 64 KiB / 100 per hook |
 | `--capture-bodies` | `true` |
-| `--redact-headers` | `Authorization,Proxy-Authorization,Cookie,Set-Cookie,X-Api-Key` |
+| `--redact-headers` | none (adds to `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`) |
 | `--hook-capture-default` | `false` |
 | `--ops-listen` | empty (off) |
 | `--ops-pprof` | `false` |
