@@ -250,7 +250,7 @@ func relayBase(ctx context.Context, relayFlag string, d deps) (string, error) {
 }
 
 // newRelayAPI returns a client for the relay's API; see relayBase. It
-// warns once when the relay reports a version other than this CLI's.
+// warns once when the relay reports another major version than this CLI's.
 func (c *cli) newRelayAPI(ctx context.Context) (*client.API, error) {
 	base, err := relayBase(ctx, c.relay, c.d)
 	if err != nil {
@@ -265,11 +265,11 @@ func (c *cli) newRelayAPI(ctx context.Context) (*client.API, error) {
 		next = http.DefaultTransport
 	}
 	checked := *hc
-	checked.Transport = &versionCheck{next: next, seen: func(relay string) {
-		c.versionWarned.Do(func() {
-			c.version.Store(&versionSeen{relay: relay})
-			c.warnVersion(relay)
-		})
+	checked.Transport = &relayTransport{next: next, seen: func(relay string, skew skew) {
+		c.version.Store(&versionSeen{relay: relay, skew: skew})
+		if skew == skewMajor {
+			c.versionWarned.Do(func() { c.warnVersion(relay) })
+		}
 	}}
 	c.base = base
 	return &client.API{BaseURL: base, HTTP: &checked}, nil

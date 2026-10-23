@@ -133,6 +133,17 @@ func TestMe(t *testing.T) {
 	}
 }
 
+// Features is an array even when the relay has none, so clients can range
+// over it without a null check.
+func TestMeFeaturesIsArray(t *testing.T) {
+	e := newEnv(t)
+	var raw map[string]json.RawMessage
+	e.call(moritz, "GET", "/", nil, &raw)
+	if got := string(raw["features"]); got != "[]" {
+		t.Fatalf("features = %s, want []", got)
+	}
+}
+
 func TestMeNamesCapAndPolicy(t *testing.T) {
 	e := newEnv(t)
 	var me Me

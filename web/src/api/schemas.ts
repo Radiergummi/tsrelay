@@ -161,6 +161,7 @@ export const me = z.object({
   }),
   public: z.array(z.string()),
   funnel: z.optional(z.boolean()),
+  features: z.array(z.string()),
 });
 
 export const licenseEntry = z.object({

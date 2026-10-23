@@ -76,8 +76,11 @@ var problemExplanations = map[string]explanation{
 		[]string{"Retry; if it keeps failing, ask the relay's operator to check its logs"}},
 }
 
-// versionSeen is a relay version that differs from this CLI's.
-type versionSeen struct{ relay string }
+// versionSeen is a relay version that differs from this CLI's, and how.
+type versionSeen struct {
+	relay string
+	skew  skew
+}
 
 // explain turns what a command returned into an explained error.
 func (c *cli) explain(err error) *cliError {
@@ -94,7 +97,7 @@ func (c *cli) explain(err error) *cliError {
 	default:
 		ce = &cliError{Title: capitalize(err.Error()), Code: "error", err: err}
 	}
-	if v := c.version.Load(); v != nil {
+	if v := c.version.Load(); v != nil && v.skew == skewMajor {
 		ce.Reason = strings.TrimSpace(ce.Reason + fmt.Sprintf(" This tsrelay (%s) differs from the relay (%s), which may be why.", version, v.relay))
 		if update := c.updateCommand(); !slices.Contains(ce.Fixes, update) {
 			ce.Fixes = append(ce.Fixes, update)

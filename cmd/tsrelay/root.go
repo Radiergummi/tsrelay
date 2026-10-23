@@ -24,7 +24,7 @@ type cli struct {
 	relayFrom string                      // where the relay URL came from: "--relay", "TSRELAY_RELAY" or "" (the tailnet)
 	base      string                      // the relay's URL, once known
 	hook      string                      // the hook the command names, if any
-	version   atomic.Pointer[versionSeen] // the relay's version, if it differs from this CLI's
+	version   atomic.Pointer[versionSeen] // the relay's version, if it differs from this CLI's; only a different major is blamed in errors
 	bg        *bgChild                    // the background tunnel this process runs as, if any
 }
 

@@ -21,6 +21,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/atomicfile"
 	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/spf13/cobra"
+	"golang.org/x/mod/semver"
 )
 
 // offerEvery is how often the update prompt and the release notice may
@@ -38,8 +39,9 @@ func newUpdateCmd(c *cli) *cobra.Command {
 	}
 	check := cmd.Flags().Bool("check", false, "only report whether this tsrelay differs from the relay's version")
 	yes := cmd.Flags().BoolP("yes", "y", false, "update without asking")
+	force := cmd.Flags().Bool("force", false, "install the relay's version even when this tsrelay is newer")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
-		return c.update(cmd.Context(), *check, *yes)
+		return c.update(cmd.Context(), *check, *yes, *force)
 	}
 	return cmd
 }
@@ -53,8 +55,9 @@ type updateResult struct {
 }
 
 // update replaces this executable with the relay's version of tsrelay.
-// check only reports; yes skips the confirmation.
-func (c *cli) update(ctx context.Context, check, yes bool) error {
+// check only reports; yes skips the confirmation; force allows replacing a
+// newer tsrelay with the relay's older one.
+func (c *cli) update(ctx context.Context, check, yes, force bool) error {
 	c.versionWarned.Do(func() {}) // this command is what the warning suggests
 	if version == "dev" {
 		return &cliError{Title: "A dev build doesn't update itself", Code: "dev_build",
@@ -87,6 +90,10 @@ func (c *cli) update(ctx context.Context, check, yes bool) error {
 		return report(errStream.glyph(errStream.style(styleOK, "●")) + fmt.Sprintf("tsrelay %s is the relay's version already", version))
 	case check:
 		return report(fmt.Sprintf("Relay is %s, you have %s. Update with: %s", me.Version, version, c.updateCommand()))
+	case !force && semver.IsValid(me.Version) && semver.Compare(version, me.Version) > 0:
+		return &cliError{Title: "This tsrelay is newer than the relay", Code: "downgrade",
+			Reason: fmt.Sprintf("This tsrelay (%s) is newer than the relay (%s); updating would replace it with an older version.", version, me.Version),
+			Fixes:  []string{c.updateCommand() + " --force"}}
 	}
 
 	exe, err := executablePath(c.d)
@@ -335,9 +342,14 @@ func noticesPath(d deps) (string, error) {
 	return filepath.Join(filepath.Dir(p), "notices.json"), nil
 }
 
+// relayNewer reports whether the relay runs a newer version than this CLI.
+func relayNewer(v *versionSeen) bool {
+	return v.skew == skewCLIOlder || v.skew == skewMajor && semver.Compare(version, v.relay) < 0
+}
+
 // offer runs after a command that talked to the relay. On an interactive
 // terminal, at most once per offerEvery each, it offers to update to the
-// relay's version when the two differ, and tells admins about a relay
+// relay's version when it is newer, and tells admins about a relay
 // release newer than the relay. It never does in a background tunnel or a
 // completion, or after an interrupt.
 func (c *cli) offer(ctx context.Context) {
@@ -359,11 +371,11 @@ func (c *cli) offer(ctx context.Context) {
 		}
 	}
 	now := time.Now()
-	if v := c.version.Load(); v != nil && now.Sub(n.UpdatePrompt) >= offerEvery {
+	if v := c.version.Load(); v != nil && relayNewer(v) && now.Sub(n.UpdatePrompt) >= offerEvery {
 		n.UpdatePrompt = now
 		save()
 		if c.confirm(ctx, fmt.Sprintf("Relay is %s, you have %s. Update now?", v.relay, version)) {
-			if err := c.update(ctx, false, true); err != nil {
+			if err := c.update(ctx, false, true, false); err != nil {
 				c.handleError(c.stderr, fang.Styles{}, err)
 			}
 		}

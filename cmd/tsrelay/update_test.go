@@ -264,6 +264,28 @@ func TestUpdateWhenAlreadyCurrent(t *testing.T) {
 	}
 }
 
+func TestUpdateRefusesDowngrade(t *testing.T) {
+	e := newCLIEnv(t)
+	a := e.relayWithAssets("v1.2.0")
+	setVersion(t, "v1.3.0")
+	exe := oldExecutable(t)
+	code, _, errOut := e.update(exe, "--yes", "--json")
+	if code != 1 || jsonErrorCode(t, errOut) != "downgrade" || !strings.Contains(errOut, "This tsrelay (v1.3.0) is newer than the relay (v1.2.0)") ||
+		!strings.Contains(errOut, "tsrelay update --relay "+e.relayURL+" --force") {
+		t.Fatalf("exit %d\nstderr %q", code, errOut)
+	}
+	assertUnchanged(t, exe)
+	if a.hits.Load() != 0 {
+		t.Fatalf("downloaded %d times", a.hits.Load())
+	}
+	if code, _, errOut := e.update(exe, "--yes", "--force"); code != 0 || !strings.Contains(errOut, "updated tsrelay v1.3.0 to v1.2.0") {
+		t.Fatalf("--force: exit %d\nstderr %q", code, errOut)
+	}
+	if b, _ := os.ReadFile(exe); !bytes.Equal(b, newBinary) {
+		t.Fatalf("executable is %q after --force", b)
+	}
+}
+
 func TestUpdateCheckOnlyReports(t *testing.T) {
 	e := newCLIEnv(t)
 	a := e.relayWithAssets("v0.3.0")
@@ -392,6 +414,25 @@ func TestUpdatePromptNeedsATerminalWithoutJSON(t *testing.T) {
 	assertUnchanged(t, exe)
 	if _, err := os.Stat(filepath.Join(filepath.Dir(e.statePath), "notices.json")); err == nil {
 		t.Error("notices.json was written, though nothing was offered")
+	}
+}
+
+// Only a relay that is newer is worth offering its version.
+func TestOfferOnlyWhenRelayNewer(t *testing.T) {
+	t.Setenv("TTY_FORCE", "1")
+	setVersion(t, "v1.3.0")
+	statePath := filepath.Join(t.TempDir(), "hooks.json")
+	for name, v := range map[string]*versionSeen{
+		"cli newer":              {relay: "v1.2.0", skew: skewCLINewer},
+		"cli newer, other major": {relay: "v0.9.0", skew: skewMajor},
+	} {
+		var stderr syncBuf
+		c := &cli{base: "http://127.0.0.1:1", stderr: &stderr, d: deps{StatePath: statePath, Stdin: strings.NewReader("y\n")}}
+		c.version.Store(v)
+		c.offer(t.Context())
+		if strings.Contains(stderr.String(), "Update now?") {
+			t.Errorf("%s: prompted:\n%s", name, stderr.String())
+		}
 	}
 }
 

@@ -83,7 +83,7 @@ The [API](api.md), the web UI and the CLI see these. Where one says the relay ma
 
 ### `unsupported_field`
 
-**422.** The request has a field this relay doesn't know, so it is newer than the relay. The problem's `errors` field names each one, like `invalid` does. Ask the relay's operator to upgrade the relay, or install the CLI version the relay runs.
+**422.** The request has a field this relay doesn't know, so it is newer than the relay; within one major version, this is how an older relay says so. The problem's `errors` field names each one, like `invalid` does. Ask the relay's operator to upgrade the relay, or install the CLI version the relay runs.
 
 ### `bad_request`
 

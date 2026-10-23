@@ -468,7 +468,7 @@ components:
         capture: { type: boolean }
     Me:
       type: object
-      required: [node, roles, limits, hooks, capName, version, policy, public, funnel, links]
+      required: [node, roles, limits, hooks, capName, version, policy, public, funnel, features, links]
       properties:
         login: { type: string, description: "Empty for tagged nodes" }
         node: { type: string }
@@ -513,6 +513,7 @@ components:
             noBodies: { type: boolean, description: "The relay keeps no bodies, whatever hooks set (--capture-bodies=false)" }
         public: { type: array, items: { type: string }, description: "Channel patterns in which the caller may make hooks public; empty when none" }
         funnel: { type: boolean, description: "The relay serves public hooks on the internet" }
+        features: { type: array, items: { type: string }, description: "Optional behaviors this relay has beyond the API's baseline, by name; empty at 1.0" }
         links:
           type: object
           required: [hooks, channels, tunnel, openapi, licenses]

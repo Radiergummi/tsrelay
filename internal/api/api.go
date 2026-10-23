@@ -87,6 +87,9 @@ type Me struct {
 	// For admins, a release newer than Version, and its release notes.
 	LatestVersion string `json:"latestVersion,omitempty"`
 	ReleaseURL    string `json:"releaseURL,omitempty"`
+	// Optional behaviors this relay has beyond the API's baseline, by name;
+	// empty at 1.0, never null.
+	Features []string `json:"features"`
 }
 
 // links point from the entry document to the relay's resources. A build
@@ -228,6 +231,7 @@ func (a *API) MeOf(id authz.Identity) Me {
 	me.CapName, me.Version, me.Commit, me.Policy = a.CapName, a.Version, a.Commit, Policy{Defaults: p.Defaults, Max: p.Max, CallsPerHook: a.Inspect.CallsPerHook(), NoBodies: a.Inspect.NoBodies()}
 	me.Public = append([]string{}, id.Grants.PublicPatterns...)
 	me.Funnel = a.PublicBaseURL != ""
+	me.Features = []string{}
 	me.Links = links
 	if a.Releases != nil && access.IsAdmin(id) {
 		if r := a.Releases.Latest(); semver.Compare(r.Version, a.Version) > 0 {
