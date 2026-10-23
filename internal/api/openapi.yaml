@@ -639,14 +639,18 @@ components:
         settings: { $ref: "#/components/schemas/Settings" }
     UpdateRequest:
       type: object
+      description: |
+        A partial update: a field left out stays as it is. `null` resets a
+        field where that means something, and is refused (422) where it
+        doesn't.
       properties:
-        path: { type: string }
-        channel: { type: string }
-        description: { type: string }
-        ephemeral: { type: boolean }
-        public: { type: boolean }
-        expiresAt: { type: [string, "null"], format: date-time }
-        settings: { $ref: "#/components/schemas/SettingsPatch" }
+        path: { type: string, description: "Moves the hook, which changes its URL. `null` is refused." }
+        channel: { type: [string, "null"], description: "`null` moves the hook back to `default`." }
+        description: { type: [string, "null"], description: "`null` clears it." }
+        ephemeral: { type: boolean, description: "`null` is refused." }
+        public: { type: boolean, description: "`false` stops serving the hook on the internet and drops its public URL; `null` is refused." }
+        expiresAt: { type: [string, "null"], format: date-time, description: "`null` removes the expiry." }
+        settings: { $ref: "#/components/schemas/SettingsPatch", description: "Each setting set to `null` goes back to the relay's default; `settings: null` changes nothing." }
     Sender:
       type: object
       properties:
@@ -711,8 +715,8 @@ components:
           type: array
           items: { type: string }
         responseBody: { $ref: "#/components/schemas/Capture" }
-        bytesIn: { type: integer }
-        bytesOut: { type: integer }
+        bytesIn: { type: integer, description: "Bytes of the request body read from the sender" }
+        bytesOut: { type: integer, description: "Bytes of the response body sent back to the sender" }
         error: { type: string }
     CallDetail:
       allOf:
