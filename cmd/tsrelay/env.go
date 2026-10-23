@@ -31,12 +31,14 @@ func visitTyped(fs *pflag.FlagSet, fn func(*pflag.Flag)) {
 // configure. A flag is not here when it acts (a variable left in the
 // environment must not make tsrelay update without asking, stop every
 // tunnel, detach, downgrade, or open a hook to the internet) or when it
-// names the one thing a command works on (a hook's path, the target of attach).
+// names the one thing a command works on (a hook's path).
 // A new flag has no twin until it is listed here; a test makes each flag
 // decide.
 var envFlags = map[string]bool{
 	// Global.
 	"relay": true, "json": true, "no-color": true, "no-hyperlinks": true,
+	// The local target of attach.
+	"to": true,
 	// Hook settings, on http and hooks create/update.
 	"attach-policy": true, "capture": true, "channel": true, "description": true,
 	"ephemeral": true, "expires-in": true, "hold-timeout": true,

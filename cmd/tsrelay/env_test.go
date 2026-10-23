@@ -119,7 +119,7 @@ func TestEveryFlagDecidesItsEnvTwin(t *testing.T) {
 	noEnv := map[string]bool{
 		"all": true, "yes": true, "check": true, "follow": true, "background": true,
 		"force": true, "public": true, "insecure": true, "help": true,
-		"to": true, "name": true, "path": true,
+		"name": true, "path": true,
 	}
 	seen := map[string]bool{}
 	everyFlag(func(cmd *cobra.Command, f *pflag.Flag) {
@@ -141,6 +141,9 @@ func TestEveryFlagDecidesItsEnvTwin(t *testing.T) {
 }
 
 func TestNoTwinForPublicAndInsecure(t *testing.T) {
+	if envFlags["public"] || envFlags["insecure"] {
+		t.Fatal("public and insecure act rather than configure: no twin")
+	}
 	t.Setenv("TSRELAY_PUBLIC", "true")
 	t.Setenv("TSRELAY_INSECURE", "true")
 	fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
