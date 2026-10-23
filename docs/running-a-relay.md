@@ -49,7 +49,7 @@ kubectl apply -n tsrelay -f secret.yaml          # your copy of secret.example.y
 kubectl apply -n tsrelay -f deploy/kubernetes/statefulset.yaml
 ```
 
-The pod meets the Pod Security `restricted` profile: it runs as user 65532 with a read-only root file system, no privilege escalation and no capabilities, and doesn't mount a Kubernetes API token. Its state is a 1 GiB volume claim. The ops listener (`/healthz`, `/readyz`, `/metrics`) is on the pod IP, port 9090, for the probes and for scraping; it has no authentication, so keep it from other workloads with a `NetworkPolicy` if your cluster runs workloads you don't trust.
+The pod meets the Pod Security `restricted` profile: it runs as user 65532 with a read-only root file system, no privilege escalation and no capabilities, and doesn't mount a Kubernetes API token. Its state is a 1 GiB volume claim. The ops listener (`/healthz`, `/readyz`, `/metrics`) is on the pod IP, port 9090, for the probes and for scraping; it has no authentication, so keep it from other workloads with a `NetworkPolicy` if your cluster runs workloads you don't trust. On its first start, the relay joins the tailnet and gets its TLS certificate before `/readyz` answers `200`, which can take a minute; the manifest's startup probe allows five.
 
 ## How senders reach the relay
 

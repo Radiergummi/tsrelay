@@ -254,6 +254,15 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 	defer ln.Close()
 
 	dnsName := strings.TrimSuffix(st.Self.DNSName, ".")
+	if cfg.tls && dnsName != "" {
+		// tsnet gets the certificate on the first TLS handshake, which can
+		// take longer than a client waits, so a new relay's first request
+		// would fail. Get it before the relay says it is ready.
+		logger.Info("getting the TLS certificate", "name", dnsName)
+		if _, _, err := lc.CertPair(ctx, dnsName); err != nil {
+			logger.Warn("couldn't get the TLS certificate yet; the first HTTPS request tries again", "error", err)
+		}
+	}
 	var publicLn net.Listener
 	if cfg.funnel {
 		publicLn, err = listenFunnel(ts, cfg.funnelPort)
