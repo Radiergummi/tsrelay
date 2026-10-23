@@ -3,6 +3,7 @@ package inspect
 import (
 	"fmt"
 	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -45,4 +46,24 @@ func TestTotalBytesEvictsOldestCalls(t *testing.T) {
 	if got := in.Bytes(); got != 0 {
 		t.Fatalf("%d bytes counted after forgetting every hook", got)
 	}
+}
+
+// Calls a hook drops for its own limit must not stay reachable: the
+// budget only bounds memory if nothing but the counted calls is kept.
+func TestDroppedCallsAreReleased(t *testing.T) {
+	in := New(Config{})
+	for i := range 10000 { // many small calls keep the store busy
+		in.Add(Call{ID: fmt.Sprintf("s_%d", i), HookID: hooks.ID(fmt.Sprintf("h_%d", i%200))})
+	}
+	for i := range 3000 { // one hook churns through ~96 MiB, keeping 100 calls
+		header := http.Header{"X-Big": {strings.Repeat(string(rune('a'+i%26)), 32<<10)}} // a copy each
+		in.Add(Call{ID: fmt.Sprintf("b_%d", i), HookID: "h_big", RequestHeaders: header})
+	}
+	runtime.GC()
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	if ms.HeapAlloc > 64<<20 {
+		t.Fatalf("heap holds %d MiB; the store counts %d MiB", ms.HeapAlloc>>20, in.Bytes()>>20)
+	}
+	runtime.KeepAlive(in)
 }

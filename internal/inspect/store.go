@@ -48,12 +48,18 @@ type Inspector struct {
 	byHook  map[hooks.ID][]*Call // oldest first
 	refused map[hooks.ID][]*Call // oldest first; the calls with Refused set
 	byID    map[string]*Call
-	// order has every kept call, oldest first, and calls dropped since,
-	// which evictLocked skips. sizes and total count what each kept call
-	// and all of them take, so TotalBytes bounds the inspector's memory.
-	order []*Call
-	sizes map[string]int64
+	// meta has the size and the order of arrival of each kept call, and
+	// total what all of them take, so TotalBytes bounds the inspector's
+	// memory. Nothing but the rings and byID refers to a call, so one that
+	// leaves them is garbage.
+	meta  map[string]callMeta
+	seq   uint64
 	total int64
+}
+
+type callMeta struct {
+	size int64
+	seq  uint64 // order of arrival
 }
 
 func New(cfg Config) *Inspector {
@@ -61,7 +67,7 @@ func New(cfg Config) *Inspector {
 	cfg.CaptureLimit = cmp.Or(cfg.CaptureLimit, DefaultCaptureLimit)
 	cfg.TotalBytes = cmp.Or(cfg.TotalBytes, DefaultTotalBytes)
 	return &Inspector{cfg: cfg, redact: NewRedactor(append(slices.Clone(DefaultRedact), cfg.Redact...)),
-		byHook: map[hooks.ID][]*Call{}, refused: map[hooks.ID][]*Call{}, byID: map[string]*Call{}, sizes: map[string]int64{}}
+		byHook: map[hooks.ID][]*Call{}, refused: map[hooks.ID][]*Call{}, byID: map[string]*Call{}, meta: map[string]callMeta{}}
 }
 
 // CallsPerHook is how many calls the inspector keeps per hook.
@@ -153,7 +159,8 @@ func (in *Inspector) Add(c Call) {
 	}
 	ring[c.HookID] = list
 	in.byID[c.ID] = p
-	in.order = append(in.order, p)
+	in.seq++
+	in.meta[c.ID] = callMeta{seq: in.seq}
 	in.resizeLocked(p)
 	in.changedLocked(p)
 }
@@ -178,41 +185,49 @@ func (in *Inspector) Bytes() int64 {
 	return in.total
 }
 
-// resizeLocked counts c's size again, and evicts the oldest calls while
-// all of them take more than TotalBytes.
+// resizeLocked counts c's size again, and drops the oldest calls of any
+// hook while all of them take more than TotalBytes.
 func (in *Inspector) resizeLocked(c *Call) {
+	m := in.meta[c.ID]
 	size := callBytes(c)
-	in.total += size - in.sizes[c.ID]
-	in.sizes[c.ID] = size
-	for in.total > in.cfg.TotalBytes && len(in.order) > 0 {
-		old := in.order[0]
-		in.order = in.order[1:]
-		if in.byID[old.ID] != old {
-			continue // dropped already
-		}
-		ring := in.byHook
-		if old.Refused {
-			ring = in.refused
-		}
-		if list := slices.DeleteFunc(ring[old.HookID], func(x *Call) bool { return x == old }); len(list) > 0 {
-			ring[old.HookID] = list
-		} else {
-			delete(ring, old.HookID)
-		}
-		in.forgetLocked(old)
-	}
-	// order also holds calls dropped by their hook's limit or Forget;
-	// compact it once they are the majority.
-	if len(in.order) > 2*len(in.byID)+64 {
-		in.order = slices.DeleteFunc(in.order, func(x *Call) bool { return in.byID[x.ID] != x })
+	in.total += size - m.size
+	m.size = size
+	in.meta[c.ID] = m
+	for in.total > in.cfg.TotalBytes {
+		in.dropOldestLocked()
 	}
 }
 
-// forgetLocked stops counting c, which its caller removed from its ring.
+// dropOldestLocked drops the call that arrived first. Each ring is oldest
+// first, so it is the head of one of them.
+func (in *Inspector) dropOldestLocked() {
+	var oldest map[hooks.ID][]*Call
+	var hook hooks.ID
+	var seq uint64
+	for _, ring := range []map[hooks.ID][]*Call{in.byHook, in.refused} {
+		for id, list := range ring {
+			if s := in.meta[list[0].ID].seq; oldest == nil || s < seq {
+				oldest, hook, seq = ring, id, s
+			}
+		}
+	}
+	if oldest == nil {
+		return
+	}
+	list := oldest[hook]
+	in.forgetLocked(list[0])
+	if list = slices.Delete(list, 0, 1); len(list) > 0 {
+		oldest[hook] = list
+	} else {
+		delete(oldest, hook)
+	}
+}
+
+// forgetLocked stops counting c, which its caller removes from its ring.
 func (in *Inspector) forgetLocked(c *Call) {
 	delete(in.byID, c.ID)
-	in.total -= in.sizes[c.ID]
-	delete(in.sizes, c.ID)
+	in.total -= in.meta[c.ID].size
+	delete(in.meta, c.ID)
 }
 
 // callBytes estimates the memory c takes: what it captured, and a fixed
@@ -234,7 +249,8 @@ func headersBytes(h http.Header) int {
 }
 
 func (in *Inspector) changedLocked(c *Call) {
-	if in.OnChange != nil && !c.Refused {
+	// A call can be dropped by the very change that announces it.
+	if in.OnChange != nil && !c.Refused && in.byID[c.ID] == c {
 		in.OnChange(c.Owner, c.Channel, c.Summary())
 	}
 }
