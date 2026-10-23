@@ -2,7 +2,6 @@ package api
 
 import (
 	"cmp"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -148,10 +147,7 @@ func (a *API) testCall(w http.ResponseWriter, r *http.Request, id authz.Identity
 		return
 	}
 	var req TestRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		problem.New(http.StatusBadRequest, problem.BadRequest, "invalid JSON: "+err.Error()).Write(w)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	var errs hooks.ValidationError

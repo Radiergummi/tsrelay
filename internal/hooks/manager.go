@@ -42,13 +42,13 @@ func (e ValidationError) Error() string {
 // CreateRequest describes a new hook. Empty Path means three random words;
 // empty Channel means authz.DefaultChannel.
 type CreateRequest struct {
-	Path        string     `json:"path"`
-	Channel     string     `json:"channel"`
-	Description string     `json:"description"`
-	Ephemeral   bool       `json:"ephemeral"`
-	Public      bool       `json:"public"`
-	Settings    Settings   `json:"settings"`
-	ExpiresAt   *time.Time `json:"expiresAt"`
+	Path        string     `json:"path,omitzero"`
+	Channel     string     `json:"channel,omitzero"`
+	Description string     `json:"description,omitzero"`
+	Ephemeral   bool       `json:"ephemeral,omitzero"`
+	Public      bool       `json:"public,omitzero"`
+	Settings    Settings   `json:"settings,omitzero"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitzero"`
 }
 
 // Manager holds all hooks in memory, enforces ownership rules, and writes

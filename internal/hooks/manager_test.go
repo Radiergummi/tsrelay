@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -241,5 +242,15 @@ func TestSettingsSurviveReload(t *testing.T) {
 	got, _ := m2.Get(h.ID)
 	if got.Settings.MaxBodyBytes == nil || *got.Settings.MaxBodyBytes != 4096 {
 		t.Fatalf("settings after reload = %+v", got.Settings)
+	}
+}
+
+func TestCreateRequestOmitsZeroFields(t *testing.T) {
+	b, err := json.Marshal(CreateRequest{Path: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != `{"path":"x"}` {
+		t.Fatalf("got %s, want {\"path\":\"x\"}", b)
 	}
 }

@@ -32,6 +32,7 @@ const (
 	Forbidden            = "forbidden"
 	NotFound             = "not_found"
 	Invalid              = "invalid"
+	UnsupportedField     = "unsupported_field"
 	BadRequest           = "bad_request"
 	Conflict             = "conflict"
 	MisdirectedRequest   = "misdirected_request"

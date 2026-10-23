@@ -293,8 +293,8 @@ func TestCreateErrors(t *testing.T) {
 		t.Fatalf("invalid channel = %d %+v", resp.StatusCode, p)
 	}
 	resp = e.call(moritz, "POST", "/hooks", map[string]any{"path": "x", "bogus": 1}, &p)
-	if resp.StatusCode != 400 {
-		t.Fatalf("unknown field = %d", resp.StatusCode)
+	if resp.StatusCode != 422 || p.Code != problem.UnsupportedField {
+		t.Fatalf("unknown field = %d %+v", resp.StatusCode, p)
 	}
 	resp = e.call(worker, "POST", "/hooks", hooks.CreateRequest{}, &p)
 	if resp.StatusCode != 403 || p.Code != problem.Forbidden {
@@ -464,7 +464,7 @@ func TestPatchHook(t *testing.T) {
 	if resp := e.call(moritz, "PATCH", "/hooks/"+h.ID, map[string]any{"channel": "billing"}, &p); resp.StatusCode != 422 {
 		t.Fatalf("invalid patch = %d", resp.StatusCode)
 	}
-	if resp := e.call(moritz, "PATCH", "/hooks/"+h.ID, map[string]any{"bogus": 1}, nil); resp.StatusCode != 400 {
+	if resp := e.call(moritz, "PATCH", "/hooks/"+h.ID, map[string]any{"bogus": 1}, nil); resp.StatusCode != 422 {
 		t.Fatalf("unknown field = %d", resp.StatusCode)
 	}
 	if resp := e.call(other, "PATCH", "/hooks/"+h.ID, map[string]any{"description": "x"}, nil); resp.StatusCode != 404 {

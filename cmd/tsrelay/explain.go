@@ -58,6 +58,8 @@ var problemExplanations = map[string]explanation{
 		[]string{"tsrelay hooks list"}},
 	problem.Invalid: {"The relay rejected the values", "Something sent is not valid.",
 		[]string{"Correct what the relay named, then retry"}},
+	problem.UnsupportedField: {"The relay doesn't support this", "The request names a field this relay doesn't know, so tsrelay is newer than the relay.",
+		[]string{"Ask the relay's operator to upgrade the relay"}},
 	problem.BadRequest: {"The relay couldn't read the request", "This tsrelay may not speak the relay's API.",
 		[]string{updateFix}},
 	problem.Conflict: {"Something is in the way", "The relay can't do this while something else holds on to it.",

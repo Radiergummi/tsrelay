@@ -44,7 +44,7 @@ type ChannelDetail struct {
 // channels.
 func (a *API) scopedHooks(r *http.Request, id authz.Identity) (list []hooks.Hook, all bool) {
 	switch {
-	case r.URL.Query().Get("all") == "true" && access.IsAdmin(id):
+	case queryBool(r, "all") && access.IsAdmin(id):
 		for _, h := range a.Hooks.ListAll() {
 			if access.View(id, h.Access()) != access.None {
 				list = append(list, h)

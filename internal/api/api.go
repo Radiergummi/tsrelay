@@ -255,13 +255,10 @@ func (a *API) listHooks(w http.ResponseWriter, r *http.Request, id authz.Identit
 
 func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 	var req hooks.CreateRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		problem.New(http.StatusBadRequest, problem.BadRequest, "invalid JSON: "+err.Error()).Write(w)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
-	dry := r.URL.Query().Get("dryRun") == "true"
+	dry := queryBool(r, "dryRun")
 	create := a.Tunnels.Create
 	if dry {
 		create = a.Hooks.CheckCreate
@@ -302,10 +299,7 @@ func (a *API) getHook(w http.ResponseWriter, r *http.Request, id authz.Identity)
 
 func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 	var req hooks.UpdateRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		problem.New(http.StatusBadRequest, problem.BadRequest, "invalid JSON: "+err.Error()).Write(w)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	// The store answers not found to anyone but the owner, so decide 404
@@ -314,7 +308,7 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		writeAccessError(w, err, "only the hook's owner, with the receiver role, can edit it")
 		return
 	}
-	dry := r.URL.Query().Get("dryRun") == "true"
+	dry := queryBool(r, "dryRun")
 	update := a.Tunnels.Update
 	if dry {
 		update = a.Hooks.CheckUpdate

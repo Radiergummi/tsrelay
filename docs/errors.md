@@ -81,6 +81,10 @@ The [API](api.md), the web UI and the CLI see these. Where one says the relay ma
 
 **422.** Something sent isn't valid, such as a hook setting above the relay's maximum. The problem's `errors` field names each one; correct them, then retry.
 
+### `unsupported_field`
+
+**422.** The request has a field this relay doesn't know, so it is newer than the relay. The problem's `errors` field names each one, like `invalid` does. Ask the relay's operator to upgrade the relay, or install the CLI version the relay runs.
+
 ### `bad_request`
 
 **400.** The relay couldn't read the request: malformed JSON, a tunnel request without its upgrade headers, or one that names no hook. This `tsrelay` may not speak the relay's API.

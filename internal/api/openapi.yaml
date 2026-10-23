@@ -751,7 +751,7 @@ components:
         code: { type: string }
         errors:
           type: array
-          description: For `422`, one entry per invalid field.
+          description: For `422`, one entry per invalid field, or per field the relay does not support (`unsupported_field`).
           items:
             type: object
             required: [field, message]

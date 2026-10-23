@@ -52,14 +52,14 @@ type RateLimit struct {
 // Settings are a hook's overrides of the relay defaults (DESIGN.md §8).
 // A nil field means "use the relay default".
 type Settings struct {
-	AttachPolicy    *AttachPolicy `json:"attachPolicy,omitempty"`
-	HostHeader      *HostHeader   `json:"hostHeader,omitempty"`
-	HoldTimeout     *Duration     `json:"holdTimeout,omitempty"`
-	ResponseTimeout *Duration     `json:"responseTimeout,omitempty"`
-	IdleTimeout     *Duration     `json:"idleTimeout,omitempty"`
-	MaxBodyBytes    *int64        `json:"maxBodyBytes,omitempty"` // 0 means unlimited
-	RateLimit       *RateLimit    `json:"rateLimit,omitempty"`
-	Capture         *bool         `json:"capture,omitempty"` // keep bodies for the inspector
+	AttachPolicy    *AttachPolicy `json:"attachPolicy,omitzero"`
+	HostHeader      *HostHeader   `json:"hostHeader,omitzero"`
+	HoldTimeout     *Duration     `json:"holdTimeout,omitzero"`
+	ResponseTimeout *Duration     `json:"responseTimeout,omitzero"`
+	IdleTimeout     *Duration     `json:"idleTimeout,omitzero"`
+	MaxBodyBytes    *int64        `json:"maxBodyBytes,omitzero"` // 0 means unlimited
+	RateLimit       *RateLimit    `json:"rateLimit,omitzero"`
+	Capture         *bool         `json:"capture,omitzero"` // keep bodies for the inspector
 }
 
 // Effective are a hook's settings with every default filled in.
