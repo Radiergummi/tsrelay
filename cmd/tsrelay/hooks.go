@@ -234,11 +234,19 @@ func newHooksDeleteCmd(c *cli) *cobra.Command {
 		out, errStream := c.streams()
 		// A hook that can't be deleted doesn't keep the others from being,
 		// nor hides which were: the first failure is the command's error.
-		ids := []string{}
+		// failure is a hook that would not delete, named as it was given.
+		type failure struct {
+			Ref string `json:"ref"`
+			jsonError
+		}
+		result := struct {
+			Deleted []string  `json:"deleted"`
+			Failed  []failure `json:"failed"`
+		}{[]string{}, []failure{}}
 		var failed error
 		for _, ref := range refs {
 			h, err := findHook(all, ref)
-			if err == nil && slices.Contains(ids, h.ID) {
+			if err == nil && slices.Contains(result.Deleted, h.ID) {
 				continue
 			}
 			if err == nil {
@@ -248,15 +256,16 @@ func newHooksDeleteCmd(c *cli) *cobra.Command {
 				if failed == nil {
 					failed = err
 				}
+				result.Failed = append(result.Failed, failure{ref, newJSONError(c.explain(err))})
 				continue
 			}
-			ids = append(ids, h.ID)
+			result.Deleted = append(result.Deleted, h.ID)
 			if !c.json {
 				fmt.Fprintf(errStream.w, "deleted %s\n", h.URL)
 			}
 		}
 		if c.json {
-			if err := writeJSON(out, map[string][]string{"deleted": ids}); err != nil {
+			if err := writeJSON(out, result); err != nil {
 				return err
 			}
 		}

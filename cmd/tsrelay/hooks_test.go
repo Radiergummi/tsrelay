@@ -107,7 +107,7 @@ func TestHooksCommands(t *testing.T) {
 	if code, _, errOut := e.tsrelay("hooks", "delete", "nope"); code != 1 || !strings.Contains(errOut, `"nope"`) {
 		t.Fatalf("delete unknown: exit %d\n%s", code, errOut)
 	}
-	if code, out, errOut := e.tsrelay("hooks", "rm", id, "--json"); code != 0 || out != `{"deleted":["`+id+`"]}`+"\n" {
+	if code, out, errOut := e.tsrelay("hooks", "rm", id, "--json"); code != 0 || out != `{"deleted":["`+id+`"],"failed":[]}`+"\n" {
 		t.Fatalf("rm --json: exit %d, stdout %q\n%s", code, out, errOut)
 	}
 	if hs := e.listJSON(); len(hs) != 0 {
@@ -194,9 +194,10 @@ func TestJSONErrors(t *testing.T) {
 		{"hooks", "create", "--channel", "Not Valid", "--json"}, // a relay refusal (problem)
 	} {
 		code, out, errOut := e.tsrelay(args...)
-		wantOut := "" // a delete still reports what it deleted: nothing
+		wantOut := "" // a delete still reports what it deleted (nothing) and what failed
 		if args[1] == "delete" {
-			wantOut = `{"deleted":[]}` + "\n"
+			// The failure carries the error stderr has: {"error":{…}}.
+			wantOut = `{"deleted":[],"failed":[{"ref":"nope",` + strings.TrimSuffix(errOut, "}\n")[1:] + "}]}\n"
 		}
 		if code != 1 || out != wantOut {
 			t.Errorf("%q: exit %d, stdout %q; want 1 and %q on stdout", args, code, out, wantOut)

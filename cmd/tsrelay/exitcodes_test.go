@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -73,8 +75,21 @@ func TestHooksDeleteReportsPartial(t *testing.T) {
 		ids[h.Path] = h.ID
 	}
 	code, out, errOut := e.tsrelay("hooks", "delete", "a", "missing", "b", "--json")
-	if want := `{"deleted":["` + ids["a"] + `","` + ids["b"] + `"]}` + "\n"; code != 1 || out != want {
-		t.Fatalf("exit %d, stdout %q, want 1 and %q\n%s", code, out, want, errOut)
+	var got struct {
+		Deleted []string `json:"deleted"`
+		Failed  []struct {
+			Ref   string `json:"ref"`
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		} `json:"failed"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); code != 1 || err != nil {
+		t.Fatalf("exit %d, stdout %q (%v), want 1\n%s", code, out, err, errOut)
+	}
+	if !slices.Equal(got.Deleted, []string{ids["a"], ids["b"]}) || len(got.Failed) != 1 ||
+		got.Failed[0].Ref != "missing" || got.Failed[0].Error.Code != "no_such_hook" {
+		t.Fatalf("stdout %s", out)
 	}
 	if hs := e.listJSON(); len(hs) != 0 {
 		t.Fatalf("hooks left: %+v", hs)
