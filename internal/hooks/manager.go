@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/authz"
@@ -42,13 +43,13 @@ func (e ValidationError) Error() string {
 // CreateRequest describes a new hook. Empty Path means three random words;
 // empty Channel means authz.DefaultChannel.
 type CreateRequest struct {
-	Path        string     `json:"path"`
-	Channel     string     `json:"channel"`
-	Description string     `json:"description"`
-	Ephemeral   bool       `json:"ephemeral"`
-	Public      bool       `json:"public"`
-	Settings    Settings   `json:"settings"`
-	ExpiresAt   *time.Time `json:"expiresAt"`
+	Path        string     `json:"path,omitzero"`
+	Channel     string     `json:"channel,omitzero"`
+	Description string     `json:"description,omitzero"`
+	Ephemeral   bool       `json:"ephemeral,omitzero"`
+	Public      bool       `json:"public,omitzero"`
+	Settings    Settings   `json:"settings,omitzero"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitzero"`
 }
 
 // Manager holds all hooks in memory, enforces ownership rules, and writes
@@ -59,8 +60,20 @@ type Manager struct {
 	policy Policy
 	now    func() time.Time
 
+	// Changes take wmu for their whole run, store write included, and mu
+	// only to change the fields below. So a slow store write, such as an
+	// fsync on a degraded volume, never holds up routing a call. Holding
+	// wmu, a change may read hooks and policy without mu: only it writes them.
+	wmu   sync.Mutex
 	mu    sync.RWMutex
 	hooks map[ID]Hook
+}
+
+// put records h in memory. The caller holds wmu.
+func (m *Manager) put(h Hook) {
+	m.mu.Lock()
+	m.hooks[h.ID] = h
+	m.mu.Unlock()
 }
 
 // NewManager loads all hooks from store.
@@ -81,6 +94,8 @@ func (m *Manager) Slug(login string) (string, error) { return m.slugs.Slug(login
 
 // SetPolicy replaces the relay-wide hook setting defaults and maxima.
 func (m *Manager) SetPolicy(p Policy) {
+	m.wmu.Lock()
+	defer m.wmu.Unlock()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.policy = p
@@ -126,10 +141,20 @@ func validateDescription(description string) []FieldError {
 	if len(description) > maxDescription {
 		return []FieldError{{"description", fmt.Sprintf("must be at most %d characters", maxDescription)}}
 	}
+	if strings.ContainsFunc(description, Unprintable) {
+		return []FieldError{{"description", "must be one line without control or bidirectional formatting characters"}}
+	}
 	return nil
 }
 
-// validateExpiry checks expiresAt against now and the owner's maxHookTTL.
+// Unprintable reports whether r may change how a terminal shows the text
+// around it: a control character (C0, DEL, C1, which start escape
+// sequences) or a bidirectional formatting character.
+func Unprintable(r rune) bool {
+	return unicode.IsControl(r) || r >= '\u202a' && r <= '\u202e' || r >= '\u2066' && r <= '\u2069' || r == '\u200e' || r == '\u200f' || r == '\u061c'
+}
+
+// validateExpiry checks expiresAt against now and the owner's maxHookTtl.
 // Ephemeral hooks need no expiry, because they end with their tunnel.
 func validateExpiry(expiresAt *time.Time, ephemeral bool, now time.Time, maxTTL time.Duration) []FieldError {
 	switch {
@@ -140,7 +165,7 @@ func validateExpiry(expiresAt *time.Time, ephemeral bool, now time.Time, maxTTL 
 	case !expiresAt.After(now):
 		return []FieldError{{"expiresAt", "must be in the future"}}
 	case maxTTL > 0 && expiresAt.Sub(now) > maxTTL:
-		return []FieldError{{"expiresAt", fmt.Sprintf("must be within %s from now (your grants' maxHookTTL)", maxTTL)}}
+		return []FieldError{{"expiresAt", fmt.Sprintf("must be within %s from now (your grants' maxHookTtl)", maxTTL)}}
 	}
 	return nil
 }
@@ -166,9 +191,12 @@ func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRe
 	if req.Channel == "" {
 		req.Channel = authz.DefaultChannel
 	}
+	if req.ExpiresAt != nil {
+		req.ExpiresAt = new(req.ExpiresAt.UTC()) // timestamps are UTC, whatever offset the client sent
+	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.wmu.Lock()
+	defer m.wmu.Unlock()
 	owned := m.ownedLocked(owner.UserID)
 	var errs ValidationError
 	if req.Path == "" {
@@ -216,7 +244,7 @@ func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRe
 	if err := m.store.PutHook(ctx, h); err != nil {
 		return Hook{}, err
 	}
-	m.hooks[h.ID] = h
+	m.put(h)
 	return h, nil
 }
 
@@ -243,6 +271,7 @@ func (m *Manager) freePathLocked(owned []Hook) string {
 	}
 }
 
+// ownedLocked needs mu or wmu.
 func (m *Manager) ownedLocked(user tailcfg.UserID) []Hook {
 	var out []Hook
 	for _, h := range m.hooks {
@@ -286,13 +315,14 @@ func sortHooks(hs []Hook) []Hook {
 }
 
 // DeleteIf deletes the hook id if cond holds for it as stored, deciding
-// and deleting under one lock so a concurrent update cannot slip between
-// the two. It returns the stored hook and whether it was deleted. Only the
-// lifecycle's Delete and Reap may call it: they keep the tunnels serving the
-// hook and the calls waiting for it consistent with the store.
+// and deleting under one lock so a concurrent change cannot slip between
+// the two. cond runs without mu held, so it may take locks that are held
+// while calling Get. It returns the stored hook and whether it was deleted.
+// Only the lifecycle's Delete and Reap may call it: they keep the tunnels
+// serving the hook and the calls waiting for it consistent with the store.
 func (m *Manager) DeleteIf(ctx context.Context, id ID, cond func(Hook) bool) (Hook, bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.wmu.Lock()
+	defer m.wmu.Unlock()
 	h, ok := m.hooks[id]
 	if !ok {
 		return Hook{}, false, ErrNotFound
@@ -303,7 +333,9 @@ func (m *Manager) DeleteIf(ctx context.Context, id ID, cond func(Hook) bool) (Ho
 	if err := m.store.DeleteHook(ctx, id); err != nil {
 		return h, false, err
 	}
+	m.mu.Lock()
 	delete(m.hooks, id)
+	m.mu.Unlock()
 	return h, true, nil
 }
 

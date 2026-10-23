@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
@@ -67,8 +68,13 @@ func TestCallsEndToEnd(t *testing.T) {
 	io.ReadAll(resp.Body)
 	var list []inspect.Summary
 	e.waitFor(func() bool {
+		var body api.CallList
 		list = nil
-		return e.getJSON("/hooks/"+h.ID+"/calls", &list) == 200 && len(list) == 1 && list[0].Outcome == inspect.OutcomeOK
+		if e.getJSON("/hooks/"+h.ID+"/calls", &body) != 200 {
+			return false
+		}
+		list = body.Calls
+		return len(list) == 1 && list[0].Outcome == inspect.OutcomeOK
 	})
 	if list[0].ID != resp.Header.Get("Tsrelay-Call-Id") || list[0].Status != 202 || list[0].Path != "/done" {
 		t.Fatalf("summary = %+v", list[0])
@@ -273,5 +279,30 @@ func TestEventStreamEndsOnClose(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the stream outlived Server.Close")
+	}
+}
+
+// TestListsAreObjects pins the list responses as objects, so they can grow
+// siblings (a cursor, a total) without breaking clients. An empty list is an
+// empty array, never null.
+func TestListsAreObjects(t *testing.T) {
+	e := newEnv(t, Config{})
+	h, err := e.api.CreateHook(context.Background(), hooks.CreateRequest{Path: "cb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, key := range map[string]string{"/hooks": "hooks", "/hooks/" + h.ID + "/calls": "calls"} {
+		var body map[string]json.RawMessage
+		if code := e.getJSON(path, &body); code != 200 {
+			t.Fatalf("GET %s = %d", path, code)
+		}
+		if len(body) != 1 || !strings.HasPrefix(string(body[key]), "[") {
+			t.Errorf("GET %s = %v, want an object whose %q is an array", path, body, key)
+		}
+	}
+	var none map[string]json.RawMessage
+	e.getJSON("/hooks/"+h.ID+"/calls", &none)
+	if string(none["calls"]) != "[]" {
+		t.Errorf("no calls = %s, want []", none["calls"])
 	}
 }

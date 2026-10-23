@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
 func TestGuard(t *testing.T) {
@@ -49,6 +51,9 @@ func TestGuard(t *testing.T) {
 			g.ServeHTTP(rec, req)
 			if rec.Code != c.want {
 				t.Fatalf("status = %d, want %d (%s)", rec.Code, c.want, rec.Body)
+			}
+			if strings.HasPrefix(c.name, "cross-site") && rec.Header().Get(problem.HeaderError) != problem.CrossSite {
+				t.Fatalf("Tsrelay-Error = %q, want %q", rec.Header().Get(problem.HeaderError), problem.CrossSite)
 			}
 		})
 	}

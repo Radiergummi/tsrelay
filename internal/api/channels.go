@@ -41,24 +41,30 @@ type ChannelDetail struct {
 
 // scopedHooks are the hooks GET /hooks lists: the caller's, or for an admin
 // asking for ?all=true (which non-admins can't) every hook in their admin
-// channels.
-func (a *API) scopedHooks(r *http.Request, id authz.Identity) (list []hooks.Hook, all bool) {
+// channels. ok is false once it has answered a bad ?all.
+func (a *API) scopedHooks(w http.ResponseWriter, r *http.Request, id authz.Identity) (list []hooks.Hook, all, ok bool) {
+	wantAll, ok := queryBool(w, r, "all")
 	switch {
-	case r.URL.Query().Get("all") == "true" && access.IsAdmin(id):
+	case !ok:
+		return nil, false, false
+	case wantAll && access.IsAdmin(id):
 		for _, h := range a.Hooks.ListAll() {
 			if access.View(id, h.Access()) != access.None {
 				list = append(list, h)
 			}
 		}
-		return list, true
+		return list, true, true
 	case id.IsUser():
-		return a.Hooks.List(id.UserID), false
+		return a.Hooks.List(id.UserID), false, true
 	}
-	return nil, false
+	return nil, false, true
 }
 
 func (a *API) listChannels(w http.ResponseWriter, r *http.Request, id authz.Identity) {
-	list, all := a.scopedHooks(r, id)
+	list, all, ok := a.scopedHooks(w, r, id)
+	if !ok {
+		return
+	}
 	byName := map[string]*Channel{}
 	for _, h := range list {
 		c, ok := byName[h.Channel]
@@ -91,7 +97,10 @@ func (a *API) getChannel(w http.ResponseWriter, r *http.Request, id authz.Identi
 		problem.New(http.StatusNotFound, problem.NotFound, "no such channel; names are dot-separated segments of a-z, 0-9 and -").Write(w)
 		return
 	}
-	list, _ := a.scopedHooks(r, id)
+	list, _, ok := a.scopedHooks(w, r, id)
+	if !ok {
+		return
+	}
 	out := ChannelDetail{
 		Name: name, Hooks: []Hook{},
 		CanReceive: access.MayReceive(id.Grants, name),

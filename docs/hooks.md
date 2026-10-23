@@ -11,8 +11,8 @@ A hook is a URL on the relay that delivers to whichever of your devices has a tu
 
 Useful flags:
 
-- `-n`/`--name payments/v1` picks the path yourself.
-- `-p`/`--persistent` keeps the hook after the command exits. Without it, the hook is *ephemeral*: the relay deletes it once no tunnel has been attached for a while. While no tunnel is attached to a persistent hook, callers get `561` with `Retry-After`.
+- `--path payments/v1` picks the path yourself. `tsrelay hooks create` and `tsrelay hooks update` take `--path` too.
+- `--ephemeral=false` keeps the hook after the command exits. By default the hook is *ephemeral*: the relay deletes it once no tunnel has been attached for a while. (`tsrelay hooks create` makes persistent hooks by default; `--ephemeral` makes one ephemeral.) While no tunnel is attached to a persistent hook, callers get `561` with `Retry-After`.
 - `--relay host` points at a relay that isn't at `tsrelay.<your tailnet>`.
 
 `tsrelay http` also accepts `-- cmd args...` to start a local process with `TSRELAY_URL` set in its environment, and stop it (SIGTERM, then a kill after 5 s) when the tunnel ends:
@@ -33,7 +33,7 @@ A hook can also be made reachable from the internet, for third-party webhooks (s
 tsrelay http 3000 --public      # make this hook's URL reachable from the internet
 ```
 
-Without the `public` grant, turning a hook public fails. The relay prints both URLs; the public one is a secret, so treat it like one, and rotate it with `tsrelay hooks rotate-url <hook>` if it leaks. An ephemeral `tsrelay http --public` hook gets a new public URL once it's reaped (after the relay's `--ephemeral-grace`, 10 minutes by default, without a tunnel), so use `-p`/`--persistent` (or `tsrelay hooks create --public`) for a stable URL to give to a provider.
+Without the `public` grant, turning a hook public fails. The relay prints both URLs; the public one is a secret, so treat it like one, and rotate it with `tsrelay hooks rotate-url <hook>` if it leaks. An ephemeral `tsrelay http --public` hook gets a new public URL once it's reaped (after the relay's `--ephemeral-grace`, 10 minutes by default, without a tunnel), so use `--ephemeral=false` (or `tsrelay hooks create --public`) for a stable URL to give to a provider.
 
 > [!WARNING]
 > The relay doesn't verify provider signatures. Your app has to, as it would without tsrelay; see the [security policy](https://github.com/Radiergummi/tsrelay/blob/main/SECURITY.md).
@@ -49,7 +49,7 @@ The web UI's Channels page lists your patterns and the channels your hooks are i
 ```bash
 tsrelay hooks list                                 # your hooks (alias: ls)
 tsrelay hooks show <hook>                          # one hook and its effective settings
-tsrelay hooks create [<path>] [flags]              # create a persistent hook
+tsrelay hooks create [flags]                      # create a persistent hook
 tsrelay hooks update <hook> [flags]                # change one (only the given flags)
 tsrelay hooks delete <hook>...                     # delete one or more (alias: rm)
 tsrelay hooks rotate-url <hook>                    # give a public hook a new public URL
@@ -67,7 +67,7 @@ Every hook has delivery settings. Your relay sets a default and, for most of the
 
 | Setting | Flag | |
 |---|---|---|
-| `attachPolicy` | `--attach-policy` | `takeover` replaces an attached tunnel with a new one; `reject` refuses the new one with `409` |
+| `attachPolicy` | `--attach-policy` | `takeover` replaces an attached tunnel with a new one; `reject` refuses the new one with `409 attach_rejected` |
 | `hostHeader` | `--host-header` | `preserve` passes the relay's host to your app; `rewrite` sets `Host` to your local target's host |
 | `holdTimeout` | `--hold-timeout` | How long a call waits for a tunnel to attach; `0s` disables holding |
 | `responseTimeout` | `--response-timeout` | How long to wait for your app's response headers |
@@ -79,7 +79,7 @@ Every hook has delivery settings. Your relay sets a default and, for most of the
 Set them when creating or updating a hook:
 
 ```bash
-tsrelay hooks create payments/v1 --rate-limit 10/20 --host-header rewrite
+tsrelay hooks create --path payments/v1 --rate-limit 10/20 --host-header rewrite
 tsrelay hooks update payments/v1 --hold-timeout 0s
 ```
 

@@ -48,7 +48,9 @@ func newHooksListCmd(c *cli) *cobra.Command {
 		}
 		out, errStream := c.streams()
 		if c.json {
-			return writeJSON(out, hs)
+			return writeJSON(out, struct {
+				Hooks []api.Hook `json:"hooks"`
+			}{hs})
 		}
 		writeHookList(out, errStream, hs)
 		return nil
@@ -85,11 +87,12 @@ func newHooksShowCmd(c *cli) *cobra.Command {
 
 func newHooksCreateCmd(c *cli) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "create [<path>]",
+		Use:   "create",
 		Short: "Create a persistent hook",
-		Args:  arity(0, 1, "path"),
+		Args:  arity(0, 0, ""),
 	}
 	fs := cmd.Flags()
+	path := fs.String("path", "", "hook path below your ~user prefix (default: three random words)")
 	channel := fs.StringP("channel", "c", "", `hook channel (default: "default")`)
 	description := fs.String("description", "", "free text, at most 280 characters")
 	ephemeral := fs.Bool("ephemeral", false, "delete the hook once it had no tunnel for the relay's grace period")
@@ -102,16 +105,13 @@ func newHooksCreateCmd(c *cli) *cobra.Command {
 		ctx := cmd.Context()
 		if *expiresIn < 0 {
 			return usage("--expires-in can't be negative", "It says how long from now the hook is deleted.",
-				strings.Join(append([]string{"tsrelay hooks create"}, args...), " ")+" --expires-in 24h")
+				"tsrelay hooks create --expires-in 24h")
 		}
 		s, err := settings()
 		if err != nil {
 			return err
 		}
-		req := hooks.CreateRequest{Channel: *channel, Description: *description, Ephemeral: *ephemeral, Settings: s, Public: *public}
-		if len(args) == 1 {
-			req.Path = args[0]
-		}
+		req := hooks.CreateRequest{Path: *path, Channel: *channel, Description: *description, Ephemeral: *ephemeral, Settings: s, Public: *public}
 		if *expiresIn != 0 {
 			at := time.Now().Add(*expiresIn)
 			req.ExpiresAt = &at
@@ -227,25 +227,49 @@ func newHooksDeleteCmd(c *cli) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		found, err := resolveHooks(ctx, relayAPI, refs)
+		all, err := relayAPI.ListHooks(ctx)
 		if err != nil {
 			return err
 		}
 		out, errStream := c.streams()
-		ids := make([]string, 0, len(found))
-		for _, h := range found {
-			if err := relayAPI.DeleteHook(ctx, h.ID); err != nil {
-				return err
+		// A hook that can't be deleted doesn't keep the others from being,
+		// nor hides which were: the first failure is the command's error.
+		// failure is a hook that would not delete, named as it was given.
+		type failure struct {
+			Ref string `json:"ref"`
+			jsonError
+		}
+		result := struct {
+			Deleted []api.Hook `json:"deleted"`
+			Failed  []failure  `json:"failed"`
+		}{[]api.Hook{}, []failure{}}
+		var failed error
+		for _, ref := range refs {
+			h, err := findHook(all, ref)
+			if err == nil && slices.ContainsFunc(result.Deleted, func(d api.Hook) bool { return d.ID == h.ID }) {
+				continue
 			}
-			ids = append(ids, h.ID)
+			if err == nil {
+				err = relayAPI.DeleteHook(ctx, h.ID)
+			}
+			if err != nil {
+				if failed == nil {
+					failed = err
+				}
+				result.Failed = append(result.Failed, failure{ref, newJSONError(c.explain(err))})
+				continue
+			}
+			result.Deleted = append(result.Deleted, h)
 			if !c.json {
 				fmt.Fprintf(errStream.w, "deleted %s\n", h.URL)
 			}
 		}
 		if c.json {
-			return writeJSON(out, map[string][]string{"deleted": ids})
+			if err := writeJSON(out, result); err != nil {
+				return err
+			}
 		}
-		return nil
+		return failed
 	}
 	return cmd
 }
@@ -294,17 +318,26 @@ func resolveHooks(ctx context.Context, c *client.API, refs []string) ([]api.Hook
 	}
 	found := make([]api.Hook, 0, len(refs))
 	for _, ref := range refs {
-		i := slices.IndexFunc(all, func(h api.Hook) bool { return h.ID == ref })
-		if i < 0 {
-			i = slices.IndexFunc(all, func(h api.Hook) bool { return h.Path == strings.Trim(ref, "/") })
+		h, err := findHook(all, ref)
+		if err != nil {
+			return nil, err
 		}
-		if i < 0 {
-			return nil, &cliError{Title: fmt.Sprintf("No hook %q", ref), Reason: "You have no hook with that ID or path.",
-				Fixes: []string{"tsrelay hooks list"}, Code: "no_such_hook"}
-		}
-		found = append(found, all[i])
+		found = append(found, h)
 	}
 	return found, nil
+}
+
+// findHook is the hook of all that ref names by ID or path.
+func findHook(all []api.Hook, ref string) (api.Hook, error) {
+	i := slices.IndexFunc(all, func(h api.Hook) bool { return h.ID == ref })
+	if i < 0 {
+		i = slices.IndexFunc(all, func(h api.Hook) bool { return h.Path == strings.Trim(ref, "/") })
+	}
+	if i < 0 {
+		return api.Hook{}, &cliError{Title: fmt.Sprintf("No hook %q", ref), Reason: "You have no hook with that ID or path.",
+			Fixes: []string{"tsrelay hooks list"}, Code: "no_such_hook"}
+	}
+	return all[i], nil
 }
 
 // optPtr is a PATCH field that sets *v, or leaves the field alone if v is nil.

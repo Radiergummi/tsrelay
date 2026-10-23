@@ -22,7 +22,8 @@ var files embed.FS
 
 var scripts = template.Must(template.ParseFS(files, "*.tmpl"))
 
-const github = "https://github.com/Radiergummi/tsrelay/releases"
+// Releases is where the release workflow publishes tsrelay.
+const Releases = "https://github.com/Radiergummi/tsrelay/releases"
 
 // targets are the platforms the release workflow builds.
 var targets = map[string][]string{
@@ -62,7 +63,7 @@ func (h *Handler) dev() bool { return h.Version == "dev" }
 func (h *Handler) assetBase() string {
 	releases := h.Releases
 	if releases == "" {
-		releases = github
+		releases = Releases
 	}
 	if h.dev() {
 		return releases + "/latest/download"
@@ -110,9 +111,13 @@ func (h *Handler) download(w http.ResponseWriter, r *http.Request) {
 		problem.New(http.StatusNotFound, problem.NotFound, "there is no tsrelay build for "+goos+"/"+arch).Write(w)
 		return
 	}
-	name := "tsrelay_" + goos + "_" + arch
+	http.Redirect(w, r, h.assetBase()+"/"+AssetName(goos, arch), http.StatusFound)
+}
+
+// AssetName is the name of the release asset of tsrelay for goos/arch.
+func AssetName(goos, arch string) string {
 	if goos == "windows" {
-		name += ".exe"
+		return "tsrelay_" + goos + "_" + arch + ".exe"
 	}
-	http.Redirect(w, r, h.assetBase()+"/"+name, http.StatusFound)
+	return "tsrelay_" + goos + "_" + arch
 }

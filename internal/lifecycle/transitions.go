@@ -17,23 +17,21 @@ import (
 // Delete deletes the hook id on behalf of actor, fails the calls waiting
 // for it, tells the tunnel serving it, and forgets its captured calls. A
 // hook a concurrent delete or the reaper already removed is not an error,
-// and that removal has already had these effects. The store deletes under
-// l.mu, so a Wait cannot register for a hook that is already gone. Whether
-// actor may delete the hook is decided on the stored hook, under the store's
-// lock: one that moved out of actor's sight since the caller's check is
-// hooks.ErrNotFound.
+// and that removal has already had these effects. Whether actor may delete
+// the hook is decided on the stored hook, under the store's lock: one that
+// moved out of actor's sight since the caller's check is hooks.ErrNotFound.
 func (l *Lifecycle) Delete(ctx context.Context, actor authz.Identity, id hooks.ID) error {
 	l.announce.Lock()
 	defer l.announce.Unlock()
-	l.mu.Lock()
 	h, deleted, err := l.cfg.Hooks.DeleteIf(ctx, id, func(h hooks.Hook) bool {
 		return access.Delete(actor, h.Access()) == nil
 	})
 	var r removal
 	if deleted {
+		l.mu.Lock()
 		r = l.forgetLocked(h)
+		l.mu.Unlock()
 	}
-	l.mu.Unlock()
 	switch {
 	case errors.Is(err, hooks.ErrNotFound):
 		return nil

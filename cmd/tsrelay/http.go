@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -34,7 +35,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 		Long: "Forward a hook to a local app. The hook is remembered per directory and target, " +
 			"so its URL stays the same across runs. A command given after -- is started with " +
 			"TSRELAY_URL set and stopped when tsrelay stops.",
-		Example: "  tsrelay http 8080\n  tsrelay http 8080 -n payments -- npm run dev",
+		Example: "  tsrelay http 8080\n  tsrelay http 8080 --path payments -- npm run dev",
 		Args: func(cmd *cobra.Command, args []string) error {
 			switch n := targetArgs(cmd, args); {
 			case n == 0:
@@ -49,9 +50,9 @@ func newHTTPCmd(c *cli) *cobra.Command {
 		ValidArgsFunction: c.completeTargetArg,
 	}
 	fs := cmd.Flags()
-	name := fs.StringP("name", "n", "", "hook path below your ~user prefix (default: remembered, else three random words)")
+	path := fs.String("path", "", "hook path below your ~user prefix (default: remembered, else three random words)")
 	channel := fs.StringP("channel", "c", "", `hook channel (default: "default")`)
-	persistent := fs.BoolP("persistent", "p", false, "keep the hook after tsrelay exits")
+	ephemeral := fs.Bool("ephemeral", true, "delete the hook once it had no tunnel for the relay's grace period (--ephemeral=false keeps it)")
 	insecure := fs.BoolP("insecure", "k", false, "skip TLS certificate verification for an https:// target")
 	background := fs.Bool("background", false, "run in the background once attached; see tsrelay ps, logs and stop")
 	public := fs.Bool("public", false, "make the hook reachable from the internet through the relay's Funnel")
@@ -84,6 +85,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 			return c.startBackground(ctx)
 		}
 		out := newOutput(c)
+		out.child = len(command) > 0
 
 		relayAPI, err := c.newRelayAPI(ctx)
 		if err != nil {
@@ -96,9 +98,9 @@ func newHTTPCmd(c *cli) *cobra.Command {
 		}
 		cwd, _ := os.Getwd()
 		key := client.StateKey(relayAPI.BaseURL, cwd, target)
-		req := hooks.CreateRequest{Channel: *channel, Ephemeral: !*persistent, Settings: s, Public: *public}
-		c.hook = cmp.Or(*name, state.Path(key))
-		hook, created, err := ensureHook(ctx, relayAPI, *name, state.Path(key), req)
+		req := hooks.CreateRequest{Channel: *channel, Ephemeral: *ephemeral, Settings: s, Public: *public}
+		c.hook = cmp.Or(*path, state.Path(key))
+		hook, created, err := ensureHook(ctx, relayAPI, *path, state.Path(key), req)
 		if err != nil {
 			return exitWith(out.fail(err))
 		}
@@ -188,8 +190,15 @@ func runTunnel(ctx context.Context, run func(context.Context) error, command []s
 		}
 		cmd.WaitDelay = childStopTimeout
 		if err := cmd.Start(); err != nil {
-			return out.fail(&cliError{Title: "Couldn't start " + command[0], Reason: sentence(err.Error()), Code: "command_failed", err: err,
-				Fixes: []string{"Check that " + command[0] + " is installed and on your PATH"}})
+			code := exitTsrelayWithChild
+			switch {
+			case errors.Is(err, exec.ErrNotFound), errors.Is(err, fs.ErrNotExist):
+				code = exitNotFound
+			case errors.Is(err, fs.ErrPermission), errors.Is(err, syscall.ENOEXEC):
+				code = exitNotExecutable
+			}
+			return out.stopped("error", &cliError{Title: "Couldn't start " + command[0], Reason: sentence(err.Error()), Code: "command_failed", err: err,
+				Fixes: []string{"Check that " + command[0] + " is installed and on your PATH"}}, code)
 		}
 		childDone = make(chan error, 1)
 		go func() { childDone <- cmd.Wait() }()
@@ -214,17 +223,22 @@ func runTunnel(ctx context.Context, run func(context.Context) error, command []s
 	}
 }
 
-// exitCode is the exit status of a finished command; 1 if a signal ended it.
+// exitCode is the exit status of a finished command; 128+N if signal N
+// ended it, as shells report it.
 func exitCode(err error) int {
 	var ee *exec.ExitError
 	switch {
 	case err == nil:
 		return 0
-	case errors.As(err, &ee) && ee.ExitCode() >= 0:
-		return ee.ExitCode()
-	default:
+	case !errors.As(err, &ee):
 		return 1
+	case ee.ExitCode() >= 0:
+		return ee.ExitCode()
 	}
+	if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+		return 128 + int(ws.Signal())
+	}
+	return 1
 }
 
 // relayBase finds the relay: --relay (envDefaults already applies
@@ -250,7 +264,7 @@ func relayBase(ctx context.Context, relayFlag string, d deps) (string, error) {
 }
 
 // newRelayAPI returns a client for the relay's API; see relayBase. It
-// warns once when the relay reports a version other than this CLI's.
+// warns once when the relay reports another major version than this CLI's.
 func (c *cli) newRelayAPI(ctx context.Context) (*client.API, error) {
 	base, err := relayBase(ctx, c.relay, c.d)
 	if err != nil {
@@ -265,11 +279,11 @@ func (c *cli) newRelayAPI(ctx context.Context) (*client.API, error) {
 		next = http.DefaultTransport
 	}
 	checked := *hc
-	checked.Transport = &versionCheck{next: next, seen: func(relay string) {
-		c.versionWarned.Do(func() {
-			c.version.Store(&versionSeen{relay: relay})
-			c.warnVersion(relay)
-		})
+	checked.Transport = &relayTransport{next: next, seen: func(relay string, skew skew) {
+		c.version.Store(&versionSeen{relay: relay, skew: skew})
+		if skew == skewMajor {
+			c.versionWarned.Do(func() { c.warnVersion(relay) })
+		}
 	}}
 	c.base = base
 	return &client.API{BaseURL: base, HTTP: &checked}, nil
@@ -298,11 +312,11 @@ func ensureHook(ctx context.Context, c *client.API, explicit, remembered string,
 			case req.Channel != "" && h.Channel != req.Channel:
 				return api.Hook{}, false, &cliError{Title: fmt.Sprintf("Your hook %q is in channel %q, not %q", h.Path, h.Channel, req.Channel), Code: "hook_mismatch",
 					Reason: "tsrelay http reuses the hook at this path, and won't move it to another channel on its own.",
-					Fixes:  []string{fmt.Sprintf("tsrelay hooks update %s --channel %s", h.Path, req.Channel), "tsrelay hooks delete " + h.Path, "Pick another path with --name"}}
+					Fixes:  []string{fmt.Sprintf("tsrelay hooks update %s --channel %s", h.Path, req.Channel), "tsrelay hooks delete " + h.Path, "Pick another path with --path"}}
 			case !req.Ephemeral && h.Ephemeral:
 				return api.Hook{}, false, &cliError{Title: fmt.Sprintf("Your hook %q is ephemeral", h.Path), Code: "hook_mismatch",
-					Reason: "--persistent asks for a hook that outlives tsrelay, and tsrelay http won't change the hook it reuses on its own.",
-					Fixes:  []string{fmt.Sprintf("tsrelay hooks update %s --ephemeral=false", h.Path), "tsrelay hooks delete " + h.Path, "Pick another path with --name"}}
+					Reason: "--ephemeral=false asks for a hook that outlives tsrelay, and tsrelay http won't change the hook it reuses on its own.",
+					Fixes:  []string{fmt.Sprintf("tsrelay hooks update %s --ephemeral=false", h.Path), "tsrelay hooks delete " + h.Path, "Pick another path with --path"}}
 			}
 			return h, false, nil
 		}

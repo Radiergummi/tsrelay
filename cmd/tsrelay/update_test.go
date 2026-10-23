@@ -61,12 +61,46 @@ func newAssetServer(t *testing.T, version string) *assetServer {
 	return a
 }
 
-// relayWithAssets restarts the relay at version, with its downloads
-// redirecting to a fake asset server instead of GitHub.
+// relayWithAssets restarts the relay at version, and serves the releases
+// from a fake asset server instead of GitHub.
 func (e *cliEnv) relayWithAssets(version string) *assetServer {
 	a := newAssetServer(e.t, version)
 	e.restartRelayWith(server.Config{Version: version, ReleaseAssets: a.URL})
+	setReleases(e.t, a.URL)
 	return a
+}
+
+func setReleases(t *testing.T, url string) {
+	old := releases
+	releases = url
+	t.Cleanup(func() { releases = old })
+}
+
+// The relay only says which version to install. It may be compromised, so
+// the binary and its checksum come from the releases, never from wherever
+// the relay's download link points.
+func TestUpdateDownloadsFromTheReleasesOnly(t *testing.T) {
+	e := newCLIEnv(t)
+	relays := newAssetServer(t, "v0.3.0")
+	e.restartRelayWith(server.Config{Version: "v0.3.0", ReleaseAssets: relays.URL})
+	releases := newAssetServer(t, "v0.3.0")
+	setReleases(t, releases.URL)
+	setVersion(t, "v0.2.2")
+	if code, _, errOut := e.update(oldExecutable(t), "--yes"); code != 0 || relays.hits.Load() != 0 || releases.hits.Load() != 1 {
+		t.Fatalf("exit %d, relay's assets fetched %d times, releases %d\n%s", code, relays.hits.Load(), releases.hits.Load(), errOut)
+	}
+}
+
+func TestUpdateRefusesAnUnknownRelayVersion(t *testing.T) {
+	e := newCLIEnv(t)
+	a := e.relayWithAssets("1.0")
+	setVersion(t, "v0.2.2")
+	exe := oldExecutable(t)
+	code, _, errOut := e.update(exe, "--yes", "--json")
+	if code != 1 || jsonErrorCode(t, errOut) != "relay_version_unknown" || a.hits.Load() != 0 {
+		t.Fatalf("exit %d, %d downloads\n%s", code, a.hits.Load(), errOut)
+	}
+	assertUnchanged(t, exe)
 }
 
 // oldExecutable is a stand-in for this tsrelay's executable, in a
@@ -264,18 +298,40 @@ func TestUpdateWhenAlreadyCurrent(t *testing.T) {
 	}
 }
 
+func TestUpdateRefusesDowngrade(t *testing.T) {
+	e := newCLIEnv(t)
+	a := e.relayWithAssets("v1.2.0")
+	setVersion(t, "v1.3.0")
+	exe := oldExecutable(t)
+	code, _, errOut := e.update(exe, "--yes", "--json")
+	if code != 1 || jsonErrorCode(t, errOut) != "downgrade" || !strings.Contains(errOut, "This tsrelay (v1.3.0) is newer than the relay (v1.2.0)") ||
+		!strings.Contains(errOut, "tsrelay update --relay "+e.relayURL+" --force") {
+		t.Fatalf("exit %d\nstderr %q", code, errOut)
+	}
+	assertUnchanged(t, exe)
+	if a.hits.Load() != 0 {
+		t.Fatalf("downloaded %d times", a.hits.Load())
+	}
+	if code, _, errOut := e.update(exe, "--yes", "--force"); code != 0 || !strings.Contains(errOut, "updated tsrelay v1.3.0 to v1.2.0") {
+		t.Fatalf("--force: exit %d\nstderr %q", code, errOut)
+	}
+	if b, _ := os.ReadFile(exe); !bytes.Equal(b, newBinary) {
+		t.Fatalf("executable is %q after --force", b)
+	}
+}
+
 func TestUpdateCheckOnlyReports(t *testing.T) {
 	e := newCLIEnv(t)
 	a := e.relayWithAssets("v0.3.0")
 	setVersion(t, "v0.2.2")
 	exe := oldExecutable(t)
 	code, _, errOut := e.update(exe, "--check")
-	if code != 0 || !strings.Contains(errOut, "Relay is v0.3.0, you have v0.2.2. Update with: tsrelay update --relay "+e.relayURL) {
+	if code != exitUpdateAvailable || !strings.Contains(errOut, "Relay is v0.3.0, you have v0.2.2. Update with: tsrelay update --relay "+e.relayURL) {
 		t.Fatalf("exit %d\nstderr %q", code, errOut)
 	}
 	code, out, _ := e.update(exe, "--check", "--json")
 	var res updateResult
-	if code != 0 || json.Unmarshal([]byte(out), &res) != nil || res != (updateResult{CLIVersion: "v0.2.2", RelayVersion: "v0.3.0"}) {
+	if code != exitUpdateAvailable || json.Unmarshal([]byte(out), &res) != nil || res != (updateResult{CLIVersion: "v0.2.2", RelayVersion: "v0.3.0"}) {
 		t.Fatalf("--json: exit %d, stdout %q", code, out)
 	}
 	assertUnchanged(t, exe)
@@ -395,6 +451,25 @@ func TestUpdatePromptNeedsATerminalWithoutJSON(t *testing.T) {
 	}
 }
 
+// Only a relay that is newer is worth offering its version.
+func TestOfferOnlyWhenRelayNewer(t *testing.T) {
+	t.Setenv("TTY_FORCE", "1")
+	setVersion(t, "v1.3.0")
+	statePath := filepath.Join(t.TempDir(), "hooks.json")
+	for name, v := range map[string]*versionSeen{
+		"cli newer":              {relay: "v1.2.0", skew: skewCLINewer},
+		"cli newer, other major": {relay: "v0.9.0", skew: skewMajor},
+	} {
+		var stderr syncBuf
+		c := &cli{base: "http://127.0.0.1:1", stderr: &stderr, d: deps{StatePath: statePath, Stdin: strings.NewReader("y\n")}}
+		c.version.Store(v)
+		c.offer(t.Context())
+		if strings.Contains(stderr.String(), "Update now?") {
+			t.Errorf("%s: prompted:\n%s", name, stderr.String())
+		}
+	}
+}
+
 // A background tunnel and a completion never ask, whatever their streams.
 func TestOfferSkipsBackgroundAndCompletions(t *testing.T) {
 	t.Setenv("TTY_FORCE", "1")
@@ -462,6 +537,18 @@ func TestChecksumURL(t *testing.T) {
 	} {
 		if got := checksumURL(asset); got != want {
 			t.Errorf("checksumURL(%q) = %q, want %q", asset, got, want)
+		}
+	}
+}
+
+func TestUpdateCheckExitsZeroWhenThereIsNothingNewer(t *testing.T) {
+	e := newCLIEnv(t)
+	e.relayWithAssets("v0.3.0")
+	exe := oldExecutable(t)
+	for _, cli := range []string{"v0.3.0", "v0.4.0"} { // the same, and a newer tsrelay
+		setVersion(t, cli)
+		if code, _, errOut := e.update(exe, "--check"); code != 0 || strings.Contains(errOut, "Update with") {
+			t.Errorf("tsrelay %s, relay v0.3.0: exit %d, want 0 and no update advice\n%s", cli, code, errOut)
 		}
 	}
 }

@@ -106,6 +106,11 @@ func (s *Server) newMetrics(mp metric.MeterProvider) (onCall func(relay.Result),
 			o.Observe(s.relay.Held())
 			return nil
 		})))
+	telemetry.Must(m.Int64ObservableGauge("tsrelay_inspector_bytes", metric.WithDescription("Bytes the inspector keeps of all calls, against --capture-total-bytes."),
+		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+			o.Observe(s.inspect.Bytes())
+			return nil
+		})))
 
 	bytesIn := metric.WithAttributes(attribute.String("direction", "in"))
 	bytesOut := metric.WithAttributes(attribute.String("direction", "out"))

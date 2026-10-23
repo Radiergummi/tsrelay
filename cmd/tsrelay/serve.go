@@ -12,7 +12,6 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -46,30 +45,32 @@ func newServeCmd(c *cli) *cobra.Command {
 	useTLS := fs.Bool("tls", true, "serve HTTPS on 443 with a tailnet certificate; false serves plain HTTP on 80")
 	tags := listFlag{Values: []string{"tag:tsrelay"}}
 	fs.Var(&tags, "advertise-tags", "tags the relay node advertises (comma-separated)")
-	capName := fs.String("cap-name", "mazetti.me/cap/relay", "application capability carrying relay grants")
+	capName := fs.String("cap-name", "tsrelay.mazetti.me/cap/relay", "application capability carrying relay grants")
 	slugMode := fs.String("user-slug", string(hooks.SlugLocalPart), `how URL slugs derive from logins: "local-part" or "login"`)
 	overrides := mapFlag{}
 	fs.Var(overrides, "user-slug-override", "login=slug pairs that resolve slug collisions (repeatable)")
-	maxHooks := fs.Int("max-hooks-default", authz.DefaultLimits.MaxHooks, "hooks per user unless a grant allows more")
-	maxTunnels := fs.Int("max-tunnels-default", authz.DefaultLimits.MaxTunnels, "tunnels per user unless a grant allows more")
-	maxTTL := fs.Duration("max-hook-ttl-default", 0, "longest hook lifetime unless a grant allows more (0: unlimited)")
+	maxHooks := fs.Int("user-max-hooks", authz.DefaultLimits.MaxHooks, "hooks per user unless a grant allows more")
+	maxTunnels := fs.Int("user-max-tunnels", authz.DefaultLimits.MaxTunnels, "tunnels per user unless a grant allows more")
+	maxTTL := fs.Duration("user-max-hook-ttl", 0, "longest hook lifetime unless a grant allows more (0: unlimited)")
 	grace := fs.Duration("ephemeral-grace", server.DefaultEphemeralGrace, "how long an ephemeral hook survives without a tunnel")
 	policyFlags := registerPolicyFlags(fs)
 	concurrency := fs.Int("tunnel-concurrency", tunnel.DefaultConcurrency, "concurrent calls per tunnel")
 	revalidate := fs.Duration("revalidate-interval", time.Minute, "how often attached tunnels and open event streams are re-authorized")
-	opsListen := fs.String("ops-listen", "", "host address for /healthz, /readyz and /metrics, e.g. :9090; never on the tailnet (empty: off)")
+	shutdownTimeout := fs.Duration("shutdown-timeout", 20*time.Second, "how long calls already delivered get to finish when the relay stops; keep it below the pod's termination grace period")
+	opsListen := fs.String("ops-listen", "", "host address for /healthz, /readyz and /metrics, e.g. :9090, unauthenticated; never on the relay's tailnet node (empty: off)")
 	opsPprof := fs.Bool("ops-pprof", false, "serve /debug/pprof/ on the ops listener")
 	funnel := fs.Bool("funnel", false, "serve hooks their owners made public on the internet, through Tailscale Funnel")
 	funnelPort := fs.Int("funnel-port", 443, "the Funnel port for public hooks: 443, 8443 or 10000")
 	funnelMaxBody := fs.Int64("funnel-max-body-bytes", 25<<20, "largest request body of a call from the internet, in bytes")
 	otlp := fs.Bool("otel", false, "export traces and metrics over OTLP/HTTP, configured by the standard OTEL_* environment variables")
-	propagate := fs.Bool("trace-propagation", true, "with --otel: join senders' traces, and pass the relay's trace context on to apps")
-	holdQueue := fs.Int("hold-queue", relay.DefaultHoldQueue, "calls per hook that may wait for a tunnel at once")
-	captureLimit := fs.Int("capture-limit", inspect.DefaultCaptureLimit, "bytes the inspector keeps of each body, of each call's headers, and of its query string")
+	propagate := fs.Bool("otel-propagation", true, "with --otel: join senders' traces, and pass the relay's trace context on to apps")
+	holdQueue := fs.Int("hook-hold-queue", relay.DefaultHoldQueue, "calls per hook that may wait for a tunnel at once")
+	captureLimit := fs.Int("capture-limit-bytes", inspect.DefaultCaptureLimit, "bytes the inspector keeps of each body, of each call's headers, and of its query string")
 	captureCalls := fs.Int("capture-calls", inspect.DefaultCallsPerHook, "calls per hook the inspector keeps")
+	captureTotal := fs.Int64("capture-total-bytes", inspect.DefaultTotalBytes, "bytes the inspector keeps of all calls together; past it, the oldest calls of any hook go first")
 	captureBodies := fs.Bool("capture-bodies", true, "keep bodies for the inspector; false records metadata and headers only, whatever hooks set")
-	redact := listFlag{Values: slices.Clone(inspect.DefaultRedact)}
-	fs.Var(&redact, "redact-headers", "headers whose values the inspector never keeps (comma-separated)")
+	redact := listFlag{}
+	fs.Var(&redact, "redact-headers", "headers whose values the inspector never keeps, in addition to the defaults (comma-separated)")
 	logFormat := fs.String("log-format", "json", `the log line format: "json" or "text"`)
 	logLevel := fs.String("log-level", "info", "debug, info, warn or error")
 	verbose := fs.Bool("verbose-tailscale", false, "include tsnet's own logs")
@@ -92,13 +93,33 @@ func newServeCmd(c *cli) *cobra.Command {
 			return usage("--revalidate-interval must be positive", "It says how often attached tunnels are re-authorized.",
 				"tsrelay serve --revalidate-interval 1m")
 		}
-		if *holdQueue < 1 {
-			return usage("--hold-queue must be at least 1", "It says how many calls per hook may wait for a tunnel at once.",
-				"tsrelay serve --hold-queue 16", "To disable holding: tsrelay serve --hook-hold-timeout-default=0s")
+		if *maxHooks < 0 || *maxTunnels < 0 || *maxTTL < 0 {
+			return usage("--user-max-hooks, --user-max-tunnels and --user-max-hook-ttl can't be negative",
+				"0 allows no hooks or tunnels, or sets no lifetime limit.",
+				"tsrelay serve --user-max-hooks 10 --user-max-tunnels 5")
 		}
-		if *captureLimit < 1 || *captureCalls < 1 {
-			return usage("--capture-limit and --capture-calls must be at least 1", "The inspector keeps at least one call, and at least one byte of it.",
-				"tsrelay serve --capture-calls 50 --capture-limit 65536", "To keep no bodies: tsrelay serve --capture-bodies=false")
+		if *concurrency < 1 {
+			return usage("--tunnel-concurrency must be at least 1", "It says how many calls one tunnel carries at once.",
+				fmt.Sprintf("tsrelay serve --tunnel-concurrency %d", tunnel.DefaultConcurrency))
+		}
+		if *grace <= 0 {
+			return usage("--ephemeral-grace must be positive", "It says how long an ephemeral hook survives without a tunnel.",
+				"tsrelay serve --ephemeral-grace "+server.DefaultEphemeralGrace.String())
+		}
+		if *shutdownTimeout <= 0 {
+			return usage("--shutdown-timeout must be positive", "It says how long calls already delivered get to finish when the relay stops.",
+				"tsrelay serve --shutdown-timeout 20s")
+		}
+		if *hostname == "" {
+			return usage("--hostname can't be empty", "It is the relay's machine name on the tailnet.", "tsrelay serve --hostname tsrelay")
+		}
+		if *holdQueue < 1 {
+			return usage("--hook-hold-queue must be at least 1", "It says how many calls per hook may wait for a tunnel at once.",
+				"tsrelay serve --hook-hold-queue 16", "To disable holding: tsrelay serve --hook-hold-timeout-default=0s")
+		}
+		if *captureLimit < 1 || *captureCalls < 1 || *captureTotal < 1 {
+			return usage("--capture-limit-bytes, --capture-calls and --capture-total-bytes must be at least 1", "The inspector keeps at least one call, and at least one byte of it.",
+				"tsrelay serve --capture-calls 50 --capture-limit-bytes 65536", "To keep no bodies: tsrelay serve --capture-bodies=false")
 		}
 		if *funnel && !*useTLS {
 			return usage("--funnel needs --tls", "Funnel only serves HTTPS.", "tsrelay serve --tls --funnel")
@@ -136,11 +157,11 @@ func newServeCmd(c *cli) *cobra.Command {
 			policy: policy,
 			server: server.Config{
 				EphemeralGrace: *grace, HoldQueue: *holdQueue, Tunnel: tunnel.Options{Concurrency: *concurrency},
-				Inspect: inspect.Config{CallsPerHook: *captureCalls, CaptureLimit: *captureLimit, NoBodies: !*captureBodies, Redact: redact.Values},
+				Inspect: inspect.Config{CallsPerHook: *captureCalls, CaptureLimit: *captureLimit, TotalBytes: *captureTotal, NoBodies: !*captureBodies, Redact: redact.Values},
 				CapName: *capName, NoTracePropagation: !*propagate, Revalidate: *revalidate,
 			},
-			opsListen: *opsListen,
-			otel:      *otlp, pprof: *opsPprof,
+			opsListen: *opsListen, shutdownTimeout: *shutdownTimeout,
+			otel: *otlp, pprof: *opsPprof,
 			updateCheck: *updateCheck,
 			funnel:      *funnel, funnelPort: *funnelPort, funnelMaxBody: *funnelMaxBody,
 		})
@@ -162,9 +183,10 @@ type relayConfig struct {
 	limits             authz.Limits
 	policy             hooks.Policy
 	server             server.Config
-	opsListen          string // host address of the ops listener; empty: off
-	otel, pprof        bool   // --otel, --ops-pprof
-	updateCheck        bool   // --update-check
+	opsListen          string        // host address of the ops listener; empty: off
+	shutdownTimeout    time.Duration // how long delivered calls get to finish on shutdown
+	otel, pprof        bool          // --otel, --ops-pprof
+	updateCheck        bool          // --update-check
 	funnel             bool
 	funnelPort         int
 	funnelMaxBody      int64
@@ -232,6 +254,15 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 	defer ln.Close()
 
 	dnsName := strings.TrimSuffix(st.Self.DNSName, ".")
+	if cfg.tls && dnsName != "" {
+		// tsnet gets the certificate on the first TLS handshake, which can
+		// take longer than a client waits, so a new relay's first request
+		// would fail. Get it before the relay says it is ready.
+		logger.Info("getting the TLS certificate", "name", dnsName)
+		if _, _, err := lc.CertPair(ctx, dnsName); err != nil {
+			logger.Warn("couldn't get the TLS certificate yet; the first HTTPS request tries again", "error", err)
+		}
+	}
 	var publicLn net.Listener
 	if cfg.funnel {
 		publicLn, err = listenFunnel(ts, cfg.funnelPort)
@@ -265,7 +296,10 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 	hs := &http.Server{
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
-		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
+		// Idle keep-alive connections of senders; tunnels are hijacked and
+		// event streams are requests, so neither is cut by it.
+		IdleTimeout: 60 * time.Second,
+		ErrorLog:    slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
 	var ps *http.Server
 	if publicLn != nil {
@@ -289,10 +323,13 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 		return err
 	case <-ctx.Done():
 	}
-	logger.Info("shutting down")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Held calls are answered now (no tunnel can attach any more) and event
+	// streams end; calls already delivered finish over their tunnels, which
+	// close last: hijacked, Shutdown doesn't cover them.
+	logger.Info("shutting down", "timeout", cfg.shutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.shutdownTimeout)
 	defer cancel()
-	srv.Close() // hijacked tunnels are not covered by Shutdown
+	srv.Drain()
 	// Both servers drain at once, so one cannot use up the other's time.
 	publicErr := make(chan error, 1)
 	go func() {
@@ -303,7 +340,9 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 		publicErr <- nil
 	}()
 	for _, err := range []error{hs.Shutdown(shutdownCtx), <-publicErr} {
-		if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(err, context.DeadlineExceeded) {
+			logger.Warn("calls were still running when the shutdown timeout ran out", "timeout", cfg.shutdownTimeout)
+		} else if err != nil {
 			return err
 		}
 	}

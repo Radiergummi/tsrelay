@@ -13,6 +13,11 @@ import (
 const (
 	DefaultCallsPerHook = 100
 	DefaultCaptureLimit = 64 << 10
+	DefaultTotalBytes   = 128 << 20
+
+	// callOverhead is what a call takes beyond the bytes it captured, as
+	// counted against TotalBytes: IDs, times, the sender and so on.
+	callOverhead = 512
 
 	// refusedPerHook is how many refused calls are kept per hook, apart
 	// from the others, so a sender shut out by the channel cannot evict
@@ -25,7 +30,8 @@ type Config struct {
 	CallsPerHook int      // calls kept per hook; 0 means DefaultCallsPerHook
 	CaptureLimit int      // bytes kept per body; 0 means DefaultCaptureLimit
 	NoBodies     bool     // turns body capture off relay-wide (--capture-bodies=false)
-	Redact       []string // headers never captured; nil means DefaultRedact
+	TotalBytes   int64    // bytes kept of all calls together; 0 means DefaultTotalBytes
+	Redact       []string // headers never captured, in addition to DefaultRedact
 }
 
 // Inspector keeps the most recent calls of each hook in memory. Calls are
@@ -42,15 +48,26 @@ type Inspector struct {
 	byHook  map[hooks.ID][]*Call // oldest first
 	refused map[hooks.ID][]*Call // oldest first; the calls with Refused set
 	byID    map[string]*Call
+	// meta has the size and the order of arrival of each kept call, and
+	// total what all of them take, so TotalBytes bounds the inspector's
+	// memory. Nothing but the rings and byID refers to a call, so one that
+	// leaves them is garbage.
+	meta  map[string]callMeta
+	seq   uint64
+	total int64
+}
+
+type callMeta struct {
+	size int64
+	seq  uint64 // order of arrival
 }
 
 func New(cfg Config) *Inspector {
 	cfg.CallsPerHook = cmp.Or(cfg.CallsPerHook, DefaultCallsPerHook)
 	cfg.CaptureLimit = cmp.Or(cfg.CaptureLimit, DefaultCaptureLimit)
-	if cfg.Redact == nil {
-		cfg.Redact = DefaultRedact
-	}
-	return &Inspector{cfg: cfg, redact: NewRedactor(cfg.Redact), byHook: map[hooks.ID][]*Call{}, refused: map[hooks.ID][]*Call{}, byID: map[string]*Call{}}
+	cfg.TotalBytes = cmp.Or(cfg.TotalBytes, DefaultTotalBytes)
+	return &Inspector{cfg: cfg, redact: NewRedactor(append(slices.Clone(DefaultRedact), cfg.Redact...)),
+		byHook: map[hooks.ID][]*Call{}, refused: map[hooks.ID][]*Call{}, byID: map[string]*Call{}, meta: map[string]callMeta{}}
 }
 
 // CallsPerHook is how many calls the inspector keeps per hook.
@@ -123,7 +140,8 @@ func (in *Inspector) NewBuffer(hookCapture bool) *Buffer {
 
 // Add records a new call and drops the hook's oldest calls beyond
 // CallsPerHook. Refused calls are kept apart, up to refusedPerHook, and
-// only ever drop each other.
+// only ever drop each other. Past TotalBytes, the oldest calls of any hook
+// are dropped.
 func (in *Inspector) Add(c Call) {
 	in.mu.Lock()
 	defer in.mu.Unlock()
@@ -135,12 +153,15 @@ func (in *Inspector) Add(c Call) {
 	list := append(ring[c.HookID], p)
 	if over := len(list) - limit; over > 0 {
 		for _, old := range list[:over] {
-			delete(in.byID, old.ID)
+			in.forgetLocked(old)
 		}
 		list = slices.Delete(list, 0, over)
 	}
 	ring[c.HookID] = list
 	in.byID[c.ID] = p
+	in.seq++
+	in.meta[c.ID] = callMeta{seq: in.seq}
+	in.resizeLocked(p)
 	in.changedLocked(p)
 }
 
@@ -153,11 +174,83 @@ func (in *Inspector) Update(id string, f func(*Call)) {
 		return
 	}
 	f(c)
+	in.resizeLocked(c)
 	in.changedLocked(c)
 }
 
+// Bytes is what the kept calls take, as counted against TotalBytes.
+func (in *Inspector) Bytes() int64 {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	return in.total
+}
+
+// resizeLocked counts c's size again, and drops the oldest calls of any
+// hook while all of them take more than TotalBytes.
+func (in *Inspector) resizeLocked(c *Call) {
+	m := in.meta[c.ID]
+	size := callBytes(c)
+	in.total += size - m.size
+	m.size = size
+	in.meta[c.ID] = m
+	for in.total > in.cfg.TotalBytes {
+		in.dropOldestLocked()
+	}
+}
+
+// dropOldestLocked drops the call that arrived first. Each ring is oldest
+// first, so it is the head of one of them.
+func (in *Inspector) dropOldestLocked() {
+	var oldest map[hooks.ID][]*Call
+	var hook hooks.ID
+	var seq uint64
+	for _, ring := range []map[hooks.ID][]*Call{in.byHook, in.refused} {
+		for id, list := range ring {
+			if s := in.meta[list[0].ID].seq; oldest == nil || s < seq {
+				oldest, hook, seq = ring, id, s
+			}
+		}
+	}
+	if oldest == nil {
+		return
+	}
+	list := oldest[hook]
+	in.forgetLocked(list[0])
+	if list = slices.Delete(list, 0, 1); len(list) > 0 {
+		oldest[hook] = list
+	} else {
+		delete(oldest, hook)
+	}
+}
+
+// forgetLocked stops counting c, which its caller removes from its ring.
+func (in *Inspector) forgetLocked(c *Call) {
+	delete(in.byID, c.ID)
+	in.total -= in.meta[c.ID].size
+	delete(in.meta, c.ID)
+}
+
+// callBytes estimates the memory c takes: what it captured, and a fixed
+// overhead.
+func callBytes(c *Call) int64 {
+	n := callOverhead + len(c.Path) + len(c.Query) + headersBytes(c.RequestHeaders) + len(c.RequestBody.Body)
+	for _, a := range c.Attempts {
+		n += callOverhead + headersBytes(a.ResponseHeaders) + len(a.ResponseBody.Body)
+	}
+	return int64(n)
+}
+
+func headersBytes(h http.Header) int {
+	n := 0
+	for k, vs := range h {
+		n += headerSize(k, vs)
+	}
+	return n
+}
+
 func (in *Inspector) changedLocked(c *Call) {
-	if in.OnChange != nil && !c.Refused {
+	// A call can be dropped by the very change that announces it.
+	if in.OnChange != nil && !c.Refused && in.byID[c.ID] == c {
 		in.OnChange(c.Owner, c.Channel, c.Summary())
 	}
 }
@@ -209,7 +302,7 @@ func (in *Inspector) Forget(hook hooks.ID) {
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	for _, c := range slices.Concat(in.byHook[hook], in.refused[hook]) {
-		delete(in.byID, c.ID)
+		in.forgetLocked(c)
 	}
 	delete(in.byHook, hook)
 	delete(in.refused, hook)

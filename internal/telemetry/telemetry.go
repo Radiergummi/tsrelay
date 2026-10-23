@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/contrib/instrumentation/runtime"
@@ -84,6 +85,14 @@ func Setup(ctx context.Context, cfg Config) (*Telemetry, error) {
 	}
 
 	reg := prometheus.NewRegistry()
+	// The names standard dashboards and alerts expect, next to the OTel
+	// runtime metrics below: go_goroutines, process_resident_memory_bytes
+	// and so on, and which version runs.
+	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "tsrelay_build_info", Help: "Always 1; its version label is the relay's version.",
+			ConstLabels: prometheus.Labels{"version": cfg.Version},
+		}, func() float64 { return 1 }))
 	prom, err := otelprom.New(
 		otelprom.WithRegisterer(reg),
 		otelprom.WithTranslationStrategy(otlptranslator.UnderscoreEscapingWithoutSuffixes),

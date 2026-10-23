@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
@@ -52,8 +53,11 @@ func NewForwarder(target *url.URL, opts Options) http.Handler {
 					pr.Out.Header[h] = v
 				}
 			}
-			pr.Out.Header.Del(tunnel.HeaderHook)
-			pr.Out.Header.Del(tunnel.HeaderTunnelHost)
+			for k := range pr.Out.Header {
+				if strings.HasPrefix(http.CanonicalHeaderKey(k), tunnel.HeaderTunnelPrefix) {
+					delete(pr.Out.Header, k)
+				}
+			}
 		},
 		Transport:     tr,
 		FlushInterval: -1,

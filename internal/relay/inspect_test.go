@@ -253,7 +253,7 @@ func TestInspectorTTFBMatchesResult(t *testing.T) {
 	if !res.HasTTFB || len(c.Attempts) != 1 {
 		t.Fatalf("result %+v, attempts %+v", res, c.Attempts)
 	}
-	if got := c.Attempts[0].TTFB; got != hooks.Duration(res.TTFB) {
+	if got := c.Attempts[0].TTFB; got != inspect.Millis(res.TTFB) {
 		t.Fatalf("inspector TTFB = %v, result TTFB = %v", got, res.TTFB)
 	}
 }

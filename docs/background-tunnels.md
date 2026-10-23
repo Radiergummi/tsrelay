@@ -24,6 +24,8 @@ tsrelay logs <id|hook> [-f]                        # print a tunnel's log, or fo
 tsrelay stop <id|hook>... | --all                  # stop tunnels
 ```
 
+With `--json`, `http --background` prints the tunnel as one object once it is attached, `ps` prints `{"runs": [...]}` and `stop` prints `{"stopped": [...], "failed": [...]}`; each run is `{"id", "pid", "command", "relay", "target", "hooks", "startedAt", "state"}`, described in [Command line](cli.md#json-output).
+
 A tunnel is named by its ID or by a hook it serves. `stop` gives each tunnel 10 s to detach cleanly, then kills it and says so. A tunnel whose process has ended, say because its hook was deleted, shows up once in `ps` as `exited` and is then forgotten, log included; read its log before that with `tsrelay logs`.
 
 Each tunnel keeps its record and log in `$XDG_STATE_HOME/tsrelay/run/` (`~/.local/state/tsrelay/run/` by default). Background tunnels don't survive a reboot or logout, and aren't restarted when they fail; use your system's service manager for that. `tsrelay http --background -- cmd` is refused: start the command yourself, for example `TSRELAY_URL=$(tsrelay url 8080) npm run dev`.

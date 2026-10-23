@@ -86,7 +86,7 @@ func TestUsageErrorSites(t *testing.T) {
 			fixes: []string{"tsrelay hooks delete --help"}},
 		{args: []string{"hooks", "list", "extra"}, title: `Unexpected argument "extra"`, reason: "tsrelay hooks list takes no arguments.",
 			fixes: []string{"tsrelay hooks list --help"}},
-		{args: []string{"hooks", "create", "a", "b"}, title: `Unexpected argument "b"`, reason: "tsrelay hooks create takes at most one path.",
+		{args: []string{"hooks", "create", "a"}, title: `Unexpected argument "a"`, reason: "tsrelay hooks create takes no arguments.",
 			fixes: []string{"tsrelay hooks create --help"}},
 		{args: []string{"url", "a", "b"}, title: `Unexpected argument "b"`, reason: "tsrelay url takes at most one port or URL.",
 			fixes: []string{"tsrelay url --help"}},
@@ -109,19 +109,19 @@ func TestUsageErrorSites(t *testing.T) {
 		{args: []string{"hooks", "create", "--hold-timeout", "soon"}, title: `Invalid value "soon" for --hold-timeout`,
 			reason: "--hold-timeout takes a duration such as 30s, 5m or 1h.",
 			fixes:  []string{"tsrelay hooks create --hold-timeout 30s", "tsrelay hooks create --help"}},
-		{args: []string{"serve", "--hold-queue", "many"}, title: `Invalid value "many" for --hold-queue`, reason: "--hold-queue takes a whole number.",
-			fixes: []string{"tsrelay serve --hold-queue 10", "tsrelay serve --help"}},
+		{args: []string{"serve", "--hook-hold-queue", "many"}, title: `Invalid value "many" for --hook-hold-queue`, reason: "--hook-hold-queue takes a whole number.",
+			fixes: []string{"tsrelay serve --hook-hold-queue 10", "tsrelay serve --help"}},
 		{args: []string{"hooks", "create", "--rate-limit", "fast"}, title: `Invalid value "fast" for --rate-limit`,
 			reason: `Rate limit "fast" must be "perSecond/burst", e.g. "100/200".`,
 			fixes:  []string{"tsrelay hooks create --rate-limit 100/200", "tsrelay hooks create --help"}},
 		{args: []string{"serve", "--user-slug-override", "alice"}, title: `Invalid value "alice" for --user-slug-override`,
 			reason: `"alice" is not key=value.`,
 			fixes:  []string{"tsrelay serve --user-slug-override alice@example.com=alice", "tsrelay serve --help"}},
-		{args: []string{"http", "8080", "-n"}, title: "--name needs a value",
+		{args: []string{"http", "8080", "--path"}, title: "--path needs a value",
 			reason: "Hook path below your ~user prefix (default: remembered, else three random words).", fixes: []string{"tsrelay http --help"}},
-		{args: []string{"http", "8080"}, env: map[string]string{"TSRELAY_PERSISTENT": "maybe"},
+		{args: []string{"http", "8080"}, env: map[string]string{"TSRELAY_EPHEMERAL": "maybe"},
 			title:  "Invalid TSRELAY_* variable in the environment",
-			reason: `TSRELAY_PERSISTENT="maybe": …`, fixes: []string{"Correct or unset TSRELAY_PERSISTENT (it sets --persistent)"}},
+			reason: `TSRELAY_EPHEMERAL="maybe": …`, fixes: []string{"Correct or unset TSRELAY_EPHEMERAL (it sets --ephemeral)"}},
 
 		// targets
 		{args: []string{"attach", "pay"}, title: "No target to forward calls to", reason: "attach needs to know where your local app listens.",
@@ -149,12 +149,12 @@ func TestUsageErrorSites(t *testing.T) {
 			fixes:  []string{"tsrelay serve --user-slug local-part", "tsrelay serve --user-slug login"}},
 		{args: []string{"serve", "--revalidate-interval", "0s"}, title: "--revalidate-interval must be positive",
 			reason: "It says how often attached tunnels are re-authorized.", fixes: []string{"tsrelay serve --revalidate-interval 1m"}},
-		{args: []string{"serve", "--hold-queue", "0"}, title: "--hold-queue must be at least 1",
+		{args: []string{"serve", "--hook-hold-queue", "0"}, title: "--hook-hold-queue must be at least 1",
 			reason: "It says how many calls per hook may wait for a tunnel at once.",
-			fixes:  []string{"tsrelay serve --hold-queue 16", "To disable holding: tsrelay serve --hook-hold-timeout-default=0s"}},
-		{args: []string{"serve", "--capture-calls", "0"}, title: "--capture-limit and --capture-calls must be at least 1",
+			fixes:  []string{"tsrelay serve --hook-hold-queue 16", "To disable holding: tsrelay serve --hook-hold-timeout-default=0s"}},
+		{args: []string{"serve", "--capture-calls", "0"}, title: "--capture-limit-bytes, --capture-calls and --capture-total-bytes must be at least 1",
 			reason: "The inspector keeps at least one call, and at least one byte of it.",
-			fixes:  []string{"tsrelay serve --capture-calls 50 --capture-limit 65536", "To keep no bodies: tsrelay serve --capture-bodies=false"}},
+			fixes:  []string{"tsrelay serve --capture-calls 50 --capture-limit-bytes 65536", "To keep no bodies: tsrelay serve --capture-bodies=false"}},
 		{args: []string{"serve", "--user-slug-override", "a@b.com=A B"}, title: `Invalid slug "A B" for a@b.com`,
 			reason: "A slug may only contain a-z, 0-9, '.', '_' and '-'.", fixes: []string{"tsrelay serve --user-slug-override a@b.com=a-b"}},
 		{args: []string{"serve", "--log-level", "loud"}, title: `Unknown --log-level "loud"`,
@@ -181,7 +181,7 @@ func TestRelayErrorSites(t *testing.T) {
 	unsetenv(t, "TSRELAY_RELAY")
 	e := newCLIEnv(t)
 	d := deps{HTTP: tunnel.NewHTTPClient(e.fake.Dial(receiver)), StatePath: e.statePath}
-	for _, args := range [][]string{{"hooks", "create", "cb"}, {"hooks", "create", "eph", "--ephemeral"}} {
+	for _, args := range [][]string{{"hooks", "create", "--path", "cb"}, {"hooks", "create", "--path", "eph", "--ephemeral"}} {
 		if code, _, errOut := e.tsrelay(args...); code != 0 {
 			t.Fatalf("%q: exit %d\n%s", args, code, errOut)
 		}
@@ -193,17 +193,17 @@ func TestRelayErrorSites(t *testing.T) {
 	for _, tc := range []errorCase{
 		noHook("hooks", "show", "nope"),
 		noHook("hooks", "update", "nope", "--description", "x"),
-		noHook("hooks", "delete", "cb", "nope"),
+		noHook("hooks", "delete", "nope"),
 		noHook("attach", "nope", "--to", "8080"),
-		{args: []string{"http", e.local.URL, "--name", "cb", "--channel", "prod"}, status: 1,
+		{args: []string{"http", e.local.URL, "--path", "cb", "--channel", "prod"}, status: 1,
 			title:  `Your hook "cb" is in channel "default", not "prod"`,
 			reason: "tsrelay http reuses the hook at this path, and won't move it to another channel on its own.",
-			fixes:  []string{"tsrelay hooks update cb --channel prod", "tsrelay hooks delete cb", "Pick another path with --name"}, code: "hook_mismatch"},
-		{args: []string{"http", e.local.URL, "--name", "eph", "--persistent"}, status: 1,
+			fixes:  []string{"tsrelay hooks update cb --channel prod", "tsrelay hooks delete cb", "Pick another path with --path"}, code: "hook_mismatch"},
+		{args: []string{"http", e.local.URL, "--path", "eph", "--ephemeral=false"}, status: 1,
 			title:  `Your hook "eph" is ephemeral`,
-			reason: "--persistent asks for a hook that outlives tsrelay, and tsrelay http won't change the hook it reuses on its own.",
-			fixes:  []string{"tsrelay hooks update eph --ephemeral=false", "tsrelay hooks delete eph", "Pick another path with --name"}, code: "hook_mismatch"},
-		{args: []string{"http", e.local.URL, "--", "/nonexistent/tsrelay-test"}, status: 1,
+			reason: "--ephemeral=false asks for a hook that outlives tsrelay, and tsrelay http won't change the hook it reuses on its own.",
+			fixes:  []string{"tsrelay hooks update eph --ephemeral=false", "tsrelay hooks delete eph", "Pick another path with --path"}, code: "hook_mismatch"},
+		{args: []string{"http", e.local.URL, "--", "/nonexistent/tsrelay-test"}, status: 127,
 			title: "Couldn't start /nonexistent/tsrelay-test", reason: "Fork/exec /nonexistent/tsrelay-test: …",
 			fixes: []string{"Check that /nonexistent/tsrelay-test is installed and on your PATH"}, code: "command_failed"},
 		{args: []string{"url", "8080"}, status: 1, title: "No hook known here yet",
@@ -252,7 +252,7 @@ func TestRelayErrorSites(t *testing.T) {
 		defer e.fake.Fail(nil)
 		errorCase{args: []string{"hooks", "list"}, status: 1, title: "The relay couldn't identify you",
 			reason: "It asks Tailscale who is calling, and Tailscale didn't know this device.",
-			fixes:  []string{"tailscale status", "Reach the relay over Tailscale, not another network"}, code: problem.Forbidden,
+			fixes:  []string{"tailscale status", "Reach the relay over Tailscale, not another network"}, code: problem.NotIdentified,
 		}.check(t, d, "--relay", e.relayURL)
 	})
 	t.Run("version mismatch", func(t *testing.T) {
@@ -369,7 +369,11 @@ func TestExplainProblem(t *testing.T) {
 	for code, x := range problemExplanations {
 		p := &problem.Problem{Status: 400, Code: code, Detail: "something happened"}
 		got := c.explain(p)
-		if got.Title != x.title || got.Reason != x.reason+" The relay says: Something happened." || got.Code != code || !errors.Is(got, p) {
+		reason := x.reason + " The relay says: Something happened."
+		if code == problem.NotIdentified {
+			reason = x.reason // its detail only repeats the title
+		}
+		if got.Title != x.title || got.Reason != reason || got.Code != code || !errors.Is(got, p) {
 			t.Errorf("%s: got %#v", code, got)
 		}
 		for _, f := range got.Fixes {

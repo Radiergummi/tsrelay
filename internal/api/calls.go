@@ -2,7 +2,6 @@ package api
 
 import (
 	"cmp"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -18,6 +17,11 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
+// CallList is GET /hooks/{id}/calls. It is an object so it can grow siblings.
+type CallList struct {
+	Calls []inspect.Summary `json:"calls"`
+}
+
 // listCalls returns the hook's call summaries, newest first. Summaries are
 // metadata only, so owners and admins get the same list.
 func (a *API) listCalls(w http.ResponseWriter, r *http.Request, id authz.Identity) {
@@ -26,7 +30,7 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request, id authz.Identit
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, a.Inspect.List(h.ID))
+	writeJSON(w, http.StatusOK, CallList{Calls: a.Inspect.List(h.ID)})
 }
 
 // getCall returns one call with its attempts. Admins who do not own the
@@ -101,15 +105,15 @@ func (a *API) ownedHook(w http.ResponseWriter, r *http.Request, id authz.Identit
 func ReplayRefusal(c inspect.Call) *problem.Problem {
 	switch {
 	case c.Outcome == inspect.OutcomePending:
-		return problem.New(http.StatusConflict, problem.Conflict, "this call is still being delivered, so it cannot be replayed yet")
+		return problem.New(http.StatusConflict, problem.CallPending, "this call is still being delivered, so it cannot be replayed yet")
 	case c.Outcome == problem.HookNotFound:
-		return problem.New(http.StatusConflict, problem.Conflict, "this call was refused by channel and never delivered, so it cannot be replayed")
+		return problem.New(http.StatusConflict, problem.CallRefused, "this call was refused by channel and never delivered, so it cannot be replayed")
 	case !c.RequestBody.Captured && c.RequestBody.Size > 0:
-		return problem.New(http.StatusConflict, problem.Conflict, "bodies aren't captured for this hook, so this call cannot be replayed")
+		return problem.New(http.StatusConflict, problem.NotCaptured, "bodies aren't captured for this hook, so this call cannot be replayed")
 	case c.QueryTruncated:
-		return problem.New(http.StatusConflict, problem.Conflict, "this call's query string was not captured in full, so it cannot be replayed")
+		return problem.New(http.StatusConflict, problem.NotCaptured, "this call's query string was not captured in full, so it cannot be replayed")
 	case !c.RequestBody.Complete():
-		return problem.New(http.StatusConflict, problem.Conflict, "this call's request body was not captured in full, so it cannot be replayed")
+		return problem.New(http.StatusConflict, problem.NotCaptured, "this call's request body was not captured in full, so it cannot be replayed")
 	}
 	return nil
 }
@@ -119,6 +123,9 @@ func ReplayRefusal(c inspect.Call) *problem.Problem {
 // out. The local app is told about the original sender. A call refused by
 // channel was never delivered, so it cannot be replayed either.
 func (a *API) replayCall(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	if !onlyQuery(w, r) {
+		return
+	}
 	h, ok := a.ownedHook(w, r, id)
 	if !ok {
 		return
@@ -143,15 +150,15 @@ func (a *API) replayCall(w http.ResponseWriter, r *http.Request, id authz.Identi
 // testCall sends a request the owner wrote through the normal pipeline,
 // as a call of kind test (DESIGN.md §9.3).
 func (a *API) testCall(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	if !onlyQuery(w, r) {
+		return
+	}
 	h, ok := a.ownedHook(w, r, id)
 	if !ok {
 		return
 	}
 	var req TestRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		problem.New(http.StatusBadRequest, problem.BadRequest, "invalid JSON: "+err.Error()).Write(w)
+	if !decodeRequest(w, r, &req, 1<<20) {
 		return
 	}
 	var errs hooks.ValidationError

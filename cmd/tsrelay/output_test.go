@@ -128,8 +128,8 @@ func TestOutputJSON(t *testing.T) {
 	o.onState("http://localhost:8080", time.Second)(true, nil)
 	o.call(client.Call{Hook: "h_1", Method: "POST", Path: "/done", Status: 200, Duration: 1500 * time.Microsecond, Sender: "tag:ci"})
 	o.dropped(api.Hook{ID: "h_1", URL: testURL}, client.DropReplaced)
-	if code := o.finish(tunnel.ErrNoHooks); code != 1 {
-		t.Fatalf("finish = %d, want 1", code)
+	if code := o.finish(tunnel.ErrNoHooks); code != exitHookDeleted {
+		t.Fatalf("finish = %d, want 3", code)
 	}
 
 	var events []jsonEvent
@@ -153,7 +153,7 @@ func TestOutputJSON(t *testing.T) {
 	if e := events[3]; e.Hook != "h_1" || e.Reason != "replaced" || e.ExitCode != nil {
 		t.Errorf("hook stopped = %+v", e)
 	}
-	if e := events[4]; e.Reason != "no-hooks" || e.ExitCode == nil || *e.ExitCode != 1 {
+	if e := events[4]; e.Reason != "no-hooks" || e.ExitCode == nil || *e.ExitCode != exitHookDeleted {
 		t.Errorf("command stopped = %+v", e)
 	}
 	if stderr.String() != "" {
@@ -202,5 +202,21 @@ func TestOutputCallLinks(t *testing.T) {
 	var e jsonEvent
 	if err := json.Unmarshal([]byte(stdout.String()), &e); err != nil || e.CallID != "c_7f3a" || e.Inspect != "https://r/inspect/c_7f3a" {
 		t.Fatalf("call event = %+v, %v", e, err)
+	}
+}
+
+// A sender controls the path and may put terminal escapes in it, such as
+// OSC 52, which writes the clipboard. They are printed escaped.
+func TestCallLineEscapesControls(t *testing.T) {
+	for _, fancy := range []string{"0", "1"} {
+		t.Setenv("TTY_FORCE", fancy)
+		o, _, stderr := testOutput(t, false)
+		o.call(client.Call{Method: "POST", Path: "/\x1b]52;c;aGk=\a\x1b[2J\u202e", Status: 200, Sender: "tag:ci\x9b"})
+		// The fancy line has escapes of its own, for styling; none is an OSC.
+		got := stderr.String()
+		if strings.Contains(got, "\x1b]") || strings.ContainsAny(got, "\a\u202e") || strings.Contains(got, "\x9b") ||
+			!strings.Contains(got, `/\x1b]52;c;aGk=\x07\x1b[2J\u202e`) || !strings.Contains(got, `tag:ci\x9b`) {
+			t.Fatalf("TTY_FORCE=%s: line = %q", fancy, got)
+		}
 	}
 }

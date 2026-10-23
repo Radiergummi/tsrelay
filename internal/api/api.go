@@ -70,23 +70,26 @@ const VersionHeader = "Tsrelay-Version"
 // Me is the entry document, GET /: who the caller is, what the relay
 // allows them, and where its resources are.
 type Me struct {
-	Login   string                  `json:"login,omitempty"`
-	Node    string                  `json:"node"`
-	Tags    []string                `json:"tags,omitempty"`
-	Slug    string                  `json:"slug,omitempty"`
-	Roles   map[authz.Role][]string `json:"roles"`
-	Limits  Limits                  `json:"limits"`
-	Hooks   int                     `json:"hooks"`
-	CapName string                  `json:"capName"`
-	Version string                  `json:"version"`
-	Commit  string                  `json:"commit,omitempty"`
-	Policy  Policy                  `json:"policy"`
-	Public  []string                `json:"public"` // channel patterns in which the caller may make hooks public
-	Funnel  bool                    `json:"funnel"` // the relay serves public hooks
-	Links   map[string]string       `json:"links"`
+	Login          string                  `json:"login,omitempty"`
+	Node           string                  `json:"node"`
+	Tags           []string                `json:"tags,omitempty"`
+	Slug           string                  `json:"slug,omitempty"`
+	Roles          map[authz.Role][]string `json:"roles"`
+	Limits         Limits                  `json:"limits"`
+	HookCount      int                     `json:"hookCount"`
+	CapName        string                  `json:"capName"`
+	Version        string                  `json:"version"`
+	Commit         string                  `json:"commit,omitempty"`
+	Policy         Policy                  `json:"policy"`
+	PublicPatterns []string                `json:"publicPatterns"` // channel patterns in which the caller may make hooks public
+	Funnel         bool                    `json:"funnel"`         // the relay serves public hooks
+	Links          map[string]string       `json:"links"`
 	// For admins, a release newer than Version, and its release notes.
 	LatestVersion string `json:"latestVersion,omitempty"`
-	ReleaseURL    string `json:"releaseURL,omitempty"`
+	ReleaseURL    string `json:"releaseUrl,omitempty"`
+	// Optional behaviors this relay has beyond the API's baseline, by name;
+	// empty at 1.0, never null.
+	Features []string `json:"features"`
 }
 
 // links point from the entry document to the relay's resources. A build
@@ -112,7 +115,12 @@ type Policy struct {
 type Limits struct {
 	MaxHooks   int    `json:"maxHooks"`
 	MaxTunnels int    `json:"maxTunnels"`
-	MaxHookTTL string `json:"maxHookTTL,omitempty"` // empty means unlimited
+	MaxHookTTL string `json:"maxHookTtl"` // "0s" means unlimited
+}
+
+// HookList is GET /hooks. It is an object so it can grow siblings.
+type HookList struct {
+	Hooks []Hook `json:"hooks"`
 }
 
 type Hook struct {
@@ -193,15 +201,11 @@ func notAcceptable(w http.ResponseWriter, offers []negotiate.Type) {
 	problem.New(http.StatusNotAcceptable, problem.NotAcceptable, "this resource is available as "+strings.Join(types, ", ")).Write(w)
 }
 
-// NotIdentified is the detail of the forbidden problem for a caller the
-// tailnet could not identify; the CLI explains it by this text.
-const NotIdentified = "could not identify you on the tailnet"
-
 func (a *API) authed(f func(http.ResponseWriter, *http.Request, authz.Identity)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, err := a.Identifier.Identify(r.Context(), r.RemoteAddr)
 		if err != nil {
-			problem.New(http.StatusForbidden, problem.Forbidden, NotIdentified).Write(w)
+			problem.New(http.StatusForbidden, problem.NotIdentified, "could not identify you on the tailnet").Write(w)
 			return
 		}
 		if span := trace.SpanFromContext(r.Context()); span.IsRecording() {
@@ -215,19 +219,20 @@ func (a *API) authed(f func(http.ResponseWriter, *http.Request, authz.Identity))
 func (a *API) MeOf(id authz.Identity) Me {
 	me := Me{
 		Login: id.Login, Node: id.NodeName, Tags: id.Tags, Roles: id.Grants.Patterns,
-		Limits: Limits{MaxHooks: id.Grants.Limits.MaxHooks, MaxTunnels: id.Grants.Limits.MaxTunnels},
-	}
-	if ttl := id.Grants.Limits.MaxHookTTL; ttl > 0 {
-		me.Limits.MaxHookTTL = ttl.String()
+		Limits: Limits{
+			MaxHooks: id.Grants.Limits.MaxHooks, MaxTunnels: id.Grants.Limits.MaxTunnels,
+			MaxHookTTL: id.Grants.Limits.MaxHookTTL.String(),
+		},
 	}
 	if id.IsUser() {
 		me.Slug, _ = a.Hooks.Slug(id.Login)
-		me.Hooks = len(a.Hooks.List(id.UserID))
+		me.HookCount = len(a.Hooks.List(id.UserID))
 	}
 	p := a.Hooks.Policy()
 	me.CapName, me.Version, me.Commit, me.Policy = a.CapName, a.Version, a.Commit, Policy{Defaults: p.Defaults, Max: p.Max, CallsPerHook: a.Inspect.CallsPerHook(), NoBodies: a.Inspect.NoBodies()}
-	me.Public = append([]string{}, id.Grants.PublicPatterns...)
+	me.PublicPatterns = append([]string{}, id.Grants.PublicPatterns...)
 	me.Funnel = a.PublicBaseURL != ""
+	me.Features = []string{}
 	me.Links = links
 	if a.Releases != nil && access.IsAdmin(id) {
 		if r := a.Releases.Latest(); semver.Compare(r.Version, a.Version) > 0 {
@@ -242,7 +247,10 @@ func (a *API) me(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 }
 
 func (a *API) listHooks(w http.ResponseWriter, r *http.Request, id authz.Identity) {
-	list, _ := a.scopedHooks(r, id)
+	list, _, ok := a.scopedHooks(w, r, id)
+	if !ok {
+		return
+	}
 	channel := r.URL.Query().Get("channel")
 	out := make([]Hook, 0, len(list))
 	for _, h := range list {
@@ -250,18 +258,21 @@ func (a *API) listHooks(w http.ResponseWriter, r *http.Request, id authz.Identit
 			out = append(out, a.HookJSON(h, id))
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, HookList{Hooks: out})
 }
 
 func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
-	var req hooks.CreateRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		problem.New(http.StatusBadRequest, problem.BadRequest, "invalid JSON: "+err.Error()).Write(w)
+	if !onlyQuery(w, r, "dryRun") {
 		return
 	}
-	dry := r.URL.Query().Get("dryRun") == "true"
+	dry, ok := queryBool(w, r, "dryRun")
+	if !ok {
+		return
+	}
+	var req hooks.CreateRequest
+	if !decodeRequest(w, r, &req, 64<<10) {
+		return
+	}
 	create := a.Tunnels.Create
 	if dry {
 		create = a.Hooks.CheckCreate
@@ -301,11 +312,15 @@ func (a *API) getHook(w http.ResponseWriter, r *http.Request, id authz.Identity)
 }
 
 func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	if !onlyQuery(w, r, "dryRun") {
+		return
+	}
+	dry, ok := queryBool(w, r, "dryRun")
+	if !ok {
+		return
+	}
 	var req hooks.UpdateRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		problem.New(http.StatusBadRequest, problem.BadRequest, "invalid JSON: "+err.Error()).Write(w)
+	if !decodeRequest(w, r, &req, 64<<10) {
 		return
 	}
 	// The store answers not found to anyone but the owner, so decide 404
@@ -314,7 +329,6 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		writeAccessError(w, err, "only the hook's owner, with the receiver role, can edit it")
 		return
 	}
-	dry := r.URL.Query().Get("dryRun") == "true"
 	update := a.Tunnels.Update
 	if dry {
 		update = a.Hooks.CheckUpdate
@@ -343,6 +357,9 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 }
 
 func (a *API) rotatePublicURL(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	if !onlyQuery(w, r) {
+		return
+	}
 	cur, err := a.decide(r, id, access.Act)
 	if err != nil {
 		writeAccessError(w, err, "only the hook's owner, with the receiver role for its channel, can rotate its public URL")
@@ -354,7 +371,7 @@ func (a *API) rotatePublicURL(w http.ResponseWriter, r *http.Request, id authz.I
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 		return
 	case errors.Is(err, hooks.ErrNotPublic):
-		problem.New(http.StatusConflict, problem.Conflict, "the hook is not public; make it public first").Write(w)
+		problem.New(http.StatusConflict, problem.NotPublic, "the hook is not public; make it public first").Write(w)
 		return
 	case err != nil:
 		a.Audit.Slog().Error("hook.update failed", "error", err)
@@ -365,6 +382,9 @@ func (a *API) rotatePublicURL(w http.ResponseWriter, r *http.Request, id authz.I
 }
 
 func (a *API) deleteHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	if !onlyQuery(w, r) {
+		return
+	}
 	h, err := a.decide(r, id, access.Delete)
 	if err != nil {
 		writeAccessError(w, err, "")

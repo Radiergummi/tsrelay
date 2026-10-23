@@ -7,6 +7,10 @@ import "time"
 
 const (
 	UpgradeToken = "tsrelay-tunnel/1"
+	// HeaderTunnelPrefix starts every header the relay sets for the client
+	// alone. The client removes them all before forwarding, also those of a
+	// newer relay it doesn't know.
+	HeaderTunnelPrefix = "Tsrelay-Tunnel-"
 	// HeaderHook carries the ID of the hook a forwarded request belongs to.
 	// Only the relay sets it; the client removes it before forwarding.
 	HeaderHook = "Tsrelay-Tunnel-Hook"

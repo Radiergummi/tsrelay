@@ -4,7 +4,7 @@ import { fixtures } from "@/test/fixtures";
 // fixtures.ts parses every captured response with its schema, so importing
 // it is the test; these assertions pin what later tasks rely on.
 test("the captured API responses parse", () => {
-  expect(fixtures.me.capName).toBe("mazetti.me/cap/relay");
+  expect(fixtures.me.capName).toBe("tsrelay.mazetti.me/cap/relay");
   expect(fixtures.me.policy.defaults.holdTimeout).toBe("30s");
   expect(fixtures.hooks.find((h) => h.path === "payments/done")?.lastCall).toBeDefined();
   expect(fixtures.callJson.replay).toEqual({ allowed: true, reason: "" });

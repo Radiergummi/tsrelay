@@ -43,7 +43,7 @@ func TestRunHelp(t *testing.T) {
 func TestShorthands(t *testing.T) {
 	root := newRoot(&cli{stdout: new(nopWriter), stderr: new(nopWriter)})
 	for _, tc := range []struct{ cmd, flag, short string }{
-		{"http", "name", "n"}, {"http", "channel", "c"}, {"http", "persistent", "p"}, {"http", "insecure", "k"},
+		{"http", "channel", "c"}, {"http", "insecure", "k"},
 		{"attach", "to", "t"}, {"attach", "insecure", "k"},
 		{"tsrelay", "json", "j"},
 	} {

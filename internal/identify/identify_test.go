@@ -16,7 +16,7 @@ import (
 	"tailscale.com/tailcfg/peercap"
 )
 
-const testCap peercap.Cap = "mazetti.me/cap/relay"
+const testCap peercap.Cap = "tsrelay.mazetti.me/cap/relay"
 
 func whois(tags []string, caps ...string) *apitype.WhoIsResponse {
 	vals := make([]tailcfg.RawMessage, len(caps))

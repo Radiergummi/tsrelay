@@ -44,7 +44,7 @@ test("a user without a role sees what is missing and an example grant", async ()
   expect(await screen.findByText(/grants you no access to this relay/)).toBeInTheDocument();
   const grant = screen.getByText(/"grants"/);
   expect(grant.textContent).toContain('"nobody@example.com"');
-  expect(grant.textContent).toContain('"mazetti.me/cap/relay"');
+  expect(grant.textContent).toContain('"tsrelay.mazetti.me/cap/relay"');
 });
 
 // The relay refuses event streams without a role (403), so asking would
@@ -109,7 +109,7 @@ test("an unidentified viewer gets one message and a reload button", async () => 
     {
       title: "Forbidden",
       status: 403,
-      code: "forbidden",
+      code: "not_identified",
       detail: "could not identify you on the tailnet",
     },
     403,
@@ -118,6 +118,13 @@ test("an unidentified viewer gets one message and a reload button", async () => 
   expect(await screen.findByText(/could not identify your device/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Reload" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Licenses" })).toBeInTheDocument();
+});
+
+test("a forbidden entry document that isn't about identity is not called unidentified", async () => {
+  meIs({ title: "Forbidden", status: 403, code: "forbidden", detail: "no" }, 403);
+  renderAt("/");
+  expect(await screen.findByText("The relay is not reachable")).toBeInTheDocument();
+  expect(screen.queryByText(/could not identify your device/)).not.toBeInTheDocument();
 });
 
 test("a failed refetch of the entry document keeps the app", async () => {

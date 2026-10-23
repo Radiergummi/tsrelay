@@ -44,7 +44,7 @@ type Config struct {
 	Releases       *release.Checker     // the latest release, named to admins in GET /; nil: none (--update-check=false)
 	ReleaseAssets  string               // base URL of the release assets /download redirects to; "" means GitHub's
 
-	NoTracePropagation bool // don't join senders' traces or pass the relay's to apps (--trace-propagation=false)
+	NoTracePropagation bool // don't join senders' traces or pass the relay's to apps (--otel-propagation=false)
 }
 
 type Server struct {
@@ -155,6 +155,14 @@ func runEvery(ctx context.Context, interval time.Duration, f func()) {
 		}
 		f()
 	}
+}
+
+// Drain prepares a shutdown: held calls are answered, as no tunnel can
+// attach any more, and event streams end, which http.Server.Shutdown would
+// otherwise wait for. Calls already delivered keep their tunnels until Close.
+func (s *Server) Drain() {
+	s.relay.Drain()
+	s.events.Close()
 }
 
 // Close ends the event streams and closes all tunnels. Neither hijacked

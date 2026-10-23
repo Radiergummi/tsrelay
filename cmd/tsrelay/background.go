@@ -53,6 +53,32 @@ type runHook struct {
 	URL  string `json:"url"`
 }
 
+// runJSON is a background tunnel as --json prints it: from http and attach
+// with --background, in tsrelay ps's runs and in tsrelay stop's stopped. Its
+// fields are a promise; runRecord, the file format, is not.
+type runJSON struct {
+	ID        string    `json:"id"`
+	PID       int       `json:"pid"`
+	Command   []string  `json:"command"` // the command line, without the program
+	Relay     string    `json:"relay"`
+	Target    string    `json:"target"`
+	Hooks     []runHook `json:"hooks"`
+	StartedAt time.Time `json:"startedAt"`
+	State     string    `json:"state,omitempty"` // running, exited, stopped or killed; where known
+}
+
+// public is r as --json prints it, without a state.
+func (r runRecord) public() runJSON {
+	j := runJSON{ID: r.ID, PID: r.PID, Command: r.Args, Relay: r.Relay, Target: r.Target, Hooks: r.Hooks, StartedAt: r.Started}
+	if j.Command == nil { // always arrays, never null
+		j.Command = []string{}
+	}
+	if j.Hooks == nil {
+		j.Hooks = []runHook{}
+	}
+	return j
+}
+
 // serves reports whether r is the tunnel ref names: by its ID, or by a
 // hook's ID, path or URL.
 func (r runRecord) serves(ref string) bool {
@@ -208,7 +234,7 @@ func (c *cli) startBackground(ctx context.Context) error {
 	go cmd.Wait()
 
 	if c.json {
-		return writeJSON(c.stdoutStream(), m.Ready)
+		return writeJSON(c.stdoutStream(), m.Ready.public())
 	}
 	out, errStream := c.streams()
 	for _, h := range m.Ready.Hooks {

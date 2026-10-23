@@ -41,13 +41,25 @@ Senders see these when they call a hook.
 
 **413.** The request body is larger than the hook's `maxBodyBytes`, or, for a call from the internet, larger than the relay's `--funnel-max-body-bytes`. The hook's owner can raise the limit with `tsrelay hooks update <hook> --max-body-bytes 10485760`, up to the relay's maximum.
 
+### `path_too_long`
+
+**414.** The call's path, percent-encoded, is longer than 8 KiB. The relay refuses it before routing, like a server refusing an overlong request line, so it doesn't reach the inspector or the audit log. Shorten the path; send long data in the body.
+
+### `shutting_down`
+
+**503.** The relay is shutting down, usually for a restart, while the call waited for a tunnel; one arriving then gets it too. Calls already delivered to a tunnel finish first. `Retry-After` is 5: retry then, and the restarted relay holds the call until the tunnel is back.
+
 ### `rate_limited`
 
 **429.** The hook's `rateLimit` was exceeded. `Retry-After` is the limiter's wait, rounded up to whole seconds. Wait, then retry; the hook's owner can raise the limit with `tsrelay hooks update <hook> --rate-limit 100/200`.
 
 ### `tunnel_unavailable`
 
-**561 Tunnel Unavailable.** No tunnel attached to the hook within its `holdTimeout`, or too many calls were already waiting for one. `Retry-After` is the `holdTimeout`, but never less than 5 s. The hook's owner can attach one with `tsrelay attach <hook> --to 3000`, or wait longer with `tsrelay hooks update <hook> --hold-timeout 1m`.
+**561 Tunnel Unavailable.** No tunnel attached to the hook within its `holdTimeout`. `Retry-After` is the `holdTimeout`, but never less than 5 s. The hook's owner can attach one with `tsrelay attach <hook> --to 3000`, or wait longer with `tsrelay hooks update <hook> --hold-timeout 1m`.
+
+### `hold_queue_full`
+
+**562 Tunnel Overloaded.** No tunnel is attached to the hook, and too many calls are already waiting for one (the relay's `--hook-hold-queue`). `Retry-After` is the `holdTimeout`, but never less than 5 s. The hook's owner can attach a tunnel with `tsrelay attach <hook> --to 3000`.
 
 ### `tunnel_overloaded`
 
@@ -65,13 +77,37 @@ Senders see these when they call a hook.
 
 **565 Upstream Timeout.** The app didn't send its response headers within the hook's `responseTimeout`, or its response stalled past the `idleTimeout`. The hook's owner can raise it with `tsrelay hooks update <hook> --response-timeout 1m`.
 
+## Call outcomes
+
+A call's `outcome` in the [inspector](web-ui.md#inspecting-calls) and the API is `pending`, `ok`, one of the codes above, or `sender_canceled`: the sender went away before the call finished, so no response was sent and no error is recorded against the hook.
+
 ## Using the API
 
 The [API](api.md), the web UI and the CLI see these. Where one says the relay may not speak your `tsrelay`'s API, install the relay's version of the CLI; see [Updating the CLI](getting-started.md#updating-the-cli).
 
 ### `forbidden`
 
-**403.** Your grants don't allow this: a missing role, a channel your patterns don't match, more tunnels than your limit allows, a cross-site request to the API, or a device Tailscale couldn't identify. Ask a relay admin to grant you the role or channel; the relay's web UI shows them the grant.
+**403.** Your grants don't allow this: a missing role, or a hook you can see but only its owner can act on. Ask a relay admin to grant you the role; the relay's web UI shows them the grant.
+
+### `not_identified`
+
+**403.** Tailscale couldn't tell the relay who is calling, so no grant applies. Check `tailscale status`, and reach the relay over Tailscale, not another network.
+
+### `cross_site`
+
+**403.** An API write came from another site, as the browser's `Sec-Fetch-Site` header says. API writes must come from the relay's own web UI or from a tool such as the CLI.
+
+### `channel_forbidden`
+
+**403.** The hook is in a channel your grants no longer match, so a tunnel can't serve it. Ask a relay admin to grant you the channel.
+
+### `stream_limit`
+
+**429.** The node already has 8 event streams open, the most the relay allows one node. Close a browser tab or a client that watches the relay, then retry.
+
+### `tunnel_limit`
+
+**403.** You already have as many tunnels attached as your `maxTunnels` grant allows. Stop one you no longer need with `tsrelay stop`, or ask a relay admin to raise the limit.
 
 ### `not_found`
 
@@ -81,13 +117,37 @@ The [API](api.md), the web UI and the CLI see these. Where one says the relay ma
 
 **422.** Something sent isn't valid, such as a hook setting above the relay's maximum. The problem's `errors` field names each one; correct them, then retry.
 
+### `unsupported_field`
+
+**422.** The request has a field this relay doesn't know, so it is newer than the relay; within one major version, this is how an older relay says so. The problem's `errors` field names each one, like `invalid` does. Ask the relay's operator to upgrade the relay, or install the CLI version the relay runs.
+
 ### `bad_request`
 
 **400.** The relay couldn't read the request: malformed JSON, a tunnel request without its upgrade headers, or one that names no hook. This `tsrelay` may not speak the relay's API.
 
-### `conflict`
+### `not_public`
 
-**409.** Something is in the way: a call that is still being delivered, or whose body or query string wasn't captured in full, can't be replayed; a hook that isn't public has no public URL to rotate; and a tunnel is refused when the hook's `attachPolicy` is `reject` and another is attached, or when a newer one has taken it over. Resolve what the relay named, then retry.
+**409.** The hook isn't public, so it has no public URL to rotate. Make it public first with `tsrelay hooks update <hook> --public`.
+
+### `superseded`
+
+**409.** A newer tunnel has taken the hook over, and a tunnel that reconnects after being replaced may not take it back. Stop the other tunnel, or attach again without resuming.
+
+### `attach_rejected`
+
+**409.** The hook's `attachPolicy` is `reject` and a tunnel is already attached. Stop that one, or set the policy to `takeover` with `tsrelay hooks update <hook> --attach-policy takeover`.
+
+### `call_pending`
+
+**409.** The call is still being delivered, so it can't be replayed yet. Retry once it has an outcome.
+
+### `call_refused`
+
+**409.** The relay refused the call by channel and never delivered it, so there is nothing to replay. Send a new test request instead.
+
+### `not_captured`
+
+**409.** The call can't be replayed because its request wasn't captured in full: bodies aren't captured for the hook, or the body or the query string was cut off at the capture limit. Turn capture on with `tsrelay hooks update <hook> --capture` to replay future calls.
 
 ### `misdirected_request`
 

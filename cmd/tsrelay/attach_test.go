@@ -46,8 +46,8 @@ func TestAttach(t *testing.T) {
 	if err := e.api().DeleteHook(ctx, b.ID); err != nil {
 		t.Fatal(err)
 	}
-	if code := waitExit(t, r); code != 1 {
-		t.Fatalf("exit with no hooks left = %d, want 1", code)
+	if code := waitExit(t, r); code != exitHookDeleted {
+		t.Fatalf("exit with no hooks left = %d, want 3", code)
 	}
 }
 

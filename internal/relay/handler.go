@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/lifecycle"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -51,6 +53,7 @@ var (
 	errHoldTimeout   = errors.New("no tunnel attached within the hold timeout")
 	errHoldQueueFull = errors.New("too many calls are waiting for a tunnel")
 	errHookExpired   = errors.New("the hook expired while the call was waiting")
+	errShuttingDown  = errors.New("the relay is shutting down")
 )
 
 // Handler serves callbacks. Each call uses the effective settings of its
@@ -73,6 +76,9 @@ type Handler struct {
 	Propagator propagation.TextMapPropagator // nil: don't join senders' traces or pass ours on
 
 	limiters  limiters
+	drainOnce sync.Once
+	draining  context.Context // done once Drain was called
+	drained   context.CancelFunc
 	heldMu    sync.Mutex
 	held      map[hooks.ID]int
 	heldTotal atomic.Int64
@@ -90,7 +96,17 @@ func (h *Handler) ServePublic(w http.ResponseWriter, r *http.Request) {
 	h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), publicKey{}, true)))
 }
 
+// maxPathBytes caps a call's escaped path, as servers cap a request line,
+// so a sender can't make the inspector, the audit log and the call events
+// keep megabytes per call.
+const maxPathBytes = 8 << 10
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if len(r.URL.EscapedPath()) > maxPathBytes {
+		problem.New(http.StatusRequestURITooLong, problem.PathTooLong,
+			fmt.Sprintf("the path is longer than %d bytes", maxPathBytes)).Write(w)
+		return
+	}
 	c := h.newCall(w, r)
 	defer c.end()
 	if err := c.deliver(); err != nil {
@@ -98,9 +114,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Drain ends every hold and refuses new ones, for a relay shutting down:
+// no tunnel can attach any more, so a held call is better answered now,
+// with a Retry-After that reaches the restarted relay. Calls already
+// delivered are not affected.
+func (h *Handler) Drain() { h.drainCtx(); h.drained() }
+
+// drainCtx is done once Drain was called.
+func (h *Handler) drainCtx() context.Context {
+	h.drainOnce.Do(func() { h.draining, h.drained = context.WithCancel(context.Background()) })
+	return h.draining
+}
+
 // hold waits up to timeout for a tunnel to attach to hook, but never past
 // the hook's expiry, and only while fewer than HoldQueue calls wait for it.
 func (h *Handler) hold(ctx context.Context, hook hooks.Hook, timeout time.Duration) error {
+	drain := h.drainCtx()
+	if drain.Err() != nil {
+		return errShuttingDown
+	}
 	if timeout <= 0 {
 		return errHoldTimeout
 	}
@@ -116,6 +148,8 @@ func (h *Handler) hold(ctx context.Context, hook hooks.Hook, timeout time.Durati
 	}
 	ctx, cancel := context.WithTimeoutCause(ctx, timeout, cause)
 	defer cancel()
+	ctx, stop := context.WithCancelCause(ctx)
+	defer context.AfterFunc(drain, func() { stop(errShuttingDown) })()
 	_, err := h.Tunnels.Wait(ctx, hook.ID)
 	return err
 }
@@ -143,7 +177,7 @@ func (h *Handler) dequeue(id hooks.ID) {
 	h.heldTotal.Add(-1)
 }
 
-// holdRetryAfter is the Retry-After of tunnel_unavailable: the hold
+// holdRetryAfter is the Retry-After of tunnel_unavailable and hold_queue_full: the hold
 // timeout rounded up to seconds, but at least 5 seconds.
 func holdRetryAfter(hold time.Duration) string { return retryAfter(max(5*time.Second, hold)) }
 
@@ -184,7 +218,10 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.
 	// which would let senders spoof it. These come from the connection only.
 	out := pr.Out
 	for k := range out.Header {
-		if strings.HasPrefix(k, "X-Forwarded-") {
+		// Some frameworks read "_" in a header name as "-" (CGI, WSGI,
+		// Rack), so X_Forwarded_For would pass for X-Forwarded-For there.
+		name := http.CanonicalHeaderKey(strings.ReplaceAll(k, "_", "-"))
+		if strings.HasPrefix(name, "X-Forwarded-") || strings.HasPrefix(name, "Tsrelay-") || name == "X-Real-Ip" || name == "Forwarded" {
 			delete(out.Header, k)
 		}
 	}

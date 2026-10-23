@@ -29,9 +29,6 @@ export function formatDuration(ms: number): string {
   return `${m}m${trim((ms - m * 60_000) / 1000)}s`;
 }
 
-/** formatGoDuration formats a Go duration string, showing an unreadable one as 0. */
-export const formatGoDuration = (go: string) => formatDuration(parseDuration(go) ?? 0);
-
 /** humanDuration reads a setting's duration in words: "10 s", "60 s", "90 s", "2 min", "1 h". */
 export function humanDuration(ms: number): string {
   if (ms >= 3_600_000 && ms % 3_600_000 === 0) return `${ms / 3_600_000} h`;

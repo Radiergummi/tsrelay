@@ -16,6 +16,13 @@ info:
     `Cache-Control: no-store`. Every write without a `Sec-Fetch-Site` header
     must send `Content-Type: application/json`, even without a body (415
     otherwise).
+
+    Within a major version, changes are additive only. Clients must ignore
+    unknown fields, enumeration values, event types, control types and problem
+    codes, and fall back to the HTTP status for a code they don't know. A
+    request field the relay doesn't know is refused with `422` and the code
+    `unsupported_field`. `GET /` lists optional capabilities in `features`.
+    See https://tsrelay.mazetti.me/compatibility.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -38,6 +45,7 @@ paths:
           description: Redirect to `/hooks`, for HTML
         "403": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /hooks:
     get:
       operationId: listHooks
@@ -57,15 +65,14 @@ paths:
           description: The hooks, or a stream of their changes
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/Hook" }
+              schema: { $ref: "#/components/schemas/HookList" }
             text/event-stream:
               schema: { $ref: "#/components/schemas/Event" }
             text/html: {}
         "403": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
     post:
       operationId: createHook
       summary: Create a hook
@@ -93,6 +100,7 @@ paths:
         "400": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
         "422": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /hooks/{id}:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -113,6 +121,7 @@ paths:
         "404": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
     patch:
       operationId: updateHook
       summary: Change a hook; only the given fields change
@@ -133,13 +142,16 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "422": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
     delete:
       operationId: deleteHook
       summary: Delete a hook
       responses:
         "204":
           description: Deleted
+        "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /hooks/{id}/rotate-public-url:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -155,6 +167,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /hooks/{id}/calls:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -167,9 +180,7 @@ paths:
           description: The calls, or a stream of them
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/Summary" }
+              schema: { $ref: "#/components/schemas/CallList" }
             text/event-stream:
               schema: { $ref: "#/components/schemas/Event" }
             text/html: {}
@@ -177,6 +188,7 @@ paths:
         "404": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /hooks/{id}/calls/{callID}:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -194,6 +206,7 @@ paths:
             text/html: {}
         "404": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /hooks/{id}/calls/{callID}/replay:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -210,6 +223,8 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
+        "500": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /hooks/{id}/test:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -231,6 +246,8 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "422": { $ref: "#/components/responses/Problem" }
+        "500": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /channels:
     get:
       operationId: listChannels
@@ -252,6 +269,7 @@ paths:
             text/html: {}
         "403": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /channels/{name}:
     parameters:
       - name: name
@@ -278,6 +296,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /tunnel:
     get:
       operationId: attachTunnel
@@ -312,6 +331,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /openapi:
     get:
       operationId: getOpenAPI
@@ -321,6 +341,7 @@ paths:
           description: The OpenAPI document
           content:
             application/json: {}
+        default: { $ref: "#/components/responses/Problem" }
   /openapi.yaml:
     get:
       operationId: getOpenAPIYAML
@@ -330,6 +351,7 @@ paths:
           description: The OpenAPI document
           content:
             application/yaml: {}
+        default: { $ref: "#/components/responses/Problem" }
   /licenses:
     get:
       operationId: getLicenses
@@ -344,6 +366,7 @@ paths:
             text/html: {}
         "403": { $ref: "#/components/responses/Problem" }
         "406": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /licenses/{textId}:
     parameters:
       - name: textId
@@ -362,6 +385,7 @@ paths:
             text/plain: {}
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /notices.txt:
     get:
       operationId: getNotices
@@ -373,6 +397,7 @@ paths:
           content:
             text/plain: {}
         "403": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
   /sbom.cdx.json:
     get:
       operationId: getSBOM
@@ -384,6 +409,7 @@ paths:
           content:
             application/vnd.cyclonedx+json: {}
         "403": { $ref: "#/components/responses/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
 components:
   parameters:
     id:
@@ -417,6 +443,11 @@ components:
       type: string
       description: A Go duration, such as `30s` or `2m0s`.
       examples: ["30s"]
+    Millis:
+      type: number
+      minimum: 0
+      description: A measured duration in milliseconds, with microsecond precision (`0.412` is 412 µs).
+      examples: [42, 0.412]
     Role:
       type: string
       enum: [receiver, sender, admin]
@@ -468,14 +499,14 @@ components:
         capture: { type: boolean }
     Me:
       type: object
-      required: [node, roles, limits, hooks, capName, version, policy, public, funnel, links]
+      required: [node, roles, limits, hookCount, capName, version, policy, publicPatterns, funnel, features, links]
       properties:
         login: { type: string, description: "Empty for tagged nodes" }
         node: { type: string }
         tags:
           type: array
           items: { type: string }
-        slug: { type: string, description: "The caller's URL prefix, `~slug`" }
+        slug: { type: string, description: "The caller's URL prefix: their hooks are at `/~{slug}/…`. Absent for tagged nodes" }
         roles:
           type: object
           description: Each role the caller has, with its channel patterns.
@@ -485,17 +516,17 @@ components:
             items: { type: string }
         limits:
           type: object
-          required: [maxHooks, maxTunnels]
+          required: [maxHooks, maxTunnels, maxHookTtl]
           properties:
             maxHooks: { type: integer }
             maxTunnels: { type: integer }
-            maxHookTTL: { $ref: "#/components/schemas/Duration" }
-        hooks: { type: integer, description: "Hooks the caller owns" }
+            maxHookTtl: { $ref: "#/components/schemas/Duration", description: "`0s` means no limit" }
+        hookCount: { type: integer, description: "Hooks the caller owns" }
         capName: { type: string }
         version: { type: string }
         commit: { type: string, description: "The revision the relay was built from, when known" }
         latestVersion: { type: string, description: "Admins only: a tsrelay release newer than `version`, unless the relay runs with --update-check=false" }
-        releaseURL: { type: string, format: uri, description: "Admins only: the release notes of `latestVersion`" }
+        releaseUrl: { type: string, format: uri, description: "Admins only: the release notes of `latestVersion`" }
         policy:
           type: object
           required: [defaults, max, callsPerHook]
@@ -511,12 +542,24 @@ components:
                 rateLimit: { $ref: "#/components/schemas/RateLimit" }
             callsPerHook: { type: integer }
             noBodies: { type: boolean, description: "The relay keeps no bodies, whatever hooks set (--capture-bodies=false)" }
-        public: { type: array, items: { type: string }, description: "Channel patterns in which the caller may make hooks public; empty when none" }
+        publicPatterns: { type: array, items: { type: string }, description: "Channel patterns in which the caller may make hooks public; empty when none" }
         funnel: { type: boolean, description: "The relay serves public hooks on the internet" }
+        features: { type: array, items: { type: string }, description: "Optional behaviors this relay has beyond the API's baseline, by name; empty at 1.0" }
         links:
           type: object
-          required: [hooks, channels, tunnel, openapi, licenses]
+          description: "`licenses` only in builds that carry an SBOM, as releases do"
+          required: [hooks, channels, tunnel, openapi]
           additionalProperties: { type: string }
+    HookList:
+      type: object
+      required: [hooks]
+      properties:
+        hooks: { type: array, items: { $ref: "#/components/schemas/Hook" } }
+    CallList:
+      type: object
+      required: [calls]
+      properties:
+        calls: { type: array, items: { $ref: "#/components/schemas/Summary" } }
     Hook:
       type: object
       required: [id, url, owner, path, channel, ephemeral, public, settings, effective, createdAt]
@@ -596,14 +639,18 @@ components:
         settings: { $ref: "#/components/schemas/Settings" }
     UpdateRequest:
       type: object
+      description: |
+        A partial update: a field left out stays as it is. `null` resets a
+        field where that means something, and is refused (422) where it
+        doesn't.
       properties:
-        path: { type: string }
-        channel: { type: string }
-        description: { type: string }
-        ephemeral: { type: boolean }
-        public: { type: boolean }
-        expiresAt: { type: [string, "null"], format: date-time }
-        settings: { $ref: "#/components/schemas/SettingsPatch" }
+        path: { type: string, description: "Moves the hook, which changes its URL. `null` is refused." }
+        channel: { type: [string, "null"], description: "`null` moves the hook back to `default`." }
+        description: { type: [string, "null"], description: "`null` clears it." }
+        ephemeral: { type: boolean, description: "`null` is refused." }
+        public: { type: boolean, description: "`false` stops serving the hook on the internet and drops its public URL; `null` is refused." }
+        expiresAt: { type: [string, "null"], format: date-time, description: "`null` removes the expiry." }
+        settings: { $ref: "#/components/schemas/SettingsPatch", description: "Each setting set to `null` goes back to the relay's default; `settings: null` changes nothing." }
     Sender:
       type: object
       properties:
@@ -617,7 +664,7 @@ components:
     Summary:
       type: object
       description: A call without headers and bodies.
-      required: [id, hookId, receivedAt, kind, sender, method, path, outcome, duration]
+      required: [id, hookId, receivedAt, kind, sender, method, path, outcome, durationMs]
       properties:
         id: { type: string }
         hookId: { type: string }
@@ -635,9 +682,9 @@ components:
         path: { type: string }
         outcome:
           type: string
-          description: "`pending`, `ok`, or a `Tsrelay-Error` code"
+          description: "`pending`, `ok`, `sender_canceled` (the sender went away before the call finished), or a `Tsrelay-Error` code"
         status: { type: integer }
-        duration: { $ref: "#/components/schemas/Duration" }
+        durationMs: { $ref: "#/components/schemas/Millis" }
     Capture:
       type: object
       required: [size, captured]
@@ -653,23 +700,23 @@ components:
         items: { type: string }
     Attempt:
       type: object
-      required: [id, startedAt, waitedFor, ttfb, duration, responseBody, bytesIn, bytesOut]
+      required: [id, startedAt, waitedForMs, ttfbMs, durationMs, responseBody, bytesIn, bytesOut]
       properties:
         id: { type: string }
         startedAt: { type: string, format: date-time }
         tunnelId: { type: string }
         node: { type: string }
-        waitedFor: { $ref: "#/components/schemas/Duration" }
-        ttfb: { $ref: "#/components/schemas/Duration" }
-        duration: { $ref: "#/components/schemas/Duration" }
+        waitedForMs: { $ref: "#/components/schemas/Millis" }
+        ttfbMs: { $ref: "#/components/schemas/Millis" }
+        durationMs: { $ref: "#/components/schemas/Millis" }
         status: { type: integer }
         responseHeaders: { $ref: "#/components/schemas/Headers" }
         redacted:
           type: array
           items: { type: string }
         responseBody: { $ref: "#/components/schemas/Capture" }
-        bytesIn: { type: integer }
-        bytesOut: { type: integer }
+        bytesIn: { type: integer, description: "Bytes of the request body read from the sender" }
+        bytesOut: { type: integer, description: "Bytes of the response body sent back to the sender" }
         error: { type: string }
     CallDetail:
       allOf:
@@ -751,7 +798,7 @@ components:
         code: { type: string }
         errors:
           type: array
-          description: For `422`, one entry per invalid field.
+          description: For `422`, one entry per invalid field, or per field the relay does not support (`unsupported_field`).
           items:
             type: object
             required: [field, message]

@@ -57,20 +57,20 @@ type Sender struct {
 // Attempt is one try at delivering a call down a tunnel. v1 makes at most
 // one attempt per call; buffered retries (DESIGN.md §17) will add more.
 type Attempt struct {
-	ID              string         `json:"id"`
-	StartedAt       time.Time      `json:"startedAt"`
-	TunnelID        string         `json:"tunnelId,omitempty"`
-	Node            string         `json:"node,omitempty"` // the tunnel owner's node
-	WaitedFor       hooks.Duration `json:"waitedFor"`      // held for a tunnel to attach
-	TTFB            hooks.Duration `json:"ttfb"`           // until the response headers
-	Duration        hooks.Duration `json:"duration"`
-	Status          int            `json:"status,omitempty"`
-	ResponseHeaders http.Header    `json:"responseHeaders,omitempty"`
-	Redacted        []string       `json:"redacted,omitempty"` // response headers left out
-	ResponseBody    Capture        `json:"responseBody"`
-	BytesIn         int64          `json:"bytesIn"`
-	BytesOut        int64          `json:"bytesOut"`
-	Error           string         `json:"error,omitempty"` // Tsrelay-Error code
+	ID              string      `json:"id"`
+	StartedAt       time.Time   `json:"startedAt"`
+	TunnelID        string      `json:"tunnelId,omitempty"`
+	Node            string      `json:"node,omitempty"` // the tunnel owner's node
+	WaitedFor       Millis      `json:"waitedForMs"`    // held for a tunnel to attach
+	TTFB            Millis      `json:"ttfbMs"`         // until the response headers
+	Duration        Millis      `json:"durationMs"`
+	Status          int         `json:"status,omitempty"`
+	ResponseHeaders http.Header `json:"responseHeaders,omitempty"`
+	Redacted        []string    `json:"redacted,omitempty"` // response headers left out
+	ResponseBody    Capture     `json:"responseBody"`
+	BytesIn         int64       `json:"bytesIn"`
+	BytesOut        int64       `json:"bytesOut"`
+	Error           string      `json:"error,omitempty"` // Tsrelay-Error code
 }
 
 // Call is one request received for a hook (DESIGN.md §9.1).
@@ -90,30 +90,30 @@ type Call struct {
 	Path  string `json:"path"`
 	Query string `json:"query,omitempty"`
 	// QueryTruncated means Query was cut at the capture limit.
-	QueryTruncated bool           `json:"queryTruncated,omitempty"`
-	RequestHeaders http.Header    `json:"requestHeaders,omitempty"`
-	Redacted       []string       `json:"redacted,omitempty"` // request headers left out
-	RequestBody    Capture        `json:"requestBody"`
-	Outcome        string         `json:"outcome"`
-	Status         int            `json:"status,omitempty"` // what the sender received
-	Duration       hooks.Duration `json:"duration"`
-	Attempts       []Attempt      `json:"attempts"`
+	QueryTruncated bool        `json:"queryTruncated,omitempty"`
+	RequestHeaders http.Header `json:"requestHeaders,omitempty"`
+	Redacted       []string    `json:"redacted,omitempty"` // request headers left out
+	RequestBody    Capture     `json:"requestBody"`
+	Outcome        string      `json:"outcome"`
+	Status         int         `json:"status,omitempty"` // what the sender received
+	Duration       Millis      `json:"durationMs"`
+	Attempts       []Attempt   `json:"attempts"`
 }
 
 // Summary is a call without headers and bodies, for lists and events.
 type Summary struct {
-	ID         string         `json:"id"`
-	HookID     hooks.ID       `json:"hookId"`
-	ReceivedAt time.Time      `json:"receivedAt"`
-	Kind       Kind           `json:"kind"`
-	ReplayOf   string         `json:"replayOf,omitempty"`
-	Refused    bool           `json:"refused,omitempty"`
-	Sender     Sender         `json:"sender"`
-	Method     string         `json:"method"`
-	Path       string         `json:"path"`
-	Outcome    string         `json:"outcome"`
-	Status     int            `json:"status,omitempty"`
-	Duration   hooks.Duration `json:"duration"`
+	ID         string    `json:"id"`
+	HookID     hooks.ID  `json:"hookId"`
+	ReceivedAt time.Time `json:"receivedAt"`
+	Kind       Kind      `json:"kind"`
+	ReplayOf   string    `json:"replayOf,omitempty"`
+	Refused    bool      `json:"refused,omitempty"`
+	Sender     Sender    `json:"sender"`
+	Method     string    `json:"method"`
+	Path       string    `json:"path"`
+	Outcome    string    `json:"outcome"`
+	Status     int       `json:"status,omitempty"`
+	Duration   Millis    `json:"durationMs"`
 }
 
 func (c *Call) Summary() Summary {

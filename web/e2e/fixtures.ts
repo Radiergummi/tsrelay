@@ -52,16 +52,11 @@ export function api(request: APIRequestContext, user: keyof typeof users = "dev"
   const base = users[user];
   return {
     async hookId(path: string): Promise<string> {
-      const list = (await (await request.get(`${base}/hooks?all=true`)).json()) as {
-        id: string;
-        path: string;
-      }[];
-      const mine = list.length
-        ? list
-        : ((await (await request.get(`${base}/hooks`)).json()) as {
-            id: string;
-            path: string;
-          }[]);
+      type List = { hooks: { id: string; path: string }[] };
+      const all = ((await (await request.get(`${base}/hooks?all=true`)).json()) as List).hooks;
+      const mine = all.length
+        ? all
+        : ((await (await request.get(`${base}/hooks`)).json()) as List).hooks;
       const h = mine.find((x) => x.path === path);
       if (!h) throw new Error(`no hook ${path}`);
       return h.id;

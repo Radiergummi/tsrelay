@@ -1,8 +1,10 @@
 package hooks
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"reflect"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/access"
@@ -22,8 +24,11 @@ func (o *Opt[T]) UnmarshalJSON(b []byte) error {
 		o.Value = nil
 		return nil
 	}
+	// A request refuses fields it doesn't know, also inside a value.
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
 	var v T
-	if err := json.Unmarshal(b, &v); err != nil {
+	if err := dec.Decode(&v); err != nil {
 		return err
 	}
 	o.Value = &v
@@ -31,6 +36,10 @@ func (o *Opt[T]) UnmarshalJSON(b []byte) error {
 }
 
 func (o Opt[T]) MarshalJSON() ([]byte, error) { return json.Marshal(o.Value) }
+
+// ValueType is the type a value of the field decodes into, so a request
+// decoder can look inside it for fields it doesn't know.
+func (Opt[T]) ValueType() reflect.Type { return reflect.TypeFor[T]() }
 
 // IsZero makes `omitzero` leave unset fields out of marshalled requests.
 func (o Opt[T]) IsZero() bool { return !o.Set }
@@ -54,7 +63,7 @@ type UpdateRequest struct {
 	Ephemeral   Opt[bool]      `json:"ephemeral,omitzero"`
 	Public      Opt[bool]      `json:"public,omitzero"`
 	ExpiresAt   Opt[time.Time] `json:"expiresAt,omitzero"`
-	Settings    SettingsPatch  `json:"settings"`
+	Settings    SettingsPatch  `json:"settings,omitzero"`
 }
 
 // apply sets dst from o if o was given.
@@ -121,8 +130,8 @@ func (m *Manager) CheckUpdate(ctx context.Context, owner authz.Identity, id ID, 
 }
 
 func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req UpdateRequest, dry bool) (Hook, []string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.wmu.Lock()
+	defer m.wmu.Unlock()
 	cur, ok := m.hooks[id]
 	if !ok || access.View(owner, cur.Access()) != access.Owner {
 		return Hook{}, nil, ErrNotFound
@@ -174,7 +183,10 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 	if h.Public {
 		errs = append(errs, validatePublic(owner.Grants, h.Channel)...)
 	}
-	if apply(&h.ExpiresAt, req.ExpiresAt); req.ExpiresAt.Set || req.Ephemeral.Set {
+	if apply(&h.ExpiresAt, req.ExpiresAt); h.ExpiresAt != nil && req.ExpiresAt.Set {
+		h.ExpiresAt = new(h.ExpiresAt.UTC()) // timestamps are UTC, whatever offset the client sent
+	}
+	if req.ExpiresAt.Set || req.Ephemeral.Set {
 		errs = append(errs, validateExpiry(h.ExpiresAt, h.Ephemeral, m.now(), owner.Grants.Limits.MaxHookTTL)...)
 	}
 
@@ -195,6 +207,6 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 	if err := m.store.PutHook(ctx, h); err != nil {
 		return Hook{}, nil, err
 	}
-	m.hooks[id] = h
+	m.put(h)
 	return h, changed, nil
 }

@@ -253,7 +253,7 @@ func TestHTTPReusesURLAcrossRestarts(t *testing.T) {
 
 func TestHTTPExplicitName(t *testing.T) {
 	e := newCLIEnv(t)
-	r := e.start("--name", "payments/v1")
+	r := e.start("--path", "payments/v1")
 	if url := e.url(r); url != e.relayURL+"/~moritz/payments/v1" {
 		t.Fatalf("url = %q", url)
 	}
@@ -263,12 +263,12 @@ func TestHTTPExplicitName(t *testing.T) {
 // of reconnecting and stealing it back.
 func TestHTTPTakeover(t *testing.T) {
 	e := newCLIEnv(t)
-	r1 := e.start("--name", "shared")
+	r1 := e.start("--path", "shared")
 	url := e.url(r1)
-	r2 := e.start("--name", "shared")
+	r2 := e.start("--path", "shared")
 	e.url(r2)
-	if code := waitExit(t, r1); code != 1 {
-		t.Fatalf("replaced CLI exit = %d, want 1", code)
+	if code := waitExit(t, r1); code != exitHookDeleted {
+		t.Fatalf("replaced CLI exit = %d, want 3", code)
 	}
 	if !strings.Contains(r1.stderr.String(), "another") {
 		t.Errorf("replaced CLI should explain why it stopped:\n%s", r1.stderr)
@@ -312,13 +312,13 @@ func TestHTTPRelayRefusalJSON(t *testing.T) {
 
 func TestHTTPRefusesMismatchedReuse(t *testing.T) {
 	e := newCLIEnv(t)
-	r1 := e.start("--name", "cb")
+	r1 := e.start("--path", "cb")
 	e.url(r1)
 	r1.cancel()
 	waitExit(t, r1)
 
-	for flag, want := range map[string]string{"--channel=prod": "channel", "--persistent": "ephemeral"} {
-		r := e.start("--name", "cb", flag)
+	for flag, want := range map[string]string{"--channel=prod": "channel", "--ephemeral=false": "ephemeral"} {
+		r := e.start("--path", "cb", flag)
 		if code := waitExit(t, r); code != 1 {
 			t.Fatalf("%s: exit = %d, want 1", flag, code)
 		}
@@ -326,7 +326,7 @@ func TestHTTPRefusesMismatchedReuse(t *testing.T) {
 			t.Errorf("%s: stderr should explain the mismatch:\n%s", flag, out)
 		}
 	}
-	r := e.start("--name", "cb", "--channel=default")
+	r := e.start("--path", "cb", "--channel=default")
 	e.url(r) // matching flags still reuse the hook
 }
 
@@ -334,12 +334,12 @@ func TestHTTPRefusesMismatchedReuse(t *testing.T) {
 // now warn, naming the hook and pointing at hooks update.
 func TestHTTPWarnsSettingsIgnoredOnReuse(t *testing.T) {
 	e := newCLIEnv(t)
-	r1 := e.start("--name", "cb")
+	r1 := e.start("--path", "cb")
 	e.url(r1)
 	r1.cancel()
 	waitExit(t, r1)
 
-	r2 := e.start("--name", "cb", "--hold-timeout", "5s")
+	r2 := e.start("--path", "cb", "--hold-timeout", "5s")
 	e.url(r2)
 	if out := r2.stderr.String(); !strings.Contains(out, "settings flags apply only when the hook is created") ||
 		!strings.Contains(out, "tsrelay hooks update") || !strings.Contains(out, "cb") {
@@ -352,12 +352,12 @@ func TestHTTPWarnsSettingsIgnoredOnReuse(t *testing.T) {
 // The same reuse must not warn when no settings flag was given.
 func TestHTTPNoWarningWithoutSettingsFlags(t *testing.T) {
 	e := newCLIEnv(t)
-	r1 := e.start("--name", "cb")
+	r1 := e.start("--path", "cb")
 	e.url(r1)
 	r1.cancel()
 	waitExit(t, r1)
 
-	r2 := e.start("--name", "cb")
+	r2 := e.start("--path", "cb")
 	e.url(r2)
 	if strings.Contains(r2.stderr.String(), "settings flags apply only when the hook is created") {
 		t.Errorf("no settings flag was given; stderr should not warn:\n%s", r2.stderr)
@@ -413,8 +413,8 @@ func TestHTTPStopsWhenHookDeleted(t *testing.T) {
 	if err := e.api().DeleteHook(ctx, hs[0].ID); err != nil {
 		t.Fatal(err)
 	}
-	if code := waitExit(t, r); code != 1 {
-		t.Fatalf("exit = %d, want 1", code)
+	if code := waitExit(t, r); code != exitHookDeleted {
+		t.Fatalf("exit = %d, want 3", code)
 	}
 	if !strings.Contains(r.stderr.String(), "was deleted") {
 		t.Errorf("CLI should say the hook was deleted:\n%s", r.stderr)
@@ -424,7 +424,7 @@ func TestHTTPStopsWhenHookDeleted(t *testing.T) {
 // Renaming the hook elsewhere prints its new URL and remembers it.
 func TestHTTPFollowsHookUpdate(t *testing.T) {
 	e := newCLIEnv(t)
-	r := e.start("--name", "old")
+	r := e.start("--path", "old")
 	oldURL := e.url(r)
 	ctx := context.Background()
 	hs, err := e.api().ListHooks(ctx)
@@ -468,7 +468,7 @@ func TestHTTPFollowsHookUpdate(t *testing.T) {
 // sequence number was tracking.
 func TestHTTPAppliesLowerSeqAfterReconnect(t *testing.T) {
 	e := newCLIEnv(t)
-	r := e.start("--name", "old")
+	r := e.start("--path", "old")
 	e.url(r)
 	ctx := context.Background()
 	hs, err := e.api().ListHooks(ctx)

@@ -8,19 +8,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 func TestEnvDefaults(t *testing.T) {
 	fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
 	grace := fs.Duration("ephemeral-grace", time.Minute, "")
-	name := fs.String("name", "", "")
-	fs.Bool("persistent", false, "")
-	if err := fs.Parse([]string{"--name", "flag"}); err != nil {
+	name := fs.String("relay", "", "")
+	fs.Bool("ephemeral", false, "")
+	if err := fs.Parse([]string{"--relay", "flag"}); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("TSRELAY_EPHEMERAL_GRACE", "5m")
-	t.Setenv("TSRELAY_NAME", "env")       // the command line wins
+	t.Setenv("TSRELAY_RELAY", "env")      // the command line wins
 	t.Setenv("TSRELAY_NO_SUCH_FLAG", "x") // ignored
 	if err := envDefaults(fs); err != nil {
 		t.Fatal(err)
@@ -33,7 +34,7 @@ func TestEnvDefaults(t *testing.T) {
 	}
 }
 
-func TestEnvDefaultsSkipActionFlags(t *testing.T) {
+func TestEnvDefaultsSkipFlagsWithoutTwin(t *testing.T) {
 	fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
 	yes := fs.Bool("yes", false, "")
 	all := fs.Bool("all", false, "")
@@ -43,18 +44,18 @@ func TestEnvDefaultsSkipActionFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	if *yes || *all {
-		t.Fatal("an action flag was set from the environment")
+		t.Fatal("a flag without a twin was set from the environment")
 	}
 }
 
 func TestEnvDefaultsInvalid(t *testing.T) {
 	fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
-	fs.Bool("persistent", false, "")
-	t.Setenv("TSRELAY_PERSISTENT", "maybe")
+	fs.Bool("ephemeral", false, "")
+	t.Setenv("TSRELAY_EPHEMERAL", "maybe")
 	err := envDefaults(fs)
 	var ce *cliError
-	if !errors.As(err, &ce) || !ce.usage || !strings.Contains(err.Error(), "TSRELAY_PERSISTENT") {
-		t.Fatalf("err = %v, want a usage error naming TSRELAY_PERSISTENT", err)
+	if !errors.As(err, &ce) || !ce.usage || !strings.Contains(err.Error(), "TSRELAY_EPHEMERAL") {
+		t.Fatalf("err = %v, want a usage error naming TSRELAY_EPHEMERAL", err)
 	}
 }
 
@@ -98,4 +99,71 @@ func TestListFlagReplacesDefault(t *testing.T) {
 	if untouched.String() != "tag:tsrelay" {
 		t.Fatalf("default = %q", untouched.String())
 	}
+}
+
+// everyFlag calls fn for each flag of every command, persistent ones once.
+func everyFlag(fn func(cmd *cobra.Command, f *pflag.Flag)) {
+	var walk func(*cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		cmd.NonInheritedFlags().VisitAll(func(f *pflag.Flag) { fn(cmd, f) })
+		for _, sub := range cmd.Commands() {
+			walk(sub)
+		}
+	}
+	walk(newRoot(&cli{}))
+}
+
+func TestEveryFlagDecidesItsEnvTwin(t *testing.T) {
+	// Flags without a twin: they act, or name the one thing a command
+	// works on.
+	noEnv := map[string]bool{
+		"all": true, "yes": true, "check": true, "follow": true, "background": true,
+		"force": true, "public": true, "insecure": true, "help": true,
+		"path": true,
+	}
+	seen := map[string]bool{}
+	everyFlag(func(cmd *cobra.Command, f *pflag.Flag) {
+		seen[f.Name] = true
+		if envFlags[f.Name] == noEnv[f.Name] {
+			t.Errorf("--%s (%s): list it in exactly one of envFlags and this test's noEnv", f.Name, cmd.CommandPath())
+		}
+	})
+	for name := range envFlags {
+		if !seen[name] {
+			t.Errorf("envFlags lists --%s, which no command has", name)
+		}
+	}
+	for name := range noEnv {
+		if !seen[name] && name != "help" {
+			t.Errorf("noEnv lists --%s, which no command has", name)
+		}
+	}
+}
+
+func TestNoTwinForPublicAndInsecure(t *testing.T) {
+	if envFlags["public"] || envFlags["insecure"] {
+		t.Fatal("public and insecure act rather than configure: no twin")
+	}
+	t.Setenv("TSRELAY_PUBLIC", "true")
+	t.Setenv("TSRELAY_INSECURE", "true")
+	fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
+	public := fs.Bool("public", false, "")
+	insecure := fs.Bool("insecure", false, "")
+	if err := envDefaults(fs); err != nil {
+		t.Fatal(err)
+	}
+	if *public || *insecure {
+		t.Fatalf("public = %v, insecure = %v: a flag that opens something was set from the environment", *public, *insecure)
+	}
+}
+
+// TestNoFlagClaimsReservedEnv checks that no flag's twin is a variable
+// tsrelay sets for the commands it starts or supervises.
+func TestNoFlagClaimsReservedEnv(t *testing.T) {
+	reservedEnv := []string{"TSRELAY_URL", backgroundIDEnv}
+	everyFlag(func(cmd *cobra.Command, f *pflag.Flag) {
+		if slices.Contains(reservedEnv, envName(f.Name)) {
+			t.Errorf("--%s (%s) would have the twin %s, which tsrelay sets itself", f.Name, cmd.CommandPath(), envName(f.Name))
+		}
+	})
 }

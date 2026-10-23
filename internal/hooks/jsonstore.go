@@ -17,6 +17,8 @@ import (
 	"tailscale.com/tailcfg"
 )
 
+// jsonStoreVersion is the store format this release writes. Bump it whenever
+// a release adds or changes stored fields, and keep reading every older format.
 const jsonStoreVersion = 1
 
 type fileData struct {
@@ -67,9 +69,13 @@ func OpenJSON(dir string) (*JSONStore, error) {
 		lf.Close()
 		return nil, fmt.Errorf("parse %s: %w", s.path, err)
 	}
-	if d.Version != jsonStoreVersion {
+	if d.Version > jsonStoreVersion {
 		lf.Close()
-		return nil, fmt.Errorf("%s has version %d, this tsrelay reads version %d", s.path, d.Version, jsonStoreVersion)
+		return nil, fmt.Errorf("%s was written by a newer tsrelay (store format %d, this one reads up to %d); rolling a relay back is not supported, run the newer version", s.path, d.Version, jsonStoreVersion)
+	}
+	if d.Version < 1 {
+		lf.Close()
+		return nil, fmt.Errorf("%s has unknown store format %d", s.path, d.Version)
 	}
 	for _, h := range d.Hooks {
 		s.hooks[h.ID] = h

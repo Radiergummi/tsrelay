@@ -238,7 +238,7 @@ test("the internet choice is disabled without the grant or without Funnel", asyn
   renderWithProviders(<HookFormPage />, {
     route: "/hooks/new",
     path: "/hooks/new",
-    context: { ...fixtures.me, public: [], funnel: true },
+    context: { ...fixtures.me, publicPatterns: [], funnel: true },
   });
   // Base UI's Radio is a <span role="radio">, which jest-dom's
   // toBeDisabled/toBeEnabled don't recognize (they only check native form
@@ -254,7 +254,7 @@ test("the internet choice is enabled with the grant and Funnel", async () => {
   renderWithProviders(<HookFormPage />, {
     route: "/hooks/new",
     path: "/hooks/new",
-    context: { ...fixtures.me, public: ["*"], funnel: true },
+    context: { ...fixtures.me, publicPatterns: ["*"], funnel: true },
   });
   expect(await screen.findByRole("radio", { name: "Tailnet and internet" })).not.toHaveAttribute(
     "aria-disabled",

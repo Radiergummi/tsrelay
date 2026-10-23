@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -241,5 +242,51 @@ func TestSettingsSurviveReload(t *testing.T) {
 	got, _ := m2.Get(h.ID)
 	if got.Settings.MaxBodyBytes == nil || *got.Settings.MaxBodyBytes != 4096 {
 		t.Fatalf("settings after reload = %+v", got.Settings)
+	}
+}
+
+func TestCreateRequestOmitsZeroFields(t *testing.T) {
+	b, err := json.Marshal(CreateRequest{Path: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != `{"path":"x"}` {
+		t.Fatalf("got %s, want {\"path\":\"x\"}", b)
+	}
+}
+
+func TestUpdateRequestOmitsZeroFields(t *testing.T) {
+	b, err := json.Marshal(UpdateRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != `{}` {
+		t.Fatalf("got %s, want {}", b)
+	}
+}
+
+func TestDescriptionRefusesControls(t *testing.T) {
+	m := newManager(t, t.TempDir())
+	for _, d := range []string{"a\x1b[2Jb", "line\nbreak", "bidi \u202e", "c1 \u009b"} {
+		_, err := m.Create(ctx, receiver, CreateRequest{Description: d})
+		fieldErr(t, err, "description")
+	}
+	if _, err := m.Create(ctx, receiver, CreateRequest{Description: "Stripe – live 🚀"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Every timestamp the API returns is UTC, also one the client sent with
+// an offset.
+func TestExpiresAtIsUTC(t *testing.T) {
+	m := newManager(t, t.TempDir())
+	at := time.Now().Add(time.Hour).In(time.FixedZone("CEST", 2*3600))
+	h, err := m.Create(ctx, receiver, CreateRequest{ExpiresAt: &at})
+	if err != nil || h.ExpiresAt.Location() != time.UTC || !h.ExpiresAt.Equal(at) {
+		t.Fatalf("create: %v %v", h.ExpiresAt, err)
+	}
+	h, _, err = m.Update(ctx, receiver, h.ID, UpdateRequest{ExpiresAt: Opt[time.Time]{Set: true, Value: &at}})
+	if err != nil || h.ExpiresAt.Location() != time.UTC {
+		t.Fatalf("update: %v %v", h.ExpiresAt, err)
 	}
 }

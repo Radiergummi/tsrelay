@@ -55,7 +55,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   }, [patterns, inUse]);
   const channel = values["channel"]?.trim() || "default";
   const pattern = allowingPattern(patterns, channel);
-  const canPublishHere = me.public.some((p) => matchChannel(p, channel));
+  const canPublishHere = me.publicPatterns.some((p) => matchChannel(p, channel));
   const canPublish = canPublishHere && (me.funnel ?? false);
 
   // The hook's URL is base followed by its path. A new hook has no URL
@@ -167,7 +167,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
       <div className="min-w-0 space-y-6">
         {!editing && (
           <p className="text-muted-foreground">
-            You own {me.hooks} of {me.limits.maxHooks} hooks.
+            You own {me.hookCount} of {me.limits.maxHooks} hooks.
           </p>
         )}
         {formError && (
@@ -291,7 +291,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
                 control={c}
                 value={values["expiresAt"] ?? ""}
                 onChange={set("expiresAt")}
-                maxTTL={ephemeral ? undefined : me.limits.maxHookTTL}
+                maxTTL={ephemeral ? undefined : me.limits.maxHookTtl}
               />
             )}
           </Field>

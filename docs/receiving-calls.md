@@ -32,7 +32,8 @@ Your app's response goes back to the sender as it is. Errors produced by the rel
 | [`body_stalled`](errors.md#body_stalled) | 408 | The sender's request body stalled past `idleTimeout` |
 | [`body_too_large`](errors.md#body_too_large) | 413 | Over the hook's `maxBodyBytes`, or for a call from the internet, over the relay's `--funnel-max-body-bytes` |
 | [`rate_limited`](errors.md#rate_limited) | 429 | Over the hook's `rateLimit`; `Retry-After` is the limiter's wait, rounded up to whole seconds |
-| [`tunnel_unavailable`](errors.md#tunnel_unavailable) | 561 | No tunnel attached within `holdTimeout`, or too many calls are already waiting; `Retry-After` is `holdTimeout`, but never less than 5 s |
+| [`tunnel_unavailable`](errors.md#tunnel_unavailable) | 561 | No tunnel attached within `holdTimeout`; `Retry-After` is `holdTimeout`, but never less than 5 s |
+| [`hold_queue_full`](errors.md#hold_queue_full) | 562 | No tunnel attached and too many calls are already waiting for one; same `Retry-After` |
 | [`tunnel_overloaded`](errors.md#tunnel_overloaded) | 562 | Too many concurrent calls on the tunnel; `Retry-After: 1` |
 | [`tunnel_lost`](errors.md#tunnel_lost) | 563 | The tunnel dropped mid-call |
 | [`upstream_unreachable`](errors.md#upstream_unreachable) | 564 | The tunnel is up but your app isn't listening |

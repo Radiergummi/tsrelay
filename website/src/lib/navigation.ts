@@ -38,6 +38,7 @@ export const sidebarGroups: NavGroup[] = [
       { slug: "running-a-relay", title: "Running a relay" },
       { slug: "access-control", title: "Access control" },
       { slug: "observability", title: "Observability" },
+      { slug: "security-model", title: "Security model" },
     ],
   },
   {
@@ -45,6 +46,7 @@ export const sidebarGroups: NavGroup[] = [
     items: [
       { slug: "configuration", title: "Configuration" },
       { slug: "errors", title: "Errors" },
+      { slug: "compatibility", title: "Compatibility" },
       { slug: "api/explorer", title: "API reference" },
       { slug: "download", title: "Download" },
     ],

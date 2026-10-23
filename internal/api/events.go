@@ -40,7 +40,11 @@ const defaultStreamsPerNode = 8
 // in their channels; summaries are metadata only, so that reveals nothing
 // more.
 func (a *API) hooksStream(w http.ResponseWriter, r *http.Request, id authz.Identity) {
-	all := r.URL.Query().Get("all") == "true" && access.IsAdmin(id)
+	all, ok := queryBool(w, r, "all")
+	if !ok {
+		return
+	}
+	all = all && access.IsAdmin(id)
 	a.stream(w, r, id, "", func(v authz.Identity, e events.Event) bool {
 		lvl := access.View(v, access.Hook{Owner: e.Owner, Channel: e.Channel})
 		if all {
@@ -94,7 +98,7 @@ func (a *API) stream(w http.ResponseWriter, r *http.Request, id authz.Identity, 
 		return
 	}
 	if !a.takeStream(id.NodeID) {
-		problem.New(http.StatusTooManyRequests, problem.RateLimited, "this node has too many event streams open").Write(w)
+		problem.New(http.StatusTooManyRequests, problem.StreamLimit, "this node has too many event streams open").Write(w)
 		return
 	}
 	defer a.releaseStream(id.NodeID)

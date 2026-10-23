@@ -126,10 +126,10 @@ func TestListHooksByChannel(t *testing.T) {
 		{"admin, all channels", admin, "/hooks?all=true", 4},
 		{"non-admin ?all=true", other, "/hooks?all=true&channel=prod.eu", 0},
 	} {
-		var list []Hook
-		e.call(tc.as, "GET", tc.path, nil, &list)
-		if len(list) != tc.want {
-			t.Errorf("%s: %s = %d hooks, want %d", tc.name, tc.path, len(list), tc.want)
+		var res HookList
+		e.call(tc.as, "GET", tc.path, nil, &res)
+		if len(res.Hooks) != tc.want {
+			t.Errorf("%s: %s = %d hooks, want %d", tc.name, tc.path, len(res.Hooks), tc.want)
 		}
 	}
 }

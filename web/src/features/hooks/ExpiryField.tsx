@@ -15,7 +15,7 @@ const picks: [string, number][] = [
 /**
  * ExpiryField picks when a hook expires, in the browser's time zone; value
  * is RFC 3339 in UTC, or "" for never. A persistent hook under a grant with
- * maxHookTTL must expire within it, so longer quick picks and "never" go.
+ * maxHookTtl must expire within it, so longer quick picks and "never" go.
  */
 export function ExpiryField({
   control,
@@ -28,7 +28,7 @@ export function ExpiryField({
   onChange: (value: string) => void;
   maxTTL: string | undefined;
 }) {
-  const maxMs = maxTTL ? parseDuration(maxTTL) : null;
+  const maxMs = parseDuration(maxTTL ?? "0s") || null; // "0s" means no limit
   // oxlint-disable-next-line react/purity -- a coarse span, recomputed on every change, needs no ticking
   const left = value ? Date.parse(value) - Date.now() : null;
   const readout = [
@@ -82,5 +82,5 @@ export function ExpiryField({
   );
 }
 
-/** fromNow is ms from now, to the minute, rounded down so a quick pick stays within maxHookTTL. */
+/** fromNow is ms from now, to the minute, rounded down so a quick pick stays within maxHookTtl. */
 const fromNow = (ms: number) => rfc3339(new Date(Math.floor((Date.now() + ms) / 60_000) * 60_000));

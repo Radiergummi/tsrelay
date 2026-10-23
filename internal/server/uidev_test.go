@@ -74,7 +74,7 @@ func TestUIDev(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := "http://127.0.0.1:8099"
-	s := New(Config{BaseURL: base, PublicBaseURL: "https://tsrelay.example.ts.net", AllowedHosts: []string{"127.0.0.1", "localhost"}, CapName: "mazetti.me/cap/relay"},
+	s := New(Config{BaseURL: base, PublicBaseURL: "https://tsrelay.example.ts.net", AllowedHosts: []string{"127.0.0.1", "localhost"}, CapName: "tsrelay.mazetti.me/cap/relay"},
 		byListener{}, mgr, audit.New(slog.New(slog.NewTextHandler(os.Stderr, nil))))
 	defer s.Close()
 
@@ -121,11 +121,11 @@ func TestUIDev(t *testing.T) {
 			c.Status = 200
 		}
 		if c.Duration == 0 && c.Outcome != inspect.OutcomePending {
-			c.Duration = hooks.Duration(42 * time.Millisecond)
+			c.Duration = inspect.Millis(42 * time.Millisecond)
 		}
 		if c.Attempts == nil {
 			c.Attempts = []inspect.Attempt{{ID: "a_" + id, StartedAt: c.ReceivedAt, TunnelID: "t_dev", Node: "dev-laptop", Status: c.Status,
-				TTFB: hooks.Duration(30 * time.Millisecond), Duration: c.Duration,
+				TTFB: inspect.Millis(30 * time.Millisecond), Duration: c.Duration,
 				ResponseHeaders: http.Header{"Content-Type": {"application/json"}}, ResponseBody: full(`{"received":true}`)}}
 		}
 		s.inspect.Add(c)
@@ -149,7 +149,7 @@ func TestUIDev(t *testing.T) {
 	sample(live, me, "c_uncaptured", inspect.Call{ReceivedAt: now.Add(-90 * time.Second),
 		RequestHeaders: http.Header{"Content-Type": {"application/json"}}, RequestBody: inspect.Capture{Size: 23},
 		Attempts: []inspect.Attempt{{ID: "a_c_uncaptured", StartedAt: now.Add(-90 * time.Second), TunnelID: "t_dev", Node: "dev-laptop", Status: 200,
-			TTFB: hooks.Duration(30 * time.Millisecond), Duration: hooks.Duration(42 * time.Millisecond),
+			TTFB: inspect.Millis(30 * time.Millisecond), Duration: inspect.Millis(42 * time.Millisecond),
 			ResponseHeaders: http.Header{"Content-Type": {"application/json"}}, ResponseBody: inspect.Capture{Size: 17}}}})
 	sample(live, me, "c_refused", inspect.Call{ReceivedAt: now.Add(-time.Minute), Outcome: "hook_not_found", Status: 404, Attempts: []inspect.Attempt{}})
 	sample(live, me, "c_pending", inspect.Call{Outcome: inspect.OutcomePending, Attempts: []inspect.Attempt{}})

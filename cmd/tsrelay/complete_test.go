@@ -52,8 +52,8 @@ var receiverIn = identify.User("laptop", "moritz@example.com", 1, `{"roles":["re
 func TestCompleteHooks(t *testing.T) {
 	e := newCLIEnv(t)
 	d := deps{HTTP: tunnel.NewHTTPClient(e.fake.Dial(receiver)), StatePath: e.statePath}
-	e.tsrelay("hooks", "create", "cb", "--description", "payments")
-	e.tsrelay("hooks", "create", "sv")
+	e.tsrelay("hooks", "create", "--path", "cb", "--description", "payments")
+	e.tsrelay("hooks", "create", "--path", "sv")
 	hs := e.listJSON()
 	ids := map[string]string{}
 	for _, h := range hs {
@@ -90,7 +90,7 @@ func TestCompleteHooks(t *testing.T) {
 func TestCompleteChannels(t *testing.T) {
 	e := newCLIEnv(t)
 	d := deps{HTTP: tunnel.NewHTTPClient(e.fake.Dial(receiverIn)), StatePath: e.statePath}
-	if code := run(t.Context(), []string{"hooks", "create", "eu", "--channel", "staging.eu", "--relay", e.relayURL}, new(nopWriter), new(nopWriter), d); code != 0 {
+	if code := run(t.Context(), []string{"hooks", "create", "--path", "eu", "--channel", "staging.eu", "--relay", e.relayURL}, new(nopWriter), new(nopWriter), d); code != 0 {
 		t.Fatalf("hooks create exited %d", code)
 	}
 	r := "--relay=" + e.relayURL
@@ -206,7 +206,7 @@ func TestCompleteFailsSilently(t *testing.T) {
 	// terminal.
 	e.restartRelayAt("v9.9.9")
 	setVersion(t, "v0.1.0")
-	e.tsrelay("hooks", "create", "cb")
+	e.tsrelay("hooks", "create", "--path", "cb")
 	if got, _ := complete(t, d, "hooks", "show", "--relay="+e.relayURL, "c"); len(got) != 1 {
 		t.Errorf("got %q, want cb", got)
 	}

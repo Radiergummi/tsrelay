@@ -283,10 +283,10 @@ func (m *matrix) check(t *testing.T, row matrixRow, who string, want int) {
 	}
 	if row.see != nil {
 		seen := row.see[who]
-		var list []api.Hook
+		var list api.HookList
 		json.Unmarshal([]byte(body), &list)
 		var found []string
-		for _, h := range list {
+		for _, h := range list.Hooks {
 			switch h.ID {
 			case m.dev:
 				found = append(found, "dev")

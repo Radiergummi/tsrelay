@@ -169,8 +169,8 @@ test("the channel says which pattern allows it, and flags one no pattern allows"
   expect(channel).toHaveAttribute("aria-invalid", "true");
 });
 
-test("expiry quick picks stay within maxHookTTL, which also takes away never", async () => {
-  const me = { ...fixtures.me, limits: { ...fixtures.me.limits, maxHookTTL: "168h0m0s" } };
+test("expiry quick picks stay within maxHookTtl, which also takes away never", async () => {
+  const me = { ...fixtures.me, limits: { ...fixtures.me.limits, maxHookTtl: "168h0m0s" } };
   const saved = render(me);
   const picks = () =>
     screen.getAllByRole("button", { name: /^(Expire in|Never)/ }).map((b) => b.textContent);

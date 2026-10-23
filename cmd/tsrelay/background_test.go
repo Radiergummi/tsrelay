@@ -191,8 +191,10 @@ func TestBackgroundAttach(t *testing.T) {
 	e.waitLog(r.ID, "POST /done → 202")
 
 	code, out, errOut = e.tsrelay("ps", "--json")
-	var ps []psEntry
-	if err := json.Unmarshal([]byte(out), &ps); code != 0 || err != nil || len(ps) != 1 || ps[0].ID != r.ID || ps[0].State != "running" {
+	var ps struct {
+		Runs []runJSON `json:"runs"`
+	}
+	if err := json.Unmarshal([]byte(out), &ps); code != 0 || err != nil || len(ps.Runs) != 1 || ps.Runs[0].ID != r.ID || ps.Runs[0].State != "running" {
 		t.Fatalf("ps --json: exit %d, %v\n%s%s", code, err, out, errOut)
 	}
 	if code, out, _ := e.tsrelay("ps"); code != 0 || !strings.Contains(out, r.ID+"\t"+a.URL+"\t"+e.local.URL) {
@@ -242,14 +244,15 @@ func TestBackgroundStop(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// --json prints the record.
-	code, out, errOut := e.tsrelay("http", e.local.URL, "--name", "one", "--background", "--json")
-	var one runRecord
+	// --json prints the public shape of the record.
+	code, out, errOut := e.tsrelay("http", e.local.URL, "--path", "one", "--background", "--json")
+	var one runJSON
 	if err := json.Unmarshal([]byte(out), &one); code != 0 || err != nil || one.ID == "" {
 		t.Fatalf("http --background --json: exit %d, %v\n%s%s", code, err, out, errOut)
 	}
-	if got := e.record(one.ID); !slices.Equal(got.Hooks, one.Hooks) || got.PID != one.PID {
-		t.Fatalf("printed %+v, recorded %+v", one, got)
+	oneRec := e.record(one.ID)
+	if !slices.Equal(oneRec.Hooks, one.Hooks) || oneRec.PID != one.PID || !one.StartedAt.Equal(oneRec.Started) || len(one.Command) == 0 {
+		t.Fatalf("printed %+v, recorded %+v", one, oneRec)
 	}
 	two := e.background("attach", "two", "--to", e.local.URL)
 	three := e.background("attach", "three", "--to", e.local.URL)
@@ -270,7 +273,7 @@ func TestBackgroundStop(t *testing.T) {
 	if code, _, errOut := e.tsrelay("stop", one.Hooks[0].Path); code != 0 || !strings.Contains(errOut, "stopped "+one.ID) {
 		t.Fatalf("stop by hook: exit %d\n%s", code, errOut)
 	}
-	e.assertGone(one)
+	e.assertGone(oneRec)
 	if !runAlive(e.runDir(), two) || !runAlive(e.runDir(), three) {
 		t.Fatal("stopping one tunnel stopped others")
 	}
@@ -284,7 +287,7 @@ func TestBackgroundStop(t *testing.T) {
 		t.Fatalf("stop --all: exit %d\n%s", code, errOut)
 	}
 	e.assertGone(three)
-	if code, out, _ := e.tsrelay("ps", "--json"); code != 0 || strings.TrimSpace(out) != "[]" {
+	if code, out, _ := e.tsrelay("ps", "--json"); code != 0 || strings.TrimSpace(out) != `{"runs":[]}` {
 		t.Fatalf("ps after stop --all: exit %d\n%s", code, out)
 	}
 }
@@ -398,7 +401,7 @@ func TestBackgroundRecordFollowsFirstDialRecreate(t *testing.T) {
 	})
 	e.handlerMu.Unlock()
 
-	r := e.background("http", e.local.URL, "--name", "pay")
+	r := e.background("http", e.local.URL, "--path", "pay")
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		hs := e.record(r.ID).Hooks
@@ -444,4 +447,47 @@ func TestBackgroundRecordDropsHook(t *testing.T) {
 	if code, _, errOut := e.tsrelay("stop", "ship"); code != 0 || !strings.Contains(errOut, "stopped "+r.ID) {
 		t.Fatalf("stop ship: exit %d\n%s", code, errOut)
 	}
+}
+
+func TestStopJSON(t *testing.T) {
+	e := newBackgroundEnv(t)
+	if _, err := e.api().CreateHook(context.Background(), hooks.CreateRequest{Path: "pay"}); err != nil {
+		t.Fatal(err)
+	}
+	r := e.background("attach", "pay", "--to", e.local.URL)
+	code, out, errOut := e.tsrelay("stop", r.ID, "--json")
+	var got struct {
+		Stopped []runJSON         `json:"stopped"`
+		Failed  []json.RawMessage `json:"failed"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); code != 0 || err != nil || got.Failed == nil || len(got.Failed) != 0 ||
+		len(got.Stopped) != 1 || got.Stopped[0].ID != r.ID || got.Stopped[0].State != "stopped" ||
+		got.Stopped[0].PID != r.PID || len(got.Stopped[0].Hooks) != 1 || got.Stopped[0].Command[0] != "attach" {
+		t.Fatalf("stop --json: exit %d, %v\n%s%s", code, err, out, errOut)
+	}
+	e.assertGone(r)
+}
+
+// Like hooks delete, stop names what it couldn't stop and stops the rest.
+func TestStopUnknownJSON(t *testing.T) {
+	e := newBackgroundEnv(t)
+	if _, err := e.api().CreateHook(context.Background(), hooks.CreateRequest{Path: "pay"}); err != nil {
+		t.Fatal(err)
+	}
+	r := e.background("attach", "pay", "--to", e.local.URL)
+	code, out, errOut := e.tsrelay("stop", "nope", r.ID, "--json")
+	var got struct {
+		Stopped []runJSON `json:"stopped"`
+		Failed  []struct {
+			Ref   string `json:"ref"`
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		} `json:"failed"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); code != 1 || err != nil || len(got.Stopped) != 1 || got.Stopped[0].ID != r.ID ||
+		len(got.Failed) != 1 || got.Failed[0].Ref != "nope" || got.Failed[0].Error.Code != "no_such_tunnel" {
+		t.Fatalf("stop --json: exit %d, %v\n%s%s", code, err, out, errOut)
+	}
+	e.assertGone(r)
 }

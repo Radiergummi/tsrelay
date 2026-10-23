@@ -1,10 +1,13 @@
 package main
 
 import (
+	"net/http"
 	"net/netip"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/Radiergummi/tsrelay/internal/inspect"
 )
 
 func serveExit(t *testing.T, args ...string) (int, string) {
@@ -57,14 +60,14 @@ func TestReleaseCheckOptOut(t *testing.T) {
 }
 
 func TestServeRejectsEmptyHoldQueue(t *testing.T) {
-	code, out := serveExit(t, "--hold-queue=0")
-	if code != 2 || !strings.Contains(out, "--hold-queue") {
+	code, out := serveExit(t, "--hook-hold-queue=0")
+	if code != 2 || !strings.Contains(out, "--hook-hold-queue") {
 		t.Fatalf("exit %d, stderr %q", code, out)
 	}
 }
 
 func TestServeRejectsBadCaptureFlags(t *testing.T) {
-	for _, args := range [][]string{{"--capture-limit=0"}, {"--capture-calls=0"}} {
+	for _, args := range [][]string{{"--capture-limit-bytes=0"}, {"--capture-calls=0"}} {
 		if code, out := serveExit(t, args...); code != 2 || !strings.Contains(out, strings.Split(strings.TrimPrefix(args[0], "--"), "=")[0]) {
 			t.Errorf("%v: exit %d, stderr %q", args, code, out)
 		}
@@ -80,5 +83,56 @@ func TestServeRejectsBadRevalidateInterval(t *testing.T) {
 	}
 }
 
+func TestServeRejectsNegativeLimits(t *testing.T) {
+	for _, arg := range []string{"--user-max-hooks=-1", "--user-max-tunnels=-1", "--user-max-hook-ttl=-1s"} {
+		if code, out := serveExit(t, arg); code != 2 || !strings.Contains(out, "negative") {
+			t.Errorf("%s: exit %d, stderr %q", arg, code, out)
+		}
+	}
+}
+
+func TestServeFlagNames(t *testing.T) {
+	fs := newServeCmd(&cli{}).Flags()
+	for _, name := range []string{"user-max-hooks", "user-max-tunnels", "user-max-hook-ttl", "hook-hold-queue", "capture-limit-bytes", "otel-propagation"} {
+		if fs.Lookup(name) == nil {
+			t.Errorf("serve has no --%s", name)
+		}
+	}
+	for _, name := range []string{"max-hooks-default", "max-tunnels-default", "max-hook-ttl-default", "hold-queue", "capture-limit", "trace-propagation"} {
+		if fs.Lookup(name) != nil {
+			t.Errorf("serve still has --%s", name)
+		}
+	}
+}
+
+func TestRedactHeadersAddsToDefaults(t *testing.T) {
+	fs := newServeCmd(&cli{}).Flags()
+	if err := fs.Parse([]string{"--redact-headers", "X-Secret,authorization"}); err != nil {
+		t.Fatal(err)
+	}
+	extra := strings.Split(fs.Lookup("redact-headers").Value.String(), ",")
+	in := inspect.New(inspect.Config{Redact: extra})
+	kept, redacted := in.Redact(http.Header{"X-Secret": {"s"}, "Authorization": {"a"}, "Cookie": {"c"}, "X-Ok": {"o"}})
+	if !slices.Equal(redacted, []string{"Authorization", "Cookie", "X-Secret"}) || len(kept) != 1 {
+		t.Fatalf("redacted %v, kept %v", redacted, kept)
+	}
+}
+
 // Minor 3: fang capitalizes a flag description's first word, so a quoted
 // value (here "json" or "text") must never be first.
+
+// A value with no meaning is refused rather than replaced by a default.
+func TestServeRejectsMeaninglessValues(t *testing.T) {
+	for arg, want := range map[string]string{
+		"--tunnel-concurrency=0":  "--tunnel-concurrency must be at least 1",
+		"--tunnel-concurrency=-1": "--tunnel-concurrency must be at least 1",
+		"--ephemeral-grace=0s":    "--ephemeral-grace must be positive",
+		"--ephemeral-grace=-5m":   "--ephemeral-grace must be positive",
+		"--shutdown-timeout=0s":   "--shutdown-timeout must be positive",
+		"--hostname=":             "--hostname can't be empty",
+	} {
+		if code, out := serveExit(t, arg); code != 2 || !strings.Contains(out, want) {
+			t.Errorf("%s: exit %d, stderr %q", arg, code, out)
+		}
+	}
+}

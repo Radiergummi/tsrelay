@@ -117,7 +117,7 @@ func writeHookShow(s stream, h api.Hook) {
 		{"path", h.Path},
 		{"channel", h.Channel},
 		{"kind", hookKind(h)},
-		{"description", orDash(h.Description)},
+		{"description", orDash(printable(h.Description))},
 		{"expires", hookExpiry(h)},
 		{"tunnel", tun},
 		{"hold timeout", e.HoldTimeout.Std().String()},

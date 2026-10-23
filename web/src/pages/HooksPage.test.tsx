@@ -25,7 +25,7 @@ test("lists the viewer's hooks with tunnel, last call and URL", async () => {
 });
 
 test("explains how to install the CLI and get a first hook", async () => {
-  server.use(http.get("/hooks", () => HttpResponse.json([])));
+  server.use(http.get("/hooks", () => HttpResponse.json({ hooks: [] })));
   renderPage();
   expect(
     await screen.findByText(`curl -fsSL ${window.location.origin}/install.sh | sh`),

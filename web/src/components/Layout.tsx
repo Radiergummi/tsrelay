@@ -73,7 +73,7 @@ function Page({ me, children }: { me?: Me; children: ReactNode }) {
 }
 
 function NotIdentified({ error }: { error: unknown }) {
-  const unidentified = error instanceof ApiError && error.status === 403;
+  const unidentified = error instanceof ApiError && error.code === "not_identified";
   return (
     <Page>
       <main className="mx-auto max-w-xl px-6 py-16">

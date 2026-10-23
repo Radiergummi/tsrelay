@@ -1,6 +1,6 @@
 # tsrelay design
 
-Status: draft for review · 2026-10-12
+Status: describes tsrelay 1.0
 
 tsrelay is a callback relay for tailnets. It lets services in one part of a tailnet (typically production) deliver HTTP callbacks to applications running on developer machines, without ever opening a connection to those machines and without anything being publicly reachable.
 
@@ -65,22 +65,32 @@ There is one binary, `tsrelay`, and it has two roles:
 - **`tsrelay serve`** runs the relay. It embeds `tsnet`.
 - **Every other subcommand** is a client: `http`, `attach`, `hooks`, `url` (§15). Clients do **not** embed `tsnet`. They reach the relay through the machine's own Tailscale connection, so the relay's `WhoIs` sees the developer's real user and node.
 
-### 3.1 Package layout (proposed)
+### 3.1 Package layout
 
 ```
 cmd/tsrelay/            main, subcommand wiring
+internal/server/        composes the relay: callback handler, API, guard, reaper, revalidator, ops listener
+internal/access/        every authorization rule, as pure functions (§5.8)
 internal/authz/         capability parsing, merging, channel matching, Identity
 internal/identify/      Identifier interface; tsnet WhoIs implementation; test fake
 internal/hooks/         Hook model, validation, name generation, Store interface + JSON store
 internal/tunnel/        tunnel protocol: relay side (round-tripper) and client side
 internal/lifecycle/     hook–tunnel transitions: attach, detach, delete, expire, revoke
 internal/relay/         callback handler, forwarding, hold-for-reconnect, limits
-internal/inspect/       call/attempt capture, ring buffers, replay, event fan-out
-internal/api/           JSON API handlers, problem responses, CSRF/host checks
-internal/ui/            server-rendered pages, embedded static assets
+internal/inspect/       call/attempt capture, ring buffers, redaction
+internal/events/        fan-out of hook and call changes to event streams
+internal/api/           JSON API handlers, routing, CSRF/host checks, OpenAPI document
+internal/negotiate/     content negotiation between the API and the UI
+internal/problem/       RFC 9457 problem responses and error codes
+internal/ui/            the web UI: a single-page app built from web/, embedded
+internal/install/       install scripts and /download redirects for the CLI
+internal/release/       the latest-release check against GitHub
+internal/sbom/          the embedded CycloneDX SBOM, for licenses
 internal/client/        CLI-side API client, local state, forwarding target
 internal/audit/         audit event types and slog emission
 internal/telemetry/     OpenTelemetry setup: metrics (Prometheus, OTLP), tracing
+internal/atomicfile/    crash-safe file replacement
+internal/ids/           random identifiers for hooks, calls and tunnels
 ```
 
 The relay core (`relay`, `api`, `tunnel`) receives a `net.Listener` and an `Identifier`. It never touches `tsnet` directly. This boundary is what makes the design testable without a tailnet (§16).
@@ -119,7 +129,7 @@ For a tagged node, `UserProfile` is Tailscale's generic "tagged-devices" placeho
 
 ### 5.2 Capability schema
 
-The capability name is configurable with `--cap-name`. The default is **`mazetti.me/cap/relay`**. Each grant contributes one JSON object:
+The capability name is configurable with `--cap-name`. The default is **`tsrelay.mazetti.me/cap/relay`**. Each grant contributes one JSON object:
 
 ```jsonc
 {
@@ -127,7 +137,7 @@ The capability name is configurable with `--cap-name`. The default is **`mazetti
   "channels":   ["prod", "staging.*"], // channel patterns; default ["*"]
   "maxHooks":   10,                    // receiver: hooks owned at once
   "maxTunnels": 5,                     // receiver: tunnels attached at once
-  "maxHookTTL": "720h",                // receiver: cap on a hook's expiry; Go duration
+  "maxHookTtl": "720h",                // receiver: raises --user-max-hook-ttl; no effect while that is unlimited; Go duration
   "public": true                       // receiver: may make hooks in these channels public (§19)
 }
 ```
@@ -146,9 +156,9 @@ A minimal policy that matches the zero-config defaults:
 "tagOwners": { "tag:tsrelay": ["autogroup:admin"] },
 "grants": [
   { "src": ["autogroup:member"], "dst": ["tag:tsrelay"], "ip": ["tcp:443"],
-    "app": { "mazetti.me/cap/relay": [{ "roles": ["receiver"] }] } },
+    "app": { "tsrelay.mazetti.me/cap/relay": [{ "roles": ["receiver"] }] } },
   { "src": ["tag:prod-worker"],  "dst": ["tag:tsrelay"], "ip": ["tcp:443"],
-    "app": { "mazetti.me/cap/relay": [{ "roles": ["sender"] }] } }
+    "app": { "tsrelay.mazetti.me/cap/relay": [{ "roles": ["sender"] }] } }
 ]
 ```
 
@@ -158,7 +168,7 @@ The grant's `ip` part is what gives network access. The `app` part only authoriz
 
 `CapMap[cap]` is a flat list of JSON values from every grant that matches, and it does not say which grant each value came from. The relay merges the list into an `Effective` value:
 
-- **Each value is parsed on its own.** A malformed value is ignored and logged once per node (fail closed); the others still apply. **Unknown fields are ignored**, which keeps the schema forward-compatible.
+- **Each value is parsed on its own.** A malformed value is ignored and logged once per node (fail closed); the others still apply. **Unknown fields are ignored**, which keeps the schema forward-compatible, but logged with the same once-per-node warning: a misspelled `channels` would otherwise silently grant every channel.
 - **`roles` and `channels`** are combined by union. Channels are tracked per role, so a `sender` grant's channels never widen what the same node can do as a `receiver`.
 - **Numeric and duration limits:** for each value, take the value it sets, or the relay's configured default if it sets none. The effective limit is the **maximum** of those. Grants only ever add access in Tailscale, and merging does the same. As a result a grant cannot push a limit *below* the relay default. To restrict most users, an operator lowers the relay default and raises it for specific groups.
 - **`public`** is scoped by channel: a value with it set to `true` lets the node make public the hooks in that value's `channels` (`*` when absent), and only if the same value grants `receiver` (§19). The channel patterns of all such values are combined by union.
@@ -234,18 +244,29 @@ The protocol version lives in the `Upgrade` token. An incompatible change gets a
 
 ### 6.2 Streams
 
-- **Forwarded calls:** each call attempt is one HTTP/2 request from the relay to the CLI. It carries a `Tsrelay-Hook: {id}` header, which the CLI uses to choose that hook's local target. The CLI removes all `Tsrelay-*` tunnel headers before forwarding, except the identity headers (§7.2).
+- **Forwarded calls:** each call attempt is one HTTP/2 request from the relay to the CLI. It carries a `Tsrelay-Tunnel-Hook: {id}` header, which the CLI uses to choose that hook's local target. The relay sets headers meant for the CLI alone under the `Tsrelay-Tunnel-` prefix (also `Tsrelay-Tunnel-Host` for `hostHeader: rewrite`), and the CLI removes every header with that prefix before forwarding, including ones from a newer relay it doesn't know. The headers for the app, such as the identity headers and `Tsrelay-Hook` (§7.2), pass through.
 - **Control messages:** requests with the header `Tsrelay-Control: 1` and a JSON body. They are handled by the CLI itself and never forwarded. Types: `attached` (the hook URLs and paths, sent first), `replaced`, `revoked`, `hook-deleted`, `hook-updated` (a hook's new URL, path and public URL). Sender requests cannot forge them, because the relay strips every incoming `Tsrelay-*` header. `hook-updated` carries a sequence number `seq`. Messages are sent in the background and can arrive out of order, so a client ignores a `hook-updated` whose `seq` is not above the last it saw for that hook, and forgets that memory on each `attached` message, because the relay's sequence counter restarts with the relay.
 - **Status:** the CLI reports its local target, one per tunnel, as the `target` query parameter on the handshake. The relay keeps it only if it is an `http(s)` URL without credentials, with any query string and fragment stripped, and shows it with the hook's tunnel to the owner and to admins (UI, copy-as-curl). The relay never connects to it.
+
+### 6.2.1 Compatibility within v1
+
+The promise for the whole product, not just the tunnel, is written down in [compatibility.md](compatibility.md).
+
+Every v1 relay serves `tsrelay-tunnel/1`. Within v1 the protocol only grows:
+
+- The attach parameters (`hook`, `session`, `resume`, `target`) keep their meaning. New ones are optional, and a relay ignores parameters it does not know.
+- Control types and `HookInfo` fields are never removed or repurposed. New ones may appear.
+- A client ignores control types and fields it does not know. It must not fail, log an error or drop the tunnel because of them.
+- `features` on `GET /` names optional tunnel capabilities as well as other optional API capabilities, so a client can discover a new one before relying on it.
 
 ### 6.3 Liveness and reconnect
 
 - **Keepalive:** both sides send HTTP/2 PINGs every 15 s. A connection is declared dead after 2 missed PINGs.
-- **Reconnect:** the CLI reconnects with exponential backoff and full jitter (from 250 ms up to 30 s) and attaches the same hooks again. A refused attach names the hook it was refused for in the problem's `hook` field. Once the CLI has been attached, a redial refused for one hook (`404`, `403` or `409`) drops that hook and redials with the rest. A refusal on the first attach ends the command, as those hooks were named on purpose. `tsrelay http` recreates its hook on a `404` instead, on any attach, but only once per dial.
+- **Reconnect:** the CLI reconnects with exponential backoff and full jitter (from 250 ms up to 30 s) and attaches the same hooks again. A refused attach names the hook it was refused for in the problem's `hook` field. Once the CLI has been attached, a redial refused for one hook (`not_found`, `channel_forbidden`, `superseded` or `attach_rejected`) drops that hook and redials with the rest. A refusal on the first attach ends the command, as those hooks were named on purpose. `tsrelay http` recreates its hook on a `404` instead, on any attach, but only once per dial.
 - **Takeover:** when a second tunnel attaches to a hook that already has one, the hook's `attachPolicy` decides.
   - **`takeover`** (default): the new tunnel wins. The old one is sent `replaced` and detached from that hook. It is closed once it serves no hooks.
-  - **`reject`:** the new attach fails with `409`.
-- **Sessions:** each client process picks a random session ID and sends it with every attach. Redials after a lost connection are marked as resumes, and a resume may only displace a tunnel of its *own* session. A CLI that was taken over, but never received `replaced` (it was asleep, or its tunnel was saturated), therefore gets `409 conflict` when it redials, rather than taking the hook back. A stale, half-open tunnel from the same process is still replaced, which is the common case on a flaky connection.
+  - **`reject`:** the new attach fails with `409 attach_rejected`.
+- **Sessions:** each client process picks a random session ID and sends it with every attach. Redials after a lost connection are marked as resumes, and a resume may only displace a tunnel of its *own* session. A CLI that was taken over, but never received `replaced` (it was asleep, or its tunnel was saturated), therefore gets `409 superseded` when it redials, rather than taking the hook back. A stale, half-open tunnel from the same process is still replaced, which is the common case on a flaky connection.
 
 ### 6.4 Concurrency
 
@@ -279,7 +300,7 @@ Delivery is **synchronous pass-through.** The sender receives the local applicat
 
 ### 7.3 Hold for reconnect
 
-If a call arrives while no tunnel is attached to its hook, the relay waits up to `holdTimeout` (30 s by default) for one to attach before it forwards anything. Nothing has been read from the request body at that point, so streamed bodies are safe to hold. Held calls count against `--hold-queue` per hook (100 by default); beyond that, or once `holdTimeout` elapses, the call fails with `561 tunnel_unavailable` and `Retry-After: max(5s, holdTimeout)`, rounded up to whole seconds. A hook deleted, or expiring, while calls are held for it releases them at once with `404 hook_not_found`, rather than waiting out `holdTimeout`. When a tunnel does attach, each held call is routed and authorized again before it is delivered (§5.5): it goes to the hook it was addressed to, below that hook's current path and with its current settings, or not at all.
+If a call arrives while no tunnel is attached to its hook, the relay waits up to `holdTimeout` (30 s by default) for one to attach before it forwards anything. Nothing has been read from the request body at that point, so streamed bodies are safe to hold. Held calls count against `--hook-hold-queue` per hook (100 by default); beyond that the call fails at once with `562 hold_queue_full`, and once `holdTimeout` elapses with `561 tunnel_unavailable`, both with `Retry-After: max(5s, holdTimeout)`, rounded up to whole seconds. A hook deleted, or expiring, while calls are held for it releases them at once with `404 hook_not_found`, rather than waiting out `holdTimeout`. When a tunnel does attach, each held call is routed and authorized again before it is delivered (§5.5): it goes to the hook it was addressed to, below that hook's current path and with its current settings, or not at all.
 
 A call already **in flight** when its tunnel drops cannot be retried, because its body has been partly consumed. It fails with `563 tunnel_lost`. Buffered replay is on the backlog (§17).
 
@@ -295,8 +316,11 @@ Tunnel and transport failures use statuses of their own, 561 to 565, which no co
 | `hook_not_found` | 404 | No such hook, or the sender's channels don't match it. The two cases are deliberately indistinguishable to the sender; the owner sees channel-denied calls in the inspector. |
 | `body_stalled` | 408 | The sender's request body was idle for `idleTimeout` before the local application answered |
 | `body_too_large` | 413 | Over `maxBodyBytes` (unlimited by default) |
+| `path_too_long` | 414 | The escaped path is over 8 KiB. Refused before routing, so it reaches neither the inspector nor the audit log. |
 | `rate_limited` | 429 + `Retry-After` | Hook rate limit exceeded. `Retry-After` is the limiter's wait, rounded up to whole seconds, at least 1. |
-| `tunnel_unavailable` | 561 Tunnel Unavailable + `Retry-After` | No tunnel attached within `holdTimeout`, or the hold queue is full. `Retry-After` is `max(5s, holdTimeout)`, rounded up to whole seconds. |
+| `shutting_down` | 503 + `Retry-After: 5` | The relay is shutting down while the call waits for a tunnel, or the call arrives during the shutdown. Calls already delivered get `--shutdown-timeout` to finish before the tunnels close. |
+| `tunnel_unavailable` | 561 Tunnel Unavailable + `Retry-After` | No tunnel attached within `holdTimeout`. `Retry-After` is `max(5s, holdTimeout)`, rounded up to whole seconds. |
+| `hold_queue_full` | 562 Tunnel Overloaded + `Retry-After` | No tunnel attached, and the hook's hold queue is full. Same `Retry-After`. |
 | `tunnel_overloaded` | 562 Tunnel Overloaded + `Retry-After: 1` | Per-tunnel concurrency limit reached |
 | `tunnel_lost` | 563 Tunnel Lost | Tunnel dropped mid-call |
 | `upstream_unreachable` | 564 Upstream Unreachable | The CLI could not connect to the local target. The CLI reports this as a 564 with its own `Tsrelay-Error`, which the relay passes through; any other `Tsrelay-Error` from the tunnel is dropped. |
@@ -314,7 +338,7 @@ Every setting has a relay-wide default and a relay-wide maximum. Settings that a
 | `channel` | `default` | Must match one of the owner's receiver patterns |
 | `description` | empty | Free text, at most 280 characters |
 | `ephemeral` | `true` from `tsrelay http`, `false` from the UI or `hooks create` | Deleted after `ephemeralGrace` with no tunnel attached |
-| `expiresAt` | none | Capped by `maxHookTTL` |
+| `expiresAt` | none | Capped by `--user-max-hook-ttl` (raised by a grant's `maxHookTtl`); no cap while that is unlimited |
 | `attachPolicy` | `takeover` | Or `reject` |
 | `hostHeader` | `preserve` | Or `rewrite` |
 | `holdTimeout` | 30 s | 0 disables holding |
@@ -332,17 +356,17 @@ Every setting has a relay-wide default and a relay-wide maximum. Settings that a
 ```
 Call     { id, hookID, receivedAt, kind: sender|replay|test, sender: {node, tags, login, ip},
            method, path, query, queryTruncated, requestHeaders, redacted, requestBody: Capture,
-           outcome, status, duration, attempts: []Attempt }
-Attempt  { id, startedAt, tunnelID, node, waitedFor (hold), ttfb, duration,
+           outcome, status, durationMs, attempts: []Attempt }
+Attempt  { id, startedAt, tunnelID, node, waitedForMs (hold), ttfbMs, durationMs,
            status, responseHeaders, redacted, responseBody: Capture,
            bytesIn, bytesOut, error: Tsrelay-Error code or "" }
 Capture  { bytes (≤ captureLimit), size, truncated, captured }
 ```
 
-- `path` is the escaped path below the hook's route, as the local app sees it. `query` is kept up to `--capture-limit` bytes; `queryTruncated` says it was cut.
-- `redacted` (on the call and on each attempt) lists header names left out either because they are redacted or because the headers exceeded `--capture-limit`.
-- `status` and `duration` on the call are what the sender received and how long the call took.
-- `Capture.truncated` means the bytes are not the whole body: it was longer than `--capture-limit`, or was never read to the end, as for a call refused before delivery. `Capture.captured` is false when body capture was off.
+- `path` is the escaped path below the hook's route, as the local app sees it. `query` is kept up to `--capture-limit-bytes` bytes; `queryTruncated` says it was cut.
+- `redacted` (on the call and on each attempt) lists header names left out either because they are redacted or because the headers exceeded `--capture-limit-bytes`.
+- `status` and `durationMs` on the call are what the sender received and how long the call took.
+- `Capture.truncated` means the bytes are not the whole body: it was longer than `--capture-limit-bytes`, or was never read to the end, as for a call refused before delivery. `Capture.captured` is false when body capture was off.
 - `outcome` is `pending` while the call is delivered, then `ok` (delivered, whatever the local app answered), a `Tsrelay-Error` code, or `sender_canceled`.
 - An attempt starts when delivery starts, holding included. A call refused before that (rate limit, body limit, channel) has no attempts.
 
@@ -350,15 +374,15 @@ Every call has an attempts list from the start, even though v1 only ever creates
 
 ### 9.2 Storage and visibility
 
-- **Retention:** the last 100 calls per hook (configurable), in memory, gone on restart. Each captured body is held up to 64 KiB (configurable).
+- **Retention:** the last 100 calls per hook (configurable), in memory, gone on restart. Each captured body is held up to 64 KiB (configurable), and all calls together up to `--capture-total-bytes` (128 MiB), past which the oldest calls of any hook are dropped, so senders can't grow the inspector past a bound.
 - **Refused calls:** calls denied by channel are recorded on the hook they targeted, so the owner can see them, but kept apart so a sender without access can't crowd out real calls: the last 10 per hook, in their own ring, marked `refused: true`. They produce no events, are refused before the rate limit and never count against it, and are never a hook's `lastCall`, which is its newest delivered call.
 - **Visibility:** only the hook's owner sees query strings, headers and bodies. Admins whose patterns match the hook's channel see metadata only, path included (§5.8).
-- **Redaction:** `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and `X-Api-Key` are redacted by default. The list is configurable relay-wide. Redacted values are dropped at capture time and never held in memory.
+- **Redaction:** `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and `X-Api-Key` are redacted by default. `--redact-headers` adds to the list relay-wide; the defaults can't be removed. Redacted values are dropped at capture time and never held in memory.
 - **Opt-in bodies:** body capture is off unless the hook or the relay's default turns it on (§8). Operators can turn it off for the whole relay with `--capture-bodies=false`, whatever hooks set.
 
 ### 9.3 Actions
 
-- **Replay:** re-sends a captured call down the hook's current tunnel, for calls whose request body was captured in full. Redacted headers are left out. The response goes only to the inspector, never back to the original sender. Only the owner can replay. The `Tsrelay-Sender-*` headers name the original sender, because a replay reproduces that call. A replayed public call carries `Tsrelay-Sender-Public: true` again, has its trace headers stripped, and names the hook's public route in `X-Forwarded-Prefix` while the hook is still public (its tailnet route otherwise). A call whose request body or query string was not captured in full gets `409`, as does one with a request body that was not captured at all because capture was off. A call refused by channel was never delivered either, so it also gets `409`.
+- **Replay:** re-sends a captured call down the hook's current tunnel, for calls whose request body was captured in full. Redacted headers are left out. The response goes only to the inspector, never back to the original sender. Only the owner can replay. The `Tsrelay-Sender-*` headers name the original sender, because a replay reproduces that call. A replayed public call carries `Tsrelay-Sender-Public: true` again, has its trace headers stripped, and names the hook's public route in `X-Forwarded-Prefix` while the hook is still public (its tailnet route otherwise). A call whose request body or query string was not captured in full gets `409 not_captured`, as does one with a request body that was not captured at all because capture was off. A call still being delivered gets `409 call_pending`, and a call refused by channel, which was never delivered, `409 call_refused`.
 - **Copy as curl:** two variants. One targets the hook URL, which only works for nodes with the sender role. The other targets the tunnel's local target (e.g. `http://localhost:8080/…`), which is what developers usually want.
 - **Send test request:** the owner writes a request (method, path, headers, body; prefilled with a small JSON sample) and sends it through the normal pipeline as a call of kind `test`. The sender authorization step is skipped, because the owner is calling their own hook. This proves the whole chain works on first setup. The API takes `{method, path, headers, body}`. `method` defaults to `POST`, `path` to `/`, and `path` may include a query string. The sender is the owner. Replay and test both answer `201` with the finished call; admins, and an owner without the receiver role for the hook's channel, get `403` (§5.8).
 
@@ -376,11 +400,11 @@ Negotiated responses carry `Vary: Accept`. A representation a resource doesn't h
 
 | Method & path | JSON | Events |
 |---|---|---|
-| `GET /` | The entry document: identity, effective grant (roles, channel patterns, limits), current usage, user slug, the relay's capability name (`capName`), version and, when known, the `commit` it was built from, the relay-wide setting defaults and maxima, how many calls it keeps per hook and whether it keeps bodies at all (`policy`, with `callsPerHook` and `noBodies`), and `links` to `/hooks`, `/channels`, `/tunnel`, `/openapi.json` and `/licenses`. For admins, `latestVersion` and `releaseURL` name a tsrelay release newer than the relay's own: the relay asks GitHub's latest-release API on startup and every 6 hours and keeps the answer in memory. A failed check is logged once and keeps the last answer; nothing waits for it. A dev build and `--update-check=false` never ask. Browsers asking for HTML are redirected to `/hooks`. | |
-| `GET /hooks` | The caller's hooks (admins: `?all=true`, every hook in their admin channels; anyone else gets their own); `?channel=` keeps those in one channel. Every hook object, here and elsewhere, carries `lastCall`: its newest call's summary. | The caller's hooks and their calls (admins: `?all=true`) |
+| `GET /` | The entry document: identity, effective grant (roles, channel patterns, limits), current usage, user slug, the relay's capability name (`capName`), version and, when known, the `commit` it was built from, the relay-wide setting defaults and maxima, how many calls it keeps per hook and whether it keeps bodies at all (`policy`, with `callsPerHook` and `noBodies`), and `links` to `/hooks`, `/channels`, `/tunnel`, `/openapi.json` and `/licenses`. For admins, `latestVersion` and `releaseUrl` name a tsrelay release newer than the relay's own: the relay asks GitHub's latest-release API on startup and every 6 hours and keeps the answer in memory. A failed check is logged once and keeps the last answer; nothing waits for it. A dev build and `--update-check=false` never ask. Browsers asking for HTML are redirected to `/hooks`. | |
+| `GET /hooks` | The caller's hooks (admins: `?all=true`, every hook in their admin channels; anyone else gets their own); `?channel=` keeps those in one channel. The answer is `{"hooks": [...]}`, an object so it can gain siblings. Every hook object, here and elsewhere, carries `lastCall`: its newest call's summary. | The caller's hooks and their calls (admins: `?all=true`) |
 | `POST /hooks` | Create. `?dryRun=true` validates without saving and answers `200` with the would-be hook. | |
 | `GET/PATCH/DELETE /hooks/{id}` | Read, update or delete. `PATCH` also accepts `?dryRun=true`, which validates without saving and answers `200` with the would-be hook. | This hook and its calls |
-| `GET /hooks/{id}/calls` | Call summaries, newest first | This hook's calls |
+| `GET /hooks/{id}/calls` | Call summaries, newest first, as `{"calls": [...]}` | This hook's calls |
 | `GET /hooks/{id}/calls/{callID}` | Full call with attempts and captures. For the hook's owner only, `replay: {allowed, reason}` says whether it can be replayed and why not. | |
 | `POST /hooks/{id}/calls/{callID}/replay` | Replay. Answers `201` with the new call as `GET` shows it to its owner, `replay` included. | |
 | `POST /hooks/{id}/test` | Send a test request. Answers like a replay. | |
@@ -411,7 +435,7 @@ The CLI uses this same API.
 The UI is a React single-page app in `web/`, built with Vite and styled with Tailwind, and embedded in the binary from `web/dist` (`make ui`). A binary built without it (a plain `go build`) serves a placeholder page that says how to build it. Screens:
 
 - **Hooks:** your hooks, filtered by channel (`?channel=`, as on the JSON list), with path, channel, kind, tunnel (attached node and local target), last call, expiry and URL.
-- **Create / edit hook:** the settings in §8, in three groups (address, lifetime, delivery) beside a sticky preview of the hook URL, channel, lifetime and every effective setting, defaults marked. Every change is checked with a dry run, and the relay's errors appear under their fields; the preview follows the dry run's result. The path input carries the base URL as a prefix; a new hook has no URL yet, so its base is the UI's origin plus `~{slug}/`. The channel combobox offers the receiver's literal patterns and the channels in use (`/channels`), accepts any name a receive pattern allows, and names that pattern. The expiry is a local date and time stored in UTC, with quick picks limited by `maxHookTTL`. Each delivery setting shows the relay default from the entry document until changed, then a custom badge and a reset that clears the override; durations offer presets up to the relay maximum plus a custom Go duration.
+- **Create / edit hook:** the settings in §8, in three groups (address, lifetime, delivery) beside a sticky preview of the hook URL, channel, lifetime and every effective setting, defaults marked. Every change is checked with a dry run, and the relay's errors appear under their fields; the preview follows the dry run's result. The path input carries the base URL as a prefix; a new hook has no URL yet, so its base is the UI's origin plus `~{slug}/`. The channel combobox offers the receiver's literal patterns and the channels in use (`/channels`), accepts any name a receive pattern allows, and names that pattern. The expiry is a local date and time stored in UTC, with quick picks limited by `maxHookTtl`. Each delivery setting shows the relay default from the entry document until changed, then a custom badge and a reset that clears the override; durations offer presets up to the relay maximum plus a custom Go duration.
 - **Hook:** a split pane. The call list (live, newest first, filtered in the browser by status class, method, path and sender, with the filters in the URL) is on the left, and the inspector is on the right: the request and the response (headers with redacted ones marked, bodies as a JSON tree, highlighted text or hex), the attempts, a diff of a replay against its original, and replay and copy-as-curl. Below about 900px the panes stack. Keyboard: `j`/`k`, `Enter`/`Esc`, `/`, `r`, `c`, `t`, `?`.
 - **Channels:** your receive and send patterns and the channels your hooks are in; admins can switch to every channel in use (`?all=true`).
 - **Channel:** one channel's hooks, and whether you may receive and send on it. Channel names everywhere else (the hook list, the hook, the admin table) link here; from the admin table and another user's hook, with `?all=true`.
@@ -459,33 +483,35 @@ Relay-wide settings (flag / environment variable):
 | `--state-dir` / `TSRELAY_STATE_DIR` | `/var/lib/tsrelay` (binary: `$XDG_STATE_HOME/tsrelay`) |
 | `--tls` / `TSRELAY_TLS` | `true` (443 via `ListenTLS`); `false` uses plain HTTP on 80 |
 | `--advertise-tags` | `tag:tsrelay` |
-| `--cap-name` | `mazetti.me/cap/relay` |
+| `--cap-name` | `tsrelay.mazetti.me/cap/relay` |
 | `--user-slug` | `local-part` |
 | `--revalidate-interval` | 60 s |
-| `--max-tunnels-default` / `--max-hooks-default` | 5 / 10 per user |
-| `--max-hook-ttl-default` | unlimited |
+| `--user-max-tunnels` / `--user-max-hooks` | 5 / 10 per user |
+| `--user-max-hook-ttl` | unlimited (a grant's `maxHookTtl` only raises a set limit) |
 | `--ephemeral-grace` | 10 min |
 | `--tunnel-concurrency` | 32 streams |
-| `--hold-queue` | 100 per hook |
-| `--capture-limit` / `--capture-calls` | 64 KiB / 100 per hook |
+| `--hook-hold-queue` | 100 per hook |
+| `--capture-limit-bytes` / `--capture-calls` | 64 KiB / 100 per hook |
+| `--capture-total-bytes` | 128 MiB for all calls together; past it the oldest calls of any hook go |
+| `--shutdown-timeout` | 20 s for delivered calls to finish on shutdown |
 | `--capture-bodies` | `true` |
-| `--redact-headers` | `Authorization,Proxy-Authorization,Cookie,Set-Cookie,X-Api-Key` |
+| `--redact-headers` | none (adds to `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`) |
 | `--hook-capture-default` | `false` |
 | `--ops-listen` | empty (off) |
 | `--ops-pprof` | `false` |
 | `--otel` | `false` (OTLP/HTTP, configured by `OTEL_*`) |
-| `--trace-propagation` | `true` |
+| `--otel-propagation` | `true` |
 | `--log-format` / `--log-level` | `json` / `info` |
 
 Per-hook defaults and maxima are listed in §8. Each per-hook setting also has a relay-wide `--hook-<setting>-default` and `--hook-<setting>-max` flag.
 
-The Tailscale credential is `TS_AUTHKEY` (an auth key) or `TS_CLIENT_SECRET` (an OAuth client secret, recommended because auth keys expire). tsnet supports OAuth client secrets in `tailscale.com@v1.104.0`.
+The Tailscale credential is `TS_AUTHKEY` (an auth key) or `TS_CLIENT_SECRET` (an OAuth client secret with the `auth_keys` scope, allowed to assign the relay's tags). tsnet only uses it to join the tailnet: once the node key is in the state directory, the credential is ignored. An OAuth client secret is recommended because it never expires, so a relay whose state is lost can join again without a new key. tsnet's OAuth support (`tailscale.com/feature/oauthkey`, imported by `serve`) mints an ephemeral, not pre-authorized key unless the secret ends in `?ephemeral=false&preauthorized=true`; the docs and examples always show that suffix, because the control plane removes an ephemeral relay after it has been offline.
 
 v1 has **no config file**. Flags and environment variables cover binaries and containers alike, and a config file is on the backlog.
 
 ## 13. Observability
 
-**Audit log:** JSON via `log/slog` to stdout, one record per event.
+**Audit log:** JSON (or text, with `--log-format text`) via `log/slog` to stderr, one record per event, in the same stream as the relay's other logs. The record's message is the event name.
 
 | Event | Fields (in addition to time and level) |
 |---|---|
@@ -493,11 +519,11 @@ v1 has **no config file**. Flags and environment variables cover binaries and co
 | `hook.create` / `.update` / `.delete` / `.expire` | hook ID, owner, path, channel, actor (user or node), changed fields |
 | `call` | call ID, hook ID, kind, sender node and tags, method, path **without the query string**, status, `Tsrelay-Error`, bytes in/out, hold/ttfb/total durations |
 | `authz.deny` | caller node, user, tags, action, reason |
-| `cap.parse_error` | node, parse error (logged at most once per node and value) |
+| `cap.parse_error` | node, parse error (at `WARN`, logged at most once per node and error) |
 
 **Never logged:** request or response bodies, query strings, or header values. Header *names* may appear in debug-level logs.
 
-**Ops listener** (`--ops-listen=:9090`, off by default, **never** bound on the tailnet interface): `/healthz` (process alive), `/readyz` (tsnet up and the store loaded), `/metrics`. The shipped Kubernetes manifests enable it on the pod IP for probes. With `--ops-pprof` (off by default) it also serves `net/http/pprof` under `/debug/pprof/`; the shipped manifests leave it off.
+**Ops listener** (`--ops-listen=:9090`, off by default, unauthenticated, and on the host's network, **never** on the relay's tsnet node; on a host that also runs `tailscaled`, `:9090` includes that host's tailnet address, so bind a specific one there): `/healthz` (process alive), `/readyz` (tsnet up and the store loaded), `/metrics`. The shipped Kubernetes manifests enable it on the pod IP for probes. With `--ops-pprof` (off by default) it also serves `net/http/pprof` under `/debug/pprof/`; the shipped manifests leave it off.
 
 **Metrics:** OpenTelemetry instruments, served as Prometheus text on the ops listener's `/metrics` (and pushed over OTLP with `--otel`, §13.1). The exporter keeps the names below exactly: no unit suffixes, no `otel_scope_*` labels, no `target_info`. Counters and histograms are derived from audit events through an `audit.Logger` observer hook, so the request path gets no second instrumentation layer; gauges are read from the tunnel registry and the hook manager at collection time.
 - `tsrelay_calls_total{outcome}`
@@ -526,7 +552,7 @@ With `--otel`, the relay records OpenTelemetry spans and exports them, and its m
 - `tsrelay.tunnel.detach`: a short span in its own trace, linked to the attach, with `tsrelay.tunnel.reason` (`disconnected`, `orphaned`, `revoked`, `shutdown`) and the tunnel's lifetime.
 - API requests (server): one span per request, named after the route pattern (`PATCH /hooks/{id}`), with the actor's login. Replays and test requests are children of their API request's span. The event stream and tunnel attaches get no request span.
 
-With `--trace-propagation` (the default), a sender's call joins the sender's trace, and `traceparent`/`tracestate` sent to the app are replaced by `tsrelay.forward`'s. With `false`, or without `--otel`, they pass through untouched. With tracing off no span code runs at all.
+With `--otel-propagation` (the default), a sender's call joins the sender's trace, and `traceparent`/`tracestate` sent to the app are replaced by `tsrelay.forward`'s. With `false`, or without `--otel`, they pass through untouched. With tracing off no span code runs at all.
 
 ## 14. Deployment
 
@@ -548,7 +574,7 @@ tsrelay http <port|url> [flags] [-- cmd args...]   forward a new or remembered h
 tsrelay attach <hook>... -t/--to <port|url>       serve existing hooks
 tsrelay hooks list (alias ls)                     list your hooks
 tsrelay hooks show <hook>                         one hook in detail
-tsrelay hooks create [<path>] [flags]
+tsrelay hooks create [flags]
 tsrelay hooks update <hook> [flags]
 tsrelay hooks delete <hook>... (alias rm)
 tsrelay hooks rotate-url <hook>                   give a public hook a new public URL
@@ -556,7 +582,7 @@ tsrelay url [<port|url>]                          print the URL `http` would use
 tsrelay ps                                        list background tunnels
 tsrelay logs <id|hook> [-f]                       print or follow a background tunnel's log
 tsrelay stop <id|hook>... | --all                 stop background tunnels
-tsrelay update [--check] [-y/--yes]               replace this CLI with the relay's version
+tsrelay update [--check] [-y/--yes] [--force]    replace this CLI with the relay's version
 tsrelay serve [flags]                             run the relay
 tsrelay licenses                                  the open-source components' licenses
 tsrelay completion bash|zsh|fish|powershell       cobra's generated completion
@@ -566,8 +592,8 @@ tsrelay --version                                 fang; there is no `version` su
 `<hook>` is a hook ID or path; `resolveHooks` looks it up among the caller's hooks.
 
 - **`tsrelay http 8080`** creates or reclaims an ephemeral hook, attaches a tunnel, prints the URL, and then prints one line per call. On a terminal, a call line has the time, method, path, status, duration and sender in aligned columns, and ends in the call ID as an OSC 8 hyperlink to `<relay>/inspect/<callID>`. Plain output prints the full link. With `--json`, call events carry `callId` and `inspect`.
-- **Flags** are GNU style, with shorthands where they read naturally: `-n`, `-c`, `-p`, `-k` on `http`; `-t`, `-k` on `attach`; `-j` everywhere. `serve` has none.
-- **The environment:** every flag `--foo-bar` can be set as `TSRELAY_FOO_BAR`, and the command line wins. Flags that act rather than configure (`--all`, `--yes`, `--check`, `--follow`, `--background`) are excluded, so a variable left in the environment can't update, stop or detach anything.
+- **Flags** are GNU style, with shorthands where they read naturally: `-c`, `-k` on `http`; `-t`, `-k` on `attach`; `-j` everywhere. `serve` has none.
+- **The environment:** every flag `--foo-bar` can be set as `TSRELAY_FOO_BAR`, and the command line wins. Flags that act rather than configure (`--all`, `--yes`, `--check`, `--force`, `--follow`, `--background`) are excluded, so a variable left in the environment can't update, downgrade, stop or detach anything.
 - **Targets:** a bare port means `http://localhost:<port>`. A full URL is also accepted, including a path prefix and `https://` (with `--insecure` for self-signed local certificates).
 - **Stable URLs:** the CLI remembers the hook path it used for each working directory and target, in `$XDG_STATE_HOME/tsrelay/hooks.json`, and asks for the same path next time. The URL put into `.env` therefore keeps working across restarts, including after the ephemeral grace period has passed.
 - **`-- cmd args...`** starts the local application with `TSRELAY_URL` set in its environment, and stops it when the tunnel command exits.
@@ -578,10 +604,10 @@ tsrelay --version                                 fang; there is no `version` su
   - **`stop`** asks a tunnel to detach, waits up to 10 s, then kills it and says so. On Unix the request is SIGTERM. A detached Windows process has no console, so no console control event reaches it; instead each tunnel waits on the named event `Local\tsrelay-stop-<id>`, which `stop` sets.
   - **`logs`** prints the log; `-f` keeps polling it until interrupted.
   - **Limits:** a pid reused by another process counts as a running tunnel. `http --background -- cmd` is refused, as a command in the background would make stopping and logging ambiguous. Surviving a reboot and restarting on failure are left to service managers.
-- **Updating:** the CLI should run the relay's version; the `Tsrelay-Version` header on every response tells it when it doesn't, and it warns once per run with the fix `tsrelay update`.
-  - **`update`** reads the relay's version from the entry document and downloads `/download/{os}/{arch}`, which redirects to that release's asset. The checksum is that asset's URL plus `.sha256`, as for `install.sh`, not the signed URL GitHub redirects the asset on to. The download goes to a temporary file next to the executable (symlinks resolved), and only once it matches is it renamed over the executable. Windows can't replace a running executable but can rename it, so the old one moves aside to `<exe>.old`, which the next run deletes. Sigstore attestations are left to `gh attestation verify`.
-  - **Refusals:** an unwritable directory (a package manager's, say) is refused before downloading, with `sudo <exe> update` and the install script as fixes. A `dev` build, or a dev relay, has no release to match.
-  - **Offering it:** after a command that saw another version, on a terminal (stdin and stderr) without `--json`, the CLI asks "Relay is vX, you have vY. Update now? [Y/n]". Admins are told when the entry document names a newer release. Each happens at most once a day, by timestamps in `notices.json` next to `hooks.json`; never during completion, in a background tunnel, or after an interrupt; and nothing is updated without a yes.
+- **Updating:** the CLI should run the relay's major version; a CLI and a relay of the same major version work together, whichever is newer. The `Tsrelay-Version` header on every response tells the CLI how the two relate (a `dev` build on either side, or a version that isn't semver, matches anything). Only a different major version is warned about, once per run with the fix `tsrelay update`, and blamed in errors. The CLI also sends `User-Agent: tsrelay/<version> (<os>/<arch>)` on every request, tunnel upgrade included.
+  - **`update`** reads the relay's version from the entry document, refuses one that isn't semver, and downloads that release's asset for its platform and the asset's `.sha256` checksum from GitHub's releases itself, not through the relay, so a compromised relay can at worst offer a genuine release. The download goes to a temporary file next to the executable (symlinks resolved), and only once it matches is it renamed over the executable. Windows can't replace a running executable but can rename it, so the old one moves aside to `<exe>.old`, which the next run deletes. Sigstore attestations are left to `gh attestation verify`.
+  - **Refusals:** an unwritable directory (a package manager's, say) is refused before downloading, with `sudo <exe> update` and the install script as fixes. A `dev` build, or a dev relay, has no release to match. A CLI newer than the relay is not downgraded without `--force` (`downgrade`).
+  - **Offering it:** after a command that saw a newer relay version (same major, or a newer major), on a terminal (stdin and stderr) without `--json`, the CLI asks "Relay is vX, you have vY. Update now? [Y/n]". Admins are told when the entry document names a newer release. Each happens at most once a day, by timestamps in `notices.json` next to `hooks.json`; never during completion, in a background tunnel, or after an interrupt; and nothing is updated without a yes.
 - **Finding the relay:** `--relay`, then `TSRELAY_RELAY`, then a default built from `https://tsrelay.` plus the tailnet's MagicDNS suffix, read from the local Tailscale API.
 - **Output:**
   - Hook URLs go to stdout and everything else to stderr, so `$(tsrelay url)` works.
@@ -614,7 +640,7 @@ tsrelay --version                                 fang; there is no `version` su
   - CSRF and Host-header rejection
 - **Unit and fuzz tests:** capability parsing and merging, channel pattern matching, slug derivation, path validation and nesting, the JSON store (crash-safe writes), and redaction.
 - **Funnel confinement and public-surface tests** (§14, §19).
-- **`testcontrol`:** during planning, check whether `tstest/integration/testcontrol` can inject app-capability grants. If it can, add one or two tests that run real tsnet nodes against it to prove the `WhoIs`→`CapMap` path. If it can't, document a manual smoke test against a real tailnet.
+- **`testcontrol`:** `TestOverRealTailnet` (package `server`, build tag `tailnet`, run in CI) runs the relay and a client as real tsnet nodes against `tstest/integration/testcontrol`, which grants the relay capability, and proves the `WhoIs`→`CapMap` path.
 - **Performance:** benchmarks for a call through the whole relay (with and without tracing) against the app called directly, the tunnel's framing, and the inspector's capture and redaction; CI runs each once so they keep working. `TestLoad` (gated by `TSRELAY_LOAD=1`) is an in-process load harness reporting the latency the relay adds. `docs/perf/baseline.md` holds the reference numbers.
 
 ## 17. Backlog
@@ -628,12 +654,9 @@ tsrelay --version                                 fang; there is no `version` su
 - **Escape hatch:** `senderTags` in the capability, matching tags directly.
 - **Packaging:** a config file, a Helm chart.
 
-## 18. To verify during planning
+## 18. Open questions
 
-1. `testcontrol` support for app-capability grants (§16).
-2. Taking over the connection behind tsnet's `ListenTLS` listener, with the client forcing HTTP/1.1 through ALPN (§6.1).
-3. Whether `http2.Transport.NewClientConn` can be driven over a connection whose server-side TLS has already been negotiated, without wrapping it in a second TLS layer. Expected yes: the tunnel runs HTTP/2 without TLS (h2c framing) inside the already-encrypted connection.
-4. How tsnet advertises tags when it is given an OAuth client secret (`AdvertiseTags`).
+None at 1.0. The assumptions this section listed during planning hold: app-capability grants in `testcontrol` (§16), taking over connections behind `ListenTLS` with the client offering only HTTP/1.1 (§6.1), HTTP/2 without a second TLS layer inside them, and tags advertised with an OAuth client secret (§12).
 
 ## 19. Public hooks
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -28,16 +29,18 @@ func (e *cliEnv) listJSON() []api.Hook {
 	if code != 0 {
 		e.t.Fatalf("hooks ls --json: exit %d\n%s", code, errOut)
 	}
-	var hs []api.Hook
-	if err := json.Unmarshal([]byte(out), &hs); err != nil {
-		e.t.Fatalf("hooks ls --json is not a JSON array: %v\n%s", err, out)
+	var list struct {
+		Hooks []api.Hook `json:"hooks"`
 	}
-	return hs
+	if err := json.Unmarshal([]byte(out), &list); err != nil || list.Hooks == nil {
+		e.t.Fatalf("hooks list --json is not {\"hooks\": [...]}: %v\n%s", err, out)
+	}
+	return list.Hooks
 }
 
 func TestHooksCommands(t *testing.T) {
 	e := newCLIEnv(t)
-	code, out, errOut := e.tsrelay("hooks", "create", "cb", "--description", "payments", "--hold-timeout", "5s", "--rate-limit", "10/20")
+	code, out, errOut := e.tsrelay("hooks", "create", "--path", "cb", "--description", "payments", "--hold-timeout", "5s", "--rate-limit", "10/20")
 	if code != 0 || strings.TrimSpace(out) != e.relayURL+"/~moritz/cb" {
 		t.Fatalf("create: exit %d, stdout %q\n%s", code, out, errOut)
 	}
@@ -59,7 +62,7 @@ func TestHooksCommands(t *testing.T) {
 		t.Fatalf("ls: exit %d\n%q", code, out)
 	}
 
-	code, out, errOut = e.tsrelay("hooks", "create", "--json", "sv")
+	code, out, errOut = e.tsrelay("hooks", "create", "--json", "--path", "sv")
 	if code != 0 {
 		t.Fatalf("create --json: exit %d\n%s", code, errOut)
 	}
@@ -105,7 +108,7 @@ func TestHooksCommands(t *testing.T) {
 	if code, _, errOut := e.tsrelay("hooks", "delete", "nope"); code != 1 || !strings.Contains(errOut, `"nope"`) {
 		t.Fatalf("delete unknown: exit %d\n%s", code, errOut)
 	}
-	if code, out, errOut := e.tsrelay("hooks", "rm", id, "--json"); code != 0 || out != `{"deleted":["`+id+`"]}`+"\n" {
+	if code, out, errOut := e.tsrelay("hooks", "rm", id, "--json"); code != 0 || !strings.HasPrefix(out, `{"deleted":[{"id":"`+id+`",`) || !strings.HasSuffix(out, `],"failed":[]}`+"\n") {
 		t.Fatalf("rm --json: exit %d, stdout %q\n%s", code, out, errOut)
 	}
 	if hs := e.listJSON(); len(hs) != 0 {
@@ -118,7 +121,7 @@ func TestHooksCommands(t *testing.T) {
 // towards "give at least one flag".
 func TestHooksUpdateIgnoresEnvVars(t *testing.T) {
 	e := newCLIEnv(t)
-	code, _, errOut := e.tsrelay("hooks", "create", "cb", "--description", "payments", "--hold-timeout", "5s")
+	code, _, errOut := e.tsrelay("hooks", "create", "--path", "cb", "--description", "payments", "--hold-timeout", "5s")
 	if code != 0 {
 		t.Fatalf("create: exit %d\n%s", code, errOut)
 	}
@@ -153,7 +156,7 @@ func TestHooksUpdateIgnoresEnvVars(t *testing.T) {
 func TestHooksCreateAppliesEnvVars(t *testing.T) {
 	e := newCLIEnv(t)
 	t.Setenv("TSRELAY_DESCRIPTION", "from-env")
-	code, _, errOut := e.tsrelay("hooks", "create", "envcb")
+	code, _, errOut := e.tsrelay("hooks", "create", "--path", "envcb")
 	if code != 0 {
 		t.Fatalf("create: exit %d\n%s", code, errOut)
 	}
@@ -192,15 +195,24 @@ func TestJSONErrors(t *testing.T) {
 		{"hooks", "create", "--channel", "Not Valid", "--json"}, // a relay refusal (problem)
 	} {
 		code, out, errOut := e.tsrelay(args...)
-		if code != 1 || out != "" {
-			t.Errorf("%q: exit %d, stdout %q; want 1 and nothing on stdout", args, code, out)
+		wantOut := "" // a delete still reports what it deleted (nothing) and what failed
+		if args[1] == "delete" {
+			// The failure carries the error stderr has: {"error":{…}}.
+			wantOut = `{"deleted":[],"failed":[{"ref":"nope",` + strings.TrimSuffix(errOut, "}\n")[1:] + "}]}\n"
+		}
+		if code != 1 || out != wantOut {
+			t.Errorf("%q: exit %d, stdout %q; want 1 and %q on stdout", args, code, out, wantOut)
 		}
 		var je jsonError
 		if err := json.Unmarshal([]byte(errOut), &je); err != nil || je.Error.Title == "" || je.Error.Fixes == nil {
 			t.Errorf("%q: stderr is not a JSON error: %v\n%s", args, err, errOut)
 		}
-		if args[1] == "create" && je.Error.Code != problem.Invalid {
-			t.Errorf("%q: want the relay's problem code in the JSON error, got %+v", args, je.Error)
+		if args[1] == "create" && (je.Error.Code != problem.Invalid || je.Error.Problem == nil ||
+			je.Error.Problem.Status != 422 || !strings.Contains(fmt.Sprint(je.Error.Problem.Errors), "channel")) {
+			t.Errorf("%q: want the relay's problem, with the invalid field, in the JSON error, got %+v", args, je.Error)
+		}
+		if args[1] == "delete" && je.Error.Problem != nil {
+			t.Errorf("%q: a CLI error carries no problem: %+v", args, je.Error.Problem)
 		}
 	}
 }
@@ -242,7 +254,7 @@ func TestRelayFromEnvironment(t *testing.T) {
 
 func TestHooksPublic(t *testing.T) {
 	e := newCLIEnv(t)
-	code, out, errOut := e.tsrelay("hooks", "create", "cb", "--public")
+	code, out, errOut := e.tsrelay("hooks", "create", "--path", "cb", "--public")
 	if code != 0 || !strings.HasPrefix(strings.TrimSpace(out), e.relayURL+"/~moritz/cb") {
 		t.Fatalf("create: exit %d %q\n%s", code, out, errOut)
 	}
@@ -274,7 +286,7 @@ func TestHooksPublic(t *testing.T) {
 // URL as if it were the new public one.
 func TestHooksRotateURLWithoutFunnel(t *testing.T) {
 	e := newCLIEnv(t)
-	if code, _, errOut := e.tsrelay("hooks", "create", "cb", "--public"); code != 0 {
+	if code, _, errOut := e.tsrelay("hooks", "create", "--path", "cb", "--public"); code != 0 {
 		t.Fatalf("create: exit %d\n%s", code, errOut)
 	}
 	e.restartRelayNoFunnel()

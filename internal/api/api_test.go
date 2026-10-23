@@ -133,6 +133,60 @@ func TestMe(t *testing.T) {
 	}
 }
 
+// Features is an array even when the relay has none, so clients can range
+// over it without a null check.
+func TestMeFeaturesIsArray(t *testing.T) {
+	e := newEnv(t)
+	var raw map[string]json.RawMessage
+	e.call(moritz, "GET", "/", nil, &raw)
+	if got := string(raw["features"]); got != "[]" {
+		t.Fatalf("features = %s, want []", got)
+	}
+}
+
+// The names of the entry document are API: assert on the raw keys, since
+// decoding into Me matches them case-insensitively.
+func TestMeFieldNames(t *testing.T) {
+	e := newEnv(t)
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"tag_name":"v0.4.0","html_url":"https://github.com/Radiergummi/tsrelay/releases/tag/v0.4.0"}`)
+	}))
+	t.Cleanup(github.Close)
+	e.api.Releases = &release.Checker{URL: github.URL}
+	e.api.Releases.Check(t.Context())
+	var raw map[string]json.RawMessage
+	e.call(admin, "GET", "/", nil, &raw)
+	for _, k := range []string{"hookCount", "publicPatterns", "releaseUrl", "latestVersion"} {
+		if _, ok := raw[k]; !ok {
+			t.Errorf("missing key %q in %v", k, keys(raw))
+		}
+	}
+	for _, k := range []string{"hooks", "public", "releaseURL"} {
+		if _, ok := raw[k]; ok {
+			t.Errorf("old key %q still present", k)
+		}
+	}
+	var limits map[string]json.RawMessage
+	if err := json.Unmarshal(raw["limits"], &limits); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := limits["maxHookTTL"]; ok {
+		t.Error("old key limits.maxHookTTL still present")
+	}
+	if got := string(limits["maxHookTtl"]); got != `"0s"` {
+		t.Errorf("limits.maxHookTtl = %s, want \"0s\" for no limit", got)
+	}
+}
+
+func keys(m map[string]json.RawMessage) []string {
+	var ks []string
+	for k := range m {
+		ks = append(ks, k)
+	}
+	slices.Sort(ks)
+	return ks
+}
+
 func TestMeNamesCapAndPolicy(t *testing.T) {
 	e := newEnv(t)
 	var me Me
@@ -218,8 +272,9 @@ func TestHookLastCall(t *testing.T) {
 	}
 	e.seedCall("c_1", h.ID, completeBody(`{"secret":true}`))
 
-	var list []Hook
-	e.call(moritz, "GET", "/hooks", nil, &list)
+	var res HookList
+	e.call(moritz, "GET", "/hooks", nil, &res)
+	list := res.Hooks
 	if len(list) != 1 || list[0].LastCall == nil || list[0].LastCall.ID != "c_1" {
 		t.Fatalf("list = %+v", list)
 	}
@@ -253,22 +308,24 @@ func TestHookCRUD(t *testing.T) {
 		t.Fatalf("Location = %q", loc)
 	}
 
-	var list []Hook
-	e.call(moritz, "GET", "/hooks", nil, &list)
-	if len(list) != 1 || list[0].ID != h.ID {
+	var res HookList
+	e.call(moritz, "GET", "/hooks", nil, &res)
+	if list := res.Hooks; len(list) != 1 || list[0].ID != h.ID {
 		t.Fatalf("list = %+v", list)
 	}
-	e.call(other, "GET", "/hooks", nil, &list)
-	if len(list) != 0 {
+	res = HookList{}
+	e.call(other, "GET", "/hooks", nil, &res)
+	if list := res.Hooks; len(list) != 0 {
 		t.Fatalf("other user sees %+v", list)
 	}
-	e.call(other, "GET", "/hooks?all=true", nil, &list)
-	if len(list) != 0 {
+	res = HookList{}
+	e.call(other, "GET", "/hooks?all=true", nil, &res)
+	if len(res.Hooks) != 0 {
 		t.Fatal("all=true must be ignored for non-admins")
 	}
-	e.call(admin, "GET", "/hooks?all=true", nil, &list)
-	if len(list) != 1 {
-		t.Fatalf("admin list = %+v", list)
+	e.call(admin, "GET", "/hooks?all=true", nil, &res)
+	if len(res.Hooks) != 1 {
+		t.Fatalf("admin list = %+v", res.Hooks)
 	}
 
 	if resp := e.call(other, "GET", "/hooks/"+h.ID, nil, nil); resp.StatusCode != 404 {
@@ -293,8 +350,8 @@ func TestCreateErrors(t *testing.T) {
 		t.Fatalf("invalid channel = %d %+v", resp.StatusCode, p)
 	}
 	resp = e.call(moritz, "POST", "/hooks", map[string]any{"path": "x", "bogus": 1}, &p)
-	if resp.StatusCode != 400 {
-		t.Fatalf("unknown field = %d", resp.StatusCode)
+	if resp.StatusCode != 422 || p.Code != problem.UnsupportedField {
+		t.Fatalf("unknown field = %d %+v", resp.StatusCode, p)
 	}
 	resp = e.call(worker, "POST", "/hooks", hooks.CreateRequest{}, &p)
 	if resp.StatusCode != 403 || p.Code != problem.Forbidden {
@@ -436,8 +493,8 @@ func TestResumeCannotTakeOverOtherSessions(t *testing.T) {
 	}
 	_, _, err := e.openTunnelQ(moritz, "session=s_old&resume=1", h.ID)
 	var p *problem.Problem
-	if !errors.As(err, &p) || p.Status != 409 || p.Code != problem.Conflict || p.Hook != h.ID {
-		t.Fatalf("replaced session resuming: err = %v, want 409 conflict", err)
+	if !errors.As(err, &p) || p.Status != 409 || p.Code != problem.Superseded || p.Hook != h.ID {
+		t.Fatalf("replaced session resuming: err = %v, want 409 superseded", err)
 	}
 	var got Hook
 	e.call(moritz, "GET", "/hooks/"+h.ID, nil, &got)
@@ -464,8 +521,12 @@ func TestPatchHook(t *testing.T) {
 	if resp := e.call(moritz, "PATCH", "/hooks/"+h.ID, map[string]any{"channel": "billing"}, &p); resp.StatusCode != 422 {
 		t.Fatalf("invalid patch = %d", resp.StatusCode)
 	}
-	if resp := e.call(moritz, "PATCH", "/hooks/"+h.ID, map[string]any{"bogus": 1}, nil); resp.StatusCode != 400 {
+	if resp := e.call(moritz, "PATCH", "/hooks/"+h.ID, map[string]any{"bogus": 1}, nil); resp.StatusCode != 422 {
 		t.Fatalf("unknown field = %d", resp.StatusCode)
+	}
+	nested := map[string]any{"settings": map[string]any{"rateLimit": map[string]any{"perSecond": 1, "burst": 1, "bogus": 1}}}
+	if resp := e.call(moritz, "PATCH", "/hooks/"+h.ID, nested, &p); resp.StatusCode != 422 || p.Code != problem.UnsupportedField {
+		t.Fatalf("unknown nested field = %d %+v", resp.StatusCode, p)
 	}
 	if resp := e.call(other, "PATCH", "/hooks/"+h.ID, map[string]any{"description": "x"}, nil); resp.StatusCode != 404 {
 		t.Fatalf("other user patch = %d", resp.StatusCode)
@@ -534,8 +595,8 @@ func TestAttachPolicyReject(t *testing.T) {
 
 	_, _, err = e.openTunnelQ(moritz, "session=s_b", h.ID)
 	var p *problem.Problem
-	if !errors.As(err, &p) || p.Status != 409 || p.Code != problem.Conflict || !strings.Contains(p.Detail, `"reject"`) {
-		t.Fatalf("second session under reject: err = %v, want 409 conflict naming the policy", err)
+	if !errors.As(err, &p) || p.Status != 409 || p.Code != problem.AttachRejected || !strings.Contains(p.Detail, `"reject"`) {
+		t.Fatalf("second session under reject: err = %v, want 409 attach_rejected naming the policy", err)
 	}
 	// The serving session may still replace its own stale tunnel.
 	if _, _, err := e.openTunnelQ(moritz, "session=s_a&resume=1", h.ID); err != nil {
@@ -561,7 +622,7 @@ func TestMaxTunnels(t *testing.T) {
 
 	_, _, err := e.openTunnelQ(limited, "session=s2", c.ID)
 	var p *problem.Problem
-	if !errors.As(err, &p) || p.Status != 403 || p.Code != problem.Forbidden || !strings.Contains(p.Detail, "maxTunnels 2") || p.Hook != "" {
+	if !errors.As(err, &p) || p.Status != 403 || p.Code != problem.TunnelLimit || !strings.Contains(p.Detail, "maxTunnels 2") || p.Hook != "" {
 		t.Fatalf("third tunnel: err = %v, want 403 naming the limit", err)
 	}
 	// Taking over your own tunnel's only hook orphans it, so it does not count.
@@ -669,9 +730,9 @@ func TestDryRun(t *testing.T) {
 	if resp.StatusCode != 200 || h.ID != "" || h.Path != "x" || h.URL != "https://tsrelay.example.ts.net/~moritz/x" {
 		t.Fatalf("dry-run create = %d %+v", resp.StatusCode, h)
 	}
-	var list []Hook
-	e.call(moritz, "GET", "/hooks", nil, &list)
-	if len(list) != 0 {
+	var res HookList
+	e.call(moritz, "GET", "/hooks", nil, &res)
+	if list := res.Hooks; len(list) != 0 {
 		t.Fatalf("a dry run saved a hook: %+v", list)
 	}
 	var p problem.Problem
@@ -731,9 +792,9 @@ func TestTaggedAdminSeesNothing(t *testing.T) {
 	ci := identify.Tagged("ci", []string{"tag:ci"}, `{"roles":["admin"]}`)
 	var h Hook
 	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
-	var list []Hook
-	if resp := e.call(ci, "GET", "/hooks?all=true", nil, &list); resp.StatusCode != 200 || len(list) != 0 {
-		t.Errorf("tagged admin's list = %d %+v, want []", resp.StatusCode, list)
+	var res HookList
+	if resp := e.call(ci, "GET", "/hooks?all=true", nil, &res); resp.StatusCode != 200 || len(res.Hooks) != 0 {
+		t.Errorf("tagged admin's list = %d %+v, want []", resp.StatusCode, res.Hooks)
 	}
 	if resp := e.call(ci, "GET", "/hooks/"+h.ID, nil, nil); resp.StatusCode != 404 {
 		t.Errorf("tagged admin's GET = %d, want 404", resp.StatusCode)
@@ -750,9 +811,9 @@ func TestAdminScopedByChannel(t *testing.T) {
 	var prod, dev Hook
 	e.call(other, "POST", "/hooks", hooks.CreateRequest{Path: "p", Channel: "prod"}, &prod)
 	e.call(other, "POST", "/hooks", hooks.CreateRequest{Path: "d", Channel: "dev"}, &dev)
-	var list []Hook
-	if e.call(prodAdmin, "GET", "/hooks?all=true", nil, &list); len(list) != 1 || list[0].ID != prod.ID {
-		t.Errorf("prod admin's list = %+v, want only the prod hook", list)
+	var res HookList
+	if e.call(prodAdmin, "GET", "/hooks?all=true", nil, &res); len(res.Hooks) != 1 || res.Hooks[0].ID != prod.ID {
+		t.Errorf("prod admin's list = %+v, want only the prod hook", res.Hooks)
 	}
 	var cs Channels
 	if e.call(prodAdmin, "GET", "/channels?all=true", nil, &cs); !slices.Equal(channelNames(cs.Channels), []string{"prod"}) {
@@ -813,5 +874,88 @@ func TestAdminOwnerActions403(t *testing.T) {
 		if resp := e.call(admin, c.method, c.path, c.body, nil); resp.StatusCode != 403 {
 			t.Errorf("admin %s = %d, want 403", c.name, resp.StatusCode)
 		}
+	}
+}
+
+func TestNotIdentified(t *testing.T) {
+	e := newEnv(t)
+	e.fake.Fail(errors.New("whois failed"))
+	defer e.fake.Fail(nil)
+	var p problem.Problem
+	if resp := e.call(moritz, "GET", "/hooks", nil, &p); resp.StatusCode != 403 || p.Code != problem.NotIdentified || resp.Header.Get(problem.HeaderError) != problem.NotIdentified {
+		t.Fatalf("unidentified caller = %d %+v", resp.StatusCode, p)
+	}
+}
+
+// A tunnel is refused for a hook whose channel the owner's grants no longer
+// cover, and the problem names the hook.
+func TestAttachChannelForbidden(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb", Channel: "prod.a"}, &h)
+	narrowed := identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"channels":["default"]}`)
+	_, _, err := e.openTunnelQ(narrowed, "", h.ID)
+	var p *problem.Problem
+	if !errors.As(err, &p) || p.Status != 403 || p.Code != problem.ChannelForbidden || p.Hook != h.ID {
+		t.Fatalf("attach outside the grants' channels: err = %v, want 403 channel_forbidden naming the hook", err)
+	}
+}
+
+// A write never ignores a query parameter: one the relay doesn't know may
+// change what a newer client meant (as dryRun does), so it is refused like
+// an unknown body field. A boolean the relay can't read is refused too.
+func TestWritesRefuseUnknownQueryParameters(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "q"}, &h)
+	for _, tc := range []struct{ method, path string }{
+		{"POST", "/hooks?bogus=1"},
+		{"PATCH", "/hooks/" + h.ID + "?bogus=1"},
+		{"DELETE", "/hooks/" + h.ID + "?bogus=1"},
+		{"POST", "/hooks/" + h.ID + "/rotate-public-url?bogus=1"},
+		{"POST", "/hooks/" + h.ID + "/test?bogus=1"},
+	} {
+		var p problem.Problem
+		resp := e.call(moritz, tc.method, tc.path, map[string]any{}, &p)
+		if resp.StatusCode != 422 || p.Code != problem.UnsupportedField || toJSON(p.Errors) != `[{"field":"query.bogus","message":"not supported by this relay"}]` {
+			t.Errorf("%s %s = %d %+v", tc.method, tc.path, resp.StatusCode, p)
+		}
+	}
+	for _, path := range []string{"/hooks?dryRun=yes", "/hooks?dryRun=", "/hooks?dryRun=true&dryRun=false"} {
+		var p problem.Problem
+		if resp := e.call(moritz, "POST", path, hooks.CreateRequest{}, &p); resp.StatusCode != 400 || p.Code != problem.BadRequest {
+			t.Errorf("POST %s = %d %+v", path, resp.StatusCode, p)
+		}
+	}
+	var list HookList
+	if e.call(moritz, "GET", "/hooks", nil, &list); len(list.Hooks) != 1 {
+		t.Fatalf("a refused write created hooks: %d", len(list.Hooks))
+	}
+	var p problem.Problem
+	if resp := e.call(moritz, "GET", "/hooks?all=maybe", nil, &p); resp.StatusCode != 400 {
+		t.Errorf("GET ?all=maybe = %d", resp.StatusCode)
+	}
+	if resp := e.call(moritz, "GET", "/hooks?future=1", nil, nil); resp.StatusCode != 200 {
+		t.Errorf("a read ignores parameters it doesn't know: %d", resp.StatusCode)
+	}
+}
+
+// A newer client advertises what it supports with attach parameters a 1.0
+// relay doesn't know (compatibility.md), so the relay ignores them.
+func TestAttachIgnoresUnknownParameters(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
+	controls, _, err := e.openTunnelQ(moritz, "client-feature=x&future=1", h.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case c := <-controls:
+		if c.Type != tunnel.ControlAttached {
+			t.Fatalf("first control = %+v", c)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("not attached")
 	}
 }

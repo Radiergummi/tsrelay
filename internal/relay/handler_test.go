@@ -194,6 +194,9 @@ func TestHeaders(t *testing.T) {
 		"X-Forwarded-Uri":     {"/admin"},
 		"X-Forwarded-Server":  {"spoofed"},
 		"Stripe-Signature":    {"t=1,v1=abc"},
+		// Some frameworks read "_" as "-" (CGI, WSGI, Rack).
+		"Tsrelay_Sender_Login": {"ceo@example.com"},
+		"X_Forwarded_For":      {"10.9.9.9"},
 	})
 	h := <-seen
 	checks := map[string]string{
@@ -210,6 +213,8 @@ func TestHeaders(t *testing.T) {
 		"X-Forwarded-Uri":      "",
 		"X-Forwarded-Server":   "",
 		"Stripe-Signature":     "t=1,v1=abc",
+		"Tsrelay_Sender_Login": "",
+		"X_Forwarded_For":      "",
 	}
 	for k, want := range checks {
 		if got := strings.Join(h.Values(k), ","); got != want {
@@ -414,4 +419,33 @@ func TestDeliveryAssert(t *testing.T) {
 	tk.Attach(context.Background(), tun, nil)
 	wantProblem(t, e.do(sender, "POST", "/~moritz/cb", nil, nil), 404, problem.HookNotFound)
 	e.waitLog(`"level":"ERROR","msg":"tunnel owner does not own the hook"`)
+}
+
+// A call path is capped like a request line, so a sender can't make the
+// inspector, the audit log and the events hold megabytes per call.
+func TestLongPathIsRefused(t *testing.T) {
+	e := newEnv(t)
+	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("local app reached with a %d-byte path", len(r.URL.EscapedPath()))
+	}), tunnel.Options{})
+	wantProblem(t, e.do(sender, "GET", "/~moritz/cb/"+strings.Repeat("a", maxPathBytes), nil, nil), 414, problem.PathTooLong)
+	if calls := e.in.List(e.hook.ID); len(calls) != 0 {
+		t.Fatalf("the inspector kept %d calls", len(calls))
+	}
+}
+
+// The app's response is sandboxed: served from the relay's origin, a page
+// could otherwise call the relay's API as whoever opens it.
+func TestResponsesAreSandboxed(t *testing.T) {
+	e := newEnv(t)
+	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", "default-src 'self'")
+		w.Header().Set("Content-Type", "text/html")
+		io.WriteString(w, "<script>fetch('/hooks')</script>")
+	}), tunnel.Options{})
+	resp := e.do(sender, "GET", "/~moritz/cb/page", nil, nil)
+	csp := resp.Header.Values("Content-Security-Policy")
+	if len(csp) != 2 || csp[0] != "default-src 'self'" || !strings.HasPrefix(csp[1], "sandbox ") || strings.Contains(csp[1], "allow-same-origin") {
+		t.Fatalf("Content-Security-Policy = %q", csp)
+	}
 }

@@ -128,7 +128,7 @@ func TestHoldQueueFull(t *testing.T) {
 	e.waitHeld(2)
 	start := time.Now()
 	resp := e.do(sender, "POST", "/~moritz/cb", nil, nil)
-	wantProblem(t, resp, 561, problem.TunnelUnavailable)
+	wantProblem(t, resp, 562, problem.HoldQueueFull)
 	if time.Since(start) > 2*time.Second || resp.Header.Get("Retry-After") != "30" {
 		t.Fatalf("a full queue must fail at once with Retry-After 30; took %v, Retry-After %q", time.Since(start), resp.Header.Get("Retry-After"))
 	}
@@ -443,5 +443,28 @@ func TestHeldCallCanceledWhileReidentified(t *testing.T) {
 	e.waitLog(`"error":"sender_canceled"`)
 	if strings.Contains(e.log(), `"msg":"authz.deny"`) {
 		t.Fatalf("a canceled call was refused:\n%s", e.log())
+	}
+}
+
+// Once the relay drains for a restart no tunnel can attach any more, so a
+// held call is answered at once, with a Retry-After that gets the sender
+// to the restarted relay, and so is a call that arrives during the drain.
+func TestDrainAnswersHeldCalls(t *testing.T) {
+	e := newEnv(t)
+	held := e.call("/~moritz/cb", "{}")
+	e.waitHeld(1)
+	e.h.Drain()
+	select {
+	case r := <-held:
+		if r.status != 503 || r.code != problem.ShuttingDown || r.took > 5*time.Second {
+			t.Fatalf("held call = %+v", r)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the held call is still held")
+	}
+	resp := e.do(sender, "POST", "/~moritz/cb", nil, nil)
+	wantProblem(t, resp, 503, problem.ShuttingDown)
+	if ra := resp.Header.Get("Retry-After"); ra != "5" {
+		t.Fatalf("Retry-After = %q", ra)
 	}
 }

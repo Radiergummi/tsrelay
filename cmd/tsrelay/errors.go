@@ -11,6 +11,19 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// tsrelay's exit statuses; docs/cli.md lists them. With a command after
+// "--", http exits with the command's status, so tsrelay's own failures
+// there take the 125 to 127 that shells use for the same.
+const (
+	exitError            = 1   // an error
+	exitUsage            = 2   // tsrelay was called wrongly
+	exitHookDeleted      = 3   // the last hook was deleted while serving it
+	exitUpdateAvailable  = 4   // update --check found a newer version
+	exitTsrelayWithChild = 125 // tsrelay failed, with a command given
+	exitNotExecutable    = 126 // the command can't be run
+	exitNotFound         = 127 // the command doesn't exist
+)
+
 // cliError is an error explained for people: what went wrong (Title), why
 // (Reason), and what to do instead (Fixes: commands or actions). Code names
 // it for --json: the relay's problem code, "usage", or one of the CLI's
@@ -55,9 +68,9 @@ func exitStatus(err error) int {
 	case errors.As(err, &ec):
 		return int(ec)
 	case errors.As(err, &ce) && ce.usage:
-		return 2
+		return exitUsage
 	default:
-		return 1
+		return exitError
 	}
 }
 

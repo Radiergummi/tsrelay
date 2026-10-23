@@ -244,6 +244,14 @@ func (c *call) tunnelUnavailable(detail string) *refusal {
 	return rf
 }
 
+// holdQueueFull is the answer when too many calls are already waiting for a
+// tunnel to attach to the hook.
+func (c *call) holdQueueFull() *refusal {
+	rf := refuse(problem.StatusTunnelOverloaded, problem.HoldQueueFull, "no tunnel is attached to this hook, and too many calls are waiting for one")
+	rf.retryAfter = holdRetryAfter(c.eff.HoldTimeout.Std())
+	return rf
+}
+
 // hold waits for a tunnel to attach to the hook.
 func (c *call) hold() error {
 	holdStart := time.Now()
@@ -252,12 +260,16 @@ func (c *call) hold() error {
 	c.waited = time.Since(holdStart)
 	result := "attached" // the span's tsrelay.hold.result
 	switch {
+	case errors.Is(err, errShuttingDown):
+		rf := refuse(http.StatusServiceUnavailable, problem.ShuttingDown, "the relay is restarting")
+		rf.retryAfter = "5"
+		result, err = "shutting_down", rf
 	case err != nil && c.ctx.Err() != nil:
 		result, err = "canceled", errSenderGone
 	case errors.Is(err, lifecycle.ErrHookGone), errors.Is(err, errHookExpired):
 		result, err = "hook_gone", errNoHook
 	case errors.Is(err, errHoldQueueFull):
-		result, err = "queue_full", c.tunnelUnavailable("no tunnel is attached to this hook, and too many calls are waiting for one")
+		result, err = "queue_full", c.holdQueueFull()
 	case err != nil:
 		result, err = "timeout", c.tunnelUnavailable("no tunnel is attached to this hook")
 	}
@@ -329,6 +341,14 @@ func (c *call) admit() error {
 	return nil
 }
 
+// sandboxPolicy is added to every response of a receiver's app. The app's
+// pages are served from the relay's own origin, so without it a page's
+// script could call the relay's API as whoever opened it. The sandbox gives
+// the page an opaque origin instead, and allows everything else a page may
+// need. The app's own policy, if any, applies as well.
+const sandboxPolicy = "sandbox allow-downloads allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox " +
+	"allow-scripts allow-top-navigation-by-user-activation"
+
 // forward sends the call down its tunnel and streams the app's response
 // back, under the hook's idle, body and response limits.
 func (c *call) forward() {
@@ -348,8 +368,9 @@ func (c *call) forward() {
 		// relay's; the one problem the CLI forwarder writes, when the app is
 		// unreachable, is kept. Tsrelay- trailers are dropped too, both as
 		// announced and once they arrive, which the proxy reads after
-		// closing the body.
+		// closing the body. The response is sandboxed, see sandboxPolicy.
 		ModifyResponse: func(resp *http.Response) error {
+			resp.Header.Add("Content-Security-Policy", sandboxPolicy)
 			resp.Header.Del(HeaderCallID)
 			if resp.StatusCode == problem.StatusUpstreamUnreachable && resp.Header.Get(problem.HeaderError) == problem.UpstreamUnreachable {
 				c.setOutcome(problem.UpstreamUnreachable)

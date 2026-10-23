@@ -2,6 +2,7 @@ package authz
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,11 +63,11 @@ func TestParseSkipsInvalidValues(t *testing.T) {
 		`{"roles":[]}`,
 		`{"roles":["sender"],"channels":["Bad/Pattern"]}`,
 		`{"roles":["receiver"],"maxHooks":-1}`,
-		`{"roles":["receiver"],"maxHookTTL":"-1h"}`,
+		`{"roles":["receiver"],"maxHookTtl":"-1h"}`,
 		`{"roles":["receiver"],"channels":["prod"],"futureField":true}`,
 	), DefaultLimits)
-	if len(errs) != 5 {
-		t.Fatalf("got %d errors (%v), want 5", len(errs), errs)
+	if len(errs) != 6 { // five skipped values, and a note on futureField, whose value applies
+		t.Fatalf("got %d errors (%v), want 6", len(errs), errs)
 	}
 	if eff.Has(RoleSender) {
 		t.Fatal("invalid sender value must be ignored entirely")
@@ -80,7 +81,7 @@ func TestParseLimitsTakeMaximum(t *testing.T) {
 	defaults := Limits{MaxHooks: 10, MaxTunnels: 5, MaxHookTTL: 24 * time.Hour}
 	eff, _ := Parse(raw(
 		`{"roles":["receiver"],"maxHooks":3}`,
-		`{"roles":["receiver"],"maxTunnels":8,"maxHookTTL":"720h"}`,
+		`{"roles":["receiver"],"maxTunnels":8,"maxHookTtl":"720h"}`,
 	), defaults)
 	want := Limits{MaxHooks: 10, MaxTunnels: 8, MaxHookTTL: 720 * time.Hour}
 	if eff.Limits != want {
@@ -89,7 +90,7 @@ func TestParseLimitsTakeMaximum(t *testing.T) {
 }
 
 func TestParseUnlimitedTTLStaysUnlimited(t *testing.T) {
-	eff, _ := Parse(raw(`{"roles":["receiver"],"maxHookTTL":"1h"}`), Limits{MaxHooks: 1})
+	eff, _ := Parse(raw(`{"roles":["receiver"],"maxHookTtl":"1h"}`), Limits{MaxHooks: 1})
 	if eff.Limits.MaxHookTTL != 0 {
 		t.Fatalf("MaxHookTTL = %v, want 0 (unlimited default wins)", eff.Limits.MaxHookTTL)
 	}
@@ -145,7 +146,7 @@ func TestParsePublicScoped(t *testing.T) {
 }
 
 func FuzzParse(f *testing.F) {
-	f.Add(`{"roles":["receiver"],"channels":["prod.*"],"maxHooks":3,"maxHookTTL":"8h"}`)
+	f.Add(`{"roles":["receiver"],"channels":["prod.*"],"maxHooks":3,"maxHookTtl":"8h"}`)
 	f.Fuzz(func(t *testing.T, v string) {
 		eff, _ := Parse(raw(v), DefaultLimits)
 		for _, ps := range eff.Patterns {
@@ -156,4 +157,51 @@ func FuzzParse(f *testing.F) {
 			}
 		}
 	})
+}
+
+func TestParseEmptyChannelsMatchesNothing(t *testing.T) {
+	eff, _ := Parse(raw(`{"roles":["receiver"],"channels":[],"public":true}`), DefaultLimits)
+	if eff.Allows(RoleReceiver, "default") || eff.AllowsPublic("default") {
+		t.Fatal(`"channels": [] must match nothing`)
+	}
+}
+
+func TestParseLimitsOnlyFromReceiverValues(t *testing.T) {
+	eff, _ := Parse(raw(`{"roles":["sender"],"maxHooks":50,"maxTunnels":50,"maxHookTtl":"720h"}`), Limits{MaxHooks: 10, MaxTunnels: 5, MaxHookTTL: time.Hour})
+	if eff.Limits != (Limits{MaxHooks: 10, MaxTunnels: 5, MaxHookTTL: time.Hour}) {
+		t.Fatalf("limits = %+v, a sender-only value must not raise them", eff.Limits)
+	}
+}
+
+func TestParseSkipsValueRequiringUnknownFeature(t *testing.T) {
+	eff, errs := Parse(raw(`{"roles":["receiver"],"requires":["expiry"]}`, `{"roles":["sender"]}`), DefaultLimits)
+	if eff.Has(RoleReceiver) || !eff.Has(RoleSender) || len(errs) != 1 {
+		t.Fatalf("receiver=%v sender=%v errs=%v", eff.Has(RoleReceiver), eff.Has(RoleSender), errs)
+	}
+}
+
+func TestParseReportsUnknownRoles(t *testing.T) {
+	eff, errs := Parse(raw(`{"roles":["receiver","recevier"]}`), DefaultLimits)
+	if !eff.Has(RoleReceiver) || len(errs) != 1 || !strings.Contains(errs[0].Error(), "recevier") {
+		t.Fatalf("errs = %v; unknown role must be reported, value still applied", errs)
+	}
+}
+
+// A misspelled key is reported: "channel" for "channels" leaves channels
+// absent, which grants every channel. The value still applies as written,
+// so a key a newer relay adds doesn't break an older one.
+func TestParseReportsUnknownKeys(t *testing.T) {
+	eff, errs := Parse(raw(`{"roles":["sender"],"channel":["staging"],"maxHooks":3}`), DefaultLimits)
+	if !eff.Has(RoleSender) || len(errs) != 1 || !strings.Contains(errs[0].Error(), `unknown key "channel"`) {
+		t.Fatalf("errs = %v", errs)
+	}
+}
+
+// encoding/json reads "Channels" as "channels", so it isn't reported as
+// ignored, but its spelling is.
+func TestParseReportsMiscasedKeys(t *testing.T) {
+	eff, errs := Parse(raw(`{"roles":["sender"],"Channels":["staging"]}`), DefaultLimits)
+	if !eff.Allows(RoleSender, "staging") || eff.Allows(RoleSender, "prod") || len(errs) != 1 || !strings.Contains(errs[0].Error(), `read as "channels"`) {
+		t.Fatalf("errs = %v", errs)
+	}
 }

@@ -125,7 +125,9 @@ func (s *Session) state(connected bool, err error) {
 	s.emit(Event{Kind: EventLost, Err: err})
 }
 
-// control applies a control message to the current hooks.
+// control applies a control message to the current hooks. A type it does not
+// know changes nothing, and fields it does not know are ignored when the
+// message is decoded: the v1 protocol only grows (DESIGN.md §6.2).
 func (s *Session) control(ctl tunnel.Control) {
 	s.emitMu.Lock()
 	defer s.emitMu.Unlock()
@@ -232,18 +234,20 @@ func (s *Session) refused(ctx context.Context, resume bool, id string, reason Dr
 }
 
 // refusal returns the hook a tunnel-attach refusal names and what dropping
-// it means; ok is false for any other error.
+// it means; ok is false for any other error. Only attach refusals name a
+// hook, so a code this client doesn't know, from a newer relay, falls back
+// to the HTTP status.
 func refusal(err error) (hook string, reason DropReason, ok bool) {
 	var p *problem.Problem
 	if !errors.As(err, &p) || p.Hook == "" {
 		return "", "", false
 	}
-	switch p.Status {
-	case http.StatusNotFound:
+	switch {
+	case p.Code == problem.NotFound, p.Status == http.StatusNotFound:
 		return p.Hook, DropDeleted, true
-	case http.StatusForbidden:
+	case p.Code == problem.ChannelForbidden, p.Code == problem.TunnelLimit, p.Code == problem.Forbidden, p.Status == http.StatusForbidden:
 		return p.Hook, DropRevoked, true
-	case http.StatusConflict:
+	case p.Code == problem.Superseded, p.Code == problem.AttachRejected, p.Status == http.StatusConflict:
 		return p.Hook, DropReplaced, true
 	}
 	return "", "", false

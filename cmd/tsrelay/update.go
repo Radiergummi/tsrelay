@@ -20,7 +20,9 @@ import (
 	"charm.land/fang/v2"
 	"github.com/Radiergummi/tsrelay/internal/atomicfile"
 	"github.com/Radiergummi/tsrelay/internal/client"
+	"github.com/Radiergummi/tsrelay/internal/install"
 	"github.com/spf13/cobra"
+	"golang.org/x/mod/semver"
 )
 
 // offerEvery is how often the update prompt and the release notice may
@@ -33,13 +35,14 @@ func newUpdateCmd(c *cli) *cobra.Command {
 		Short: "Replace this tsrelay with the relay's version",
 		Long: "Replace this tsrelay with the version the relay runs, downloaded from the relay " +
 			"and checked against the release's SHA-256 checksum before anything is replaced.",
-		Example: "  tsrelay update\n  tsrelay update --check",
+		Example: "  tsrelay update\n  tsrelay update --check\n  tsrelay update --force",
 		Args:    arity(0, 0, ""),
 	}
-	check := cmd.Flags().Bool("check", false, "only report whether this tsrelay differs from the relay's version")
+	check := cmd.Flags().Bool("check", false, "only report whether this tsrelay differs from the relay's version; exit 4 if the relay's is newer")
 	yes := cmd.Flags().BoolP("yes", "y", false, "update without asking")
+	force := cmd.Flags().Bool("force", false, "install the relay's version even when this tsrelay is newer")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
-		return c.update(cmd.Context(), *check, *yes)
+		return c.update(cmd.Context(), *check, *yes, *force)
 	}
 	return cmd
 }
@@ -53,8 +56,9 @@ type updateResult struct {
 }
 
 // update replaces this executable with the relay's version of tsrelay.
-// check only reports; yes skips the confirmation.
-func (c *cli) update(ctx context.Context, check, yes bool) error {
+// check only reports; yes skips the confirmation; force allows replacing a
+// newer tsrelay with the relay's older one.
+func (c *cli) update(ctx context.Context, check, yes, force bool) error {
 	c.versionWarned.Do(func() {}) // this command is what the warning suggests
 	if version == "dev" {
 		return &cliError{Title: "A dev build doesn't update itself", Code: "dev_build",
@@ -83,10 +87,24 @@ func (c *cli) update(ctx context.Context, check, yes bool) error {
 		return &cliError{Title: "The relay is a dev build", Code: "relay_dev",
 			Reason: "It runs no release, so there is no version of tsrelay to match.",
 			Fixes:  []string{"Ask the relay's operator to run a release"}}
+	case !semver.IsValid(me.Version):
+		return &cliError{Title: "The relay's version is unknown", Code: "relay_version_unknown",
+			Reason: fmt.Sprintf("The relay says it runs %q, which is no release version, so there is no release to install.", me.Version),
+			Fixes:  []string{"Ask the relay's operator to run a release"}}
 	case me.Version == version:
 		return report(errStream.glyph(errStream.style(styleOK, "●")) + fmt.Sprintf("tsrelay %s is the relay's version already", version))
+	case check && semver.Compare(version, me.Version) > 0:
+		// This tsrelay is the newer one: nothing to update to.
+		return report(fmt.Sprintf("Relay is %s, you have %s, which is newer", me.Version, version))
 	case check:
-		return report(fmt.Sprintf("Relay is %s, you have %s. Update with: %s", me.Version, version, c.updateCommand()))
+		if err := report(fmt.Sprintf("Relay is %s, you have %s. Update with: %s", me.Version, version, c.updateCommand())); err != nil {
+			return err
+		}
+		return exitCodeError(exitUpdateAvailable)
+	case !force && semver.Compare(version, me.Version) > 0:
+		return &cliError{Title: "This tsrelay is newer than the relay", Code: "downgrade",
+			Reason: fmt.Sprintf("This tsrelay (%s) is newer than the relay (%s); updating would replace it with an older version.", version, me.Version),
+			Fixes:  []string{c.updateCommand() + " --force"}}
 	}
 
 	exe, err := executablePath(c.d)
@@ -112,7 +130,7 @@ func (c *cli) update(ctx context.Context, check, yes bool) error {
 			return report(fmt.Sprintf("Left tsrelay %s as it is", version))
 		}
 	}
-	err = download(ctx, relayAPI.HTTP, c.base, f)
+	err = download(ctx, relayAPI.HTTP, me.Version, f)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -165,10 +183,9 @@ func installCommand(base string) string {
 	return "curl -fsSL " + base + "/install.sh | sh"
 }
 
-// download writes the relay's tsrelay for this platform to f, and checks
-// it against the release's checksum. The relay redirects
-// /download/{os}/{arch} to the release asset; the checksum is next to it,
-// at checksumURL(asset).
+// releases is where tsrelay update downloads from; tests point it elsewhere.
+var releases = install.Releases
+
 // checksumURL is where a release keeps asset's checksum: its URL without
 // ".exe", plus ".sha256", as the release workflow names it and install.sh
 // and install.ps1 fetch it.
@@ -176,11 +193,13 @@ func checksumURL(asset string) string {
 	return strings.TrimSuffix(asset, ".exe") + ".sha256"
 }
 
-func download(ctx context.Context, hc *http.Client, base string, f *os.File) error {
-	asset, err := assetURL(ctx, hc, base+"/download/"+runtime.GOOS+"/"+runtime.GOARCH)
-	if err != nil {
-		return err
-	}
+// download writes the release ver of tsrelay for this platform to f, and
+// checks it against the release's checksum. Both come from the releases,
+// not from the relay: a compromised relay can then only offer a genuine
+// release, and the version checks before this one keep it from being an
+// older one.
+func download(ctx context.Context, hc *http.Client, ver string, f *os.File) error {
+	asset := releases + "/download/" + ver + "/" + install.AssetName(runtime.GOOS, runtime.GOARCH)
 	resp, err := fetch(ctx, hc, asset)
 	if err != nil {
 		return err
@@ -207,28 +226,6 @@ func download(ctx context.Context, hc *http.Client, base string, f *os.File) err
 			Fixes:  []string{"Retry; if it keeps failing, the download is being altered on its way"}}
 	}
 	return nil
-}
-
-// assetURL is where the relay's download link redirects. GitHub redirects
-// that URL on to a signed one, which has no checksum next to it, so only
-// the relay's redirect is followed here.
-func assetURL(ctx context.Context, hc *http.Client, url string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	noFollow := *hc
-	noFollow.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := noFollow.Do(req)
-	if err != nil {
-		return "", downloadFailed(url, err)
-	}
-	resp.Body.Close()
-	loc, err := resp.Location()
-	if err != nil {
-		return "", downloadFailed(url, fmt.Errorf("it answered %s", resp.Status))
-	}
-	return loc.String(), nil
 }
 
 func fetch(ctx context.Context, hc *http.Client, url string) (*http.Response, error) {
@@ -335,9 +332,14 @@ func noticesPath(d deps) (string, error) {
 	return filepath.Join(filepath.Dir(p), "notices.json"), nil
 }
 
+// relayNewer reports whether the relay runs a newer version than this CLI.
+func relayNewer(v *versionSeen) bool {
+	return v.skew == skewCLIOlder || v.skew == skewMajor && semver.Compare(version, v.relay) < 0
+}
+
 // offer runs after a command that talked to the relay. On an interactive
 // terminal, at most once per offerEvery each, it offers to update to the
-// relay's version when the two differ, and tells admins about a relay
+// relay's version when it is newer, and tells admins about a relay
 // release newer than the relay. It never does in a background tunnel or a
 // completion, or after an interrupt.
 func (c *cli) offer(ctx context.Context) {
@@ -359,11 +361,11 @@ func (c *cli) offer(ctx context.Context) {
 		}
 	}
 	now := time.Now()
-	if v := c.version.Load(); v != nil && now.Sub(n.UpdatePrompt) >= offerEvery {
+	if v := c.version.Load(); v != nil && relayNewer(v) && now.Sub(n.UpdatePrompt) >= offerEvery {
 		n.UpdatePrompt = now
 		save()
 		if c.confirm(ctx, fmt.Sprintf("Relay is %s, you have %s. Update now?", v.relay, version)) {
-			if err := c.update(ctx, false, true); err != nil {
+			if err := c.update(ctx, false, true, false); err != nil {
 				c.handleError(c.stderr, fang.Styles{}, err)
 			}
 		}

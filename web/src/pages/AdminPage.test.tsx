@@ -45,7 +45,9 @@ test("lists every hook as metadata, subscribes to every hook's events, and delet
 
 test("another user's hook path is shown with its control characters revealed", async () => {
   server.use(
-    http.get("/hooks", () => HttpResponse.json([{ ...fixtures.theirs, path: "pay\u202egnp.exe" }])),
+    http.get("/hooks", () =>
+      HttpResponse.json({ hooks: [{ ...fixtures.theirs, path: "pay\u202egnp.exe" }] }),
+    ),
   );
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   renderWithProviders(

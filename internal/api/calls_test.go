@@ -43,9 +43,9 @@ func TestCallVisibility(t *testing.T) {
 	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb2"}, &h2)
 	e.seedCall("c_1", h.ID, completeBody(`{"secret":true}`))
 
-	var list []inspect.Summary
-	if resp := e.call(moritz, "GET", "/hooks/"+h.ID+"/calls", nil, &list); resp.StatusCode != 200 || len(list) != 1 || list[0].ID != "c_1" {
-		t.Fatalf("owner list = %d %+v", resp.StatusCode, list)
+	var res CallList
+	if resp := e.call(moritz, "GET", "/hooks/"+h.ID+"/calls", nil, &res); resp.StatusCode != 200 || len(res.Calls) != 1 || res.Calls[0].ID != "c_1" {
+		t.Fatalf("owner list = %d %+v", resp.StatusCode, res.Calls)
 	}
 	var full inspect.Call
 	if resp := e.call(moritz, "GET", "/hooks/"+h.ID+"/calls/c_1", nil, &full); resp.StatusCode != 200 ||
@@ -54,9 +54,9 @@ func TestCallVisibility(t *testing.T) {
 	}
 
 	// Admins see metadata only.
-	list = nil
-	if resp := e.call(admin, "GET", "/hooks/"+h.ID+"/calls", nil, &list); resp.StatusCode != 200 || len(list) != 1 {
-		t.Fatalf("admin list = %d %+v", resp.StatusCode, list)
+	res = CallList{}
+	if resp := e.call(admin, "GET", "/hooks/"+h.ID+"/calls", nil, &res); resp.StatusCode != 200 || len(res.Calls) != 1 {
+		t.Fatalf("admin list = %d %+v", resp.StatusCode, res.Calls)
 	}
 	var meta inspect.Call
 	if resp := e.call(admin, "GET", "/hooks/"+h.ID+"/calls/c_1", nil, &meta); resp.StatusCode != 200 {
@@ -162,8 +162,17 @@ func TestReplayRules(t *testing.T) {
 	replay := func(id authz.Identity, callID string) int {
 		return e.call(id, "POST", "/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, nil).StatusCode
 	}
+	replayCode := func(callID string) string {
+		return e.call(moritz, "POST", "/hooks/"+h.ID+"/calls/"+callID+"/replay", nil, nil).Header.Get(problem.HeaderError)
+	}
+	if got := replayCode("c_cut"); got != problem.NotCaptured {
+		t.Errorf("replay of c_cut: Tsrelay-Error = %q, want %q", got, problem.NotCaptured)
+	}
 	if code := replay(moritz, "c_cut"); code != 409 {
 		t.Errorf("replay of a truncated body = %d, want 409", code)
+	}
+	if got := replayCode("c_uncaptured"); got != problem.NotCaptured {
+		t.Errorf("replay of c_uncaptured: Tsrelay-Error = %q, want %q", got, problem.NotCaptured)
 	}
 	if code := replay(moritz, "c_uncaptured"); code != 409 {
 		t.Errorf("replay of an uncaptured body = %d, want 409", code)
@@ -173,11 +182,20 @@ func TestReplayRules(t *testing.T) {
 	if got.Replay == nil || got.Replay.Allowed || !strings.Contains(got.Replay.Reason, "aren't captured for this hook") {
 		t.Errorf("uncaptured call replay = %+v", got.Replay)
 	}
+	if got := replayCode("c_refused"); got != problem.CallRefused {
+		t.Errorf("replay of c_refused: Tsrelay-Error = %q, want %q", got, problem.CallRefused)
+	}
 	if code := replay(moritz, "c_refused"); code != 409 {
 		t.Errorf("replay of a call refused by channel = %d, want 409", code)
 	}
+	if got := replayCode("c_pending"); got != problem.CallPending {
+		t.Errorf("replay of c_pending: Tsrelay-Error = %q, want %q", got, problem.CallPending)
+	}
 	if code := replay(moritz, "c_pending"); code != 409 {
 		t.Errorf("replay of a pending call = %d, want 409", code)
+	}
+	if got := replayCode("c_long"); got != problem.NotCaptured {
+		t.Errorf("replay of c_long: Tsrelay-Error = %q, want %q", got, problem.NotCaptured)
 	}
 	if code := replay(moritz, "c_long"); code != 409 {
 		t.Errorf("replay of a truncated query = %d, want 409", code)
@@ -234,6 +252,10 @@ func TestTestRequest(t *testing.T) {
 		if resp := e.call(moritz, "POST", "/hooks/"+h.ID+"/test", req, &p); resp.StatusCode != 422 || !strings.Contains(p.Detail, strings.TrimSpace(field)) {
 			t.Errorf("%s: %d %+v, want 422 naming the field", field, resp.StatusCode, p)
 		}
+	}
+	// A test body may be larger than a hook's settings: up to 1 MiB.
+	if resp := e.call(moritz, "POST", "/hooks/"+h.ID+"/test", TestRequest{Body: strings.Repeat("x", 200<<10)}, nil); resp.StatusCode != 201 {
+		t.Errorf("200 KiB test body = %d, want 201", resp.StatusCode)
 	}
 	if resp := e.call(admin, "POST", "/hooks/"+h.ID+"/test", TestRequest{}, nil); resp.StatusCode != 403 {
 		t.Errorf("admin test request = %d, want 403", resp.StatusCode)

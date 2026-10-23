@@ -36,7 +36,7 @@ func (h *Handler) startRecord(r *http.Request, callID string, start time.Time, k
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	query, queryCut := h.Inspect.TruncateQuery(r.URL.RawQuery)
 	h.Inspect.Add(inspect.Call{
-		ID: callID, HookID: hook.ID, Owner: hook.Owner, Channel: hook.Channel, ReceivedAt: start, Kind: kind, ReplayOf: replayOf, Refused: refused,
+		ID: callID, HookID: hook.ID, Owner: hook.Owner, Channel: hook.Channel, ReceivedAt: start.UTC(), Kind: kind, ReplayOf: replayOf, Refused: refused,
 		Sender: inspect.Sender{Node: sender.NodeName, Tags: sender.Tags, Login: sender.Login, IP: ip, Public: internet},
 		Method: r.Method, Path: cmp.Or(rawPath, path), Query: query, QueryTruncated: queryCut,
 		RequestHeaders: headers, Redacted: redacted,
@@ -63,21 +63,21 @@ func (rc *callRecord) finish(res Result, d delivered) {
 	rc.in.Update(rc.id, func(c *inspect.Call) {
 		c.Outcome = res.Outcome()
 		c.Status = res.Status
-		c.Duration = hooks.Duration(res.Duration)
+		c.Duration = inspect.Millis(res.Duration)
 		c.RequestBody = rc.reqBuf.Capture(d.bodyRead)
 		if d.delivery.IsZero() {
 			return // refused before delivery: no attempt
 		}
 		respHeaders, respRedacted := rc.in.Redact(d.header)
 		a := inspect.Attempt{
-			ID: ids.New("a_"), StartedAt: d.delivery,
-			WaitedFor: hooks.Duration(res.Waited), Duration: hooks.Duration(now.Sub(d.delivery)),
+			ID: ids.New("a_"), StartedAt: d.delivery.UTC(),
+			WaitedFor: inspect.Millis(res.Waited), Duration: inspect.Millis(now.Sub(d.delivery)),
 			Status: res.Status, ResponseHeaders: respHeaders, Redacted: respRedacted,
 			ResponseBody: rc.respBuf.Capture(d.whole),
 			BytesIn:      res.BytesIn, BytesOut: res.BytesOut, Error: res.Code,
 		}
 		if res.HasTTFB {
-			a.TTFB = hooks.Duration(res.TTFB)
+			a.TTFB = inspect.Millis(res.TTFB)
 		}
 		if d.tunnel != nil {
 			a.TunnelID, a.Node = d.tunnel.ID, d.tunnel.Owner.NodeName

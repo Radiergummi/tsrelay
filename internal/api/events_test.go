@@ -111,7 +111,7 @@ func TestStreamCap(t *testing.T) {
 		open = append(open, resp)
 	}
 	resp, _ := e.openStream(c, "/hooks")
-	if resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get(problem.HeaderError) != problem.RateLimited {
+	if resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get(problem.HeaderError) != problem.StreamLimit {
 		t.Fatalf("9th stream = %d %s", resp.StatusCode, resp.Header.Get(problem.HeaderError))
 	}
 	// Another node of the same relay is not affected.

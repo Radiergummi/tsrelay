@@ -152,3 +152,47 @@ func TestEventStreamEndsAfterMaxAge(t *testing.T) {
 		t.Fatal("the stream outlived eventMaxAge")
 	}
 }
+
+// Every operation answers with a problem for anything it did not list (the
+// global 415 and 421 included), and the statuses the handlers can return
+// are declared.
+func TestOpenAPIDeclaresStatuses(t *testing.T) {
+	type operation struct {
+		Responses map[string]struct {
+			Ref string `yaml:"$ref"`
+		} `yaml:"responses"`
+	}
+	var doc struct {
+		Paths map[string]map[string]yaml.Node `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(openAPIYAML, &doc); err != nil {
+		t.Fatal(err)
+	}
+	ops := map[string]operation{}
+	for path, item := range doc.Paths {
+		for method, node := range item {
+			if method == "parameters" {
+				continue
+			}
+			var op operation
+			if err := node.Decode(&op); err != nil {
+				t.Fatal(err)
+			}
+			ops[method+" "+path] = op
+		}
+	}
+	for name, op := range ops {
+		if op.Responses["default"].Ref != "#/components/responses/Problem" {
+			t.Errorf("%s has no default Problem response", name)
+		}
+	}
+	for name, status := range map[string]string{
+		"delete /hooks/{id}":                     "403",
+		"post /hooks/{id}/calls/{callID}/replay": "500",
+		"post /hooks/{id}/test":                  "500",
+	} {
+		if _, ok := ops[name].Responses[status]; !ok {
+			t.Errorf("%s does not declare %s", name, status)
+		}
+	}
+}

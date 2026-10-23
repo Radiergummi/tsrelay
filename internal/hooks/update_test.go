@@ -29,7 +29,7 @@ func TestOptJSON(t *testing.T) {
 		t.Errorf("settings = %+v", req.Settings)
 	}
 	out, _ := json.Marshal(UpdateRequest{Description: Opt[string]{Set: true, Value: new("y")}, Channel: Opt[string]{Set: true}})
-	if string(out) != `{"channel":null,"description":"y","settings":{}}` {
+	if string(out) != `{"channel":null,"description":"y"}` {
 		t.Errorf("marshal = %s", out)
 	}
 }
