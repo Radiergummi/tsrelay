@@ -29,6 +29,7 @@ const (
 	UpstreamTimeout     = "upstream_timeout"
 	BodyStalled         = "body_stalled"
 	HoldQueueFull       = "hold_queue_full"
+	PathTooLong         = "path_too_long"
 
 	Forbidden            = "forbidden"
 	NotIdentified        = "not_identified"

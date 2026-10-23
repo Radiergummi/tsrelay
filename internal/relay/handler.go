@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"github.com/Radiergummi/tsrelay/internal/lifecycle"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -90,7 +92,17 @@ func (h *Handler) ServePublic(w http.ResponseWriter, r *http.Request) {
 	h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), publicKey{}, true)))
 }
 
+// maxPathBytes caps a call's escaped path, as servers cap a request line,
+// so a sender can't make the inspector, the audit log and the call events
+// keep megabytes per call.
+const maxPathBytes = 8 << 10
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if len(r.URL.EscapedPath()) > maxPathBytes {
+		problem.New(http.StatusRequestURITooLong, problem.PathTooLong,
+			fmt.Sprintf("the path is longer than %d bytes", maxPathBytes)).Write(w)
+		return
+	}
 	c := h.newCall(w, r)
 	defer c.end()
 	if err := c.deliver(); err != nil {
@@ -184,7 +196,10 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.
 	// which would let senders spoof it. These come from the connection only.
 	out := pr.Out
 	for k := range out.Header {
-		if strings.HasPrefix(k, "X-Forwarded-") {
+		// Some frameworks read "_" in a header name as "-" (CGI, WSGI,
+		// Rack), so X_Forwarded_For would pass for X-Forwarded-For there.
+		name := http.CanonicalHeaderKey(strings.ReplaceAll(k, "_", "-"))
+		if strings.HasPrefix(name, "X-Forwarded-") || strings.HasPrefix(name, "Tsrelay-") || name == "X-Real-Ip" || name == "Forwarded" {
 			delete(out.Header, k)
 		}
 	}

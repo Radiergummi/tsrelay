@@ -41,6 +41,10 @@ Senders see these when they call a hook.
 
 **413.** The request body is larger than the hook's `maxBodyBytes`, or, for a call from the internet, larger than the relay's `--funnel-max-body-bytes`. The hook's owner can raise the limit with `tsrelay hooks update <hook> --max-body-bytes 10485760`, up to the relay's maximum.
 
+### `path_too_long`
+
+**414.** The call's path, percent-encoded, is longer than 8 KiB. The relay refuses it before routing, like a server refusing an overlong request line, so it doesn't reach the inspector or the audit log. Shorten the path; send long data in the body.
+
 ### `rate_limited`
 
 **429.** The hook's `rateLimit` was exceeded. `Retry-After` is the limiter's wait, rounded up to whole seconds. Wait, then retry; the hook's owner can raise the limit with `tsrelay hooks update <hook> --rate-limit 100/200`.

@@ -337,6 +337,14 @@ func (c *call) admit() error {
 	return nil
 }
 
+// sandboxPolicy is added to every response of a receiver's app. The app's
+// pages are served from the relay's own origin, so without it a page's
+// script could call the relay's API as whoever opened it. The sandbox gives
+// the page an opaque origin instead, and allows everything else a page may
+// need. The app's own policy, if any, applies as well.
+const sandboxPolicy = "sandbox allow-downloads allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox " +
+	"allow-scripts allow-top-navigation-by-user-activation"
+
 // forward sends the call down its tunnel and streams the app's response
 // back, under the hook's idle, body and response limits.
 func (c *call) forward() {
@@ -356,8 +364,9 @@ func (c *call) forward() {
 		// relay's; the one problem the CLI forwarder writes, when the app is
 		// unreachable, is kept. Tsrelay- trailers are dropped too, both as
 		// announced and once they arrive, which the proxy reads after
-		// closing the body.
+		// closing the body. The response is sandboxed, see sandboxPolicy.
 		ModifyResponse: func(resp *http.Response) error {
+			resp.Header.Add("Content-Security-Policy", sandboxPolicy)
 			resp.Header.Del(HeaderCallID)
 			if resp.StatusCode == problem.StatusUpstreamUnreachable && resp.Header.Get(problem.HeaderError) == problem.UpstreamUnreachable {
 				c.setOutcome(problem.UpstreamUnreachable)
