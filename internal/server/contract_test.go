@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/Radiergummi/tsrelay/internal/hooks"
+	"github.com/Radiergummi/tsrelay/internal/inspect"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -48,12 +49,14 @@ func TestResponsesMatchOpenAPI(t *testing.T) {
 	defer e.cli(h.ID, local.URL)()
 	e.send(h, "/x?q=1", []byte(`{"a":1}`), http.Header{"Content-Type": {"application/json"}})
 	var calls struct {
-		Calls []struct{ ID string } `json:"calls"`
+		Calls []struct{ ID, Outcome string } `json:"calls"`
 	}
-	e.getJSON("/hooks/"+h.ID+"/calls", &calls)
-	if len(calls.Calls) == 0 {
-		t.Fatal("no call recorded")
-	}
+	// The sender has the answer just before the relay records the call as
+	// done, and a call still pending can't be replayed.
+	e.waitFor(func() bool {
+		e.getJSON("/hooks/"+h.ID+"/calls", &calls)
+		return len(calls.Calls) > 0 && calls.Calls[0].Outcome != inspect.OutcomePending
+	})
 	callID := calls.Calls[0].ID
 
 	for _, tc := range []struct {

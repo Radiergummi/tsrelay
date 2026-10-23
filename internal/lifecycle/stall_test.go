@@ -45,11 +45,18 @@ func TestStoreDeletesDoNotBlockLookups(t *testing.T) {
 	st.stall = true
 	defer close(st.release)
 
-	for name, remove := range map[string]func(){
-		"delete": func() { l.Delete(context.Background(), receiver, ids[0]) },
-		"reap":   func() { l.Reap(context.Background(), 0) },
+	// In this order: the delete takes ids[0], so the reap has only ids[1]
+	// left, the hook Lookup asks for, which must not wait for its own delete.
+	for _, step := range []struct {
+		name   string
+		remove func()
+	}{
+		{"delete", func() { l.Delete(context.Background(), receiver, ids[0]) }},
+		{"reap", func() { l.Reap(context.Background(), 0) }},
 	} {
-		go remove()
+		name := step.name
+		removed := make(chan struct{})
+		go func() { step.remove(); close(removed) }()
 		<-st.deleting // the delete is now stalled in the store
 		done := make(chan struct{})
 		go func() {
@@ -62,5 +69,6 @@ func TestStoreDeletesDoNotBlockLookups(t *testing.T) {
 			t.Fatalf("%s: Lookup waits for the stalled store delete", name)
 		}
 		st.release <- struct{}{}
+		<-removed
 	}
 }

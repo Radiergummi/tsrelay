@@ -36,14 +36,20 @@ func TestStoreWritesDoNotBlockReads(t *testing.T) {
 	st := stallingStore{Store: m.store, writing: make(chan struct{}), release: make(chan struct{})}
 	m.store = st
 	defer close(st.release)
-	for name, write := range map[string]func(){
-		"create": func() { m.Create(ctx, receiver, CreateRequest{Path: "new"}) },
-		"update": func() {
+	// In this order: each step must write, so delete comes last.
+	for _, step := range []struct {
+		name  string
+		write func()
+	}{
+		{"create", func() { m.Create(ctx, receiver, CreateRequest{Path: "new"}) }},
+		{"update", func() {
 			m.Update(ctx, receiver, served.ID, UpdateRequest{Description: Opt[string]{Set: true, Value: new("x")}})
-		},
-		"delete": func() { m.DeleteIf(ctx, served.ID, func(Hook) bool { return true }) },
+		}},
+		{"delete", func() { m.DeleteIf(ctx, served.ID, func(Hook) bool { return true }) }},
 	} {
-		go write()
+		name := step.name
+		wrote := make(chan struct{})
+		go func() { step.write(); close(wrote) }()
 		<-st.writing // the write is now stalled in the store
 		done := make(chan struct{})
 		go func() {
@@ -59,5 +65,6 @@ func TestStoreWritesDoNotBlockReads(t *testing.T) {
 			t.Fatalf("%s: reads wait for the stalled store write", name)
 		}
 		st.release <- struct{}{} // let this one write finish
+		<-wrote
 	}
 }
