@@ -152,7 +152,7 @@ func TestUsageErrorSites(t *testing.T) {
 		{args: []string{"serve", "--hook-hold-queue", "0"}, title: "--hook-hold-queue must be at least 1",
 			reason: "It says how many calls per hook may wait for a tunnel at once.",
 			fixes:  []string{"tsrelay serve --hook-hold-queue 16", "To disable holding: tsrelay serve --hook-hold-timeout-default=0s"}},
-		{args: []string{"serve", "--capture-calls", "0"}, title: "--capture-limit-bytes and --capture-calls must be at least 1",
+		{args: []string{"serve", "--capture-calls", "0"}, title: "--capture-limit-bytes, --capture-calls and --capture-total-bytes must be at least 1",
 			reason: "The inspector keeps at least one call, and at least one byte of it.",
 			fixes:  []string{"tsrelay serve --capture-calls 50 --capture-limit-bytes 65536", "To keep no bodies: tsrelay serve --capture-bodies=false"}},
 		{args: []string{"serve", "--user-slug-override", "a@b.com=A B"}, title: `Invalid slug "A B" for a@b.com`,

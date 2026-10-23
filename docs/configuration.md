@@ -39,6 +39,7 @@ Flag names follow one scheme, so a prefix tells you what a flag governs:
 | `--hook-hold-queue` | `100` | Calls per hook that may wait for a tunnel to attach at once |
 | `--capture-calls` | `100` | Calls per hook the inspector keeps in memory |
 | `--capture-limit-bytes` | `65536` | Bytes the inspector keeps of each body, of each call's headers, and of its query string |
+| `--capture-total-bytes` | `134217728` | Bytes the inspector keeps of all calls together (128 MiB); past it, the oldest calls of any hook go first. See [sizing](running-a-relay.md#sizing) |
 | `--capture-bodies` | `true` | `false` keeps no bodies for any hook |
 | `--redact-headers` | none | Headers whose values are never kept, in addition to `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and `X-Api-Key`, which are always redacted; names match without regard to case |
 | `--funnel` | `false` | Serve hooks their owners made public on the internet, through Tailscale Funnel; requires `--tls` |

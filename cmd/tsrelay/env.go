@@ -46,7 +46,7 @@ var envFlags = map[string]bool{
 	"response-timeout": true,
 	// serve: every flag.
 	"advertise-tags": true, "cap-name": true, "capture-bodies": true,
-	"capture-calls": true, "capture-limit-bytes": true, "ephemeral-grace": true,
+	"capture-calls": true, "capture-limit-bytes": true, "capture-total-bytes": true, "ephemeral-grace": true,
 	"funnel": true, "funnel-max-body-bytes": true, "funnel-port": true,
 	"hook-attach-policy-default": true, "hook-capture-default": true,
 	"hook-hold-queue": true, "hook-hold-timeout-default": true,

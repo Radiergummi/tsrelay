@@ -67,6 +67,7 @@ func newServeCmd(c *cli) *cobra.Command {
 	holdQueue := fs.Int("hook-hold-queue", relay.DefaultHoldQueue, "calls per hook that may wait for a tunnel at once")
 	captureLimit := fs.Int("capture-limit-bytes", inspect.DefaultCaptureLimit, "bytes the inspector keeps of each body, of each call's headers, and of its query string")
 	captureCalls := fs.Int("capture-calls", inspect.DefaultCallsPerHook, "calls per hook the inspector keeps")
+	captureTotal := fs.Int64("capture-total-bytes", inspect.DefaultTotalBytes, "bytes the inspector keeps of all calls together; past it, the oldest calls of any hook go first")
 	captureBodies := fs.Bool("capture-bodies", true, "keep bodies for the inspector; false records metadata and headers only, whatever hooks set")
 	redact := listFlag{}
 	fs.Var(&redact, "redact-headers", "headers whose values the inspector never keeps, in addition to the defaults (comma-separated)")
@@ -116,8 +117,8 @@ func newServeCmd(c *cli) *cobra.Command {
 			return usage("--hook-hold-queue must be at least 1", "It says how many calls per hook may wait for a tunnel at once.",
 				"tsrelay serve --hook-hold-queue 16", "To disable holding: tsrelay serve --hook-hold-timeout-default=0s")
 		}
-		if *captureLimit < 1 || *captureCalls < 1 {
-			return usage("--capture-limit-bytes and --capture-calls must be at least 1", "The inspector keeps at least one call, and at least one byte of it.",
+		if *captureLimit < 1 || *captureCalls < 1 || *captureTotal < 1 {
+			return usage("--capture-limit-bytes, --capture-calls and --capture-total-bytes must be at least 1", "The inspector keeps at least one call, and at least one byte of it.",
 				"tsrelay serve --capture-calls 50 --capture-limit-bytes 65536", "To keep no bodies: tsrelay serve --capture-bodies=false")
 		}
 		if *funnel && !*useTLS {
@@ -156,7 +157,7 @@ func newServeCmd(c *cli) *cobra.Command {
 			policy: policy,
 			server: server.Config{
 				EphemeralGrace: *grace, HoldQueue: *holdQueue, Tunnel: tunnel.Options{Concurrency: *concurrency},
-				Inspect: inspect.Config{CallsPerHook: *captureCalls, CaptureLimit: *captureLimit, NoBodies: !*captureBodies, Redact: redact.Values},
+				Inspect: inspect.Config{CallsPerHook: *captureCalls, CaptureLimit: *captureLimit, TotalBytes: *captureTotal, NoBodies: !*captureBodies, Redact: redact.Values},
 				CapName: *capName, NoTracePropagation: !*propagate, Revalidate: *revalidate,
 			},
 			opsListen: *opsListen, shutdownTimeout: *shutdownTimeout,
