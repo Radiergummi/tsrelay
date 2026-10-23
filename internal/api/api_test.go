@@ -839,3 +839,17 @@ func TestNotIdentified(t *testing.T) {
 		t.Fatalf("unidentified caller = %d %+v", resp.StatusCode, p)
 	}
 }
+
+// A tunnel is refused for a hook whose channel the owner's grants no longer
+// cover, and the problem names the hook.
+func TestAttachChannelForbidden(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb", Channel: "prod.a"}, &h)
+	narrowed := identify.User("laptop", "moritz@example.com", 1, `{"roles":["receiver"],"channels":["default"]}`)
+	_, _, err := e.openTunnelQ(narrowed, "", h.ID)
+	var p *problem.Problem
+	if !errors.As(err, &p) || p.Status != 403 || p.Code != problem.ChannelForbidden || p.Hook != h.ID {
+		t.Fatalf("attach outside the grants' channels: err = %v, want 403 channel_forbidden naming the hook", err)
+	}
+}

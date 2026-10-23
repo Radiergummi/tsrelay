@@ -120,6 +120,13 @@ test("an unidentified viewer gets one message and a reload button", async () => 
   expect(screen.getByRole("link", { name: "Licenses" })).toBeInTheDocument();
 });
 
+test("a forbidden entry document that isn't about identity is not called unidentified", async () => {
+  meIs({ title: "Forbidden", status: 403, code: "forbidden", detail: "no" }, 403);
+  renderAt("/");
+  expect(await screen.findByText("The relay is not reachable")).toBeInTheDocument();
+  expect(screen.queryByText(/could not identify your device/)).not.toBeInTheDocument();
+});
+
 test("a failed refetch of the entry document keeps the app", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   renderAt("/hooks", client);
