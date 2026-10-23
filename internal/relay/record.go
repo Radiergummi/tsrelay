@@ -63,7 +63,7 @@ func (rc *callRecord) finish(res Result, d delivered) {
 	rc.in.Update(rc.id, func(c *inspect.Call) {
 		c.Outcome = res.Outcome()
 		c.Status = res.Status
-		c.Duration = hooks.Duration(res.Duration)
+		c.Duration = inspect.Millis(res.Duration)
 		c.RequestBody = rc.reqBuf.Capture(d.bodyRead)
 		if d.delivery.IsZero() {
 			return // refused before delivery: no attempt
@@ -71,13 +71,13 @@ func (rc *callRecord) finish(res Result, d delivered) {
 		respHeaders, respRedacted := rc.in.Redact(d.header)
 		a := inspect.Attempt{
 			ID: ids.New("a_"), StartedAt: d.delivery,
-			WaitedFor: hooks.Duration(res.Waited), Duration: hooks.Duration(now.Sub(d.delivery)),
+			WaitedFor: inspect.Millis(res.Waited), Duration: inspect.Millis(now.Sub(d.delivery)),
 			Status: res.Status, ResponseHeaders: respHeaders, Redacted: respRedacted,
 			ResponseBody: rc.respBuf.Capture(d.whole),
 			BytesIn:      res.BytesIn, BytesOut: res.BytesOut, Error: res.Code,
 		}
 		if res.HasTTFB {
-			a.TTFB = hooks.Duration(res.TTFB)
+			a.TTFB = inspect.Millis(res.TTFB)
 		}
 		if d.tunnel != nil {
 			a.TunnelID, a.Node = d.tunnel.ID, d.tunnel.Owner.NodeName

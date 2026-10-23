@@ -70,23 +70,23 @@ const VersionHeader = "Tsrelay-Version"
 // Me is the entry document, GET /: who the caller is, what the relay
 // allows them, and where its resources are.
 type Me struct {
-	Login   string                  `json:"login,omitempty"`
-	Node    string                  `json:"node"`
-	Tags    []string                `json:"tags,omitempty"`
-	Slug    string                  `json:"slug,omitempty"`
-	Roles   map[authz.Role][]string `json:"roles"`
-	Limits  Limits                  `json:"limits"`
-	Hooks   int                     `json:"hooks"`
-	CapName string                  `json:"capName"`
-	Version string                  `json:"version"`
-	Commit  string                  `json:"commit,omitempty"`
-	Policy  Policy                  `json:"policy"`
-	Public  []string                `json:"public"` // channel patterns in which the caller may make hooks public
-	Funnel  bool                    `json:"funnel"` // the relay serves public hooks
-	Links   map[string]string       `json:"links"`
+	Login          string                  `json:"login,omitempty"`
+	Node           string                  `json:"node"`
+	Tags           []string                `json:"tags,omitempty"`
+	Slug           string                  `json:"slug,omitempty"`
+	Roles          map[authz.Role][]string `json:"roles"`
+	Limits         Limits                  `json:"limits"`
+	HookCount      int                     `json:"hookCount"`
+	CapName        string                  `json:"capName"`
+	Version        string                  `json:"version"`
+	Commit         string                  `json:"commit,omitempty"`
+	Policy         Policy                  `json:"policy"`
+	PublicPatterns []string                `json:"publicPatterns"` // channel patterns in which the caller may make hooks public
+	Funnel         bool                    `json:"funnel"`         // the relay serves public hooks
+	Links          map[string]string       `json:"links"`
 	// For admins, a release newer than Version, and its release notes.
 	LatestVersion string `json:"latestVersion,omitempty"`
-	ReleaseURL    string `json:"releaseURL,omitempty"`
+	ReleaseURL    string `json:"releaseUrl,omitempty"`
 	// Optional behaviors this relay has beyond the API's baseline, by name;
 	// empty at 1.0, never null.
 	Features []string `json:"features"`
@@ -115,7 +115,7 @@ type Policy struct {
 type Limits struct {
 	MaxHooks   int    `json:"maxHooks"`
 	MaxTunnels int    `json:"maxTunnels"`
-	MaxHookTTL string `json:"maxHookTTL,omitempty"` // empty means unlimited
+	MaxHookTTL string `json:"maxHookTtl"` // "0s" means unlimited
 }
 
 // HookList is GET /hooks. It is an object so it can grow siblings.
@@ -219,18 +219,18 @@ func (a *API) authed(f func(http.ResponseWriter, *http.Request, authz.Identity))
 func (a *API) MeOf(id authz.Identity) Me {
 	me := Me{
 		Login: id.Login, Node: id.NodeName, Tags: id.Tags, Roles: id.Grants.Patterns,
-		Limits: Limits{MaxHooks: id.Grants.Limits.MaxHooks, MaxTunnels: id.Grants.Limits.MaxTunnels},
-	}
-	if ttl := id.Grants.Limits.MaxHookTTL; ttl > 0 {
-		me.Limits.MaxHookTTL = ttl.String()
+		Limits: Limits{
+			MaxHooks: id.Grants.Limits.MaxHooks, MaxTunnels: id.Grants.Limits.MaxTunnels,
+			MaxHookTTL: id.Grants.Limits.MaxHookTTL.String(),
+		},
 	}
 	if id.IsUser() {
 		me.Slug, _ = a.Hooks.Slug(id.Login)
-		me.Hooks = len(a.Hooks.List(id.UserID))
+		me.HookCount = len(a.Hooks.List(id.UserID))
 	}
 	p := a.Hooks.Policy()
 	me.CapName, me.Version, me.Commit, me.Policy = a.CapName, a.Version, a.Commit, Policy{Defaults: p.Defaults, Max: p.Max, CallsPerHook: a.Inspect.CallsPerHook(), NoBodies: a.Inspect.NoBodies()}
-	me.Public = append([]string{}, id.Grants.PublicPatterns...)
+	me.PublicPatterns = append([]string{}, id.Grants.PublicPatterns...)
 	me.Funnel = a.PublicBaseURL != ""
 	me.Features = []string{}
 	me.Links = links

@@ -38,7 +38,7 @@ export function HooksPage() {
             onChange={(c) => setSearch(c ? { channel: c } : {}, { replace: true })}
           />
           <span>
-            {me.hooks} of {me.limits.maxHooks}
+            {me.hookCount} of {me.limits.maxHooks}
           </span>
           <Link to="/hooks/new" className={buttonVariants()}>
             New hook

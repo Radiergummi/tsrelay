@@ -86,12 +86,12 @@ func TestMePublicAndFunnel(t *testing.T) {
 	e := newEnv(t)
 	var me Me
 	e.call(publicMoritz, "GET", "/", nil, &me)
-	if len(me.Public) != 1 || me.Public[0] != "*" || me.Funnel {
+	if len(me.PublicPatterns) != 1 || me.PublicPatterns[0] != "*" || me.Funnel {
 		t.Fatalf("me = %+v; want public grant, funnel off", me)
 	}
 	e.api.PublicBaseURL = publicBase
 	e.call(moritz, "GET", "/", nil, &me)
-	if me.Public == nil || len(me.Public) != 0 || !me.Funnel {
+	if me.PublicPatterns == nil || len(me.PublicPatterns) != 0 || !me.Funnel {
 		t.Fatalf("me = %+v; want no public grant, funnel on", me)
 	}
 }

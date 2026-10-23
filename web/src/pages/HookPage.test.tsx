@@ -122,7 +122,7 @@ test("a pending call that completes refreshes the open inspector", async () => {
   open(fixtures.hook.id, `/hooks/${fixtures.hook.id}/calls/c_pending`);
   await screen.findByRole("heading", { level: 2, name: /POST/ });
   expect(screen.queryByText("200 OK")).not.toBeInTheDocument();
-  const done = { ...fixtures.callPending, outcome: "ok", status: 200, duration: "12ms" };
+  const done = { ...fixtures.callPending, outcome: "ok", status: 200, durationMs: 12 };
   server.use(http.get("/hooks/:id/calls/c_pending", () => HttpResponse.json(done)));
   act(() => {
     FakeEventSource.latest()!.open();

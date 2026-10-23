@@ -413,6 +413,11 @@ components:
       type: string
       description: A Go duration, such as `30s` or `2m0s`.
       examples: ["30s"]
+    Millis:
+      type: number
+      minimum: 0
+      description: A measured duration in milliseconds, with microsecond precision (`0.412` is 412 µs).
+      examples: [42, 0.412]
     Role:
       type: string
       enum: [receiver, sender, admin]
@@ -481,17 +486,17 @@ components:
             items: { type: string }
         limits:
           type: object
-          required: [maxHooks, maxTunnels]
+          required: [maxHooks, maxTunnels, maxHookTtl]
           properties:
             maxHooks: { type: integer }
             maxTunnels: { type: integer }
-            maxHookTTL: { $ref: "#/components/schemas/Duration" }
-        hooks: { type: integer, description: "Hooks the caller owns" }
+            maxHookTtl: { $ref: "#/components/schemas/Duration", description: "`0s` means no limit" }
+        hookCount: { type: integer, description: "Hooks the caller owns" }
         capName: { type: string }
         version: { type: string }
         commit: { type: string, description: "The revision the relay was built from, when known" }
         latestVersion: { type: string, description: "Admins only: a tsrelay release newer than `version`, unless the relay runs with --update-check=false" }
-        releaseURL: { type: string, format: uri, description: "Admins only: the release notes of `latestVersion`" }
+        releaseUrl: { type: string, format: uri, description: "Admins only: the release notes of `latestVersion`" }
         policy:
           type: object
           required: [defaults, max, callsPerHook]
@@ -507,7 +512,7 @@ components:
                 rateLimit: { $ref: "#/components/schemas/RateLimit" }
             callsPerHook: { type: integer }
             noBodies: { type: boolean, description: "The relay keeps no bodies, whatever hooks set (--capture-bodies=false)" }
-        public: { type: array, items: { type: string }, description: "Channel patterns in which the caller may make hooks public; empty when none" }
+        publicPatterns: { type: array, items: { type: string }, description: "Channel patterns in which the caller may make hooks public; empty when none" }
         funnel: { type: boolean, description: "The relay serves public hooks on the internet" }
         features: { type: array, items: { type: string }, description: "Optional behaviors this relay has beyond the API's baseline, by name; empty at 1.0" }
         links:
@@ -624,7 +629,7 @@ components:
     Summary:
       type: object
       description: A call without headers and bodies.
-      required: [id, hookId, receivedAt, kind, sender, method, path, outcome, duration]
+      required: [id, hookId, receivedAt, kind, sender, method, path, outcome, durationMs]
       properties:
         id: { type: string }
         hookId: { type: string }
@@ -644,7 +649,7 @@ components:
           type: string
           description: "`pending`, `ok`, `sender_canceled` (the sender went away before the call finished), or a `Tsrelay-Error` code"
         status: { type: integer }
-        duration: { $ref: "#/components/schemas/Duration" }
+        durationMs: { $ref: "#/components/schemas/Millis" }
     Capture:
       type: object
       required: [size, captured]
@@ -660,15 +665,15 @@ components:
         items: { type: string }
     Attempt:
       type: object
-      required: [id, startedAt, waitedFor, ttfb, duration, responseBody, bytesIn, bytesOut]
+      required: [id, startedAt, waitedForMs, ttfbMs, durationMs, responseBody, bytesIn, bytesOut]
       properties:
         id: { type: string }
         startedAt: { type: string, format: date-time }
         tunnelId: { type: string }
         node: { type: string }
-        waitedFor: { $ref: "#/components/schemas/Duration" }
-        ttfb: { $ref: "#/components/schemas/Duration" }
-        duration: { $ref: "#/components/schemas/Duration" }
+        waitedForMs: { $ref: "#/components/schemas/Millis" }
+        ttfbMs: { $ref: "#/components/schemas/Millis" }
+        durationMs: { $ref: "#/components/schemas/Millis" }
         status: { type: integer }
         responseHeaders: { $ref: "#/components/schemas/Headers" }
         redacted:

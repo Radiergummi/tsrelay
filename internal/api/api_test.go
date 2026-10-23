@@ -144,6 +144,49 @@ func TestMeFeaturesIsArray(t *testing.T) {
 	}
 }
 
+// The names of the entry document are API: assert on the raw keys, since
+// decoding into Me matches them case-insensitively.
+func TestMeFieldNames(t *testing.T) {
+	e := newEnv(t)
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"tag_name":"v0.4.0","html_url":"https://github.com/Radiergummi/tsrelay/releases/tag/v0.4.0"}`)
+	}))
+	t.Cleanup(github.Close)
+	e.api.Releases = &release.Checker{URL: github.URL}
+	e.api.Releases.Check(t.Context())
+	var raw map[string]json.RawMessage
+	e.call(admin, "GET", "/", nil, &raw)
+	for _, k := range []string{"hookCount", "publicPatterns", "releaseUrl", "latestVersion"} {
+		if _, ok := raw[k]; !ok {
+			t.Errorf("missing key %q in %v", k, keys(raw))
+		}
+	}
+	for _, k := range []string{"hooks", "public", "releaseURL"} {
+		if _, ok := raw[k]; ok {
+			t.Errorf("old key %q still present", k)
+		}
+	}
+	var limits map[string]json.RawMessage
+	if err := json.Unmarshal(raw["limits"], &limits); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := limits["maxHookTTL"]; ok {
+		t.Error("old key limits.maxHookTTL still present")
+	}
+	if got := string(limits["maxHookTtl"]); got != `"0s"` {
+		t.Errorf("limits.maxHookTtl = %s, want \"0s\" for no limit", got)
+	}
+}
+
+func keys(m map[string]json.RawMessage) []string {
+	var ks []string
+	for k := range m {
+		ks = append(ks, k)
+	}
+	slices.Sort(ks)
+	return ks
+}
+
 func TestMeNamesCapAndPolicy(t *testing.T) {
 	e := newEnv(t)
 	var me Me

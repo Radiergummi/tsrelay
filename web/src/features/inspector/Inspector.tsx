@@ -93,7 +93,7 @@ function CallView({
   const showDiff = call.kind === "replay" && !!call.replayOf && owner;
   const reason = call.replay?.reason ?? "";
   const last = call.attempts.at(-1);
-  const ms = parseDuration(call.duration) ?? 0;
+  const ms = call.durationMs;
   const timeout = parseDuration(hook.effective.responseTimeout) ?? 0;
 
   const doReplay = () => {

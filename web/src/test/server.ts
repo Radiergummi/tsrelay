@@ -86,7 +86,7 @@ export const handlers = [
     if (params.id === fixtures.hostile.id)
       return HttpResponse.json({
         calls: hostileCalls.map(
-          ({ id, hookId, receivedAt, kind, sender, method, path, outcome, status, duration }) => ({
+          ({
             id,
             hookId,
             receivedAt,
@@ -96,7 +96,18 @@ export const handlers = [
             path,
             outcome,
             status,
-            duration,
+            durationMs,
+          }) => ({
+            id,
+            hookId,
+            receivedAt,
+            kind,
+            sender,
+            method,
+            path,
+            outcome,
+            status,
+            durationMs,
           }),
         ),
       });

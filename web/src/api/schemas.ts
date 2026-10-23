@@ -1,11 +1,13 @@
 import * as z from "zod/mini";
 
 // Every schema mirrors the Go JSON in internal/api, internal/inspect and
-// internal/hooks. Durations are Go duration strings ("1.5s", "2m0s"),
-// times RFC 3339, and bodies base64.
+// internal/hooks. Setting durations are Go duration strings ("1.5s", "2m0s"),
+// measured durations (…Ms) numbers of milliseconds, times RFC 3339, and
+// bodies base64.
 
 const headers = z.record(z.string(), z.array(z.string()));
 const duration = z.string();
+const millis = z.number();
 
 export const capture = z.object({
   body: z.optional(z.string()),
@@ -34,7 +36,7 @@ export const summary = z.object({
   path: z.string(),
   outcome: z.string(), // "ok", "pending", or a relay error code
   status: z.optional(z.number()),
-  duration,
+  durationMs: millis,
 });
 export const summaries = z.array(summary);
 /** callList is GET /hooks/{id}/calls. */
@@ -45,9 +47,9 @@ export const attempt = z.object({
   startedAt: z.string(),
   tunnelId: z.optional(z.string()),
   node: z.optional(z.string()),
-  waitedFor: duration,
-  ttfb: duration,
-  duration,
+  waitedForMs: millis,
+  ttfbMs: millis,
+  durationMs: millis,
   status: z.optional(z.number()),
   responseHeaders: z.optional(headers),
   redacted: z.optional(z.array(z.string())),
@@ -151,9 +153,9 @@ export const me = z.object({
   limits: z.object({
     maxHooks: z.number(),
     maxTunnels: z.number(),
-    maxHookTTL: z.optional(z.string()),
+    maxHookTtl: z.string(), // "0s" means no limit
   }),
-  hooks: z.number(),
+  hookCount: z.number(),
   capName: z.string(),
   version: z.string(),
   commit: z.optional(z.string()),
@@ -163,7 +165,7 @@ export const me = z.object({
     callsPerHook: z.number(),
     noBodies: z.optional(z.boolean()),
   }),
-  public: z.array(z.string()),
+  publicPatterns: z.array(z.string()),
   funnel: z.optional(z.boolean()),
   features: z.array(z.string()),
 });
