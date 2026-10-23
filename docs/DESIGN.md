@@ -168,7 +168,7 @@ The grant's `ip` part is what gives network access. The `app` part only authoriz
 
 `CapMap[cap]` is a flat list of JSON values from every grant that matches, and it does not say which grant each value came from. The relay merges the list into an `Effective` value:
 
-- **Each value is parsed on its own.** A malformed value is ignored and logged once per node (fail closed); the others still apply. **Unknown fields are ignored**, which keeps the schema forward-compatible.
+- **Each value is parsed on its own.** A malformed value is ignored and logged once per node (fail closed); the others still apply. **Unknown fields are ignored**, which keeps the schema forward-compatible, but logged with the same once-per-node warning: a misspelled `channels` would otherwise silently grant every channel.
 - **`roles` and `channels`** are combined by union. Channels are tracked per role, so a `sender` grant's channels never widen what the same node can do as a `receiver`.
 - **Numeric and duration limits:** for each value, take the value it sets, or the relay's configured default if it sets none. The effective limit is the **maximum** of those. Grants only ever add access in Tailscale, and merging does the same. As a result a grant cannot push a limit *below* the relay default. To restrict most users, an operator lowers the relay default and raises it for specific groups.
 - **`public`** is scoped by channel: a value with it set to `true` lets the node make public the hooks in that value's `channels` (`*` when absent), and only if the same value grants `receiver` (§19). The channel patterns of all such values are combined by union.
@@ -316,7 +316,9 @@ Tunnel and transport failures use statuses of their own, 561 to 565, which no co
 | `hook_not_found` | 404 | No such hook, or the sender's channels don't match it. The two cases are deliberately indistinguishable to the sender; the owner sees channel-denied calls in the inspector. |
 | `body_stalled` | 408 | The sender's request body was idle for `idleTimeout` before the local application answered |
 | `body_too_large` | 413 | Over `maxBodyBytes` (unlimited by default) |
+| `path_too_long` | 414 | The escaped path is over 8 KiB. Refused before routing, so it reaches neither the inspector nor the audit log. |
 | `rate_limited` | 429 + `Retry-After` | Hook rate limit exceeded. `Retry-After` is the limiter's wait, rounded up to whole seconds, at least 1. |
+| `shutting_down` | 503 + `Retry-After: 5` | The relay is shutting down while the call waits for a tunnel, or the call arrives during the shutdown. Calls already delivered get `--shutdown-timeout` to finish before the tunnels close. |
 | `tunnel_unavailable` | 561 Tunnel Unavailable + `Retry-After` | No tunnel attached within `holdTimeout`. `Retry-After` is `max(5s, holdTimeout)`, rounded up to whole seconds. |
 | `hold_queue_full` | 562 Tunnel Overloaded + `Retry-After` | No tunnel attached, and the hook's hold queue is full. Same `Retry-After`. |
 | `tunnel_overloaded` | 562 Tunnel Overloaded + `Retry-After: 1` | Per-tunnel concurrency limit reached |
@@ -372,7 +374,7 @@ Every call has an attempts list from the start, even though v1 only ever creates
 
 ### 9.2 Storage and visibility
 
-- **Retention:** the last 100 calls per hook (configurable), in memory, gone on restart. Each captured body is held up to 64 KiB (configurable).
+- **Retention:** the last 100 calls per hook (configurable), in memory, gone on restart. Each captured body is held up to 64 KiB (configurable), and all calls together up to `--capture-total-bytes` (128 MiB), past which the oldest calls of any hook are dropped, so senders can't grow the inspector past a bound.
 - **Refused calls:** calls denied by channel are recorded on the hook they targeted, so the owner can see them, but kept apart so a sender without access can't crowd out real calls: the last 10 per hook, in their own ring, marked `refused: true`. They produce no events, are refused before the rate limit and never count against it, and are never a hook's `lastCall`, which is its newest delivered call.
 - **Visibility:** only the hook's owner sees query strings, headers and bodies. Admins whose patterns match the hook's channel see metadata only, path included (§5.8).
 - **Redaction:** `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and `X-Api-Key` are redacted by default. `--redact-headers` adds to the list relay-wide; the defaults can't be removed. Redacted values are dropped at capture time and never held in memory.
@@ -490,6 +492,8 @@ Relay-wide settings (flag / environment variable):
 | `--tunnel-concurrency` | 32 streams |
 | `--hook-hold-queue` | 100 per hook |
 | `--capture-limit-bytes` / `--capture-calls` | 64 KiB / 100 per hook |
+| `--capture-total-bytes` | 128 MiB for all calls together; past it the oldest calls of any hook go |
+| `--shutdown-timeout` | 20 s for delivered calls to finish on shutdown |
 | `--capture-bodies` | `true` |
 | `--redact-headers` | none (adds to `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`) |
 | `--hook-capture-default` | `false` |
