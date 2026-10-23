@@ -73,7 +73,7 @@ jobs:
         run: go test -run='^$' -bench=. -benchtime=1x ./...
 
       - name: tailnet integration test
-        run: go test -race -tags tailnet ./internal/server
+        run: go test -race -tags tailnet -run 'Tailnet' ./internal/server ./cmd/tsrelay
 
   # Background tunnels detach, signal and stop processes differently per
   # system, so their tests run on each.
