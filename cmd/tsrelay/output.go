@@ -27,6 +27,7 @@ type output struct {
 	now            func() time.Time
 	explain        func(error) *cliError
 	bg             *bgChild // told why the command stops, if this is a background tunnel
+	child          bool     // a command runs after "--", so its exit status is the command's own
 	mu             sync.Mutex
 	// inspectBase is the relay's URL. Call lines link to the call's
 	// inspector page below it. Empty means no links.
@@ -295,8 +296,18 @@ func (o *output) stopped(reason string, err error, code int) int {
 	return code
 }
 
-// fail reports err as the reason the command stops; the exit code is 1.
-func (o *output) fail(err error) int { return o.stopped("error", err, 1) }
+// fail reports err as the reason the command stops.
+func (o *output) fail(err error) int { return o.stopped("error", err, o.failCode(exitError)) }
+
+// failCode is the exit code for a failure of tsrelay that would exit with
+// code: with a command running, 125 instead, so that the command's own
+// codes stay apart.
+func (o *output) failCode(code int) int {
+	if o.child {
+		return exitTsrelayWithChild
+	}
+	return code
+}
 
 // finish reports how tunnel.Client.Run ended and returns the exit code.
 func (o *output) finish(err error) int {
@@ -304,7 +315,7 @@ func (o *output) finish(err error) int {
 	case err == nil:
 		return o.stopped("interrupted", nil, 0)
 	case errors.Is(err, tunnel.ErrNoHooks):
-		return o.stopped("no-hooks", nil, 1)
+		return o.stopped("no-hooks", nil, o.failCode(exitHookDeleted))
 	default:
 		return o.fail(err)
 	}

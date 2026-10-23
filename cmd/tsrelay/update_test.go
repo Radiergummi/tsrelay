@@ -292,12 +292,12 @@ func TestUpdateCheckOnlyReports(t *testing.T) {
 	setVersion(t, "v0.2.2")
 	exe := oldExecutable(t)
 	code, _, errOut := e.update(exe, "--check")
-	if code != 0 || !strings.Contains(errOut, "Relay is v0.3.0, you have v0.2.2. Update with: tsrelay update --relay "+e.relayURL) {
+	if code != exitUpdateAvailable || !strings.Contains(errOut, "Relay is v0.3.0, you have v0.2.2. Update with: tsrelay update --relay "+e.relayURL) {
 		t.Fatalf("exit %d\nstderr %q", code, errOut)
 	}
 	code, out, _ := e.update(exe, "--check", "--json")
 	var res updateResult
-	if code != 0 || json.Unmarshal([]byte(out), &res) != nil || res != (updateResult{CLIVersion: "v0.2.2", RelayVersion: "v0.3.0"}) {
+	if code != exitUpdateAvailable || json.Unmarshal([]byte(out), &res) != nil || res != (updateResult{CLIVersion: "v0.2.2", RelayVersion: "v0.3.0"}) {
 		t.Fatalf("--json: exit %d, stdout %q", code, out)
 	}
 	assertUnchanged(t, exe)
@@ -503,6 +503,18 @@ func TestChecksumURL(t *testing.T) {
 	} {
 		if got := checksumURL(asset); got != want {
 			t.Errorf("checksumURL(%q) = %q, want %q", asset, got, want)
+		}
+	}
+}
+
+func TestUpdateCheckExitsZeroWhenThereIsNothingNewer(t *testing.T) {
+	e := newCLIEnv(t)
+	e.relayWithAssets("v0.3.0")
+	exe := oldExecutable(t)
+	for _, cli := range []string{"v0.3.0", "v0.4.0"} { // the same, and a newer tsrelay
+		setVersion(t, cli)
+		if code, _, errOut := e.update(exe, "--check"); code != 0 {
+			t.Errorf("tsrelay %s, relay v0.3.0: exit %d, want 0\n%s", cli, code, errOut)
 		}
 	}
 }

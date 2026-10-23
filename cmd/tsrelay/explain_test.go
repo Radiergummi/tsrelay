@@ -86,7 +86,7 @@ func TestUsageErrorSites(t *testing.T) {
 			fixes: []string{"tsrelay hooks delete --help"}},
 		{args: []string{"hooks", "list", "extra"}, title: `Unexpected argument "extra"`, reason: "tsrelay hooks list takes no arguments.",
 			fixes: []string{"tsrelay hooks list --help"}},
-		{args: []string{"hooks", "create", "a", "b"}, title: `Unexpected argument "b"`, reason: "tsrelay hooks create takes at most one path.",
+		{args: []string{"hooks", "create", "a"}, title: `Unexpected argument "a"`, reason: "tsrelay hooks create takes no arguments.",
 			fixes: []string{"tsrelay hooks create --help"}},
 		{args: []string{"url", "a", "b"}, title: `Unexpected argument "b"`, reason: "tsrelay url takes at most one port or URL.",
 			fixes: []string{"tsrelay url --help"}},
@@ -117,11 +117,11 @@ func TestUsageErrorSites(t *testing.T) {
 		{args: []string{"serve", "--user-slug-override", "alice"}, title: `Invalid value "alice" for --user-slug-override`,
 			reason: `"alice" is not key=value.`,
 			fixes:  []string{"tsrelay serve --user-slug-override alice@example.com=alice", "tsrelay serve --help"}},
-		{args: []string{"http", "8080", "-n"}, title: "--name needs a value",
+		{args: []string{"http", "8080", "--path"}, title: "--path needs a value",
 			reason: "Hook path below your ~user prefix (default: remembered, else three random words).", fixes: []string{"tsrelay http --help"}},
-		{args: []string{"http", "8080"}, env: map[string]string{"TSRELAY_PERSISTENT": "maybe"},
+		{args: []string{"http", "8080"}, env: map[string]string{"TSRELAY_EPHEMERAL": "maybe"},
 			title:  "Invalid TSRELAY_* variable in the environment",
-			reason: `TSRELAY_PERSISTENT="maybe": …`, fixes: []string{"Correct or unset TSRELAY_PERSISTENT (it sets --persistent)"}},
+			reason: `TSRELAY_EPHEMERAL="maybe": …`, fixes: []string{"Correct or unset TSRELAY_EPHEMERAL (it sets --ephemeral)"}},
 
 		// targets
 		{args: []string{"attach", "pay"}, title: "No target to forward calls to", reason: "attach needs to know where your local app listens.",
@@ -181,7 +181,7 @@ func TestRelayErrorSites(t *testing.T) {
 	unsetenv(t, "TSRELAY_RELAY")
 	e := newCLIEnv(t)
 	d := deps{HTTP: tunnel.NewHTTPClient(e.fake.Dial(receiver)), StatePath: e.statePath}
-	for _, args := range [][]string{{"hooks", "create", "cb"}, {"hooks", "create", "eph", "--ephemeral"}} {
+	for _, args := range [][]string{{"hooks", "create", "--path", "cb"}, {"hooks", "create", "--path", "eph", "--ephemeral"}} {
 		if code, _, errOut := e.tsrelay(args...); code != 0 {
 			t.Fatalf("%q: exit %d\n%s", args, code, errOut)
 		}
@@ -193,17 +193,17 @@ func TestRelayErrorSites(t *testing.T) {
 	for _, tc := range []errorCase{
 		noHook("hooks", "show", "nope"),
 		noHook("hooks", "update", "nope", "--description", "x"),
-		noHook("hooks", "delete", "cb", "nope"),
+		noHook("hooks", "delete", "nope"),
 		noHook("attach", "nope", "--to", "8080"),
-		{args: []string{"http", e.local.URL, "--name", "cb", "--channel", "prod"}, status: 1,
+		{args: []string{"http", e.local.URL, "--path", "cb", "--channel", "prod"}, status: 1,
 			title:  `Your hook "cb" is in channel "default", not "prod"`,
 			reason: "tsrelay http reuses the hook at this path, and won't move it to another channel on its own.",
-			fixes:  []string{"tsrelay hooks update cb --channel prod", "tsrelay hooks delete cb", "Pick another path with --name"}, code: "hook_mismatch"},
-		{args: []string{"http", e.local.URL, "--name", "eph", "--persistent"}, status: 1,
+			fixes:  []string{"tsrelay hooks update cb --channel prod", "tsrelay hooks delete cb", "Pick another path with --path"}, code: "hook_mismatch"},
+		{args: []string{"http", e.local.URL, "--path", "eph", "--ephemeral=false"}, status: 1,
 			title:  `Your hook "eph" is ephemeral`,
-			reason: "--persistent asks for a hook that outlives tsrelay, and tsrelay http won't change the hook it reuses on its own.",
-			fixes:  []string{"tsrelay hooks update eph --ephemeral=false", "tsrelay hooks delete eph", "Pick another path with --name"}, code: "hook_mismatch"},
-		{args: []string{"http", e.local.URL, "--", "/nonexistent/tsrelay-test"}, status: 1,
+			reason: "--ephemeral=false asks for a hook that outlives tsrelay, and tsrelay http won't change the hook it reuses on its own.",
+			fixes:  []string{"tsrelay hooks update eph --ephemeral=false", "tsrelay hooks delete eph", "Pick another path with --path"}, code: "hook_mismatch"},
+		{args: []string{"http", e.local.URL, "--", "/nonexistent/tsrelay-test"}, status: 127,
 			title: "Couldn't start /nonexistent/tsrelay-test", reason: "Fork/exec /nonexistent/tsrelay-test: …",
 			fixes: []string{"Check that /nonexistent/tsrelay-test is installed and on your PATH"}, code: "command_failed"},
 		{args: []string{"url", "8080"}, status: 1, title: "No hook known here yet",

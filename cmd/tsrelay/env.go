@@ -42,7 +42,7 @@ var envFlags = map[string]bool{
 	// Hook settings, on http and hooks create/update.
 	"attach-policy": true, "capture": true, "channel": true, "description": true,
 	"ephemeral": true, "expires-in": true, "hold-timeout": true,
-	"host-header": true, "idle-timeout": true, "max-body-bytes": true, "persistent": true, "rate-limit": true,
+	"host-header": true, "idle-timeout": true, "max-body-bytes": true, "rate-limit": true,
 	"response-timeout": true,
 	// serve: every flag.
 	"advertise-tags": true, "cap-name": true, "capture-bodies": true,

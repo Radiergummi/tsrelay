@@ -128,8 +128,8 @@ func TestOutputJSON(t *testing.T) {
 	o.onState("http://localhost:8080", time.Second)(true, nil)
 	o.call(client.Call{Hook: "h_1", Method: "POST", Path: "/done", Status: 200, Duration: 1500 * time.Microsecond, Sender: "tag:ci"})
 	o.dropped(api.Hook{ID: "h_1", URL: testURL}, client.DropReplaced)
-	if code := o.finish(tunnel.ErrNoHooks); code != 1 {
-		t.Fatalf("finish = %d, want 1", code)
+	if code := o.finish(tunnel.ErrNoHooks); code != exitHookDeleted {
+		t.Fatalf("finish = %d, want 3", code)
 	}
 
 	var events []jsonEvent
@@ -153,7 +153,7 @@ func TestOutputJSON(t *testing.T) {
 	if e := events[3]; e.Hook != "h_1" || e.Reason != "replaced" || e.ExitCode != nil {
 		t.Errorf("hook stopped = %+v", e)
 	}
-	if e := events[4]; e.Reason != "no-hooks" || e.ExitCode == nil || *e.ExitCode != 1 {
+	if e := events[4]; e.Reason != "no-hooks" || e.ExitCode == nil || *e.ExitCode != exitHookDeleted {
 		t.Errorf("command stopped = %+v", e)
 	}
 	if stderr.String() != "" {

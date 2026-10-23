@@ -147,8 +147,8 @@ func TestVersionWarningAsJSON(t *testing.T) {
 		w.CLIVersion != "v1.0.0" || w.RelayVersion != "v2.0.0" || !strings.Contains(w.Warning, "different major versions") {
 		t.Fatalf("exit %d, stderr %q", code, errOut)
 	}
-	var hs []json.RawMessage
-	if err := json.Unmarshal([]byte(out), &hs); err != nil {
+	var hs struct{ Hooks []json.RawMessage }
+	if err := json.Unmarshal([]byte(out), &hs); err != nil || hs.Hooks == nil {
 		t.Fatalf("stdout is not the hook list: %v\n%s", err, out)
 	}
 }

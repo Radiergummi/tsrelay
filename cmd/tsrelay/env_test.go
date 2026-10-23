@@ -16,7 +16,7 @@ func TestEnvDefaults(t *testing.T) {
 	fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
 	grace := fs.Duration("ephemeral-grace", time.Minute, "")
 	name := fs.String("relay", "", "")
-	fs.Bool("persistent", false, "")
+	fs.Bool("ephemeral", false, "")
 	if err := fs.Parse([]string{"--relay", "flag"}); err != nil {
 		t.Fatal(err)
 	}
@@ -50,12 +50,12 @@ func TestEnvDefaultsSkipFlagsWithoutTwin(t *testing.T) {
 
 func TestEnvDefaultsInvalid(t *testing.T) {
 	fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
-	fs.Bool("persistent", false, "")
-	t.Setenv("TSRELAY_PERSISTENT", "maybe")
+	fs.Bool("ephemeral", false, "")
+	t.Setenv("TSRELAY_EPHEMERAL", "maybe")
 	err := envDefaults(fs)
 	var ce *cliError
-	if !errors.As(err, &ce) || !ce.usage || !strings.Contains(err.Error(), "TSRELAY_PERSISTENT") {
-		t.Fatalf("err = %v, want a usage error naming TSRELAY_PERSISTENT", err)
+	if !errors.As(err, &ce) || !ce.usage || !strings.Contains(err.Error(), "TSRELAY_EPHEMERAL") {
+		t.Fatalf("err = %v, want a usage error naming TSRELAY_EPHEMERAL", err)
 	}
 }
 
@@ -119,7 +119,7 @@ func TestEveryFlagDecidesItsEnvTwin(t *testing.T) {
 	noEnv := map[string]bool{
 		"all": true, "yes": true, "check": true, "follow": true, "background": true,
 		"force": true, "public": true, "insecure": true, "help": true,
-		"name": true, "path": true,
+		"path": true,
 	}
 	seen := map[string]bool{}
 	everyFlag(func(cmd *cobra.Command, f *pflag.Flag) {

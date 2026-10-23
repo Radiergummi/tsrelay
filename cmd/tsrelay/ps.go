@@ -11,12 +11,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// psEntry is one background tunnel as tsrelay ps lists it.
-type psEntry struct {
-	runRecord
-	State string `json:"state"` // running or exited
-}
-
 func newPsCmd(c *cli) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ps",
@@ -30,9 +24,10 @@ func newPsCmd(c *cli) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		entries := []psEntry{}
+		entries := []runJSON{}
 		for _, r := range readRecords(dir) {
-			e := psEntry{runRecord: r, State: "running"}
+			e := r.public()
+			e.State = "running"
 			if !runAlive(dir, r) {
 				e.State = "exited"
 				removeRun(dir, r.ID)
@@ -41,7 +36,9 @@ func newPsCmd(c *cli) *cobra.Command {
 		}
 		out, errStream := c.streams()
 		if c.json {
-			return writeJSON(out, entries)
+			return writeJSON(out, struct {
+				Runs []runJSON `json:"runs"`
+			}{entries})
 		}
 		rows := make([][]string, len(entries))
 		for i, e := range entries {
@@ -51,7 +48,7 @@ func newPsCmd(c *cli) *cobra.Command {
 			}
 			uptime := "-"
 			if e.State == "running" {
-				uptime = time.Since(e.Started).Round(time.Second).String()
+				uptime = time.Since(e.StartedAt).Round(time.Second).String()
 			}
 			rows[i] = []string{e.ID, strings.Join(urls, " "), e.Target, uptime, e.State}
 		}
@@ -100,38 +97,45 @@ func newStopCmd(c *cli) *cobra.Command {
 			}
 			rs = named
 		}
-		type stopped struct {
-			ID     string `json:"id"`
-			Result string `json:"result"` // stopped, killed or exited
+		// failure is a tunnel that would not stop, with the error on it.
+		type failure struct {
+			ID string `json:"id"`
+			jsonError
 		}
-		results := []stopped{}
+		result := struct {
+			Stopped []runJSON `json:"stopped"`
+			Failed  []failure `json:"failed"`
+		}{[]runJSON{}, []failure{}}
 		out, errStream := c.streams()
 		// A tunnel that won't stop doesn't keep the others running, nor
 		// hides the results of those stopped already.
 		var failed error
 		for _, r := range rs {
-			result, err := stopRun(dir, r)
+			state, err := stopRun(dir, r)
 			if err != nil {
 				if failed == nil {
 					failed = err
 				}
+				result.Failed = append(result.Failed, failure{r.ID, newJSONError(c.explain(err))})
 				continue
 			}
 			removeRun(dir, r.ID)
-			results = append(results, stopped{r.ID, result})
+			j := r.public()
+			j.State = state
+			result.Stopped = append(result.Stopped, j)
 			switch {
 			case c.json:
-			case result == "killed":
+			case state == "killed":
 				fmt.Fprintln(errStream.w, errStream.glyph(errStream.style(styleWarn, "●"))+
 					fmt.Sprintf("%s didn't detach within %s; killed it", r.ID, backgroundStopTimeout))
-			case result == "exited":
+			case state == "exited":
 				fmt.Fprintln(errStream.w, errStream.glyph(errStream.style(styleDim, "●"))+r.ID+" had exited already")
 			default:
 				fmt.Fprintln(errStream.w, errStream.glyph(errStream.style(styleOK, "●"))+"stopped "+r.ID)
 			}
 		}
 		if c.json {
-			if err := writeJSON(out, results); err != nil {
+			if err := writeJSON(out, result); err != nil {
 				return err
 			}
 		}

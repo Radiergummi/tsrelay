@@ -34,10 +34,10 @@ func newUpdateCmd(c *cli) *cobra.Command {
 		Short: "Replace this tsrelay with the relay's version",
 		Long: "Replace this tsrelay with the version the relay runs, downloaded from the relay " +
 			"and checked against the release's SHA-256 checksum before anything is replaced.",
-		Example: "  tsrelay update\n  tsrelay update --check",
+		Example: "  tsrelay update\n  tsrelay update --check\n  tsrelay update --force",
 		Args:    arity(0, 0, ""),
 	}
-	check := cmd.Flags().Bool("check", false, "only report whether this tsrelay differs from the relay's version")
+	check := cmd.Flags().Bool("check", false, "only report whether this tsrelay differs from the relay's version; exit 4 if the relay's is newer")
 	yes := cmd.Flags().BoolP("yes", "y", false, "update without asking")
 	force := cmd.Flags().Bool("force", false, "install the relay's version even when this tsrelay is newer")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
@@ -89,7 +89,13 @@ func (c *cli) update(ctx context.Context, check, yes, force bool) error {
 	case me.Version == version:
 		return report(errStream.glyph(errStream.style(styleOK, "●")) + fmt.Sprintf("tsrelay %s is the relay's version already", version))
 	case check:
-		return report(fmt.Sprintf("Relay is %s, you have %s. Update with: %s", me.Version, version, c.updateCommand()))
+		if err := report(fmt.Sprintf("Relay is %s, you have %s. Update with: %s", me.Version, version, c.updateCommand())); err != nil {
+			return err
+		}
+		if semver.IsValid(me.Version) && semver.Compare(version, me.Version) > 0 {
+			return nil // this tsrelay is the newer one: nothing to update to
+		}
+		return exitCodeError(exitUpdateAvailable)
 	case !force && semver.IsValid(me.Version) && semver.Compare(version, me.Version) > 0:
 		return &cliError{Title: "This tsrelay is newer than the relay", Code: "downgrade",
 			Reason: fmt.Sprintf("This tsrelay (%s) is newer than the relay (%s); updating would replace it with an older version.", version, me.Version),

@@ -48,7 +48,7 @@ The CLI should run the same major version as your relay; a CLI and a relay of th
 
 ```bash
 tsrelay update           # asks first; --yes doesn't
-tsrelay update --check   # only says whether the versions differ
+tsrelay update --check   # only says whether the versions differ; exits 4 if the relay is newer
 tsrelay update --force   # also installs the relay's version when yours is newer
 ```
 

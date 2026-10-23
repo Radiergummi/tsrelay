@@ -558,7 +558,7 @@ tsrelay http <port|url> [flags] [-- cmd args...]   forward a new or remembered h
 tsrelay attach <hook>... -t/--to <port|url>       serve existing hooks
 tsrelay hooks list (alias ls)                     list your hooks
 tsrelay hooks show <hook>                         one hook in detail
-tsrelay hooks create [<path>] [flags]
+tsrelay hooks create [flags]
 tsrelay hooks update <hook> [flags]
 tsrelay hooks delete <hook>... (alias rm)
 tsrelay hooks rotate-url <hook>                   give a public hook a new public URL
@@ -576,7 +576,7 @@ tsrelay --version                                 fang; there is no `version` su
 `<hook>` is a hook ID or path; `resolveHooks` looks it up among the caller's hooks.
 
 - **`tsrelay http 8080`** creates or reclaims an ephemeral hook, attaches a tunnel, prints the URL, and then prints one line per call. On a terminal, a call line has the time, method, path, status, duration and sender in aligned columns, and ends in the call ID as an OSC 8 hyperlink to `<relay>/inspect/<callID>`. Plain output prints the full link. With `--json`, call events carry `callId` and `inspect`.
-- **Flags** are GNU style, with shorthands where they read naturally: `-n`, `-c`, `-p`, `-k` on `http`; `-t`, `-k` on `attach`; `-j` everywhere. `serve` has none.
+- **Flags** are GNU style, with shorthands where they read naturally: `-c`, `-k` on `http`; `-t`, `-k` on `attach`; `-j` everywhere. `serve` has none.
 - **The environment:** every flag `--foo-bar` can be set as `TSRELAY_FOO_BAR`, and the command line wins. Flags that act rather than configure (`--all`, `--yes`, `--check`, `--force`, `--follow`, `--background`) are excluded, so a variable left in the environment can't update, downgrade, stop or detach anything.
 - **Targets:** a bare port means `http://localhost:<port>`. A full URL is also accepted, including a path prefix and `https://` (with `--insecure` for self-signed local certificates).
 - **Stable URLs:** the CLI remembers the hook path it used for each working directory and target, in `$XDG_STATE_HOME/tsrelay/hooks.json`, and asks for the same path next time. The URL put into `.env` therefore keeps working across restarts, including after the ephemeral grace period has passed.
