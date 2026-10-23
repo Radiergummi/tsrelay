@@ -101,6 +101,10 @@ The [API](api.md), the web UI and the CLI see these. Where one says the relay ma
 
 **403.** The hook is in a channel your grants no longer match, so a tunnel can't serve it. Ask a relay admin to grant you the channel.
 
+### `stream_limit`
+
+**429.** The node already has 8 event streams open, the most the relay allows one node. Close a browser tab or a client that watches the relay, then retry.
+
 ### `tunnel_limit`
 
 **403.** You already have as many tunnels attached as your `maxTunnels` grant allows. Stop one you no longer need with `tsrelay stop`, or ask a relay admin to raise the limit.

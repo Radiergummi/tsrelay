@@ -37,6 +37,7 @@ const (
 	CrossSite            = "cross_site"
 	ChannelForbidden     = "channel_forbidden"
 	TunnelLimit          = "tunnel_limit"
+	StreamLimit          = "stream_limit"
 	NotFound             = "not_found"
 	Invalid              = "invalid"
 	UnsupportedField     = "unsupported_field"

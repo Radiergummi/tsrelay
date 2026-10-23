@@ -98,7 +98,7 @@ func (a *API) stream(w http.ResponseWriter, r *http.Request, id authz.Identity, 
 		return
 	}
 	if !a.takeStream(id.NodeID) {
-		problem.New(http.StatusTooManyRequests, problem.RateLimited, "this node has too many event streams open").Write(w)
+		problem.New(http.StatusTooManyRequests, problem.StreamLimit, "this node has too many event streams open").Write(w)
 		return
 	}
 	defer a.releaseStream(id.NodeID)

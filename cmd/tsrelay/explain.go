@@ -63,6 +63,8 @@ var problemExplanations = map[string]explanation{
 		[]string{"Send the request from the CLI, or from the relay's web UI"}},
 	problem.ChannelForbidden: {"Your grants don't cover the hook's channel", "The hook is in a channel your grants no longer match.",
 		[]string{"Ask a relay admin to grant you the channel; the relay's web UI shows them the grant"}},
+	problem.StreamLimit: {"Too many event streams", "This device already has as many event streams open as the relay allows one device.",
+		[]string{"Close a browser tab or a client that watches the relay"}},
 	problem.TunnelLimit: {"Too many tunnels", "You already have as many tunnels attached as your grants allow.",
 		[]string{"tsrelay ps", "Stop a tunnel you no longer need, or ask a relay admin to raise your limit"}},
 	problem.NotFound: {"Not found", "The relay has no such resource for you.",
