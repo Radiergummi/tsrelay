@@ -11,16 +11,22 @@ import (
 )
 
 func TestQueryBool(t *testing.T) {
-	for q, want := range map[string]bool{
-		"dryRun=1":    true,
-		"dryRun=true": true,
-		"dryRun=TRUE": true,
-		"dryRun=yes":  false,
-		"dryRun=":     false,
-		"":            false,
+	type result struct{ value, ok bool }
+	for q, want := range map[string]result{
+		"dryRun=1":          {true, true},
+		"dryRun=true":       {true, true},
+		"dryRun=TRUE":       {true, true},
+		"dryRun=false":      {false, true},
+		"":                  {false, true},
+		"dryRun=yes":        {false, false},
+		"dryRun=":           {false, false},
+		"dryRun=1&dryRun=1": {false, false},
+		"dryrun=true":       {false, true}, // another parameter
 	} {
-		if got := queryBool(httptest.NewRequest("POST", "/hooks?"+q, nil), "dryRun"); got != want {
-			t.Errorf("queryBool(%q) = %v, want %v", q, got, want)
+		w := httptest.NewRecorder()
+		value, ok := queryBool(w, httptest.NewRequest("POST", "/hooks?"+q, nil), "dryRun")
+		if (result{value, ok}) != want || !ok && w.Code != 400 {
+			t.Errorf("queryBool(%q) = %v, %v (%d), want %v", q, value, ok, w.Code, want)
 		}
 	}
 }
@@ -29,7 +35,10 @@ func TestDecodeRequestNamesUnknownFields(t *testing.T) {
 	for body, want := range map[string]string{
 		`{"bogus":1}`:                    `[{"field":"bogus","message":"not supported by this relay"}]`,
 		`{"settings":{"bogus":1,"x":2}}`: `[{"field":"settings.bogus","message":"not supported by this relay"},{"field":"settings.x","message":"not supported by this relay"}]`,
-		`{"Settings":{"rateLimit":{"perSecond":1,"y":1}},"z":null}`: `[{"field":"settings.rateLimit.y","message":"not supported by this relay"},{"field":"z","message":"not supported by this relay"}]`,
+		`{"settings":{"rateLimit":{"perSecond":1,"y":1}},"z":null}`: `[{"field":"settings.rateLimit.y","message":"not supported by this relay"},{"field":"z","message":"not supported by this relay"}]`,
+		// Names match exactly: encoding/json would apply these.
+		`{"PATH":"x"}`:                      `[{"field":"PATH","message":"not supported by this relay"}]`,
+		`{"settings":{"HoldTimeout":"1s"}}`: `[{"field":"settings.HoldTimeout","message":"not supported by this relay"}]`,
 	} {
 		w := httptest.NewRecorder()
 		var req hooks.UpdateRequest
@@ -44,9 +53,11 @@ func TestDecodeRequestNamesUnknownFields(t *testing.T) {
 			t.Errorf("%s errors = %s, want %s", body, got, want)
 		}
 	}
-	w := httptest.NewRecorder()
-	var req hooks.UpdateRequest
-	if decodeRequest(w, httptest.NewRequest("PATCH", "/hooks/x", strings.NewReader(`{"path":1}`)), &req, 1<<10) || w.Code != 400 {
-		t.Fatalf("wrong type = %d %s", w.Code, w.Body)
+	for _, body := range []string{`{"path":1}`, `{"path":"a"} {}`, `{"path":"a"} x`, ``} {
+		w := httptest.NewRecorder()
+		var req hooks.UpdateRequest
+		if decodeRequest(w, httptest.NewRequest("PATCH", "/hooks/x", strings.NewReader(body)), &req, 1<<10) || w.Code != 400 {
+			t.Errorf("%q = %d %s", body, w.Code, w.Body)
+		}
 	}
 }

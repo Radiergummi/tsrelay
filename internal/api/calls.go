@@ -123,6 +123,9 @@ func ReplayRefusal(c inspect.Call) *problem.Problem {
 // out. The local app is told about the original sender. A call refused by
 // channel was never delivered, so it cannot be replayed either.
 func (a *API) replayCall(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	if !onlyQuery(w, r) {
+		return
+	}
 	h, ok := a.ownedHook(w, r, id)
 	if !ok {
 		return
@@ -147,6 +150,9 @@ func (a *API) replayCall(w http.ResponseWriter, r *http.Request, id authz.Identi
 // testCall sends a request the owner wrote through the normal pipeline,
 // as a call of kind test (DESIGN.md §9.3).
 func (a *API) testCall(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	if !onlyQuery(w, r) {
+		return
+	}
 	h, ok := a.ownedHook(w, r, id)
 	if !ok {
 		return

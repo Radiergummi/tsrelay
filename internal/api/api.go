@@ -247,7 +247,10 @@ func (a *API) me(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 }
 
 func (a *API) listHooks(w http.ResponseWriter, r *http.Request, id authz.Identity) {
-	list, _ := a.scopedHooks(r, id)
+	list, _, ok := a.scopedHooks(w, r, id)
+	if !ok {
+		return
+	}
 	channel := r.URL.Query().Get("channel")
 	out := make([]Hook, 0, len(list))
 	for _, h := range list {
@@ -259,11 +262,17 @@ func (a *API) listHooks(w http.ResponseWriter, r *http.Request, id authz.Identit
 }
 
 func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	if !onlyQuery(w, r, "dryRun") {
+		return
+	}
+	dry, ok := queryBool(w, r, "dryRun")
+	if !ok {
+		return
+	}
 	var req hooks.CreateRequest
 	if !decodeRequest(w, r, &req, 64<<10) {
 		return
 	}
-	dry := queryBool(r, "dryRun")
 	create := a.Tunnels.Create
 	if dry {
 		create = a.Hooks.CheckCreate
@@ -303,6 +312,13 @@ func (a *API) getHook(w http.ResponseWriter, r *http.Request, id authz.Identity)
 }
 
 func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	if !onlyQuery(w, r, "dryRun") {
+		return
+	}
+	dry, ok := queryBool(w, r, "dryRun")
+	if !ok {
+		return
+	}
 	var req hooks.UpdateRequest
 	if !decodeRequest(w, r, &req, 64<<10) {
 		return
@@ -313,7 +329,6 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		writeAccessError(w, err, "only the hook's owner, with the receiver role, can edit it")
 		return
 	}
-	dry := queryBool(r, "dryRun")
 	update := a.Tunnels.Update
 	if dry {
 		update = a.Hooks.CheckUpdate
@@ -342,6 +357,9 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 }
 
 func (a *API) rotatePublicURL(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	if !onlyQuery(w, r) {
+		return
+	}
 	cur, err := a.decide(r, id, access.Act)
 	if err != nil {
 		writeAccessError(w, err, "only the hook's owner, with the receiver role for its channel, can rotate its public URL")
@@ -364,6 +382,9 @@ func (a *API) rotatePublicURL(w http.ResponseWriter, r *http.Request, id authz.I
 }
 
 func (a *API) deleteHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
+	if !onlyQuery(w, r) {
+		return
+	}
 	h, err := a.decide(r, id, access.Delete)
 	if err != nil {
 		writeAccessError(w, err, "")

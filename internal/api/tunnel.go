@@ -40,7 +40,10 @@ func (a *API) tunnel(w http.ResponseWriter, r *http.Request, id authz.Identity) 
 		return
 	}
 	session := r.URL.Query().Get("session")
-	resume := queryBool(r, "resume")
+	resume, ok := queryBool(w, r, "resume")
+	if !ok {
+		return
+	}
 	requested := make([]hooks.ID, len(hookIDs))
 	for i, hid := range hookIDs {
 		requested[i] = hooks.ID(hid)

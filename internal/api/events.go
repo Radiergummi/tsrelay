@@ -40,7 +40,11 @@ const defaultStreamsPerNode = 8
 // in their channels; summaries are metadata only, so that reveals nothing
 // more.
 func (a *API) hooksStream(w http.ResponseWriter, r *http.Request, id authz.Identity) {
-	all := queryBool(r, "all") && access.IsAdmin(id)
+	all, ok := queryBool(w, r, "all")
+	if !ok {
+		return
+	}
+	all = all && access.IsAdmin(id)
 	a.stream(w, r, id, "", func(v authz.Identity, e events.Event) bool {
 		lvl := access.View(v, access.Hook{Owner: e.Owner, Channel: e.Channel})
 		if all {

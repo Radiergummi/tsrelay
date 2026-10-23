@@ -900,3 +900,42 @@ func TestAttachChannelForbidden(t *testing.T) {
 		t.Fatalf("attach outside the grants' channels: err = %v, want 403 channel_forbidden naming the hook", err)
 	}
 }
+
+// A write never ignores a query parameter: one the relay doesn't know may
+// change what a newer client meant (as dryRun does), so it is refused like
+// an unknown body field. A boolean the relay can't read is refused too.
+func TestWritesRefuseUnknownQueryParameters(t *testing.T) {
+	e := newEnv(t)
+	var h Hook
+	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "q"}, &h)
+	for _, tc := range []struct{ method, path string }{
+		{"POST", "/hooks?bogus=1"},
+		{"PATCH", "/hooks/" + h.ID + "?bogus=1"},
+		{"DELETE", "/hooks/" + h.ID + "?bogus=1"},
+		{"POST", "/hooks/" + h.ID + "/rotate-public-url?bogus=1"},
+		{"POST", "/hooks/" + h.ID + "/test?bogus=1"},
+	} {
+		var p problem.Problem
+		resp := e.call(moritz, tc.method, tc.path, map[string]any{}, &p)
+		if resp.StatusCode != 422 || p.Code != problem.UnsupportedField || toJSON(p.Errors) != `[{"field":"query.bogus","message":"not supported by this relay"}]` {
+			t.Errorf("%s %s = %d %+v", tc.method, tc.path, resp.StatusCode, p)
+		}
+	}
+	for _, path := range []string{"/hooks?dryRun=yes", "/hooks?dryRun=", "/hooks?dryRun=true&dryRun=false"} {
+		var p problem.Problem
+		if resp := e.call(moritz, "POST", path, hooks.CreateRequest{}, &p); resp.StatusCode != 400 || p.Code != problem.BadRequest {
+			t.Errorf("POST %s = %d %+v", path, resp.StatusCode, p)
+		}
+	}
+	var list HookList
+	if e.call(moritz, "GET", "/hooks", nil, &list); len(list.Hooks) != 1 {
+		t.Fatalf("a refused write created hooks: %d", len(list.Hooks))
+	}
+	var p problem.Problem
+	if resp := e.call(moritz, "GET", "/hooks?all=maybe", nil, &p); resp.StatusCode != 400 {
+		t.Errorf("GET ?all=maybe = %d", resp.StatusCode)
+	}
+	if resp := e.call(moritz, "GET", "/hooks?future=1", nil, nil); resp.StatusCode != 200 {
+		t.Errorf("a read ignores parameters it doesn't know: %d", resp.StatusCode)
+	}
+}
