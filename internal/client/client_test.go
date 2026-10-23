@@ -64,6 +64,7 @@ func TestForwarder(t *testing.T) {
 	req := httptest.NewRequest("POST", "http://tsrelay.example/done?x=1", strings.NewReader("raw-body"))
 	req.Host = "tsrelay.example"
 	req.Header.Set(tunnel.HeaderHook, "h_1")
+	req.Header.Set("Tsrelay-Tunnel-Future", "x") // one a newer relay may add
 	req.Header.Set("X-Forwarded-For", "100.64.0.9")
 	req.Header.Set("X-Forwarded-Proto", "https")
 	req.Header.Set("X-Forwarded-Prefix", "/~m/cb")
@@ -77,7 +78,7 @@ func TestForwarder(t *testing.T) {
 	if b, _ := io.ReadAll(r.Body); string(b) != "raw-body" {
 		t.Fatalf("body = %q", b)
 	}
-	if r.Header.Get(tunnel.HeaderHook) != "" {
+	if r.Header.Get(tunnel.HeaderHook) != "" || r.Header.Get("Tsrelay-Tunnel-Future") != "" {
 		t.Fatal("tunnel-internal header leaked to the local app")
 	}
 	if r.Header.Get("X-Forwarded-For") != "100.64.0.9" || r.Header.Get("X-Forwarded-Proto") != "https" || r.Header.Get("X-Forwarded-Prefix") != "/~m/cb" {
