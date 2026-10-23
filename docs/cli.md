@@ -13,7 +13,7 @@ tags: [cli, completion, json, environment]
 
 ## Environment
 
-Every flag can also be set in the environment as `TSRELAY_<FLAG>`, with dashes as underscores (`TSRELAY_RELAY` for `--relay`, `TSRELAY_HOLD_TIMEOUT` for `--hold-timeout`); the command line wins. Flags that act rather than configure (`--all`, `--yes`, `--check`, `--force`, `--follow`, `--background`) have no such variable.
+Every flag can also be set in the environment as `TSRELAY_<FLAG>`, with dashes as underscores (`TSRELAY_RELAY` for `--relay`, `TSRELAY_HOLD_TIMEOUT` for `--hold-timeout`); the command line wins. The rule is an explicit list, `envFlags` in `cmd/tsrelay/env.go`: the global flags (`--relay`, `--json`, `--no-color`, `--no-hyperlinks`), the hook settings (`--attach-policy`, `--capture`, `--channel`, `--description`, `--ephemeral`, `--expires-in`, `--hold-timeout`, `--host-header`, `--idle-timeout`, `--max-body-bytes`, `--persistent`, `--rate-limit`, `--response-timeout`) and every `serve` flag. Flags that act rather than configure (`--all`, `--yes`, `--check`, `--force`, `--follow`, `--background`, `--public`, `--insecure`) and flags that name what a command works on (`--to`, `--name`, `--path`) have no such variable. `TSRELAY_URL` and `TSRELAY_BACKGROUND_ID` are set by `tsrelay http` and the background supervisor for their children, so no flag may take those names.
 
 ## Output
 

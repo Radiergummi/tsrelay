@@ -7,7 +7,7 @@ tags: [operators, configuration, flags, environment]
 
 # Configuration
 
-Every flag can also be set as an environment variable: `--ephemeral-grace` becomes `TSRELAY_EPHEMERAL_GRACE`. Run `tsrelay serve --help` for the full list.
+Every `serve` flag can also be set as an environment variable: `--ephemeral-grace` becomes `TSRELAY_EPHEMERAL_GRACE`. Run `tsrelay serve --help` for the full list. Client flags have a variable too unless they act (such as `--public`, `--yes` or `--all`) or name a target; [the CLI page](cli.md#environment) lists which.
 
 Flag names follow one scheme, so a prefix tells you what a flag governs:
 
