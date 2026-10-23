@@ -32,7 +32,7 @@ Additive means new things appear. A client that breaks on them breaks on the nex
 - **Ignore unknown enumeration values, event-stream event types and control types.** Skip an event you don't know; don't close the stream because of it.
 - **Fall back to the HTTP status for an unknown problem code.** The `code` field and the `Tsrelay-Error` header may name a code this page's [error reference](errors.md) doesn't have yet; the status says which class of failure it is.
 
-The relay is strict the other way round. It refuses a request field it doesn't know with status 422, the code `unsupported_field`, and the field's name in `errors[].field`, so a newer client can tell that a relay is too old for what it asked. The CLI never sends a field that has its zero value, so an old relay only sees the fields you use.
+The relay is strict the other way round. It refuses a request field it doesn't know with status 422, the code `unsupported_field`, and the field's name in `errors[].field`, so a newer client can tell that a relay is too old for what it asked. The CLI sends only the fields you set, so an old relay only sees the fields you use.
 
 ## Which relay features exist
 
@@ -40,7 +40,7 @@ The relay is strict the other way round. It refuses a request field it doesn't k
 
 ## CLI and relay versions
 
-Any v1.x CLI works against any v1.y relay, in both directions. A newer CLI against an older relay degrades cleanly when a feature is missing: it checks `features` and tells you which relay version it needs.
+Any v1.x CLI works against any v1.y relay, in both directions. A newer CLI against an older relay degrades cleanly when a feature is missing. The rule for a feature added in a 1.x release is that a CLI using it checks `features` first.
 
 - The CLI warns about the relay's version only when the major versions differ. Development builds never warn.
 - On the same major version, an older CLI may offer to update itself, at most now and then and only when interactive. A newer or equal CLI says nothing.
@@ -52,14 +52,25 @@ Any v1.x CLI works against any v1.y relay, in both directions. A newer CLI again
 Grants are read value by value, and what a relay doesn't understand it skips, so a newer policy keeps working against an older relay.
 
 - An absent `channels` means `*`. An empty list, `[]`, matches nothing.
-- Limits apply per user, and only values of the receiver count. A grant can only raise a limit above the relay's default, so durations in a grant such as `maxHookTtl` must be positive. Unlike the relay's own limits, `"0s"` in a grant is invalid, and the relay skips that value.
+- Limits apply per user, and only values of the receiver count. A grant can only raise a limit above the relay's default. `maxHooks` and `maxTunnels` of `0` are accepted and change nothing. A grant's duration, `maxHookTtl`, must be positive: `"0s"` is invalid, and the relay skips that value.
 - A value with a `requires` list names the features it needs. If any name is a feature this relay doesn't know, the relay skips the value and logs it. At 1.0 no features exist, so on a 1.0 relay any non-empty `requires` skips the value.
 - An unknown role is logged and dropped. A value whose roles are all unknown is skipped.
 - A malformed value is skipped and logged. The other values still apply.
 
-## No limit
+## What zero means
 
-Zero means no limit, for every relay limit: each maximum, and each per-user default, as flags and as settings. `--user-max-hook-ttl=0` and a `maxBodyBytes` setting of `0` both mean unlimited. The one exception is a grant, where zero is invalid (see [policy grants](#policy-grants)).
+Zero doesn't mean the same for every limit, and the meaning stays within a major version.
+
+| Setting | Zero means |
+| --- | --- |
+| `--user-max-hook-ttl` | No limit. |
+| `--user-max-hooks`, `--user-max-tunnels` | Nothing allowed: no hook or tunnel until a grant raises it. |
+| The `--hook-<setting>-max` flags | No maximum. |
+| `--hook-max-body-bytes-default` and the `maxBodyBytes` setting | No limit on the body size. |
+| `--hook-hold-timeout-default` and the `holdTimeout` setting | No holding: a call without a tunnel fails at once. |
+| `responseTimeout` and `idleTimeout` | Invalid; they must be greater than zero. |
+| `--hook-hold-queue`, `--capture-calls`, `--capture-limit-bytes`, `--funnel-max-body-bytes` | Refused at startup; they must be at least 1. |
+| `--tunnel-concurrency` | The default of 32. |
 
 ## Shapes of lists and numbers
 

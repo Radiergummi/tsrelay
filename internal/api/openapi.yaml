@@ -18,7 +18,7 @@ info:
     otherwise).
 
     Within a major version, changes are additive only. Clients must ignore
-    unknown fields, enum values, event types, control types and problem
+    unknown fields, enumeration values, event types, control types and problem
     codes, and fall back to the HTTP status for a code they don't know. A
     request field the relay doesn't know is refused with `422` and the code
     `unsupported_field`. `GET /` lists optional capabilities in `features`.

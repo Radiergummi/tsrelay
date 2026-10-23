@@ -67,4 +67,4 @@ Each [hook setting](hooks.md#hook-settings) has a relay-wide default, `--hook-<s
 | `rateLimit` | `100/200` | none |
 | `capture` | `false` | |
 
-For example `--hook-rate-limit-default=100/200`, or `--hook-max-body-bytes-default=1048576 --hook-max-body-bytes-max=10485760` (the default body size is unlimited, which a maximum wouldn't allow, so set both). A hook may only set a value within the maximum.
+For example `--hook-rate-limit-default=100/200`, or `--hook-max-body-bytes-default=1048576 --hook-max-body-bytes-max=10485760` (the default body size is unlimited, which a maximum wouldn't allow, so set both). A hook may only set a value within the maximum. A maximum of `0` means none. Zero is not "no limit" everywhere, though: [Compatibility](compatibility.md#what-zero-means) lists what it means for each limit.
