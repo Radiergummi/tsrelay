@@ -81,13 +81,34 @@ func newStopCmd(c *cli) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		// failure is a tunnel that would not stop, or a name that names none,
+		// as it was given, with the error on it.
+		type failure struct {
+			Ref string `json:"ref"`
+			jsonError
+		}
+		result := struct {
+			Stopped []runJSON `json:"stopped"`
+			Failed  []failure `json:"failed"`
+		}{[]runJSON{}, []failure{}}
+		// A tunnel that won't stop, or a name that names none, doesn't keep
+		// the others running, nor hides the results of those stopped
+		// already: the first failure is the command's error.
+		var failed error
+		fail := func(ref string, err error) {
+			if failed == nil {
+				failed = err
+			}
+			result.Failed = append(result.Failed, failure{ref, newJSONError(c.explain(err))})
+		}
 		rs := readRecords(dir)
 		if !*all {
 			var named []runRecord
 			for _, ref := range refs {
 				found, err := findRuns(rs, ref)
 				if err != nil {
-					return err
+					fail(ref, err)
+					continue
 				}
 				for _, r := range found {
 					if !slices.ContainsFunc(named, func(n runRecord) bool { return n.ID == r.ID }) {
@@ -97,26 +118,11 @@ func newStopCmd(c *cli) *cobra.Command {
 			}
 			rs = named
 		}
-		// failure is a tunnel that would not stop, with the error on it.
-		type failure struct {
-			ID string `json:"id"`
-			jsonError
-		}
-		result := struct {
-			Stopped []runJSON `json:"stopped"`
-			Failed  []failure `json:"failed"`
-		}{[]runJSON{}, []failure{}}
 		out, errStream := c.streams()
-		// A tunnel that won't stop doesn't keep the others running, nor
-		// hides the results of those stopped already.
-		var failed error
 		for _, r := range rs {
 			state, err := stopRun(dir, r)
 			if err != nil {
-				if failed == nil {
-					failed = err
-				}
-				result.Failed = append(result.Failed, failure{r.ID, newJSONError(c.explain(err))})
+				fail(r.ID, err)
 				continue
 			}
 			removeRun(dir, r.ID)

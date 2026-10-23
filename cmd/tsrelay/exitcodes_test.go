@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
+	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 )
 
@@ -76,7 +76,7 @@ func TestHooksDeleteReportsPartial(t *testing.T) {
 	}
 	code, out, errOut := e.tsrelay("hooks", "delete", "a", "missing", "b", "--json")
 	var got struct {
-		Deleted []string `json:"deleted"`
+		Deleted []api.Hook `json:"deleted"`
 		Failed  []struct {
 			Ref   string `json:"ref"`
 			Error struct {
@@ -87,7 +87,7 @@ func TestHooksDeleteReportsPartial(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); code != 1 || err != nil {
 		t.Fatalf("exit %d, stdout %q (%v), want 1\n%s", code, out, err, errOut)
 	}
-	if !slices.Equal(got.Deleted, []string{ids["a"], ids["b"]}) || len(got.Failed) != 1 ||
+	if len(got.Deleted) != 2 || got.Deleted[0].ID != ids["a"] || got.Deleted[1].ID != ids["b"] || got.Deleted[1].Path != "b" || len(got.Failed) != 1 ||
 		got.Failed[0].Ref != "missing" || got.Failed[0].Error.Code != "no_such_hook" {
 		t.Fatalf("stdout %s", out)
 	}

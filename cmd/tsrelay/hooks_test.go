@@ -107,7 +107,7 @@ func TestHooksCommands(t *testing.T) {
 	if code, _, errOut := e.tsrelay("hooks", "delete", "nope"); code != 1 || !strings.Contains(errOut, `"nope"`) {
 		t.Fatalf("delete unknown: exit %d\n%s", code, errOut)
 	}
-	if code, out, errOut := e.tsrelay("hooks", "rm", id, "--json"); code != 0 || out != `{"deleted":["`+id+`"],"failed":[]}`+"\n" {
+	if code, out, errOut := e.tsrelay("hooks", "rm", id, "--json"); code != 0 || !strings.HasPrefix(out, `{"deleted":[{"id":"`+id+`",`) || !strings.HasSuffix(out, `],"failed":[]}`+"\n") {
 		t.Fatalf("rm --json: exit %d, stdout %q\n%s", code, out, errOut)
 	}
 	if hs := e.listJSON(); len(hs) != 0 {

@@ -240,13 +240,13 @@ func newHooksDeleteCmd(c *cli) *cobra.Command {
 			jsonError
 		}
 		result := struct {
-			Deleted []string  `json:"deleted"`
-			Failed  []failure `json:"failed"`
-		}{[]string{}, []failure{}}
+			Deleted []api.Hook `json:"deleted"`
+			Failed  []failure  `json:"failed"`
+		}{[]api.Hook{}, []failure{}}
 		var failed error
 		for _, ref := range refs {
 			h, err := findHook(all, ref)
-			if err == nil && slices.Contains(result.Deleted, h.ID) {
+			if err == nil && slices.ContainsFunc(result.Deleted, func(d api.Hook) bool { return d.ID == h.ID }) {
 				continue
 			}
 			if err == nil {
@@ -259,7 +259,7 @@ func newHooksDeleteCmd(c *cli) *cobra.Command {
 				result.Failed = append(result.Failed, failure{ref, newJSONError(c.explain(err))})
 				continue
 			}
-			result.Deleted = append(result.Deleted, h.ID)
+			result.Deleted = append(result.Deleted, h)
 			if !c.json {
 				fmt.Fprintf(errStream.w, "deleted %s\n", h.URL)
 			}

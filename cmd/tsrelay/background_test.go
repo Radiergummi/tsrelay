@@ -467,3 +467,27 @@ func TestStopJSON(t *testing.T) {
 	}
 	e.assertGone(r)
 }
+
+// Like hooks delete, stop names what it couldn't stop and stops the rest.
+func TestStopUnknownJSON(t *testing.T) {
+	e := newBackgroundEnv(t)
+	if _, err := e.api().CreateHook(context.Background(), hooks.CreateRequest{Path: "pay"}); err != nil {
+		t.Fatal(err)
+	}
+	r := e.background("attach", "pay", "--to", e.local.URL)
+	code, out, errOut := e.tsrelay("stop", "nope", r.ID, "--json")
+	var got struct {
+		Stopped []runJSON `json:"stopped"`
+		Failed  []struct {
+			Ref   string `json:"ref"`
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		} `json:"failed"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); code != 1 || err != nil || len(got.Stopped) != 1 || got.Stopped[0].ID != r.ID ||
+		len(got.Failed) != 1 || got.Failed[0].Ref != "nope" || got.Failed[0].Error.Code != "no_such_tunnel" {
+		t.Fatalf("stop --json: exit %d, %v\n%s%s", code, err, out, errOut)
+	}
+	e.assertGone(r)
+}

@@ -27,10 +27,10 @@ On a terminal, output is colored, call lines are aligned, and each call ends wit
 | --- | --- |
 | `hooks list` | `{"hooks": [hook, …]}` |
 | `hooks show`, `create`, `update`, `rotate-url` | the hook |
-| `hooks delete` | `{"deleted": [id, …], "failed": [{"ref": …, "error": {…}}, …]}`: `ref` is the hook as you named it; if any failed, the command exits 1 and the first error is also on stderr |
+| `hooks delete` | `{"deleted": [hook, …], "failed": [{"ref": …, "error": {…}}, …]}`: each hook as it was, and `ref` the hook as you named it; if any failed, the command exits 1 and the first error is also on stderr |
 | `url` | `{"url": …}` |
 | `ps` | `{"runs": [run, …]}` |
-| `stop` | `{"stopped": [run, …], "failed": [{"id": …, "error": {…}}, …]}`; a stopped run's `state` is `stopped`, `killed` or `exited` (it had gone already) |
+| `stop` | `{"stopped": [run, …], "failed": [{"ref": …, "error": {…}}, …]}`; a stopped run's `state` is `stopped`, `killed` or `exited` (it had gone already). `ref` is a name you gave that matches no tunnel, or the ID of a tunnel that wouldn't stop; if any failed, the command exits 1 and the first error is also on stderr |
 | `http`/`attach --background` | the run, once attached |
 | `update` | `{"cliVersion": …, "relayVersion": …, "updated": …, "path": …}` |
 
