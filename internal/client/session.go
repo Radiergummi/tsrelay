@@ -125,7 +125,9 @@ func (s *Session) state(connected bool, err error) {
 	s.emit(Event{Kind: EventLost, Err: err})
 }
 
-// control applies a control message to the current hooks.
+// control applies a control message to the current hooks. A type it does not
+// know changes nothing, and fields it does not know are ignored when the
+// message is decoded: the v1 protocol only grows (DESIGN.md §6.2).
 func (s *Session) control(ctl tunnel.Control) {
 	s.emitMu.Lock()
 	defer s.emitMu.Unlock()

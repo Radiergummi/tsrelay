@@ -238,6 +238,15 @@ The protocol version lives in the `Upgrade` token. An incompatible change gets a
 - **Control messages:** requests with the header `Tsrelay-Control: 1` and a JSON body. They are handled by the CLI itself and never forwarded. Types: `attached` (the hook URLs and paths, sent first), `replaced`, `revoked`, `hook-deleted`, `hook-updated` (a hook's new URL, path and public URL). Sender requests cannot forge them, because the relay strips every incoming `Tsrelay-*` header. `hook-updated` carries a sequence number `seq`. Messages are sent in the background and can arrive out of order, so a client ignores a `hook-updated` whose `seq` is not above the last it saw for that hook, and forgets that memory on each `attached` message, because the relay's sequence counter restarts with the relay.
 - **Status:** the CLI reports its local target, one per tunnel, as the `target` query parameter on the handshake. The relay keeps it only if it is an `http(s)` URL without credentials, with any query string and fragment stripped, and shows it with the hook's tunnel to the owner and to admins (UI, copy-as-curl). The relay never connects to it.
 
+### 6.2.1 Compatibility within v1
+
+Every v1 relay serves `tsrelay-tunnel/1`. Within v1 the protocol only grows:
+
+- The attach parameters (`hook`, `session`, `resume`, `target`) keep their meaning. New ones are optional, and a relay ignores parameters it does not know.
+- Control types and `HookInfo` fields are never removed or repurposed. New ones may appear.
+- A client ignores control types and fields it does not know. It must not fail, log an error or drop the tunnel because of them.
+- `features` on `GET /` names optional tunnel capabilities as well as other optional API capabilities, so a client can discover a new one before relying on it.
+
 ### 6.3 Liveness and reconnect
 
 - **Keepalive:** both sides send HTTP/2 PINGs every 15 s. A connection is declared dead after 2 missed PINGs.
