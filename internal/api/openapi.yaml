@@ -57,9 +57,7 @@ paths:
           description: The hooks, or a stream of their changes
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/Hook" }
+              schema: { $ref: "#/components/schemas/HookList" }
             text/event-stream:
               schema: { $ref: "#/components/schemas/Event" }
             text/html: {}
@@ -167,9 +165,7 @@ paths:
           description: The calls, or a stream of them
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/Summary" }
+              schema: { $ref: "#/components/schemas/CallList" }
             text/event-stream:
               schema: { $ref: "#/components/schemas/Event" }
             text/html: {}
@@ -518,6 +514,16 @@ components:
           type: object
           required: [hooks, channels, tunnel, openapi, licenses]
           additionalProperties: { type: string }
+    HookList:
+      type: object
+      required: [hooks]
+      properties:
+        hooks: { type: array, items: { $ref: "#/components/schemas/Hook" } }
+    CallList:
+      type: object
+      required: [calls]
+      properties:
+        calls: { type: array, items: { $ref: "#/components/schemas/Summary" } }
     Hook:
       type: object
       required: [id, url, owner, path, channel, ephemeral, public, settings, effective, createdAt]

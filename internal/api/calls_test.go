@@ -43,9 +43,9 @@ func TestCallVisibility(t *testing.T) {
 	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb2"}, &h2)
 	e.seedCall("c_1", h.ID, completeBody(`{"secret":true}`))
 
-	var list []inspect.Summary
-	if resp := e.call(moritz, "GET", "/hooks/"+h.ID+"/calls", nil, &list); resp.StatusCode != 200 || len(list) != 1 || list[0].ID != "c_1" {
-		t.Fatalf("owner list = %d %+v", resp.StatusCode, list)
+	var res CallList
+	if resp := e.call(moritz, "GET", "/hooks/"+h.ID+"/calls", nil, &res); resp.StatusCode != 200 || len(res.Calls) != 1 || res.Calls[0].ID != "c_1" {
+		t.Fatalf("owner list = %d %+v", resp.StatusCode, res.Calls)
 	}
 	var full inspect.Call
 	if resp := e.call(moritz, "GET", "/hooks/"+h.ID+"/calls/c_1", nil, &full); resp.StatusCode != 200 ||
@@ -54,9 +54,9 @@ func TestCallVisibility(t *testing.T) {
 	}
 
 	// Admins see metadata only.
-	list = nil
-	if resp := e.call(admin, "GET", "/hooks/"+h.ID+"/calls", nil, &list); resp.StatusCode != 200 || len(list) != 1 {
-		t.Fatalf("admin list = %d %+v", resp.StatusCode, list)
+	res = CallList{}
+	if resp := e.call(admin, "GET", "/hooks/"+h.ID+"/calls", nil, &res); resp.StatusCode != 200 || len(res.Calls) != 1 {
+		t.Fatalf("admin list = %d %+v", resp.StatusCode, res.Calls)
 	}
 	var meta inspect.Call
 	if resp := e.call(admin, "GET", "/hooks/"+h.ID+"/calls/c_1", nil, &meta); resp.StatusCode != 200 {

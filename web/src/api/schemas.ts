@@ -37,6 +37,8 @@ export const summary = z.object({
   duration,
 });
 export const summaries = z.array(summary);
+/** callList is GET /hooks/{id}/calls. */
+export const callList = z.object({ calls: summaries });
 
 export const attempt = z.object({
   id: z.string(),
@@ -117,6 +119,8 @@ export const hook = z.object({
   lastCall: z.optional(summary),
 });
 export const hooks = z.array(hook);
+/** hookList is GET /hooks; the object leaves room for more than the list. */
+export const hookList = z.object({ hooks });
 
 export const channel = z.object({
   name: z.string(),

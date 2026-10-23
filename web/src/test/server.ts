@@ -50,7 +50,9 @@ export const handlers = [
   http.get("/", () => HttpResponse.json(fixtures.me)),
   http.get("/hooks", ({ request }) => {
     const channel = new URL(request.url).searchParams.get("channel");
-    return HttpResponse.json(scoped(request).filter((h) => !channel || h.channel === channel));
+    return HttpResponse.json({
+      hooks: scoped(request).filter((h) => !channel || h.channel === channel),
+    });
   }),
   http.get("/channels", ({ request }) =>
     HttpResponse.json(
@@ -79,11 +81,11 @@ export const handlers = [
     return h ? HttpResponse.json(h) : notFound();
   }),
   http.get("/hooks/:id/calls", ({ params }) => {
-    if (params.id === fixtures.hook.id) return HttpResponse.json(fixtures.calls);
-    if (params.id === fixtures.busy.id) return HttpResponse.json(fixtures.busyCalls);
+    if (params.id === fixtures.hook.id) return HttpResponse.json({ calls: fixtures.calls });
+    if (params.id === fixtures.busy.id) return HttpResponse.json({ calls: fixtures.busyCalls });
     if (params.id === fixtures.hostile.id)
-      return HttpResponse.json(
-        hostileCalls.map(
+      return HttpResponse.json({
+        calls: hostileCalls.map(
           ({ id, hookId, receivedAt, kind, sender, method, path, outcome, status, duration }) => ({
             id,
             hookId,
@@ -97,8 +99,8 @@ export const handlers = [
             duration,
           }),
         ),
-      );
-    return HttpResponse.json([]);
+      });
+    return HttpResponse.json({ calls: [] });
   }),
   http.get("/hooks/:id/calls/:callId", ({ params }) => {
     const c = byId([...calls, ...hostileCalls], params.callId);

@@ -17,6 +17,11 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
+// CallList is GET /hooks/{id}/calls. It is an object so it can grow siblings.
+type CallList struct {
+	Calls []inspect.Summary `json:"calls"`
+}
+
 // listCalls returns the hook's call summaries, newest first. Summaries are
 // metadata only, so owners and admins get the same list.
 func (a *API) listCalls(w http.ResponseWriter, r *http.Request, id authz.Identity) {
@@ -25,7 +30,7 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request, id authz.Identit
 		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, a.Inspect.List(h.ID))
+	writeJSON(w, http.StatusOK, CallList{Calls: a.Inspect.List(h.ID)})
 }
 
 // getCall returns one call with its attempts. Admins who do not own the

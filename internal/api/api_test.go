@@ -229,8 +229,9 @@ func TestHookLastCall(t *testing.T) {
 	}
 	e.seedCall("c_1", h.ID, completeBody(`{"secret":true}`))
 
-	var list []Hook
-	e.call(moritz, "GET", "/hooks", nil, &list)
+	var res HookList
+	e.call(moritz, "GET", "/hooks", nil, &res)
+	list := res.Hooks
 	if len(list) != 1 || list[0].LastCall == nil || list[0].LastCall.ID != "c_1" {
 		t.Fatalf("list = %+v", list)
 	}
@@ -264,22 +265,24 @@ func TestHookCRUD(t *testing.T) {
 		t.Fatalf("Location = %q", loc)
 	}
 
-	var list []Hook
-	e.call(moritz, "GET", "/hooks", nil, &list)
-	if len(list) != 1 || list[0].ID != h.ID {
+	var res HookList
+	e.call(moritz, "GET", "/hooks", nil, &res)
+	if list := res.Hooks; len(list) != 1 || list[0].ID != h.ID {
 		t.Fatalf("list = %+v", list)
 	}
-	e.call(other, "GET", "/hooks", nil, &list)
-	if len(list) != 0 {
+	res = HookList{}
+	e.call(other, "GET", "/hooks", nil, &res)
+	if list := res.Hooks; len(list) != 0 {
 		t.Fatalf("other user sees %+v", list)
 	}
-	e.call(other, "GET", "/hooks?all=true", nil, &list)
-	if len(list) != 0 {
+	res = HookList{}
+	e.call(other, "GET", "/hooks?all=true", nil, &res)
+	if len(res.Hooks) != 0 {
 		t.Fatal("all=true must be ignored for non-admins")
 	}
-	e.call(admin, "GET", "/hooks?all=true", nil, &list)
-	if len(list) != 1 {
-		t.Fatalf("admin list = %+v", list)
+	e.call(admin, "GET", "/hooks?all=true", nil, &res)
+	if len(res.Hooks) != 1 {
+		t.Fatalf("admin list = %+v", res.Hooks)
 	}
 
 	if resp := e.call(other, "GET", "/hooks/"+h.ID, nil, nil); resp.StatusCode != 404 {
@@ -680,9 +683,9 @@ func TestDryRun(t *testing.T) {
 	if resp.StatusCode != 200 || h.ID != "" || h.Path != "x" || h.URL != "https://tsrelay.example.ts.net/~moritz/x" {
 		t.Fatalf("dry-run create = %d %+v", resp.StatusCode, h)
 	}
-	var list []Hook
-	e.call(moritz, "GET", "/hooks", nil, &list)
-	if len(list) != 0 {
+	var res HookList
+	e.call(moritz, "GET", "/hooks", nil, &res)
+	if list := res.Hooks; len(list) != 0 {
 		t.Fatalf("a dry run saved a hook: %+v", list)
 	}
 	var p problem.Problem
@@ -742,9 +745,9 @@ func TestTaggedAdminSeesNothing(t *testing.T) {
 	ci := identify.Tagged("ci", []string{"tag:ci"}, `{"roles":["admin"]}`)
 	var h Hook
 	e.call(moritz, "POST", "/hooks", hooks.CreateRequest{Path: "cb"}, &h)
-	var list []Hook
-	if resp := e.call(ci, "GET", "/hooks?all=true", nil, &list); resp.StatusCode != 200 || len(list) != 0 {
-		t.Errorf("tagged admin's list = %d %+v, want []", resp.StatusCode, list)
+	var res HookList
+	if resp := e.call(ci, "GET", "/hooks?all=true", nil, &res); resp.StatusCode != 200 || len(res.Hooks) != 0 {
+		t.Errorf("tagged admin's list = %d %+v, want []", resp.StatusCode, res.Hooks)
 	}
 	if resp := e.call(ci, "GET", "/hooks/"+h.ID, nil, nil); resp.StatusCode != 404 {
 		t.Errorf("tagged admin's GET = %d, want 404", resp.StatusCode)
@@ -761,9 +764,9 @@ func TestAdminScopedByChannel(t *testing.T) {
 	var prod, dev Hook
 	e.call(other, "POST", "/hooks", hooks.CreateRequest{Path: "p", Channel: "prod"}, &prod)
 	e.call(other, "POST", "/hooks", hooks.CreateRequest{Path: "d", Channel: "dev"}, &dev)
-	var list []Hook
-	if e.call(prodAdmin, "GET", "/hooks?all=true", nil, &list); len(list) != 1 || list[0].ID != prod.ID {
-		t.Errorf("prod admin's list = %+v, want only the prod hook", list)
+	var res HookList
+	if e.call(prodAdmin, "GET", "/hooks?all=true", nil, &res); len(res.Hooks) != 1 || res.Hooks[0].ID != prod.ID {
+		t.Errorf("prod admin's list = %+v, want only the prod hook", res.Hooks)
 	}
 	var cs Channels
 	if e.call(prodAdmin, "GET", "/channels?all=true", nil, &cs); !slices.Equal(channelNames(cs.Channels), []string{"prod"}) {

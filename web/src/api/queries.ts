@@ -14,7 +14,8 @@ export function useMe() {
 export function useHooks(all: boolean, channel?: string) {
   return useQuery({
     queryKey: keys.hooks(all, channel),
-    queryFn: ({ signal }) => request(s.hooks, "GET", paths.hooks(all, channel), undefined, signal),
+    queryFn: async ({ signal }) =>
+      (await request(s.hookList, "GET", paths.hooks(all, channel), undefined, signal)).hooks,
   });
 }
 
@@ -43,7 +44,8 @@ export function useHook(id: string) {
 export function useCalls(id: string) {
   return useQuery({
     queryKey: keys.calls(id),
-    queryFn: ({ signal }) => request(s.summaries, "GET", paths.calls(id), undefined, signal),
+    queryFn: async ({ signal }) =>
+      (await request(s.callList, "GET", paths.calls(id), undefined, signal)).calls,
   });
 }
 

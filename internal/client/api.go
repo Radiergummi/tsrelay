@@ -43,9 +43,9 @@ func (c *API) Me(ctx context.Context) (api.Me, error) {
 }
 
 func (c *API) ListHooks(ctx context.Context) ([]api.Hook, error) {
-	var hs []api.Hook
-	err := c.do(ctx, http.MethodGet, "/hooks", nil, &hs)
-	return hs, err
+	var list api.HookList
+	err := c.do(ctx, http.MethodGet, "/hooks", nil, &list)
+	return list.Hooks, err
 }
 
 func (c *API) CreateHook(ctx context.Context, req hooks.CreateRequest) (api.Hook, error) {

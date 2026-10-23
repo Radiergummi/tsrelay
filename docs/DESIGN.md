@@ -386,10 +386,10 @@ Negotiated responses carry `Vary: Accept`. A representation a resource doesn't h
 | Method & path | JSON | Events |
 |---|---|---|
 | `GET /` | The entry document: identity, effective grant (roles, channel patterns, limits), current usage, user slug, the relay's capability name (`capName`), version and, when known, the `commit` it was built from, the relay-wide setting defaults and maxima, how many calls it keeps per hook and whether it keeps bodies at all (`policy`, with `callsPerHook` and `noBodies`), and `links` to `/hooks`, `/channels`, `/tunnel`, `/openapi.json` and `/licenses`. For admins, `latestVersion` and `releaseURL` name a tsrelay release newer than the relay's own: the relay asks GitHub's latest-release API on startup and every 6 hours and keeps the answer in memory. A failed check is logged once and keeps the last answer; nothing waits for it. A dev build and `--update-check=false` never ask. Browsers asking for HTML are redirected to `/hooks`. | |
-| `GET /hooks` | The caller's hooks (admins: `?all=true`, every hook in their admin channels; anyone else gets their own); `?channel=` keeps those in one channel. Every hook object, here and elsewhere, carries `lastCall`: its newest call's summary. | The caller's hooks and their calls (admins: `?all=true`) |
+| `GET /hooks` | The caller's hooks (admins: `?all=true`, every hook in their admin channels; anyone else gets their own); `?channel=` keeps those in one channel. The answer is `{"hooks": [...]}`, an object so it can gain siblings. Every hook object, here and elsewhere, carries `lastCall`: its newest call's summary. | The caller's hooks and their calls (admins: `?all=true`) |
 | `POST /hooks` | Create. `?dryRun=true` validates without saving and answers `200` with the would-be hook. | |
 | `GET/PATCH/DELETE /hooks/{id}` | Read, update or delete. `PATCH` also accepts `?dryRun=true`, which validates without saving and answers `200` with the would-be hook. | This hook and its calls |
-| `GET /hooks/{id}/calls` | Call summaries, newest first | This hook's calls |
+| `GET /hooks/{id}/calls` | Call summaries, newest first, as `{"calls": [...]}` | This hook's calls |
 | `GET /hooks/{id}/calls/{callID}` | Full call with attempts and captures. For the hook's owner only, `replay: {allowed, reason}` says whether it can be replayed and why not. | |
 | `POST /hooks/{id}/calls/{callID}/replay` | Replay. Answers `201` with the new call as `GET` shows it to its owner, `replay` included. | |
 | `POST /hooks/{id}/test` | Send a test request. Answers like a replay. | |

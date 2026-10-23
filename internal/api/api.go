@@ -118,6 +118,11 @@ type Limits struct {
 	MaxHookTTL string `json:"maxHookTTL,omitempty"` // empty means unlimited
 }
 
+// HookList is GET /hooks. It is an object so it can grow siblings.
+type HookList struct {
+	Hooks []Hook `json:"hooks"`
+}
+
 type Hook struct {
 	ID          string           `json:"id"`
 	URL         string           `json:"url"`
@@ -254,7 +259,7 @@ func (a *API) listHooks(w http.ResponseWriter, r *http.Request, id authz.Identit
 			out = append(out, a.HookJSON(h, id))
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, HookList{Hooks: out})
 }
 
 func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
