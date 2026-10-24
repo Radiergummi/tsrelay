@@ -47,6 +47,12 @@ func TestMethodNotAllowed(t *testing.T) {
 		"DELETE /hooks.json":  "GET, HEAD, POST",
 		// The web UI answers GET everywhere, so Allow names it here too.
 		"PUT /hooks/" + h.ID + "/test": "GET, HEAD, POST",
+		// Documents serve GET alone.
+		"POST /openapi":             "GET, HEAD",
+		"DELETE /install.sh":        "GET, HEAD",
+		"PUT /download/linux/arm64": "GET, HEAD",
+		// No route serves OPTIONS: the relay answers no CORS preflight.
+		"OPTIONS /hooks": "GET, HEAD, POST",
 	} {
 		method, p, _ := strings.Cut(path, " ")
 		resp, _ := e.send(method, p, "")
