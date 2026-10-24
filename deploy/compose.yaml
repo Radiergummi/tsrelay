@@ -11,7 +11,7 @@ services:
   tsrelay:
     # An exact version. The :1 tag moves to every 1.x release; pinning the
     # digest (ghcr.io/radiergummi/tsrelay:1.0.0@sha256:...) is better still.
-    image: ghcr.io/radiergummi/tsrelay:1.0.0
+    image: ghcr.io/radiergummi/tsrelay:1.1.0
     restart: unless-stopped
     # /healthz, /readyz and /metrics, without authentication, only on this
     # host's loopback. The image has no shell, so there is no healthcheck here.
