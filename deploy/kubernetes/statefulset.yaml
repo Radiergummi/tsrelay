@@ -40,7 +40,7 @@ spec:
           # An exact version. The :1 tag moves to every 1.x release; pinning
           # the digest (ghcr.io/radiergummi/tsrelay:1.0.0@sha256:...) is better
           # still.
-          image: ghcr.io/radiergummi/tsrelay:1.0.0
+          image: ghcr.io/radiergummi/tsrelay:1.1.0
           args:
             - --ops-listen=:9090
             # --ops-pprof and --otel are left off here; enable them

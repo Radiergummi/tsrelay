@@ -59,6 +59,21 @@ func TestUpdateSeqs(t *testing.T) {
 	}
 }
 
+// An attached message overtaken by a newer hook-updated must not undo it.
+func TestSessionIgnoresStaleAttached(t *testing.T) {
+	var events []Event
+	s := &Session{OnEvent: func(e Event) { events = append(events, e) }}
+	s.current = []api.Hook{{ID: "h_1", Path: "pay"}}
+	s.seqs = updateSeqs{}
+	s.control(tunnel.Control{Type: tunnel.ControlHookUpdated, Seq: 5, Hooks: []tunnel.HookInfo{{ID: "h_1", Path: "billing"}}})
+	s.control(tunnel.Control{Type: tunnel.ControlAttached, Seq: 4, Hooks: []tunnel.HookInfo{{ID: "h_1", Path: "pay"}}})
+	// Unnumbered, from a v1.0.0 relay: no telling whether it is newer.
+	s.control(tunnel.Control{Type: tunnel.ControlAttached, Hooks: []tunnel.HookInfo{{ID: "h_1", Path: "pay"}}})
+	if cur := s.Current(); len(cur) != 1 || cur[0].Path != "billing" || len(events) != 1 {
+		t.Fatalf("Current = %+v, events = %+v", cur, events)
+	}
+}
+
 // TestSessionIgnoresUnknownControl pins the v1 rule that a client skips
 // control types and fields it does not know, so the relay can add them.
 func TestSessionIgnoresUnknownControl(t *testing.T) {

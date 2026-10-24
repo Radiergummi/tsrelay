@@ -223,6 +223,30 @@ func TestSessionFollowsHookUpdate(t *testing.T) {
 	}
 }
 
+// A rename while the tunnel is down reaches the session with the attached
+// message of the redial, not only with the hook's next update.
+func TestSessionFollowsHookUpdateDuringOutage(t *testing.T) {
+	e := newSessionEnv(t)
+	h := e.create("pay")
+	s := e.session(h)
+	events, _ := start(t, s)
+	e.served(events, h)
+	e.goOffline()
+	next(t, events, client.EventLost)
+	moved, err := e.setup().UpdateHook(context.Background(), h.ID, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true, Value: new("billing")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.goOnline()
+	ev := next(t, events, client.EventHookChanged)
+	if ev.Hook.Path != "billing" || ev.Hook.URL != moved.URL || ev.OldID != h.ID || ev.Recreated {
+		t.Fatalf("changed = %+v", ev)
+	}
+	if cur := s.Current(); len(cur) != 1 || cur[0].URL != moved.URL {
+		t.Fatalf("Current = %+v", cur)
+	}
+}
+
 func TestSessionDropsOnControl(t *testing.T) {
 	e := newSessionEnv(t)
 	pay, ship := e.create("pay"), e.create("ship")

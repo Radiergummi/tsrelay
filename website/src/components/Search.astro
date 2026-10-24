@@ -266,7 +266,9 @@ import {Search} from "@lucide/astro";
                 row.className = rowClass;
 
                 const link = document.createElement("a");
-                link.href = item.url;
+                // Pagefind indexes the built files (`build.format: "file"`), so
+                // its URLs end in `.html`; the site's own URLs never do.
+                link.href = item.url.replace(/\.html$/, "");
                 link.className = linkClass;
 
                 const title = document.createElement("span");

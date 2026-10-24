@@ -359,7 +359,12 @@ func TestTunnelLostBeforeHeaders(t *testing.T) {
 
 func TestAuditCallRecord(t *testing.T) {
 	e := newEnv(t)
-	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "response-body") }), tunnel.Options{})
+	// The app reads the body: bytesIn counts what was forwarded, and an app
+	// that answers first can cut the forward short.
+	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		io.WriteString(w, "response-body")
+	}), tunnel.Options{})
 	e.do(sender, "POST", "/~moritz/cb/done?token=s3cr3t", strings.NewReader("request-body"),
 		http.Header{"Authorization": {"Bearer hunter2"}}).Body.Close()
 	e.do(identify.Tagged("w3", []string{"tag:x"}), "POST", "/~moritz/cb", nil, nil).Body.Close()

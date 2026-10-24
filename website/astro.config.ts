@@ -112,7 +112,7 @@ function remarkCodeTabs() {
       const buttons = labels
         .map(
           (label, index) =>
-            `<button role="tab" class="code-tabs-button${index === 0 ? " active" : ""}" data-tab="${index}" aria-selected="${index === 0}" aria-controls="${tabGroupId}-panel-${index}" id="${tabGroupId}-tab-${index}">${label}</button>`,
+            `<button role="tab" class="code-tabs-button${index === 0 ? " active" : ""}" data-tab="${index}" aria-selected="${index === 0}" aria-controls="${tabGroupId}-panel-${index}" id="${tabGroupId}-tab-${index}">${escapeHtml(label)}</button>`,
         )
         .join("");
 
@@ -157,6 +157,11 @@ function stripTabMeta(node: Code) {
 
 function html(value: string): Html {
   return { type: "html", value };
+}
+
+/** Labels come from a code fence's meta string, which is free text. */
+function escapeHtml(text: string) {
+  return text.replace(/[&<>"]/g, (character) => `&#${character.charCodeAt(0)};`);
 }
 
 /**

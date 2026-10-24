@@ -56,7 +56,7 @@ type Lifecycle struct {
 	waits     map[hooks.ID]*waiters
 	detached  map[hooks.ID]time.Time // when each hook's last tunnel ended
 	started   time.Time
-	updateSeq uint64 // numbers hook-updated notices, see notifyUpdated
+	updateSeq uint64 // numbers attached and hook-updated notices, see notifyUpdated
 	now       func() time.Time
 	cfg       Config
 
