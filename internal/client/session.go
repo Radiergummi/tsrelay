@@ -132,7 +132,6 @@ func (s *Session) control(ctl tunnel.Control) {
 	s.emitMu.Lock()
 	defer s.emitMu.Unlock()
 	s.mu.Lock()
-	s.seqs.observe(ctl)
 	var events []Event
 	for _, info := range ctl.Hooks {
 		i := slices.IndexFunc(s.current, func(h api.Hook) bool { return h.ID == info.ID })
@@ -141,8 +140,13 @@ func (s *Session) control(ctl tunnel.Control) {
 		}
 		switch ctl.Type {
 		// Attached carries each hook as it is now, which an outage may
-		// have changed without a hook-updated reaching us.
+		// have changed without a hook-updated reaching us. One without a
+		// number (from a v1.0.0 relay) can't be ordered against updates,
+		// so it could undo a newer one: it changes nothing.
 		case tunnel.ControlHookUpdated, tunnel.ControlAttached:
+			if ctl.Type == tunnel.ControlAttached && ctl.Seq == 0 {
+				continue
+			}
 			cur := s.current[i]
 			h := cur
 			h.URL, h.Path, h.Public, h.PublicURL = info.URL, info.Path, info.Public, info.PublicURL
@@ -178,6 +182,12 @@ func sameHook(a, b api.Hook) bool {
 // redial, drops it, and dials again. Any other refusal is returned.
 func (s *Session) dial(ctx context.Context, _ []string, a tunnel.Attach) (net.Conn, error) {
 	recreated := map[string]bool{} // a recreated hook refused again is not recreated again
+	// A number remembered from the last connection (e.g. from before a
+	// relay restart, whose counter starts over) must not suppress a message
+	// on this one, all of which are numbered above its attached message.
+	s.mu.Lock()
+	clear(s.seqs)
+	s.mu.Unlock()
 	for {
 		conn, err := tunnel.Dial(ctx, s.API.HTTP, s.API.TunnelURL(a, s.ids()...))
 		id, reason, ok := refusal(err)
@@ -255,8 +265,8 @@ func refusal(err error) (hook string, reason DropReason, ok bool) {
 	return "", "", false
 }
 
-// updateSeqs remembers the newest hook-updated sequence number per hook,
-// because control messages can arrive out of order.
+// updateSeqs remembers the newest attached or hook-updated sequence number
+// per hook, because control messages can arrive out of order.
 type updateSeqs map[string]uint64
 
 // fresh reports whether an update numbered seq for hook is newer than any
@@ -271,15 +281,4 @@ func (s updateSeqs) fresh(hook string, seq uint64) bool {
 	}
 	s[hook] = seq
 	return true
-}
-
-// observe forgets every sequence number when c is attached: a new
-// connection starts its own sequence, and attached precedes any
-// hook-updated on it. A number remembered from before a reconnect (e.g. a
-// relay restart, whose counter starts over at 0) must not suppress an
-// update that is actually new.
-func (s updateSeqs) observe(c tunnel.Control) {
-	if c.Type == tunnel.ControlAttached {
-		clear(s)
-	}
 }

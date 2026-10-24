@@ -152,6 +152,10 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 		infos = append(infos, l.hookInfo(cur))
 	}
 	reps := l.attachLocked(t, live)
+	// Numbered like hook-updated: an update made once t serves the hooks
+	// gets a higher number, so a client that sees it first keeps it.
+	l.updateSeq++
+	seq := l.updateSeq
 	l.mu.Unlock()
 
 	for _, rep := range reps {
@@ -163,7 +167,7 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 	}
 	l.cfg.Audit.Log(ctx, audit.TunnelAttach, audit.Actor(tk.owner), slog.String("tunnel", t.ID), slog.Any("hooks", live))
 	if len(infos) > 0 {
-		t.Notify(tunnel.Control{Type: tunnel.ControlAttached, Hooks: infos}, false)
+		t.Notify(tunnel.Control{Type: tunnel.ControlAttached, Seq: seq, Hooks: infos}, false)
 	}
 	if len(revoked) > 0 {
 		l.cfg.Audit.Log(ctx, audit.TunnelRevoked, audit.Actor(tk.owner), slog.String("tunnel", t.ID),
