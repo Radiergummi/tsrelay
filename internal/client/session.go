@@ -140,7 +140,9 @@ func (s *Session) control(ctl tunnel.Control) {
 			continue
 		}
 		switch ctl.Type {
-		case tunnel.ControlHookUpdated:
+		// Attached carries each hook as it is now, which an outage may
+		// have changed without a hook-updated reaching us.
+		case tunnel.ControlHookUpdated, tunnel.ControlAttached:
 			cur := s.current[i]
 			h := cur
 			h.URL, h.Path, h.Public, h.PublicURL = info.URL, info.Path, info.Public, info.PublicURL
