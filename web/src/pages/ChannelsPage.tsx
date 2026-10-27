@@ -1,4 +1,5 @@
 import { Link, useSearchParams } from "react-router";
+import { paths } from "@/api/client";
 import { useChannels } from "@/api/queries";
 import type { Channels } from "@/api/schemas";
 import { EmptyState } from "@/components/PageState";
@@ -100,11 +101,7 @@ function ChannelsTable({ channels, all }: { channels: Channels; all: boolean }) 
                 {c.hooks ? (
                   <span className="flex flex-wrap gap-x-3">
                     {c.hooks.map((h) => (
-                      <Link
-                        key={h.id}
-                        to={`/hooks/${encodeURIComponent(h.id)}`}
-                        className="hover:underline"
-                      >
+                      <Link key={h.id} to={paths.hook(h.id)} className="hover:underline">
                         <Reveal text={h.path} />
                       </Link>
                     ))}

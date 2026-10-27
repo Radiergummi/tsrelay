@@ -1,4 +1,5 @@
 import { Link, useSearchParams } from "react-router";
+import { paths } from "@/api/client";
 import { useChannels, useHooks } from "@/api/queries";
 import type { Hook } from "@/api/schemas";
 import { EmptyState } from "@/components/PageState";
@@ -117,10 +118,7 @@ function HooksTable({ hooks }: { hooks: Hook[] }) {
           {hooks.map((h) => (
             <TableRow key={h.id}>
               <TableCell>
-                <Link
-                  to={`/hooks/${encodeURIComponent(h.id)}`}
-                  className="font-medium hover:underline"
-                >
+                <Link to={paths.hook(h.id)} className="font-medium hover:underline">
                   {h.path}
                 </Link>
                 {h.description && (

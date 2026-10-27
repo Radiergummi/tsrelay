@@ -1,5 +1,6 @@
 import { lazy, memo, Suspense, useMemo, useState } from "react";
 import { Link } from "react-router";
+import { paths } from "@/api/client";
 import type { Capture } from "@/api/schemas";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -48,10 +49,7 @@ export const BodyViewer = memo(function BodyViewer({
     return (
       <Note>
         {formatSize(capture.size)} body. Bodies aren't captured for this hook.{" "}
-        <Link
-          to={`/hooks/${encodeURIComponent(hookId)}/edit`}
-          className="text-primary hover:underline"
-        >
+        <Link to={`${paths.hook(hookId)}/edit`} className="text-primary hover:underline">
           Edit the hook
         </Link>{" "}
         to capture them.

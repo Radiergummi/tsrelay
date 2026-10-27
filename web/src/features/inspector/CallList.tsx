@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Link } from "react-router";
+import { paths } from "@/api/client";
 import type { Summary } from "@/api/schemas";
 import { StatusText } from "@/components/StatusText";
 import { TimeAgo } from "@/components/TimeAgo";
@@ -38,7 +39,7 @@ export function CallList({
             <Link
               ref={on ? selectedRef : undefined}
               to={{
-                pathname: `/hooks/${encodeURIComponent(hookId)}/calls/${encodeURIComponent(c.id)}`,
+                pathname: paths.call(hookId, c.id),
                 search,
               }}
               aria-current={on ? "true" : undefined}

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery } from "@tanstack/react-query";
 import { keys } from "./cache";
 import { paths, request, requestText } from "./client";
 import * as s from "./schemas";
@@ -52,8 +52,10 @@ export function useCalls(id: string) {
 export function useCall(hookId: string, callId: string | undefined) {
   return useQuery({
     queryKey: keys.call(hookId, callId ?? ""),
-    queryFn: ({ signal }) => request(s.call, "GET", paths.call(hookId, callId!), undefined, signal),
-    enabled: callId !== undefined,
+    queryFn:
+      callId === undefined
+        ? skipToken
+        : ({ signal }) => request(s.call, "GET", paths.call(hookId, callId), undefined, signal),
   });
 }
 

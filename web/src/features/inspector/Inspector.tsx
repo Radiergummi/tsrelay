@@ -1,5 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from "react";
 import { Link } from "react-router";
+import { paths } from "@/api/client";
 import { useReplay } from "@/api/mutations";
 import { useCall } from "@/api/queries";
 import type { Call, Hook, Me } from "@/api/schemas";
@@ -155,7 +156,7 @@ function CallView({
             <span className="text-muted-foreground">
               replay of{" "}
               <Link
-                to={`/hooks/${encodeURIComponent(hook.id)}/calls/${encodeURIComponent(call.replayOf)}`}
+                to={paths.call(hook.id, call.replayOf)}
                 className="font-mono text-primary hover:underline"
               >
                 {call.replayOf}

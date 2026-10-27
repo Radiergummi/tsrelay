@@ -12,7 +12,7 @@ import { LicenseTextDialog } from "@/features/licenses/LicenseTextDialog";
 import { licenseLabel, licensesOf } from "@/lib/licenseLabel";
 import { cn } from "@/lib/utils";
 
-type Ecosystem = "all" | "go" | "npm" | "other";
+type Ecosystem = "all" | LicenseComponent["ecosystem"];
 
 const ecosystemLabels: Record<string, string> = {
   all: "All",

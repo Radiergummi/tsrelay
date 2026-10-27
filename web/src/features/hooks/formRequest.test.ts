@@ -12,6 +12,9 @@ import {
 test("field values by type", () => {
   expect(fieldValue("  ", "duration")).toEqual({ value: undefined });
   expect(fieldValue("1h30m", "duration")).toEqual({ value: "1h30m" });
+  // Go accepts both the micro sign and the Greek mu, as parseDuration does.
+  expect(fieldValue("1µs", "duration")).toEqual({ value: "1µs" });
+  expect(fieldValue("1μs", "duration")).toEqual({ value: "1μs" });
   expect(fieldValue("5 minutes", "duration").error).toMatch(/duration like 30s/);
   expect(fieldValue("1024", "int")).toEqual({ value: 1024 });
   expect(fieldValue("1e3", "int").error).toMatch(/whole number/);

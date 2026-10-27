@@ -8,6 +8,8 @@ import * as z from "zod/mini";
 const headers = z.record(z.string(), z.array(z.string()));
 const duration = z.string();
 const millis = z.number();
+const attachPolicy = z.enum(["takeover", "reject"]);
+const hostHeader = z.enum(["preserve", "rewrite"]);
 
 export const capture = z.object({
   body: z.optional(z.string()),
@@ -28,7 +30,7 @@ export const summary = z.object({
   id: z.string(),
   hookId: z.string(),
   receivedAt: z.string(),
-  kind: z.string(), // "sender" | "replay" | "test" | "public"
+  kind: z.enum(["sender", "replay", "test", "public"]),
   replayOf: z.optional(z.string()),
   refused: z.optional(z.boolean()), // the sender may not use the hook's channel
   sender,
@@ -72,8 +74,8 @@ export const call = z.extend(summary, {
 const rateLimit = z.object({ perSecond: z.number(), burst: z.number() });
 
 export const effective = z.object({
-  attachPolicy: z.string(),
-  hostHeader: z.string(),
+  attachPolicy,
+  hostHeader,
   holdTimeout: duration,
   responseTimeout: duration,
   idleTimeout: duration,
@@ -83,8 +85,8 @@ export const effective = z.object({
 });
 
 export const settings = z.object({
-  attachPolicy: z.optional(z.string()),
-  hostHeader: z.optional(z.string()),
+  attachPolicy: z.optional(attachPolicy),
+  hostHeader: z.optional(hostHeader),
   holdTimeout: z.optional(duration),
   responseTimeout: z.optional(duration),
   idleTimeout: z.optional(duration),
@@ -180,7 +182,7 @@ export const licenseComponent = z.object({
   name: z.string(),
   version: z.optional(z.string()),
   description: z.optional(z.string()),
-  ecosystem: z.string(), // "go" | "npm" | "other"
+  ecosystem: z.enum(["go", "npm", "other"]),
   licenses: z.array(licenseEntry),
   homepage: z.optional(z.string()),
   repository: z.optional(z.string()),
@@ -223,10 +225,11 @@ export type FieldError = z.infer<typeof fieldError>;
 /** HookRequest is the body of POST and PATCH /hooks (hooks.CreateRequest and UpdateRequest). */
 export type HookRequest = Record<string, unknown>;
 
-/** TestRequest is the body of POST /hooks/{id}/test (api.TestRequest). */
-export interface TestRequest {
-  method: string;
-  path: string;
-  headers: Record<string, string[]>;
-  body: string;
-}
+/** testRequest is the body of POST /hooks/{id}/test (api.TestRequest). */
+export const testRequest = z.object({
+  method: z.string(),
+  path: z.string(),
+  headers,
+  body: z.string(),
+});
+export type TestRequest = z.infer<typeof testRequest>;

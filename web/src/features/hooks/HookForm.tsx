@@ -1,7 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ApiError, fieldMessage, formMessage } from "@/api/client";
+import { ApiError, fieldMessage, formMessage, paths } from "@/api/client";
 import { dryRunHook, useCreateHook, useUpdateHook } from "@/api/mutations";
 import { useChannels } from "@/api/queries";
 import type { Effective, FieldError, Hook, Me } from "@/api/schemas";
@@ -142,7 +142,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
     if (local.length) return setErrors(local);
     const onSuccess = (h: Hook) => {
       toast.success(editing ? "Saved" : `Created ${h.path}`);
-      navigate(`/hooks/${encodeURIComponent(h.id)}`);
+      navigate(paths.hook(h.id));
     };
     if (editing) update.mutate(body, { onSuccess, onError: applySaveError });
     else create.mutate(body, { onSuccess, onError: applySaveError });
@@ -337,7 +337,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
           {editing ? "Save changes" : "Create hook"}
         </Button>
         <Link
-          to={editing ? `/hooks/${encodeURIComponent(hook.id)}` : "/hooks"}
+          to={editing ? paths.hook(hook.id) : "/hooks"}
           className={buttonVariants({ variant: "ghost" })}
         >
           Cancel

@@ -1,4 +1,5 @@
 import { Link, useParams, useSearchParams } from "react-router";
+import { paths } from "@/api/client";
 import { useChannel } from "@/api/queries";
 import type { Hook } from "@/api/schemas";
 import { EmptyState } from "@/components/PageState";
@@ -25,7 +26,7 @@ export function ChannelPage() {
   const all = isAdmin(me) && search.get("all") === "true";
   useAllEvents(all);
   const channel = useChannel(name, all);
-  const here = `/channels/${encodeURIComponent(name)}`;
+  const here = paths.channel(name);
   return (
     <section>
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
@@ -75,10 +76,7 @@ function ChannelHooks({ hooks, all }: { hooks: Hook[]; all: boolean }) {
             <TableRow key={h.id}>
               {all && <TableCell>{h.owner}</TableCell>}
               <TableCell>
-                <Link
-                  to={`/hooks/${encodeURIComponent(h.id)}`}
-                  className="font-medium hover:underline"
-                >
+                <Link to={paths.hook(h.id)} className="font-medium hover:underline">
                   <Reveal text={h.path} />
                 </Link>
               </TableCell>

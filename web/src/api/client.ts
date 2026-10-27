@@ -113,7 +113,10 @@ async function toApiError(resp: Response): Promise<ApiError> {
     p = { detail: text.trim() };
   }
   const errors = Array.isArray(p.errors)
-    ? p.errors.flatMap((e) => (fieldError.safeParse(e).success ? [e as FieldError] : []))
+    ? p.errors.flatMap((e) => {
+        const parsed = fieldError.safeParse(e);
+        return parsed.success ? [parsed.data] : [];
+      })
     : [];
   return new ApiError({
     status: resp.status,

@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { paths } from "@/api/client";
 import { useCalls, useHook } from "@/api/queries";
 import type { Hook, Me } from "@/api/schemas";
 import { EmptyState } from "@/components/PageState";
@@ -64,10 +65,10 @@ function Loaded({
   const search = useRef<HTMLInputElement>(null);
   const [testing, setTesting] = useState(false);
   const [help, setHelp] = useState(false);
-  const base = `/hooks/${encodeURIComponent(hookId)}`;
+  const base = paths.hook(hookId);
   const qs = query ? `?${query}` : "";
   const select = (id: string | undefined, replace = true) =>
-    navigate((id ? `${base}/calls/${encodeURIComponent(id)}` : base) + qs, { replace });
+    navigate((id ? paths.call(hookId, id) : base) + qs, { replace });
   const at = visible.findIndex((c) => c.id === callId);
 
   useShortcuts({

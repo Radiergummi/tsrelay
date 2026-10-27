@@ -1,5 +1,6 @@
 import { Trash2 } from "lucide-react";
 import { Link } from "react-router";
+import { paths } from "@/api/client";
 import { useHooks } from "@/api/queries";
 import type { Hook } from "@/api/schemas";
 import { EmptyState } from "@/components/PageState";
@@ -67,10 +68,7 @@ function AllHooks({ hooks }: { hooks: Hook[] }) {
               <TableRow key={h.id}>
                 <TableCell>{h.owner}</TableCell>
                 <TableCell>
-                  <Link
-                    to={`/hooks/${encodeURIComponent(h.id)}`}
-                    className="font-medium hover:underline"
-                  >
+                  <Link to={paths.hook(h.id)} className="font-medium hover:underline">
                     <Reveal text={h.path} />
                   </Link>
                 </TableCell>

@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { callRecorded, hookChanged, resync } from "@/api/cache";
 import { paths } from "@/api/client";
-import { hookEvent, summary } from "@/api/schemas";
+import { hookEvent, problem, summary } from "@/api/schemas";
 import { backoffDelay } from "./backoff";
 
 /**
@@ -190,7 +190,7 @@ export class LiveStream {
     const detail = res.ok
       ? undefined
       : await res.json().then(
-          (p: { detail?: unknown }) => (typeof p?.detail === "string" ? p.detail : undefined),
+          (p: unknown) => problem.safeParse(p).data?.detail,
           () => undefined,
         );
     ac.abort();

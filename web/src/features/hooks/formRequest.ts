@@ -1,4 +1,5 @@
 import type { Effective, FieldError, Hook } from "@/api/schemas";
+import { parseDuration } from "@/lib/duration";
 
 export type FieldType = "text" | "bool" | "int" | "duration" | "ratelimit" | "time";
 
@@ -20,8 +21,6 @@ export const fieldTypes: Record<string, FieldType> = {
   "settings.capture": "bool",
 };
 
-const durationRE = /^(\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+$/;
-
 /** fieldValue converts a field's text to its API value: undefined for an empty field, or an error. */
 export function fieldValue(raw: string, type: FieldType): { value?: unknown; error?: string } {
   const s = raw.trim();
@@ -32,7 +31,7 @@ export function fieldValue(raw: string, type: FieldType): { value?: unknown; err
     case "int":
       return /^\d+$/.test(s) ? { value: Number(s) } : { error: "must be a whole number of bytes" };
     case "duration":
-      return durationRE.test(s)
+      return parseDuration(s) !== null
         ? { value: s }
         : { error: "must be a duration like 30s, 2m or 1h30m" };
     case "ratelimit": {
