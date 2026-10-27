@@ -171,10 +171,10 @@ func TestStripsSenderTrailersAndAddressHeaders(t *testing.T) {
 func TestLocalCallIDIsReplaced(t *testing.T) {
 	e := newEnv(t)
 	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set(HeaderCallID, "c_local")
+		w.Header().Set(tunnel.HeaderCallID, "c_local")
 	}), tunnel.Options{})
 	resp := e.do(sender, "GET", "/~moritz/cb", nil, nil)
-	if ids := resp.Header.Values(HeaderCallID); len(ids) != 1 || ids[0] == "c_local" {
+	if ids := resp.Header.Values(tunnel.HeaderCallID); len(ids) != 1 || ids[0] == "c_local" {
 		t.Fatalf("Tsrelay-Call-Id = %q, want only the relay's", ids)
 	}
 }
@@ -278,7 +278,7 @@ func TestTunnelLostMidResponse(t *testing.T) {
 	drop()
 	io.Copy(io.Discard, resp.Body)
 	e.waitLog(`"error":"tunnel_lost"`)
-	if c, ok := e.in.Get(resp.Header.Get(HeaderCallID)); !ok || c.Outcome != problem.TunnelLost {
+	if c, ok := e.in.Get(resp.Header.Get(tunnel.HeaderCallID)); !ok || c.Outcome != problem.TunnelLost {
 		t.Fatalf("inspector call = %+v, want outcome %q", c, problem.TunnelLost)
 	}
 }

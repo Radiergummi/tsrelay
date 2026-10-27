@@ -73,7 +73,7 @@ var errSenderGone = errors.New("the sender went away")
 
 func (h *Handler) newCall(w http.ResponseWriter, r *http.Request, public bool, inj *injection) *call {
 	c := &call{h: h, start: time.Now(), id: ids.New("c_"), kind: inspect.KindSender, parent: r.Context()}
-	w.Header().Set(HeaderCallID, c.id)
+	w.Header().Set(tunnel.HeaderCallID, c.id)
 	c.inj, c.public = inj, public
 	c.internet = c.public || c.inj != nil && c.inj.public
 	c.logPath = r.URL.Path
@@ -370,7 +370,7 @@ func (c *call) forward() {
 		// closing the body. The response is sandboxed, see sandboxPolicy.
 		ModifyResponse: func(resp *http.Response) error {
 			resp.Header.Add("Content-Security-Policy", sandboxPolicy)
-			resp.Header.Del(HeaderCallID)
+			resp.Header.Del(tunnel.HeaderCallID)
 			if resp.StatusCode == problem.StatusUpstreamUnreachable && resp.Header.Get(problem.HeaderError) == problem.UpstreamUnreachable {
 				c.setOutcome(problem.UpstreamUnreachable)
 			} else {

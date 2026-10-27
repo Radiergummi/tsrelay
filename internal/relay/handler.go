@@ -28,17 +28,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Headers the relay sets for the local application. Incoming headers with
-// the Tsrelay- prefix are always removed first, so senders cannot spoof them.
-const (
-	HeaderSenderNode   = "Tsrelay-Sender-Node"
-	HeaderSenderTags   = "Tsrelay-Sender-Tags"
-	HeaderSenderLogin  = "Tsrelay-Sender-Login"
-	HeaderSenderPublic = "Tsrelay-Sender-Public"
-	HeaderHook         = "Tsrelay-Hook"
-	HeaderCallID       = "Tsrelay-Call-Id"
-)
-
 // DefaultHoldQueue is how many calls per hook may wait for a tunnel at once.
 const DefaultHoldQueue = 100
 
@@ -263,18 +252,18 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.
 	}
 	out.Header.Set("X-Forwarded-Prefix", prefix)
 	if internet {
-		out.Header.Set(HeaderSenderPublic, "true")
+		out.Header.Set(tunnel.HeaderSenderPublic, "true")
 	} else {
-		out.Header.Set(HeaderSenderNode, sender.NodeName)
+		out.Header.Set(tunnel.HeaderSenderNode, sender.NodeName)
 		if len(sender.Tags) > 0 {
-			out.Header.Set(HeaderSenderTags, strings.Join(sender.Tags, ","))
+			out.Header.Set(tunnel.HeaderSenderTags, strings.Join(sender.Tags, ","))
 		}
 		if sender.Login != "" {
-			out.Header.Set(HeaderSenderLogin, sender.Login)
+			out.Header.Set(tunnel.HeaderSenderLogin, sender.Login)
 		}
 	}
-	out.Header.Set(HeaderHook, hook.Slug+"/"+hook.Path)
-	out.Header.Set(HeaderCallID, callID)
+	out.Header.Set(tunnel.HeaderAppHook, hook.Slug+"/"+hook.Path)
+	out.Header.Set(tunnel.HeaderCallID, callID)
 	out.Header.Set(tunnel.HeaderHook, string(hook.ID))
 	path, rawPath := remainder(pr.In.URL, segments)
 	out.URL = &url.URL{Scheme: "http", Host: "tunnel", Path: path, RawPath: rawPath, RawQuery: pr.In.URL.RawQuery}

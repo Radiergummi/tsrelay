@@ -30,6 +30,18 @@ const (
 	clientMaxStreams = 1000
 )
 
+// Headers the relay sets for the local application, which the client
+// passes on. Incoming headers with the Tsrelay- prefix are always removed
+// first, so senders cannot spoof them.
+const (
+	HeaderSenderNode   = "Tsrelay-Sender-Node"
+	HeaderSenderTags   = "Tsrelay-Sender-Tags"
+	HeaderSenderLogin  = "Tsrelay-Sender-Login"
+	HeaderSenderPublic = "Tsrelay-Sender-Public"
+	HeaderAppHook      = "Tsrelay-Hook" // the hook's slug and path
+	HeaderCallID       = "Tsrelay-Call-Id"
+)
+
 type ControlType string
 
 const (
