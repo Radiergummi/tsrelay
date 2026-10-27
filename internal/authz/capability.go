@@ -51,22 +51,12 @@ func (e Effective) Has(r Role) bool {
 
 // Allows reports whether one of the role's patterns matches channel.
 func (e Effective) Allows(r Role, channel string) bool {
-	for _, p := range e.Patterns[r] {
-		if MatchChannel(p, channel) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(e.Patterns[r], func(p string) bool { return MatchChannel(p, channel) })
 }
 
 // AllowsPublic reports whether one of the public patterns matches channel.
 func (e Effective) AllowsPublic(channel string) bool {
-	for _, p := range e.PublicPatterns {
-		if MatchChannel(p, channel) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(e.PublicPatterns, func(p string) bool { return MatchChannel(p, channel) })
 }
 
 type grantValue struct {

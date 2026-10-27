@@ -99,12 +99,7 @@ func Extension(path string) bool {
 func Pick(w http.ResponseWriter, r *http.Request, offers ...Type) (Type, bool) {
 	w.Header().Add("Vary", "Accept")
 	if t, ok := Forced(r); ok {
-		for _, o := range offers {
-			if o == t {
-				return t, true
-			}
-		}
-		return t, false
+		return t, slices.Contains(offers, t)
 	}
 	accept := strings.Join(r.Header.Values("Accept"), ",")
 	if strings.TrimSpace(accept) == "" {

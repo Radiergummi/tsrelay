@@ -8,6 +8,7 @@ package lifecycle
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -131,7 +132,7 @@ func (l *Lifecycle) Snapshot() map[*tunnel.Tunnel][]hooks.ID {
 	defer l.mu.Unlock()
 	out := make(map[*tunnel.Tunnel][]hooks.ID, len(l.served))
 	for t, ids := range l.served {
-		out[t] = append([]hooks.ID(nil), ids...)
+		out[t] = slices.Clone(ids)
 	}
 	return out
 }

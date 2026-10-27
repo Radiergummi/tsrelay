@@ -256,7 +256,7 @@ func relayBase(ctx context.Context, relayFlag string, d deps) (string, error) {
 			Fixes:  []string{"Name the relay with --relay https://<relay host>, or set TSRELAY_RELAY"}}
 	case err != nil:
 		return "", &cliError{Title: "Can't ask Tailscale for your tailnet", Code: "tailscale_unavailable", err: err,
-			Reason: "tsrelay finds the relay by your tailnet's name, which the local Tailscale didn't give: " + sentence(errors.Unwrap(err).Error()),
+			Reason: "tsrelay finds the relay by your tailnet's name, which the local Tailscale didn't give: " + sentence(cmp.Or(errors.Unwrap(err), err).Error()),
 			Fixes:  []string{"tailscale up", "Name the relay with --relay https://tsrelay.<your tailnet>.ts.net"}}
 	}
 	return base, nil

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -280,11 +281,7 @@ func (m *Manager) List(user tailcfg.UserID) []Hook {
 func (m *Manager) ListAll() []Hook {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	out := make([]Hook, 0, len(m.hooks))
-	for _, h := range m.hooks {
-		out = append(out, h)
-	}
-	return sortHooks(out)
+	return sortHooks(slices.Collect(maps.Values(m.hooks)))
 }
 
 func sortHooks(hs []Hook) []Hook {
