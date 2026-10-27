@@ -57,6 +57,12 @@ const (
 	ControlRevoked ControlType = "revoked"
 )
 
+// DropsHooks reports whether a control message of type t takes its hooks
+// off the tunnel.
+func (t ControlType) DropsHooks() bool {
+	return t == ControlReplaced || t == ControlRevoked || t == ControlHookDeleted
+}
+
 type HookInfo struct {
 	ID        string `json:"id"`
 	URL       string `json:"url,omitempty"`

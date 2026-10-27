@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Radiergummi/tsrelay/internal/api"
+	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
@@ -84,13 +85,11 @@ func TestSessionIgnoresUnknownControl(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go tunnel.Serve(ctx, sc, http.NotFoundHandler(), s.control)
-	var h2 http.Protocols
-	h2.SetUnencryptedHTTP2(true)
-	tr := &http.Transport{Protocols: &h2, DialContext: func(context.Context, string, string) (net.Conn, error) { return cc, nil }}
-	conn, err := tr.NewClientConn(ctx, "http", "tunnel:80")
+	tun, err := tunnel.NewTunnel(cc, "t", authz.Identity{}, tunnel.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer tun.Close()
 	post := func(body string) {
 		t.Helper()
 		req, err := http.NewRequest(http.MethodPost, "http://tunnel/", strings.NewReader(body))
@@ -98,7 +97,7 @@ func TestSessionIgnoresUnknownControl(t *testing.T) {
 			t.Fatal(err)
 		}
 		req.Header.Set(tunnel.HeaderControl, "1")
-		resp, err := conn.RoundTrip(req)
+		resp, err := tun.RoundTrip(req)
 		if err != nil {
 			t.Fatal(err)
 		}

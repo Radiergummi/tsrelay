@@ -14,6 +14,9 @@ const (
 	SlugLogin     SlugMode = "login"      // moritz@example.com → moritz-example.com
 )
 
+// SlugModes lists every SlugMode.
+var SlugModes = []SlugMode{SlugLocalPart, SlugLogin}
+
 // SlugConfig derives the "~slug" URL prefix of each user.
 type SlugConfig struct {
 	Mode SlugMode // empty means SlugLocalPart

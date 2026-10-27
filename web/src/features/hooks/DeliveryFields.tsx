@@ -20,7 +20,7 @@ import type { FieldName, FormValues } from "./formRequest";
 export interface Form {
   values: FormValues;
   set: (name: FieldName) => (value: string) => void;
-  err: (name: FieldName) => string | undefined;
+  message: (name: FieldName) => string | undefined;
 }
 
 /** durationPresets are the one-click choices per duration (issue #25). */
@@ -79,7 +79,7 @@ export function DeliveryFields({
         hint={`Calls above the rate get 429 with Retry-After.${max.rateLimit ? ` At most ${rate(max.rateLimit)}.` : ""}`}
       >
         {(c) => {
-          const raw = form.values["settings.rateLimit"] ?? "";
+          const raw = form.values["settings.rateLimit"];
           const [perSecond = "", burst = ""] = raw ? raw.split("/") : [];
           // Clearing a half while the other is at its default resets.
           const { perSecond: dp, burst: db } = defaults.rateLimit;
@@ -152,7 +152,7 @@ export function DeliveryFields({
       />
       <Field
         label="Capture"
-        error={form.err("settings.capture")}
+        error={form.message("settings.capture")}
         hint="Bodies are kept for the inspector only if capture is on, and replay needs them. Metadata is always recorded."
         aside={form.values["settings.capture"] ? <CustomBadge /> : null}
       >
@@ -161,7 +161,7 @@ export function DeliveryFields({
             aria-labelledby={c["aria-labelledby"]}
             aria-describedby={c["aria-describedby"]}
             aria-invalid={c["aria-invalid"]}
-            value={form.values["settings.capture"] ?? ""}
+            value={form.values["settings.capture"]}
             onValueChange={form.set("settings.capture")}
           >
             <Segment value="">Relay default ({defaults.capture ? "on" : "off"})</Segment>
@@ -200,11 +200,11 @@ function Setting({
   onReset?: () => void;
   children: Parameters<typeof Field>[0]["children"];
 }) {
-  const custom = (form.values[name] ?? "") !== "";
+  const custom = form.values[name] !== "";
   return (
     <Field
       label={label}
-      error={form.err(name)}
+      error={form.message(name)}
       hint={hint}
       aside={
         custom && (
@@ -251,7 +251,7 @@ function DurationSetting({
   hint: string;
 }) {
   const field = `settings.${name}` as const;
-  const raw = form.values[field] ?? "";
+  const raw = form.values[field];
   const maxMs = max ? parseDuration(max) : null;
   const dfltMs = parseDuration(dflt) ?? 0;
   const presets = durationPresets[name]
@@ -334,7 +334,7 @@ function BodySizeSetting({
   max: number | undefined;
 }) {
   const field = "settings.maxBodyBytes";
-  const raw = form.values[field] ?? "";
+  const raw = form.values[field];
   const [unit, setUnit] = useState(() => {
     const n = raw ? Number(raw) : dflt;
     return [...units].reverse().find(([, size]) => n >= size && n % size === 0)?.[1] ?? 1 << 20;
@@ -428,7 +428,7 @@ function ChoiceSetting({
   dflt: string;
   choices: [value: string, title: string, about: ReactNode][];
 }) {
-  const raw = form.values[name] ?? "";
+  const raw = form.values[name];
   const title = (v: string) => choices.find(([c]) => c === v)?.[1] ?? v;
   return (
     <Setting form={form} name={name} label={label} shown={title(dflt)}>

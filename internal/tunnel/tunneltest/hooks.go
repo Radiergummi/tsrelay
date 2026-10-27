@@ -25,7 +25,7 @@ func (h *Hooks) List() []string {
 
 // Follow drops the hooks ctl reports replaced, revoked or deleted.
 func (h *Hooks) Follow(ctl tunnel.Control) {
-	if ctl.Type != tunnel.ControlReplaced && ctl.Type != tunnel.ControlRevoked && ctl.Type != tunnel.ControlHookDeleted {
+	if !ctl.Type.DropsHooks() {
 		return
 	}
 	h.mu.Lock()

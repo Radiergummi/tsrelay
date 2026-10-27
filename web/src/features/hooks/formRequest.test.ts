@@ -2,13 +2,10 @@ import { expect, test } from "vitest";
 import { fixtures } from "@/test/fixtures";
 import {
   effectiveSettings,
-  fieldTypes,
   fieldValue,
   formRequest,
   initialValues,
   parseHeaders,
-  type FieldName,
-  type FieldType,
 } from "./formRequest";
 
 test("field values by type", () => {
@@ -29,17 +26,17 @@ test("field values by type", () => {
 });
 
 test("creating leaves empty fields out", () => {
-  const fields: [FieldName, string, FieldType][] = [
-    ["path", "cb", "text"],
-    ["description", "", "text"],
-    ["settings.holdTimeout", "45s", "duration"],
-    ["settings.idleTimeout", "", "duration"],
-  ];
-  expect(formRequest(fields)).toEqual({
+  const values = {
+    path: "cb",
+    description: "",
+    "settings.holdTimeout": "45s",
+    "settings.idleTimeout": "",
+  };
+  expect(formRequest(values)).toEqual({
     body: { path: "cb", settings: { holdTimeout: "45s" } },
     errors: [],
   });
-  expect(formRequest([["settings.holdTimeout", "soon", "duration"]]).errors).toEqual([
+  expect(formRequest({ "settings.holdTimeout": "soon" }).errors).toEqual([
     { field: "settings.holdTimeout", message: "must be a duration like 30s, 2m or 1h30m" },
   ]);
 });
@@ -52,17 +49,17 @@ test("editing sends only the changed fields, and null for a cleared one", () => 
     "settings.holdTimeout": "10m",
     "settings.idleTimeout": "",
   };
-  const fields: [FieldName, string, FieldType][] = [
-    ["path", "cb", "text"],
-    ["description", "", "text"],
-    ["settings.holdTimeout", "10m", "duration"],
-    ["settings.idleTimeout", "45s", "duration"],
-  ];
-  expect(formRequest(fields, initial)).toEqual({
+  const values = {
+    path: "cb",
+    description: "",
+    "settings.holdTimeout": "10m",
+    "settings.idleTimeout": "45s",
+  };
+  expect(formRequest(values, initial)).toEqual({
     body: { description: null, settings: { idleTimeout: "45s" } },
     errors: [],
   });
-  expect(formRequest([["path", " cb ", "text"]], initial).body).toEqual({});
+  expect(formRequest({ path: " cb " }, initial).body).toEqual({});
 });
 
 test("initial values come from the hook, with relay defaults left empty", () => {
@@ -89,7 +86,7 @@ test("public is a bool field that starts false and follows the hook", () => {
   expect(
     initialValues({ ...fixtures.hook, public: true, publicUrl: "https://x/+t" })["public"],
   ).toBe("true");
-  const { body } = formRequest([["public", "true", fieldTypes["public"]!]]);
+  const { body } = formRequest({ public: "true" });
   expect(body).toEqual({ public: true });
 });
 

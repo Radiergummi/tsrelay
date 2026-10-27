@@ -222,40 +222,18 @@ export type LicenseEntry = z.infer<typeof licenseEntry>;
 export type LicenseComponent = z.infer<typeof licenseComponent>;
 export type FieldError = z.infer<typeof fieldError>;
 
-/**
- * hookRequest is the body of POST and PATCH /hooks (hooks.CreateRequest
- * and UpdateRequest). A PATCH leaves out what it keeps and sends null for
- * what it resets.
- */
-export const hookRequest = z.partial(
-  z.object({
-    path: z.nullable(z.string()),
-    channel: z.nullable(z.string()),
-    description: z.nullable(z.string()),
-    ephemeral: z.nullable(z.boolean()),
-    public: z.nullable(z.boolean()),
-    expiresAt: z.nullable(z.string()),
-    settings: z.partial(
-      z.object({
-        attachPolicy: z.nullable(attachPolicy),
-        hostHeader: z.nullable(hostHeader),
-        holdTimeout: z.nullable(duration),
-        responseTimeout: z.nullable(duration),
-        idleTimeout: z.nullable(duration),
-        maxBodyBytes: z.nullable(z.number()),
-        rateLimit: z.nullable(rateLimit),
-        capture: z.nullable(z.boolean()),
-      }),
-    ),
-  }),
-);
-export type HookRequest = z.infer<typeof hookRequest>;
+/** Patch leaves out what a PATCH keeps and sends null for what it resets. */
+type Patch<T> = { [K in keyof T]?: T[K] | null };
 
-/** testRequest is the body of POST /hooks/{id}/test (api.TestRequest). */
-export const testRequest = z.object({
-  method: z.string(),
-  path: z.string(),
-  headers,
-  body: z.string(),
-});
-export type TestRequest = z.infer<typeof testRequest>;
+/** HookRequest is the body of POST and PATCH /hooks (hooks.CreateRequest and UpdateRequest). */
+export type HookRequest = Patch<
+  Pick<Hook, "path" | "channel" | "description" | "ephemeral" | "public" | "expiresAt">
+> & { settings?: Patch<Effective> };
+
+/** TestRequest is the body of POST /hooks/{id}/test (api.TestRequest). */
+export interface TestRequest {
+  method: string;
+  path: string;
+  headers: z.infer<typeof headers>;
+  body: string;
+}

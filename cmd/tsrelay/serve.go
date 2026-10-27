@@ -47,8 +47,7 @@ func newServeCmd(c *cli) *cobra.Command {
 	tags := listFlag{Values: []string{"tag:tsrelay"}}
 	fs.Var(&tags, "advertise-tags", "tags the relay node advertises (comma-separated)")
 	capName := fs.String("cap-name", "tsrelay.mazetti.me/cap/relay", "application capability carrying relay grants")
-	slugMode := enumVar(fs, "user-slug", string(hooks.SlugLocalPart), `how URL slugs derive from logins: "local-part" or "login"`,
-		string(hooks.SlugLocalPart), string(hooks.SlugLogin))
+	slugMode := enumVar(fs, "user-slug", hooks.SlugLocalPart, "how URL slugs derive from logins: %s", hooks.SlugModes...)
 	overrides := mapFlag{}
 	fs.Var(overrides, "user-slug-override", "login=slug pairs that resolve slug collisions (repeatable)")
 	maxHooks := fs.Int("user-max-hooks", authz.DefaultLimits.MaxHooks, "hooks per user unless a grant allows more")
@@ -73,8 +72,8 @@ func newServeCmd(c *cli) *cobra.Command {
 	captureBodies := fs.Bool("capture-bodies", true, "keep bodies for the inspector; false records metadata and headers only, whatever hooks set")
 	redact := listFlag{}
 	fs.Var(&redact, "redact-headers", "headers whose values the inspector never keeps, in addition to the defaults (comma-separated)")
-	logFormat := enumVar(fs, "log-format", "json", `the log line format: "json" or "text"`, "json", "text")
-	logLevel := enumVar(fs, "log-level", "info", "debug, info, warn or error", "debug", "info", "warn", "error")
+	logFormat := enumVar(fs, "log-format", "json", "the log line format: %s", "json", "text")
+	logLevel := enumVar(fs, "log-level", "info", "the log level: %s", "debug", "info", "warn", "error")
 	verbose := fs.Bool("verbose-tailscale", false, "include tsnet's own logs")
 	updateCheck := fs.Bool("update-check", true, "check GitHub for a newer tsrelay release every 6 hours, and tell admins about it")
 	completeEnums(cmd)

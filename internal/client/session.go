@@ -138,12 +138,12 @@ func (s *Session) control(ctl tunnel.Control) {
 		if i < 0 {
 			continue
 		}
-		switch ctl.Type {
+		switch {
 		// Attached carries each hook as it is now, which an outage may
 		// have changed without a hook-updated reaching us. One without a
 		// number (from a v1.0.0 relay) can't be ordered against updates,
 		// so it could undo a newer one: it changes nothing.
-		case tunnel.ControlHookUpdated, tunnel.ControlAttached:
+		case ctl.Type == tunnel.ControlHookUpdated || ctl.Type == tunnel.ControlAttached:
 			if ctl.Type == tunnel.ControlAttached && ctl.Seq == 0 {
 				continue
 			}
@@ -155,7 +155,7 @@ func (s *Session) control(ctl tunnel.Control) {
 			}
 			s.current[i] = h
 			events = append(events, Event{Kind: EventHookChanged, Hook: h, OldID: h.ID})
-		case tunnel.ControlReplaced, tunnel.ControlRevoked, tunnel.ControlHookDeleted:
+		case ctl.Type.DropsHooks():
 			events = append(events, Event{Kind: EventHookDropped, Hook: s.current[i], Reason: controlDrops[ctl.Type]})
 			s.current = slices.Delete(s.current, i, i+1)
 		}

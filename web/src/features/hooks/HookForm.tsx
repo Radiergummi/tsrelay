@@ -62,7 +62,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
       if (!out.includes(c.name) && allowingPattern(patterns, c.name)) out.push(c.name);
     return out;
   }, [patterns, inUse]);
-  const channel = values["channel"]?.trim() || "default";
+  const channel = values.channel.trim() || "default";
   const pattern = allowingPattern(patterns, channel);
   const canPublishHere = me.publicPatterns.some((p) => matchChannel(p, channel));
   const canPublish = canPublishHere && (me.funnel ?? false);
@@ -75,10 +75,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   const tilde = base.indexOf("/~") + 1;
 
   const build = () => {
-    const r = formRequest(
-      (Object.keys(fieldTypes) as FieldName[]).map((n) => [n, values[n], fieldTypes[n]]),
-      editing ? initial : undefined,
-    );
+    const r = formRequest(values, editing ? initial : undefined);
     if (!validChannel(channel))
       r.errors.push({
         field: "channel",
@@ -89,14 +86,15 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
     return r;
   };
   const { body, errors: local } = build();
-  const key = JSON.stringify(body);
-  // Two different invalid fields can leave the body the same.
-  const localKey = JSON.stringify(local);
+  // Two different invalid fields can leave the body the same, so the key
+  // holds the local errors too.
+  const key = JSON.stringify([body, local]);
+  const invalid = local.length > 0;
 
   // Shows the local errors, or else dry-runs the body, whose key is ran: a
   // change since would have cancelled this run.
   const validate = useEffectEvent((ran: string, signal: AbortSignal) => {
-    if (local.length) return show(local);
+    if (invalid) return show(local);
     dryRunHook(body, hook?.id, signal).then(
       (h) => {
         setDry({ key: ran, hook: h });
@@ -112,30 +110,25 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   useEffect(() => {
     if (!dirty) return;
     const ctrl = new AbortController();
-    if (localKey !== "[]") {
-      validate(key, ctrl.signal);
-      return;
-    }
-    const t = setTimeout(() => validate(key, ctrl.signal), dryRunDelay);
+    const t = setTimeout(() => validate(key, ctrl.signal), invalid ? 0 : dryRunDelay);
     return () => {
       clearTimeout(t);
       ctrl.abort();
     };
-  }, [dirty, key, localKey]);
+  }, [dirty, key, invalid]);
 
   const set = (name: FieldName) => (value: string) => {
     setDirty(true);
     setValues((v) => ({ ...v, [name]: value }));
   };
-  const err = (name: FieldName) => message(name);
   const text = (name: FieldName) => ({
-    value: values[name] ?? "",
+    value: values[name],
     onChange: (e: { target: { value: string } }) => set(name)(e.target.value),
   });
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (local.length) return show(local);
+    if (invalid) return show(local);
     const onSuccess = (h: Hook) => {
       toast.success(editing ? "Saved" : `Created ${h.path}`);
       navigate(paths.hook(h.id));
@@ -150,7 +143,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   // while the next one is pending or failed.
   const current = dry?.key === key ? dry.hook : undefined;
   const effective: Effective = current?.effective ?? effectiveSettings(values, defaults);
-  const path = values["path"]?.trim() ?? "";
+  const path = values.path.trim();
   const ephemeral = values["ephemeral"] === "true";
   const pending = create.isPending || update.isPending;
   const group = "space-y-4";
@@ -176,7 +169,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
           <legend className={legend}>Address</legend>
           <Field
             label="Path"
-            error={err("path")}
+            error={message("path")}
             hint={
               <>
                 Up to 8 segments of letters, digits, <code>.</code>, <code>_</code> and{" "}
@@ -204,10 +197,10 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
           </Field>
           <Field
             label="Channel"
-            error={err("channel")}
+            error={message("channel")}
             hint={
               <>
-                {pattern && !err("channel") && (
+                {pattern && !message("channel") && (
                   <>
                     ✓ allowed by <code>{pattern}</code>.{" "}
                   </>
@@ -219,18 +212,18 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
           >
             <Combobox
               items={channels}
-              value={values["channel"] ?? ""}
+              value={values.channel}
               onValueChange={set("channel")}
               placeholder="default"
               autoComplete="off"
             />
           </Field>
-          <Field label="Description" error={err("description")}>
+          <Field label="Description" error={message("description")}>
             <Textarea {...text("description")} rows={2} maxLength={280} />
           </Field>
           <Field
             label="Reachable from"
-            error={err("public")}
+            error={message("public")}
             hint={
               !me.funnel
                 ? "This relay does not serve hooks on the internet."
@@ -262,7 +255,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
           <legend className={legend}>Lifetime</legend>
           <Field
             label="Kind"
-            error={err("ephemeral")}
+            error={message("ephemeral")}
             hint="Ephemeral hooks are deleted once no tunnel has been attached for a while."
           >
             {(c) => (
@@ -280,13 +273,13 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
           </Field>
           <Field
             label="Expires at"
-            error={err("expiresAt")}
+            error={message("expiresAt")}
             hint={`In your time zone, ${new Intl.DateTimeFormat().resolvedOptions().timeZone}.`}
           >
             {(c) => (
               <ExpiryField
                 control={c}
-                value={values["expiresAt"] ?? ""}
+                value={values.expiresAt}
                 onChange={set("expiresAt")}
                 maxTTL={ephemeral ? undefined : me.limits.maxHookTtl}
               />
@@ -308,7 +301,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
             <fieldset className="pt-4 pb-1">
               <legend className="sr-only">Delivery</legend>
               <DeliveryFields
-                form={{ values, set, err }}
+                form={{ values, set, message }}
                 policy={me.policy}
                 relayHost={hostOf(base)}
                 appHost={hook?.tunnel?.target && hostOf(hook.tunnel.target)}
@@ -324,9 +317,9 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
         channel={channel}
         pattern={pattern}
         ephemeral={ephemeral}
-        expiresAt={values["expiresAt"] ?? ""}
+        expiresAt={values.expiresAt}
         effective={effective}
-        inherited={(k) => (values[`settings.${k}`] ?? "") === ""}
+        inherited={(k) => values[`settings.${k}`] === ""}
       />
 
       <div className="flex gap-2">

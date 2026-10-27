@@ -38,7 +38,6 @@ export function TestRequestDialog({
     (field) => field === "method" || field === "path" || field.startsWith("headers."),
   );
   const test = useTestRequest(hook.id);
-  const err = message;
   const headerErr =
     errors
       .filter((e) => e.field.startsWith("headers."))
@@ -85,12 +84,12 @@ export function TestRequestDialog({
             </p>
           )}
           <div className="grid grid-cols-[7rem_1fr] gap-3">
-            <Field label="Method" error={err("method")}>
+            <Field label="Method" error={message("method")}>
               <Input value={method} onChange={(e) => setMethod(e.target.value.toUpperCase())} />
             </Field>
             <Field
               label="Path"
-              error={err("path")}
+              error={message("path")}
               hint="Below the hook's URL; a query string is allowed."
             >
               <Input value={path} onChange={(e) => setPath(e.target.value)} />

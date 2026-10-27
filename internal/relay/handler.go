@@ -239,7 +239,6 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.
 		proto = "https"
 	}
 	out.Header.Set("X-Forwarded-Proto", proto)
-	stripTsrelay(out.Header)
 	stripTsrelay(out.Trailer)
 	if eff.HostHeader == hooks.HostRewrite {
 		out.Header.Set(tunnel.HeaderTunnelHost, "rewrite")

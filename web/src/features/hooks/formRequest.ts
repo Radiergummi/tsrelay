@@ -52,21 +52,22 @@ export function fieldValue(raw: string, type: FieldType): { value?: unknown; err
 }
 
 /**
- * formRequest builds the API body from [name, text, type] triples. Dotted
- * names nest. An empty field is left out when creating, so the relay
+ * formRequest builds the API body from the fields' texts, in form order.
+ * Dotted names nest. An empty field is left out when creating, so the relay
  * default applies. Editing (initial holds the form's starting texts) sends
  * only the fields that changed, as the PATCH is partial: a cleared one as
  * null, which resets it.
  */
 export function formRequest(
-  fields: [FieldName, string, FieldType][],
+  values: Partial<FormValues>,
   initial?: FormValues,
 ): { body: HookRequest; errors: FieldError[] } {
   const body: Record<string, unknown> = {};
   const errors: FieldError[] = [];
-  for (const [name, raw, type] of fields) {
-    if (initial && raw.trim() === initial[name]?.trim()) continue;
-    const r = fieldValue(raw, type);
+  for (const name of Object.keys(fieldTypes) as FieldName[]) {
+    const raw = values[name];
+    if (raw === undefined || (initial && raw.trim() === initial[name].trim())) continue;
+    const r = fieldValue(raw, fieldTypes[name]);
     if (r.error) {
       errors.push({ field: name, message: r.error });
       continue;

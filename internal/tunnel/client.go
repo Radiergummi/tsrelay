@@ -61,7 +61,8 @@ func Dial(ctx context.Context, hc *http.Client, endpoint string) (net.Conn, erro
 func Serve(ctx context.Context, conn net.Conn, h http.Handler, onControl func(Control)) {
 	stop := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stop()
-	l := &oneConnListener{conn: conn, closed: make(chan struct{})}
+	l := &oneConnListener{conns: make(chan net.Conn, 1), closed: make(chan struct{}), addr: conn.LocalAddr()}
+	l.conns <- conn
 	srv := &http.Server{
 		Protocols:   h2Only(),
 		HTTP2:       &http.HTTP2Config{MaxConcurrentStreams: clientMaxStreams, SendPingTimeout: pingInterval, PingTimeout: pingInterval},
@@ -93,22 +94,21 @@ func Serve(ctx context.Context, conn net.Conn, h http.Handler, onControl func(Co
 	_ = srv.Serve(l)
 }
 
-// oneConnListener hands out conn once, then blocks until closed.
+// oneConnListener hands out the one conn in conns, then blocks until closed.
 type oneConnListener struct {
-	conn   net.Conn
-	once   sync.Once
+	conns  chan net.Conn
 	closed chan struct{}
 	close  sync.Once
+	addr   net.Addr
 }
 
 func (l *oneConnListener) Accept() (net.Conn, error) {
-	var c net.Conn
-	l.once.Do(func() { c = l.conn })
-	if c != nil {
+	select {
+	case c := <-l.conns:
 		return c, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
 	}
-	<-l.closed
-	return nil, net.ErrClosed
 }
 
 func (l *oneConnListener) Close() error {
@@ -116,4 +116,4 @@ func (l *oneConnListener) Close() error {
 	return nil
 }
 
-func (l *oneConnListener) Addr() net.Addr { return l.conn.LocalAddr() }
+func (l *oneConnListener) Addr() net.Addr { return l.addr }

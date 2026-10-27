@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/problem"
@@ -39,12 +40,18 @@ const (
 	AttachReject   AttachPolicy = "reject"   // a newer tunnel is refused while one is attached
 )
 
+// AttachPolicies lists every AttachPolicy.
+var AttachPolicies = []AttachPolicy{AttachTakeover, AttachReject}
+
 type HostHeader string
 
 const (
 	HostPreserve HostHeader = "preserve" // the local app sees the relay's host
 	HostRewrite  HostHeader = "rewrite"  // the local app sees its own host
 )
+
+// HostHeaders lists every HostHeader.
+var HostHeaders = []HostHeader{HostPreserve, HostRewrite}
 
 type RateLimit struct {
 	PerSecond float64 `json:"perSecond"`
@@ -164,10 +171,10 @@ func (p Policy) Validate(s Settings) problem.FieldErrors {
 	add := func(field, format string, args ...any) {
 		errs = append(errs, problem.FieldError{Field: "settings." + field, Message: fmt.Sprintf(format, args...)})
 	}
-	if v := s.AttachPolicy; v != nil && *v != AttachTakeover && *v != AttachReject {
+	if v := s.AttachPolicy; v != nil && !slices.Contains(AttachPolicies, *v) {
 		add("attachPolicy", "must be %q or %q", AttachTakeover, AttachReject)
 	}
-	if v := s.HostHeader; v != nil && *v != HostPreserve && *v != HostRewrite {
+	if v := s.HostHeader; v != nil && !slices.Contains(HostHeaders, *v) {
 		add("hostHeader", "must be %q or %q", HostPreserve, HostRewrite)
 	}
 	checkDur := func(field string, v *Duration, max Duration, allowZero bool) {
