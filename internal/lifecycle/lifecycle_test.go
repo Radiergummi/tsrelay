@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
@@ -147,27 +148,30 @@ func (l *Lifecycle) release(id hooks.ID) {
 }
 
 func TestWait(t *testing.T) {
-	l, mgr := newLifecycle(t)
-	ids := createHooks(t, mgr, 2, hooks.CreateRequest{})
-	h1, h2 := ids[0], ids[1]
-	a, b := &tunnel.Tunnel{ID: "a"}, &tunnel.Tunnel{ID: "b"}
-	got := startWait(context.Background(), l, h1)
+	synctest.Test(t, func(t *testing.T) {
+		l, mgr := newLifecycle(t)
+		ids := createHooks(t, mgr, 2, hooks.CreateRequest{})
+		h1, h2 := ids[0], ids[1]
+		a, b := &tunnel.Tunnel{ID: "a"}, &tunnel.Tunnel{ID: "b"}
+		got := startWait(context.Background(), l, h1)
 
-	// An attach for a different hook must not wake the waiter.
-	l.attach(b, h2)
-	select {
-	case res := <-got:
-		t.Fatalf("woken by another hook's attach: %+v", res)
-	case <-time.After(50 * time.Millisecond):
-	}
-	l.attach(a, h1)
-	if res := <-got; res.err != nil || res.t != a {
-		t.Fatalf("Wait = %+v, want tunnel a", res)
-	}
-	// Already attached: no waiting.
-	if tun, err := l.Wait(context.Background(), h2); err != nil || tun != b {
-		t.Fatalf("Wait(attached) = %v, %v", tun, err)
-	}
+		// An attach for a different hook must not wake the waiter.
+		l.attach(b, h2)
+		synctest.Wait()
+		select {
+		case res := <-got:
+			t.Fatalf("woken by another hook's attach: %+v", res)
+		default:
+		}
+		l.attach(a, h1)
+		if res := <-got; res.err != nil || res.t != a {
+			t.Fatalf("Wait = %+v, want tunnel a", res)
+		}
+		// Already attached: no waiting.
+		if tun, err := l.Wait(context.Background(), h2); err != nil || tun != b {
+			t.Fatalf("Wait(attached) = %v, %v", tun, err)
+		}
+	})
 }
 
 // Wait for a hook the store does not have fails at once: a hook deleted
@@ -182,68 +186,73 @@ func TestWaitFailsForMissingHook(t *testing.T) {
 }
 
 func TestWaitEnds(t *testing.T) {
-	l, mgr := newLifecycle(t)
-	ids := createHooks(t, mgr, 2, hooks.CreateRequest{})
-	h1, h2 := ids[0], ids[1]
-	stop := errors.New("hold timeout")
-	ctx, cancel := context.WithTimeoutCause(context.Background(), 20*time.Millisecond, stop)
-	defer cancel()
-	if _, err := l.Wait(ctx, h1); err != stop {
-		t.Fatalf("Wait after timeout = %v, want the context's cause", err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		l, mgr := newLifecycle(t)
+		ids := createHooks(t, mgr, 2, hooks.CreateRequest{})
+		h1, h2 := ids[0], ids[1]
+		stop := errors.New("hold timeout")
+		ctx, cancel := context.WithTimeoutCause(context.Background(), 20*time.Millisecond, stop)
+		defer cancel()
+		if _, err := l.Wait(ctx, h1); err != stop {
+			t.Fatalf("Wait after timeout = %v, want the context's cause", err)
+		}
 
-	got := startWait(context.Background(), l, h1)
-	other := startWait(context.Background(), l, h2)
-	time.Sleep(20 * time.Millisecond) // let both block
-	l.release(h1)
-	if res := <-got; !errors.Is(res.err, ErrHookGone) {
-		t.Fatalf("Wait after release = %+v, want ErrHookGone", res)
-	}
-	select {
-	case res := <-other:
-		t.Fatalf("release of h1 woke h2's waiter: %+v", res)
-	case <-time.After(50 * time.Millisecond):
-	}
-	l.attach(&tunnel.Tunnel{ID: "c"}, h2)
-	if res := <-other; res.err != nil {
-		t.Fatal(res.err)
-	}
+		got := startWait(context.Background(), l, h1)
+		other := startWait(context.Background(), l, h2)
+		synctest.Wait() // both block
+		l.release(h1)
+		if res := <-got; !errors.Is(res.err, ErrHookGone) {
+			t.Fatalf("Wait after release = %+v, want ErrHookGone", res)
+		}
+		synctest.Wait()
+		select {
+		case res := <-other:
+			t.Fatalf("release of h1 woke h2's waiter: %+v", res)
+		default:
+		}
+		l.attach(&tunnel.Tunnel{ID: "c"}, h2)
+		if res := <-other; res.err != nil {
+			t.Fatal(res.err)
+		}
+	})
 }
 
 // Waits that end without an attach must not leave entries behind, and one
 // waiter giving up must not strand another waiting for the same hook.
 func TestWaitLeavesNoEntries(t *testing.T) {
-	l, mgr := newLifecycle(t)
-	ids := createHooks(t, mgr, 2, hooks.CreateRequest{})
-	timeout, shared := ids[0], ids[1]
-	short, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
-	if _, err := l.Wait(short, timeout); err == nil {
-		t.Fatal("Wait returned without an attach")
-	}
-	if _, err := l.Wait(context.Background(), "h_deleted"); !errors.Is(err, ErrHookGone) {
-		t.Fatalf("Wait for a deleted hook = %v, want ErrHookGone", err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		l, mgr := newLifecycle(t)
+		ids := createHooks(t, mgr, 2, hooks.CreateRequest{})
+		timeout, shared := ids[0], ids[1]
+		short, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer cancel()
+		if _, err := l.Wait(short, timeout); err == nil {
+			t.Fatal("Wait returned without an attach")
+		}
+		if _, err := l.Wait(context.Background(), "h_deleted"); !errors.Is(err, ErrHookGone) {
+			t.Fatalf("Wait for a deleted hook = %v, want ErrHookGone", err)
+		}
 
-	long := startWait(context.Background(), l, shared)
-	time.Sleep(20 * time.Millisecond) // let it block
-	brief, cancelBrief := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancelBrief()
-	if _, err := l.Wait(brief, shared); err == nil {
-		t.Fatal("the brief Wait returned without an attach")
-	}
-	a := &tunnel.Tunnel{ID: "a"}
-	l.attach(a, shared)
-	if res := <-long; res.err != nil || res.t != a {
-		t.Fatalf("remaining waiter = %+v, want tunnel a", res)
-	}
+		long := startWait(context.Background(), l, shared)
+		synctest.Wait() // it blocks
+		brief, cancelBrief := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer cancelBrief()
+		if _, err := l.Wait(brief, shared); err == nil {
+			t.Fatal("the brief Wait returned without an attach")
+		}
+		a := &tunnel.Tunnel{ID: "a"}
+		l.attach(a, shared)
+		if res := <-long; res.err != nil || res.t != a {
+			t.Fatalf("remaining waiter = %+v, want tunnel a", res)
+		}
 
-	l.mu.Lock()
-	left := len(l.waits)
-	l.mu.Unlock()
-	if left != 0 {
-		t.Fatalf("%d waiter entries left behind", left)
-	}
+		l.mu.Lock()
+		left := len(l.waits)
+		l.mu.Unlock()
+		if left != 0 {
+			t.Fatalf("%d waiter entries left behind", left)
+		}
+	})
 }
 
 func TestCountOwner(t *testing.T) {
