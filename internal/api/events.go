@@ -58,7 +58,7 @@ func (a *API) hooksStream(w http.ResponseWriter, r *http.Request, id authz.Ident
 func (a *API) hookStream(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 	h, _, ok := a.visibleHook(r, id)
 	if !ok {
-		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
+		notFound(w, "hook not found")
 		return
 	}
 	a.stream(w, r, id, h.ID, func(v authz.Identity, e events.Event) bool { return e.HookID == string(h.ID) && sees(v, e) })
@@ -74,7 +74,7 @@ func sees(v authz.Identity, e events.Event) bool {
 func (a *API) callsStream(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 	h, _, ok := a.visibleHook(r, id)
 	if !ok {
-		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
+		notFound(w, "hook not found")
 		return
 	}
 	a.stream(w, r, id, h.ID, func(v authz.Identity, e events.Event) bool {

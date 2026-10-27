@@ -9,7 +9,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
+	"strings"
 
 	cyclonedx "github.com/CycloneDX/cyclonedx-go"
 )
@@ -73,7 +74,7 @@ func run(out string) error {
 		}
 		components = append(components, rendered)
 	}
-	sort.Slice(components, func(i, j int) bool { return components[i].BOMRef < components[j].BOMRef })
+	slices.SortFunc(components, func(a, b cyclonedx.Component) int { return strings.Compare(a.BOMRef, b.BOMRef) })
 
 	// Only the components are used: build-sbom.sh merges them into an
 	// envelope of its own without volatile fields.

@@ -17,6 +17,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
@@ -289,7 +290,7 @@ func TestUpdateNotifies(t *testing.T) {
 	if _, changed, err := l.Update(context.Background(), receiver, id, hooks.UpdateRequest{}); err != nil || len(changed) != 0 {
 		t.Fatalf("empty Update = %v, %v", changed, err)
 	}
-	var ve hooks.ValidationError
+	var ve problem.FieldErrors
 	if _, _, err := l.Update(context.Background(), receiver, id, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true}}); !errors.As(err, &ve) {
 		t.Fatalf("Update with a null path = %v", err)
 	}
@@ -488,7 +489,11 @@ func TestRecheckFallsBackToLastGrants(t *testing.T) {
 	}
 
 	l, _, tun, ids, controls := recheckEnv(t, receiver)
-	l.cfg.Identify = fail
+	// Grants a concurrent identify records meanwhile outlive the failed one.
+	l.cfg.Identify = func(ctx context.Context, addr string) (authz.Identity, error) {
+		tun.SetGrants(devOnly.Grants)
+		return fail(ctx, addr)
+	}
 	moveTo(t, l, ids[1], "prod")
 	if c := next(t, controls); c.Type != tunnel.ControlHookUpdated {
 		t.Fatalf("control = %+v, want only hook-updated", c)
@@ -496,6 +501,9 @@ func TestRecheckFallsBackToLastGrants(t *testing.T) {
 	noControl(t, controls)
 	if cur, ok := l.Lookup(ids[1]); !ok || cur != tun {
 		t.Fatal("a hook the last known grants cover was detached")
+	}
+	if g := tun.Identity().Grants; !slices.Equal(g.Patterns[authz.RoleReceiver], []string{"dev"}) {
+		t.Fatalf("tunnel grants = %+v, want the concurrently recorded ones", g)
 	}
 }
 

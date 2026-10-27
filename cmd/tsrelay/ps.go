@@ -68,6 +68,8 @@ func newStopCmd(c *cli) *cobra.Command {
 	}
 	cmd.ValidArgsFunction = c.completeBackground(-1)
 	all := cmd.Flags().BoolP("all", "a", false, "stop every background tunnel")
+	// The checks read --all, so they run in RunE: cobra runs Args before
+	// the root's PersistentPreRunE applies the environment's defaults.
 	cmd.RunE = func(cmd *cobra.Command, refs []string) error {
 		switch {
 		case *all && len(refs) > 0:

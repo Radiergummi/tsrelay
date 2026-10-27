@@ -42,10 +42,9 @@ const ShutdownTimeout = 5 * time.Second
 var Buckets = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120}
 
 type Config struct {
-	OTLP     bool         // export traces and metrics over OTLP/HTTP
-	Version  string       // service.version
-	Hostname string       // host.name
-	Logger   *slog.Logger // receives SDK errors, at most one per minute; nil: slog.Default()
+	OTLP     bool   // export traces and metrics over OTLP/HTTP
+	Version  string // service.version
+	Hostname string // host.name
 }
 
 type Telemetry struct {
@@ -58,13 +57,10 @@ type Telemetry struct {
 	shutdown []func(context.Context) error
 }
 
+// Setup builds the providers cfg asks for. It leaves the process-wide SDK
+// error handler alone: a caller that exports (cfg.OTLP) routes SDK errors
+// with LogErrors, or OTel's default handler logs every one.
 func Setup(ctx context.Context, cfg Config) (*Telemetry, error) {
-	logger := cfg.Logger
-	if logger == nil {
-		logger = slog.Default()
-	}
-	otel.SetErrorHandler(rateLimited(logger, time.Minute))
-
 	res, err := resource.Merge(resource.Default(), resource.NewSchemaless(
 		semconv.ServiceName("tsrelay"),
 		semconv.ServiceVersion(cfg.Version),
@@ -147,6 +143,10 @@ func (t *Telemetry) Shutdown(ctx context.Context) error {
 	}
 	return errors.Join(errs...)
 }
+
+// LogErrors sends the OTel SDK's errors, process-wide, to l, at most one
+// per minute.
+func LogErrors(l *slog.Logger) { otel.SetErrorHandler(rateLimited(l, time.Minute)) }
 
 // rateLimited logs SDK errors, such as an unreachable collector, at most
 // once per interval, so a dead endpoint does not flood the log.

@@ -9,8 +9,7 @@ import (
 	"strings"
 	"time"
 
-	// Imported by another name: negotiate is the Accept-Encoding pick here.
-	representation "github.com/Radiergummi/tsrelay/internal/negotiate"
+	"github.com/Radiergummi/tsrelay/internal/negotiate"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
@@ -42,7 +41,7 @@ func (u *UI) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if t, _ := representation.Pick(w, r, representation.JSON, representation.HTML); t != representation.HTML {
+	if t, _ := negotiate.Pick(w, r, negotiate.JSON, negotiate.HTML); t != negotiate.HTML {
 		notFound(w)
 		return
 	}
@@ -52,7 +51,7 @@ func (u *UI) serve(w http.ResponseWriter, r *http.Request) {
 // app sends the app for a request asking for HTML. A .html extension is
 // redirected away first, since the app routes only the bare URL.
 func (u *UI) app(w http.ResponseWriter, r *http.Request) {
-	if _, ok := representation.Forced(r); ok {
+	if _, ok := negotiate.Forced(r); ok {
 		http.Redirect(w, r, r.URL.RequestURI(), http.StatusFound)
 		return
 	}
@@ -104,7 +103,7 @@ func (u *UI) serveAsset(w http.ResponseWriter, r *http.Request, name string) {
 		h.Set("ETag", `"`+e.ETag+`"`)
 		if len(e.Variants) > 0 {
 			h.Add("Vary", "Accept-Encoding")
-			if coding := negotiate(r.Header.Get("Accept-Encoding")); coding != "" {
+			if coding := negotiate.Encoding(r.Header.Get("Accept-Encoding")); coding != "" {
 				if v, ok := e.Variants[coding]; ok {
 					file = name + suffixes[coding]
 					h.Set("ETag", `"`+v.ETag+`"`)

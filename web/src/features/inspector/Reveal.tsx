@@ -7,17 +7,18 @@ const controls =
 export function splitControls(text: string): { control: boolean; text: string }[] {
   const out: { control: boolean; text: string }[] = [];
   let last = 0;
-  for (const m of text.matchAll(controls)) {
-    if (m.index > last) out.push({ control: false, text: text.slice(last, m.index) });
-    out.push({ control: true, text: m[0] });
-    last = m.index + m[0].length;
+  for (const match of text.matchAll(controls)) {
+    const [run] = match;
+    if (match.index > last) out.push({ control: false, text: text.slice(last, match.index) });
+    out.push({ control: true, text: run });
+    last = match.index + run.length;
   }
   if (last < text.length) out.push({ control: false, text: text.slice(last) });
   return out;
 }
 
-const code = (ch: string) =>
-  `⟨U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}⟩`;
+const code = (character: string) =>
+  `⟨U+${character.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}⟩`;
 
 /** codes renders every character of a control run as its own ⟨U+XXXX⟩, joined. */
 const codes = (run: string) => [...run].map(code).join("");
@@ -32,17 +33,17 @@ export function Reveal({ text }: { text: string }) {
   if (parts.length === 1 && !parts[0]!.control) return <>{text}</>;
   return (
     <>
-      {parts.map((p, i) =>
-        p.control ? (
+      {parts.map((part, i) =>
+        part.control ? (
           <span
             key={i}
             className="rounded-sm bg-muted px-0.5 text-[0.85em] text-destructive"
             title="control character"
           >
-            {codes(p.text)}
+            {codes(part.text)}
           </span>
         ) : (
-          <span key={i}>{p.text}</span>
+          <span key={i}>{part.text}</span>
         ),
       )}
     </>

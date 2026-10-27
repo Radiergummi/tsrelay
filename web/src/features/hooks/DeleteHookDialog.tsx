@@ -25,7 +25,7 @@ export function DeleteHookDialog({
   onDeleted?: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const del = useDeleteHook();
+  const deletion = useDeleteHook();
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger render={trigger} />
@@ -40,9 +40,9 @@ export function DeleteHookDialog({
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <Button
             variant="destructive"
-            disabled={del.isPending}
+            disabled={deletion.isPending}
             onClick={() =>
-              del.mutate(hook.id, {
+              deletion.mutate(hook.id, {
                 onSuccess: () => {
                   setOpen(false);
                   toast.success(`Deleted ${hook.path}`);

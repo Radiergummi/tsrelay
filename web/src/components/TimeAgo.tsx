@@ -18,7 +18,7 @@ function schedule() {
     return;
   }
   const now = Date.now();
-  const ages = [...subscribers.values()].map((t) => Math.max(0, now - t));
+  const ages = [...subscribers.values()].map((timestamp) => Math.max(0, now - timestamp));
   const delay = ages.some((age) => age < 31_000)
     ? 1000
     : Math.min(...ages.map((age) => 60_000 - (age % 60_000)));
@@ -27,7 +27,7 @@ function schedule() {
   due = now + delay;
   timer = setTimeout(() => {
     due = Infinity;
-    subscribers.forEach((_, fn) => fn());
+    subscribers.forEach((_, onChange) => onChange());
     schedule();
   }, delay);
 }

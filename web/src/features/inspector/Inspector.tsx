@@ -1,5 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from "react";
 import { Link } from "react-router";
+import { paths } from "@/api/client";
 import { useReplay } from "@/api/mutations";
 import { useCall } from "@/api/queries";
 import type { Call, Hook, Me } from "@/api/schemas";
@@ -36,10 +37,10 @@ export function Inspector({
   callId: string;
   onSelect: (callId: string) => void;
 }) {
-  const call = useCall(hook.id, callId);
+  const callQuery = useCall(hook.id, callId);
   return (
     <QueryView
-      query={call}
+      query={callQuery}
       pending={<Skeleton className="h-64 w-full" />}
       gone={
         <div className="py-12 text-center">
@@ -51,11 +52,11 @@ export function Inspector({
         </div>
       }
     >
-      {(c) => (
+      {(call) => (
         <CallView
-          key={c.id}
+          key={call.id}
           hook={hook}
-          call={c}
+          call={call}
           owner={owns(me, hook)}
           relayNoBodies={me.policy.noBodies === true}
           onSelect={onSelect}
@@ -93,15 +94,15 @@ function CallView({
   const showDiff = call.kind === "replay" && !!call.replayOf && owner;
   const reason = call.replay?.reason ?? "";
   const last = call.attempts.at(-1);
-  const ms = call.durationMs;
+  const { durationMs } = call;
   const timeout = parseDuration(hook.effective.responseTimeout) ?? 0;
 
   const doReplay = () => {
     if (!allowed || replay.isPending) return;
     replay.mutate(call.id, {
-      onSuccess: (c) => {
-        toast.success(`Replayed: ${outcomeLabel(c)}`);
-        onSelect(c.id);
+      onSuccess: (replayed) => {
+        toast.success(`Replayed: ${outcomeLabel(replayed)}`);
+        onSelect(replayed.id);
       },
     });
   };
@@ -134,7 +135,7 @@ function CallView({
           <StatusText call={call} />
           {call.outcome !== "pending" && (
             <span className="flex items-center gap-2">
-              {formatDuration(ms)}
+              {formatDuration(durationMs)}
               {timeout > 0 && (
                 <span
                   className="h-1 w-20 overflow-hidden rounded-full bg-muted"
@@ -142,7 +143,7 @@ function CallView({
                 >
                   <span
                     className="block h-full bg-primary"
-                    style={{ width: `${Math.min(100, (ms / timeout) * 100)}%` }}
+                    style={{ width: `${Math.min(100, (durationMs / timeout) * 100)}%` }}
                   />
                 </span>
               )}
@@ -155,7 +156,7 @@ function CallView({
             <span className="text-muted-foreground">
               replay of{" "}
               <Link
-                to={`/hooks/${encodeURIComponent(hook.id)}/calls/${encodeURIComponent(call.replayOf)}`}
+                to={paths.call(hook.id, call.replayOf)}
                 className="font-mono text-primary hover:underline"
               >
                 {call.replayOf}
@@ -199,7 +200,7 @@ function CallView({
         )}
       </header>
 
-      <Tabs value={tab} onValueChange={(v: string) => setTab(v)}>
+      <Tabs value={tab} onValueChange={(value: string) => setTab(value)}>
         <TabsList>
           <TabsTrigger value="request">Request</TabsTrigger>
           <TabsTrigger value="response">Response</TabsTrigger>
@@ -266,13 +267,13 @@ function QueryTable({ query, truncated }: { query: string; truncated: boolean })
     <div>
       <table className="w-full text-xs">
         <tbody>
-          {params.map(([k, v], i) => (
+          {params.map(([name, value], i) => (
             <tr key={i} className="border-b last:border-0">
               <th className="w-1/3 py-1 pr-3 text-left font-mono font-medium break-all">
-                <Reveal text={k} />
+                <Reveal text={name} />
               </th>
               <td className="py-1 font-mono break-all">
-                <Reveal text={v} />
+                <Reveal text={value} />
               </td>
             </tr>
           ))}

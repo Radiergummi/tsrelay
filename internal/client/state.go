@@ -21,17 +21,27 @@ type State struct {
 	file  string
 }
 
-// DefaultStatePath is $XDG_STATE_HOME/tsrelay/hooks.json, or
-// ~/.local/state/tsrelay/hooks.json if XDG_STATE_HOME is not set.
-func DefaultStatePath() (string, error) {
+// StateHome is tsrelay's state directory: $XDG_STATE_HOME/tsrelay, or
+// ~/.local/state/tsrelay if XDG_STATE_HOME is not set or, against the XDG
+// Base Directory spec, not absolute.
+func StateHome() (string, error) {
 	if d := os.Getenv("XDG_STATE_HOME"); filepath.IsAbs(d) {
-		return filepath.Join(d, "tsrelay", "hooks.json"), nil
+		return filepath.Join(d, "tsrelay"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".local", "state", "tsrelay", "hooks.json"), nil
+	return filepath.Join(home, ".local", "state", "tsrelay"), nil
+}
+
+// DefaultStatePath is hooks.json in StateHome.
+func DefaultStatePath() (string, error) {
+	d, err := StateHome()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(d, "hooks.json"), nil
 }
 
 // DefaultRunDir is where background tunnels keep their records and logs:

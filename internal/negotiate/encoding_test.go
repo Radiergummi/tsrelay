@@ -1,8 +1,8 @@
-package ui
+package negotiate
 
 import "testing"
 
-func TestNegotiate(t *testing.T) {
+func TestEncoding(t *testing.T) {
 	for accept, want := range map[string]string{
 		"":                          "",
 		"identity":                  "",
@@ -19,8 +19,8 @@ func TestNegotiate(t *testing.T) {
 		"gzip;q=1, identity;q=0.5":  "gzip",
 		"gzip;q=nonsense, zstd;q=0": "",
 	} {
-		if got := negotiate(accept); got != want {
-			t.Errorf("negotiate(%q) = %q, want %q", accept, got, want)
+		if got := Encoding(accept); got != want {
+			t.Errorf("Encoding(%q) = %q, want %q", accept, got, want)
 		}
 	}
 }

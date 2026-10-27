@@ -1,4 +1,4 @@
-import * as s from "@/api/schemas";
+import * as schemas from "@/api/schemas";
 import callAdmin from "./fixtures/call-admin.json";
 import callBin from "./fixtures/call-bin.json";
 import callCut from "./fixtures/call-cut.json";
@@ -26,28 +26,28 @@ import me from "./fixtures/me.json";
 
 /** fixtures are real API responses from the dev harness, parsed by the app's schemas. */
 export const fixtures = {
-  me: s.me.parse(me),
-  meAdmin: s.me.parse(meAdmin),
-  meNobody: s.me.parse(meNobody),
-  meOther: s.me.parse(meOther),
-  hooks: s.hooks.parse(hooks),
-  hooksAll: s.hooks.parse(hooksAll),
-  hook: s.hook.parse(hook),
-  idle: s.hook.parse(idle),
-  busy: s.hook.parse(busy),
-  hostile: s.hook.parse(hostile),
-  theirs: s.hook.parse(theirs),
-  calls: s.summaries.parse(calls),
-  busyCalls: s.summaries.parse(busyCalls),
-  callJson: s.call.parse(callJson),
-  callReplay: s.call.parse(callReplay),
-  callCut: s.call.parse(callCut),
-  callBin: s.call.parse(callBin),
-  callRefused: s.call.parse(callRefused),
-  callPending: s.call.parse(callPending),
-  callUncaptured: s.call.parse(callUncaptured),
-  callAdmin: s.call.parse(callAdmin),
-  hostileHtml: s.call.parse(hostileHtml),
-  hostileJson: s.call.parse(hostileJson),
-  hostileForm: s.call.parse(hostileForm),
+  me: schemas.me.parse(me),
+  meAdmin: schemas.me.parse(meAdmin),
+  meNobody: schemas.me.parse(meNobody),
+  meOther: schemas.me.parse(meOther),
+  hooks: schemas.hooks.parse(hooks),
+  hooksAll: schemas.hooks.parse(hooksAll),
+  hook: schemas.hook.parse(hook),
+  idle: schemas.hook.parse(idle),
+  busy: schemas.hook.parse(busy),
+  hostile: schemas.hook.parse(hostile),
+  theirs: schemas.hook.parse(theirs),
+  calls: schemas.summaries.parse(calls),
+  busyCalls: schemas.summaries.parse(busyCalls),
+  callJson: schemas.call.parse(callJson),
+  callReplay: schemas.call.parse(callReplay),
+  callCut: schemas.call.parse(callCut),
+  callBin: schemas.call.parse(callBin),
+  callRefused: schemas.call.parse(callRefused),
+  callPending: schemas.call.parse(callPending),
+  callUncaptured: schemas.call.parse(callUncaptured),
+  callAdmin: schemas.call.parse(callAdmin),
+  hostileHtml: schemas.call.parse(hostileHtml),
+  hostileJson: schemas.call.parse(hostileJson),
+  hostileForm: schemas.call.parse(hostileForm),
 };

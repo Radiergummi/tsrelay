@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -13,32 +14,12 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/authz"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 	"tailscale.com/tailcfg"
 )
 
 // ErrForbidden means the caller may not own hooks at all.
 var ErrForbidden = errors.New("forbidden")
-
-// FieldError describes why one field of a request was rejected. An empty
-// Field means the request as a whole.
-type FieldError struct {
-	Field   string `json:"field"`
-	Message string `json:"message"`
-}
-
-// ValidationError is returned when a request is well-formed but not acceptable.
-type ValidationError []FieldError
-
-func (e ValidationError) Error() string {
-	msgs := make([]string, len(e))
-	for i, fe := range e {
-		msgs[i] = fe.Message
-		if fe.Field != "" {
-			msgs[i] = fe.Field + ": " + fe.Message
-		}
-	}
-	return strings.Join(msgs, "; ")
-}
 
 // CreateRequest describes a new hook. Empty Path means three random words;
 // empty Channel means authz.DefaultChannel.
@@ -112,13 +93,13 @@ func (m *Manager) Effective(h Hook) Effective { return m.Policy().Resolve(h.Sett
 
 // validateHookPath checks path, and that it neither equals nor nests inside the
 // path of one of owned other than the hook except (empty for a new hook).
-func validateHookPath(path string, owned []Hook, except ID) []FieldError {
+func validateHookPath(path string, owned []Hook, except ID) []problem.FieldError {
 	if err := ValidatePath(path); err != nil {
-		return []FieldError{{"path", err.Error()}}
+		return []problem.FieldError{{Field: "path", Message: err.Error()}}
 	}
 	for _, h := range owned {
 		if h.ID != except && overlaps(h.Path, path) {
-			return []FieldError{{"path", fmt.Sprintf("conflicts with your hook %q; a hook cannot equal or nest inside another", h.Path)}}
+			return []problem.FieldError{{Field: "path", Message: fmt.Sprintf("conflicts with your hook %q; a hook cannot equal or nest inside another", h.Path)}}
 		}
 	}
 	return nil
@@ -126,23 +107,23 @@ func validateHookPath(path string, owned []Hook, except ID) []FieldError {
 
 // validateChannel checks that channel is valid and that grants let its
 // owner receive on it.
-func validateChannel(channel string, grants authz.Effective) []FieldError {
+func validateChannel(channel string, grants authz.Effective) []problem.FieldError {
 	switch {
 	case !authz.ValidChannel(channel):
-		return []FieldError{{"channel", fmt.Sprintf("%q is not a valid channel name (dot-separated [a-z0-9-] segments, not ending in .json or .html)", channel)}}
+		return []problem.FieldError{{Field: "channel", Message: fmt.Sprintf("%q is not a valid channel name (dot-separated [a-z0-9-] segments, not ending in .json or .html)", channel)}}
 	case !access.MayReceive(grants, channel):
-		return []FieldError{{"channel", fmt.Sprintf("channel %q is not matched by your receiver patterns %s",
+		return []problem.FieldError{{Field: "channel", Message: fmt.Sprintf("channel %q is not matched by your receiver patterns %s",
 			channel, strings.Join(grants.Patterns[authz.RoleReceiver], ", "))}}
 	}
 	return nil
 }
 
-func validateDescription(description string) []FieldError {
+func validateDescription(description string) []problem.FieldError {
 	if len(description) > maxDescription {
-		return []FieldError{{"description", fmt.Sprintf("must be at most %d characters", maxDescription)}}
+		return []problem.FieldError{{Field: "description", Message: fmt.Sprintf("must be at most %d characters", maxDescription)}}
 	}
 	if strings.ContainsFunc(description, Unprintable) {
-		return []FieldError{{"description", "must be one line without control or bidirectional formatting characters"}}
+		return []problem.FieldError{{Field: "description", Message: "must be one line without control or bidirectional formatting characters"}}
 	}
 	return nil
 }
@@ -156,16 +137,16 @@ func Unprintable(r rune) bool {
 
 // validateExpiry checks expiresAt against now and the owner's maxHookTtl.
 // Ephemeral hooks need no expiry, because they end with their tunnel.
-func validateExpiry(expiresAt *time.Time, ephemeral bool, now time.Time, maxTTL time.Duration) []FieldError {
+func validateExpiry(expiresAt *time.Time, ephemeral bool, now time.Time, maxTTL time.Duration) []problem.FieldError {
 	switch {
 	case expiresAt == nil && maxTTL > 0 && !ephemeral:
-		return []FieldError{{"expiresAt", fmt.Sprintf("your grants require persistent hooks to expire within %s", maxTTL)}}
+		return []problem.FieldError{{Field: "expiresAt", Message: fmt.Sprintf("your grants require persistent hooks to expire within %s", maxTTL)}}
 	case expiresAt == nil:
 		return nil
 	case !expiresAt.After(now):
-		return []FieldError{{"expiresAt", "must be in the future"}}
+		return []problem.FieldError{{Field: "expiresAt", Message: "must be in the future"}}
 	case maxTTL > 0 && expiresAt.Sub(now) > maxTTL:
-		return []FieldError{{"expiresAt", fmt.Sprintf("must be within %s from now (your grants' maxHookTtl)", maxTTL)}}
+		return []problem.FieldError{{Field: "expiresAt", Message: fmt.Sprintf("must be within %s from now (your grants' maxHookTtl)", maxTTL)}}
 	}
 	return nil
 }
@@ -186,7 +167,7 @@ func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRe
 	}
 	slug, err := m.slugs.Slug(owner.Login)
 	if err != nil {
-		return Hook{}, ValidationError{{Field: "owner", Message: err.Error()}}
+		return Hook{}, problem.FieldErrors{{Field: "owner", Message: err.Error()}}
 	}
 	if req.Channel == "" {
 		req.Channel = authz.DefaultChannel
@@ -198,7 +179,7 @@ func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRe
 	m.wmu.Lock()
 	defer m.wmu.Unlock()
 	owned := m.ownedLocked(owner.UserID)
-	var errs ValidationError
+	var errs problem.FieldErrors
 	if req.Path == "" {
 		req.Path = m.freePathLocked(owned)
 	} else {
@@ -212,7 +193,7 @@ func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRe
 		errs = append(errs, validatePublic(owner.Grants, req.Channel)...)
 	}
 	if len(owned) >= owner.Grants.Limits.MaxHooks {
-		errs = append(errs, FieldError{"", fmt.Sprintf("you already own %d hooks, the maximum your grants allow", len(owned))})
+		errs = append(errs, problem.FieldError{Field: "", Message: fmt.Sprintf("you already own %d hooks, the maximum your grants allow", len(owned))})
 	}
 	if len(errs) > 0 {
 		return Hook{}, errs
@@ -224,7 +205,7 @@ func (m *Manager) create(ctx context.Context, owner authz.Identity, req CreateRe
 	}
 	if err := bind(ctx, slug, owner.UserID); err != nil {
 		if errors.Is(err, ErrSlugTaken) {
-			return Hook{}, ValidationError{{Field: "owner", Message: fmt.Sprintf(
+			return Hook{}, problem.FieldErrors{{Field: "owner", Message: fmt.Sprintf(
 				"the URL prefix ~%s belongs to another user; ask the relay operator to configure a slug override for %s", slug, owner.Login)}}
 		}
 		return Hook{}, err
@@ -300,11 +281,7 @@ func (m *Manager) List(user tailcfg.UserID) []Hook {
 func (m *Manager) ListAll() []Hook {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	out := make([]Hook, 0, len(m.hooks))
-	for _, h := range m.hooks {
-		out = append(out, h)
-	}
-	return sortHooks(out)
+	return sortHooks(slices.Collect(maps.Values(m.hooks)))
 }
 
 func sortHooks(hs []Hook) []Hook {

@@ -25,10 +25,10 @@ export function ShortcutsDialog({
         </DialogHeader>
         <table>
           <tbody>
-            {keys.map(([k, what]) => (
-              <tr key={k}>
+            {keys.map(([key, what]) => (
+              <tr key={key}>
                 <td className="py-1 pr-6">
-                  <kbd className="rounded-sm border px-1.5 text-xs">{k}</kbd>
+                  <kbd className="rounded-sm border px-1.5 text-xs">{key}</kbd>
                 </td>
                 <td className="py-1">{what}</td>
               </tr>

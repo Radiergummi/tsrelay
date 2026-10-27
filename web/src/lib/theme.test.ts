@@ -20,8 +20,8 @@ test("system is the default, and only light and dark are stored", () => {
 
 test("system follows prefers-color-scheme", () => {
   const original = window.matchMedia;
-  window.matchMedia = ((q: string) => ({
-    ...original(q),
+  window.matchMedia = ((query: string) => ({
+    ...original(query),
     matches: true,
   })) as typeof window.matchMedia;
   applyTheme("system");

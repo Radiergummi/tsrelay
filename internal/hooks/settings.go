@@ -4,7 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"strconv"
+	"strings"
 	"time"
+
+	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
 // Duration is a time.Duration that reads and writes JSON as "30s".
@@ -37,12 +42,31 @@ const (
 	AttachReject   AttachPolicy = "reject"   // a newer tunnel is refused while one is attached
 )
 
+// AttachPolicies lists every AttachPolicy.
+var AttachPolicies = []AttachPolicy{AttachTakeover, AttachReject}
+
 type HostHeader string
 
 const (
 	HostPreserve HostHeader = "preserve" // the local app sees the relay's host
 	HostRewrite  HostHeader = "rewrite"  // the local app sees its own host
 )
+
+// HostHeaders lists every HostHeader.
+var HostHeaders = []HostHeader{HostPreserve, HostRewrite}
+
+// Choices lists values for a message: "a" or "b", or "a", "b" or "c".
+func Choices[T ~string](values []T) string {
+	quoted := make([]string, len(values))
+	for i, v := range values {
+		quoted[i] = strconv.Quote(string(v))
+	}
+	last := len(quoted) - 1
+	if last == 0 {
+		return quoted[0]
+	}
+	return strings.Join(quoted[:last], ", ") + " or " + quoted[last]
+}
 
 type RateLimit struct {
 	PerSecond float64 `json:"perSecond"`
@@ -157,16 +181,16 @@ func (p Policy) Resolve(s Settings) Effective {
 }
 
 // Validate checks a hook's overrides against the policy's maxima.
-func (p Policy) Validate(s Settings) ValidationError {
-	var errs ValidationError
+func (p Policy) Validate(s Settings) problem.FieldErrors {
+	var errs problem.FieldErrors
 	add := func(field, format string, args ...any) {
-		errs = append(errs, FieldError{Field: "settings." + field, Message: fmt.Sprintf(format, args...)})
+		errs = append(errs, problem.FieldError{Field: "settings." + field, Message: fmt.Sprintf(format, args...)})
 	}
-	if v := s.AttachPolicy; v != nil && *v != AttachTakeover && *v != AttachReject {
-		add("attachPolicy", "must be %q or %q", AttachTakeover, AttachReject)
+	if v := s.AttachPolicy; v != nil && !slices.Contains(AttachPolicies, *v) {
+		add("attachPolicy", "must be %s", Choices(AttachPolicies))
 	}
-	if v := s.HostHeader; v != nil && *v != HostPreserve && *v != HostRewrite {
-		add("hostHeader", "must be %q or %q", HostPreserve, HostRewrite)
+	if v := s.HostHeader; v != nil && !slices.Contains(HostHeaders, *v) {
+		add("hostHeader", "must be %s", Choices(HostHeaders))
 	}
 	checkDur := func(field string, v *Duration, max Duration, allowZero bool) {
 		switch {

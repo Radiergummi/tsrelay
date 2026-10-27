@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
@@ -30,14 +29,12 @@ func decodeRequest(w http.ResponseWriter, r *http.Request, v any, limit int64) b
 		err = json.Unmarshal(body, &raw) // also refuses trailing data
 	}
 	if err == nil {
-		var errs hooks.ValidationError
+		var errs problem.FieldErrors
 		for _, field := range unknownFields(reflect.TypeOf(v), raw, "") {
-			errs = append(errs, hooks.FieldError{Field: field, Message: "not supported by this relay"})
+			errs = append(errs, problem.FieldError{Field: field, Message: "not supported by this relay"})
 		}
 		if len(errs) > 0 {
-			p := problem.New(http.StatusUnprocessableEntity, problem.UnsupportedField, errs.Error())
-			p.Errors = errs
-			p.Write(w)
+			problem.InvalidFields(problem.UnsupportedField, errs).Write(w)
 			return false
 		}
 		err = json.Unmarshal(body, v)
@@ -148,17 +145,15 @@ func queryBool(w http.ResponseWriter, r *http.Request, name string) (value, ok b
 // may mean it to change the write, as dryRun does. Reads ignore unknown
 // parameters instead. It returns false once it has written a response.
 func onlyQuery(w http.ResponseWriter, r *http.Request, names ...string) bool {
-	var errs hooks.ValidationError
+	var errs problem.FieldErrors
 	for _, name := range slices.Sorted(maps.Keys(r.URL.Query())) {
 		if !slices.Contains(names, name) {
-			errs = append(errs, hooks.FieldError{Field: "query." + name, Message: "not supported by this relay"})
+			errs = append(errs, problem.FieldError{Field: "query." + name, Message: "not supported by this relay"})
 		}
 	}
 	if len(errs) == 0 {
 		return true
 	}
-	p := problem.New(http.StatusUnprocessableEntity, problem.UnsupportedField, errs.Error())
-	p.Errors = errs
-	p.Write(w)
+	problem.InvalidFields(problem.UnsupportedField, errs).Write(w)
 	return false
 }

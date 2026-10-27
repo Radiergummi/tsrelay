@@ -13,15 +13,16 @@ export function makeQueryClient(): QueryClient {
       queries: {
         staleTime: 10_000,
         refetchOnWindowFocus: false,
-        retry: (count, err) =>
-          count < 2 && !(err instanceof ApiError && err.status >= 400 && err.status < 500),
+        retry: (failureCount, error) =>
+          failureCount < 2 &&
+          !(error instanceof ApiError && error.status >= 400 && error.status < 500),
       },
       mutations: { retry: false },
     },
     mutationCache: new MutationCache({
-      onError: (err) => {
-        if (err instanceof ApiError && err.status === 422) return;
-        toast.error("That didn't work", err.message);
+      onError: (error) => {
+        if (error instanceof ApiError && error.status === 422) return;
+        toast.error("That didn't work", error.message);
       },
     }),
   });

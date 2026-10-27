@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Link } from "react-router";
+import { paths } from "@/api/client";
 import type { Summary } from "@/api/schemas";
 import { StatusText } from "@/components/StatusText";
 import { TimeAgo } from "@/components/TimeAgo";
@@ -31,14 +32,14 @@ export function CallList({
     return <p className="py-8 text-center text-muted-foreground">No calls match.</p>;
   return (
     <ul className="space-y-0.5">
-      {calls.map((c) => {
-        const on = c.id === selected;
+      {calls.map((call) => {
+        const on = call.id === selected;
         return (
-          <li key={c.id}>
+          <li key={call.id}>
             <Link
               ref={on ? selectedRef : undefined}
               to={{
-                pathname: `/hooks/${encodeURIComponent(hookId)}/calls/${encodeURIComponent(c.id)}`,
+                pathname: paths.call(hookId, call.id),
                 search,
               }}
               aria-current={on ? "true" : undefined}
@@ -48,27 +49,27 @@ export function CallList({
               )}
             >
               <span className="truncate font-mono text-xs">
-                {c.method} <Reveal text={c.path} />
-                {c.kind !== "sender" && (
+                {call.method} <Reveal text={call.path} />
+                {call.kind !== "sender" && (
                   <span className="ml-1.5 rounded-sm bg-muted px-1 text-[0.7rem] text-muted-foreground">
-                    {c.kind}
+                    {call.kind}
                   </span>
                 )}
-                {c.refused && (
+                {call.refused && (
                   <span className="ml-1.5 rounded-sm bg-destructive/10 px-1 text-[0.7rem] text-destructive">
                     refused
                   </span>
                 )}
               </span>
               <span className="text-right">
-                <StatusText call={c} short />
+                <StatusText call={call} short />
               </span>
               <span className="truncate text-xs text-muted-foreground">
-                {senderLabel(c.sender)}
+                {senderLabel(call.sender)}
               </span>
               <span className="text-xs text-muted-foreground">
-                {c.outcome !== "pending" && `${formatDuration(c.durationMs)} · `}
-                <TimeAgo iso={c.receivedAt} />
+                {call.outcome !== "pending" && `${formatDuration(call.durationMs)} · `}
+                <TimeAgo iso={call.receivedAt} />
               </span>
             </Link>
           </li>

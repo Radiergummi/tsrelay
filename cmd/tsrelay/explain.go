@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 
+	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
@@ -110,9 +112,23 @@ func (c *cli) explain(err error) *cliError {
 	var ce *cliError
 	var p *problem.Problem
 	var ue *client.UnreachableError
+	var nh *client.NoHookError
+	var cm *client.ChannelMismatchError
+	var em *client.EphemeralMismatchError
 	switch {
 	case errors.As(err, &ce):
 		return ce
+	case errors.As(err, &nh):
+		return &cliError{Title: fmt.Sprintf("No hook %q", nh.Ref), Reason: "You have no hook with that ID or path.",
+			Fixes: []string{"tsrelay hooks list"}, Code: "no_such_hook", err: err}
+	case errors.As(err, &cm):
+		return explainMismatch(cm, cm.Hook, fmt.Sprintf("Your hook %q is in channel %q, not %q", cm.Hook.Path, cm.Hook.Channel, cm.Want),
+			"tsrelay http reuses the hook at this path, and won't move it to another channel on its own.",
+			fmt.Sprintf("tsrelay hooks update %s --channel %s", cm.Hook.Path, cm.Want))
+	case errors.As(err, &em):
+		return explainMismatch(em, em.Hook, fmt.Sprintf("Your hook %q is ephemeral", em.Hook.Path),
+			"--ephemeral=false asks for a hook that outlives tsrelay, and tsrelay http won't change the hook it reuses on its own.",
+			fmt.Sprintf("tsrelay hooks update %s --ephemeral=false", em.Hook.Path))
 	case errors.As(err, &ue):
 		return c.explainUnreachable(ue)
 	case errors.As(err, &p):
@@ -127,6 +143,13 @@ func (c *cli) explain(err error) *cliError {
 		}
 	}
 	return ce
+}
+
+// explainMismatch explains why tsrelay http won't reuse hook, the one at
+// its path; update is the command that makes it fit.
+func explainMismatch(err error, hook api.Hook, title, reason, update string) *cliError {
+	return &cliError{Title: title, Reason: reason, Code: "hook_mismatch", err: err,
+		Fixes: []string{update, "tsrelay hooks delete " + hook.Path, "Pick another path with --path"}}
 }
 
 // explainProblem explains a relay refusal; the relay's detail says what
@@ -180,7 +203,7 @@ func (c *cli) explainUnreachable(ue *client.UnreachableError) *cliError {
 		return &cliError{Title: "The relay's certificate isn't trusted", Code: "relay_tls", err: ue,
 			Reason: fmt.Sprintf("Verifying %s (from %s) failed: %s.", ue.Base, from, cv.Err),
 			Fixes:  []string{"Check that the URL names the relay's tailnet host", relayFix}}
-	case strings.Contains(cause.Error(), "server gave HTTP response to HTTPS client"):
+	case errors.Is(cause, http.ErrSchemeMismatch):
 		return &cliError{Title: "The relay doesn't speak HTTPS", Code: "relay_tls", err: ue,
 			Reason: fmt.Sprintf("%s answered in plain HTTP (the URL came from %s); it may run with --tls=false.", ue.Base, from),
 			Fixes:  []string{cmdPath + " --relay " + strings.Replace(ue.Base, "https://", "http://", 1)}}

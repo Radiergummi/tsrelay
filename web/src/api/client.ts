@@ -9,34 +9,40 @@ export class ApiError extends Error {
   readonly detail: string;
   readonly fieldErrors: FieldError[];
 
-  constructor(init: {
+  constructor({
+    status,
+    code,
+    title,
+    detail,
+    fieldErrors,
+  }: {
     status: number;
     code: string;
     title: string;
     detail: string;
     fieldErrors: FieldError[];
   }) {
-    super(init.detail || init.title || `The relay answered ${init.status}.`);
+    super(detail || title || `The relay answered ${status}.`);
     this.name = "ApiError";
-    this.status = init.status;
-    this.code = init.code;
-    this.title = init.title;
-    this.detail = init.detail;
-    this.fieldErrors = init.fieldErrors;
+    this.status = status;
+    this.code = code;
+    this.title = title;
+    this.detail = detail;
+    this.fieldErrors = fieldErrors;
   }
 }
 
 /** fieldMessage is the message for one field, or for the whole form when name is "". */
 export const fieldMessage = (errors: FieldError[], name: string): string | undefined =>
-  errors.find((e) => e.field === name)?.message;
+  errors.find(({ field }) => field === name)?.message;
 
 /**
  * formMessage is a 422's form-level message: its message when some field
  * error has no slot of its own (shown is false), or there are none at all.
  */
-export function formMessage(err: ApiError, shown: (field: string) => boolean): string {
-  const rest = err.fieldErrors.filter((e) => !shown(e.field));
-  return rest.length || !err.fieldErrors.length ? err.message : "";
+export function formMessage(error: ApiError, shown: (field: string) => boolean): string {
+  const rest = error.fieldErrors.filter(({ field }) => !shown(field));
+  return rest.length || !error.fieldErrors.length ? error.message : "";
 }
 
 const id = encodeURIComponent;
@@ -64,11 +70,11 @@ export const paths = {
 
 /** query is "?all=true&channel=…" for the options that are set, or "". */
 function query({ all, channel }: { all: boolean; channel?: string | undefined }): string {
-  const q = new URLSearchParams();
-  if (all) q.set("all", "true");
-  if (channel) q.set("channel", channel);
-  const s = q.toString();
-  return s ? `?${s}` : "";
+  const params = new URLSearchParams();
+  if (all) params.set("all", "true");
+  if (channel) params.set("channel", channel);
+  const encoded = params.toString();
+  return encoded ? `?${encoded}` : "";
 }
 
 async function send(
@@ -85,12 +91,12 @@ async function send(
   if (body !== undefined) {
     init.body = JSON.stringify(body);
   }
-  let resp: Response;
+  let response: Response;
   try {
-    resp = await fetch(path, init);
-  } catch (err) {
-    if (signal?.aborted) throw err;
-    const reason = err instanceof Error ? err.message : String(err);
+    response = await fetch(path, init);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    const reason = error instanceof Error ? error.message : String(error);
     throw new ApiError({
       status: 0,
       code: "unreachable",
@@ -99,27 +105,30 @@ async function send(
       fieldErrors: [],
     });
   }
-  if (!resp.ok) throw await toApiError(resp);
-  return resp;
+  if (!response.ok) throw await toApiError(response);
+  return response;
 }
 
-async function toApiError(resp: Response): Promise<ApiError> {
-  const text = await resp.text();
-  let p: z.infer<typeof problem> = {};
+async function toApiError(response: Response): Promise<ApiError> {
+  const text = await response.text();
+  let body: z.infer<typeof problem> = {};
   try {
     const parsed = problem.safeParse(JSON.parse(text));
-    if (parsed.success) p = parsed.data;
+    if (parsed.success) body = parsed.data;
   } catch {
-    p = { detail: text.trim() };
+    body = { detail: text.trim() };
   }
-  const errors = Array.isArray(p.errors)
-    ? p.errors.flatMap((e) => (fieldError.safeParse(e).success ? [e as FieldError] : []))
+  const errors = Array.isArray(body.errors)
+    ? body.errors.flatMap((entry) => {
+        const parsed = fieldError.safeParse(entry);
+        return parsed.success ? [parsed.data] : [];
+      })
     : [];
   return new ApiError({
-    status: resp.status,
-    code: p.code ?? "",
-    title: p.title ?? resp.statusText,
-    detail: p.detail ?? "",
+    status: response.status,
+    code: body.code ?? "",
+    title: body.title ?? response.statusText,
+    detail: body.detail ?? "",
     fieldErrors: errors,
   });
 }
@@ -132,14 +141,14 @@ export async function request<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
-  const resp = await send(method, path, body, signal);
-  return schema.parse(await resp.json());
+  const response = await send(method, path, body, signal);
+  return schema.parse(await response.json());
 }
 
 /** requestText sends a GET request and returns the answer as text. */
 export async function requestText(path: string, signal?: AbortSignal): Promise<string> {
-  const resp = await send("GET", path, undefined, signal);
-  return resp.text();
+  const response = await send("GET", path, undefined, signal);
+  return response.text();
 }
 
 /** requestVoid sends a request whose answer has no body (204). */

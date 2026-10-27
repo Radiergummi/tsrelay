@@ -23,7 +23,7 @@ import (
 // finished waits until the call has an outcome and returns it.
 func (e *env) finished(resp *http.Response) inspect.Call {
 	e.t.Helper()
-	id := resp.Header.Get(HeaderCallID)
+	id := resp.Header.Get(tunnel.HeaderCallID)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if c, ok := e.in.Get(id); ok && c.Outcome != inspect.OutcomePending {
@@ -175,7 +175,7 @@ func TestRecordsRefusedCalls(t *testing.T) {
 
 	// A path that matches no hook is not recorded anywhere.
 	resp = e.do(sender, "POST", "/~moritz/nope", nil, nil)
-	if _, ok := e.in.Get(resp.Header.Get(HeaderCallID)); ok {
+	if _, ok := e.in.Get(resp.Header.Get(tunnel.HeaderCallID)); ok {
 		t.Fatal("a call for no hook was recorded")
 	}
 }

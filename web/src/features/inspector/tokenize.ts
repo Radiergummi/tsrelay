@@ -42,15 +42,15 @@ const colonRE = /\s*:/y;
 function json(text: string): Token[] {
   const out: Token[] = [];
   jsonRE.lastIndex = 0;
-  for (let m = jsonRE.exec(text); m; m = jsonRE.exec(text)) {
-    const [t, str, num, lit, punct] = m;
-    if (str !== undefined) {
+  for (let match = jsonRE.exec(text); match; match = jsonRE.exec(text)) {
+    const [matched, quoted, numeral, literal, punctuation] = match;
+    if (quoted !== undefined) {
       colonRE.lastIndex = jsonRE.lastIndex;
-      out.push({ kind: colonRE.test(text) ? "key" : "string", text: t });
-    } else if (num !== undefined) out.push({ kind: "number", text: t });
-    else if (lit !== undefined) out.push({ kind: "literal", text: t });
-    else if (punct !== undefined) out.push({ kind: "punct", text: t });
-    else out.push({ kind: "plain", text: t });
+      out.push({ kind: colonRE.test(text) ? "key" : "string", text: matched });
+    } else if (numeral !== undefined) out.push({ kind: "number", text: matched });
+    else if (literal !== undefined) out.push({ kind: "literal", text: matched });
+    else if (punctuation !== undefined) out.push({ kind: "punct", text: matched });
+    else out.push({ kind: "plain", text: matched });
   }
   return merge(out);
 }
@@ -62,37 +62,37 @@ const attrRE = /(\s+)|([^\s=/>"']+)|(=)|(\/?>)|("[^"]*"?|'[^']*'?|[^\s>"']+)/gy;
 function markup(text: string): Token[] {
   const out: Token[] = [];
   tagRE.lastIndex = 0;
-  for (let m = tagRE.exec(text); m; m = tagRE.exec(text)) {
-    const [t, comment, open] = m;
-    if (comment !== undefined) out.push({ kind: "comment", text: t });
-    else if (open !== undefined) {
-      out.push({ kind: "tag", text: t });
+  for (let match = tagRE.exec(text); match; match = tagRE.exec(text)) {
+    const [matched, comment, openTag] = match;
+    if (comment !== undefined) out.push({ kind: "comment", text: matched });
+    else if (openTag !== undefined) {
+      out.push({ kind: "tag", text: matched });
       attrRE.lastIndex = tagRE.lastIndex;
       let end = tagRE.lastIndex; // where the tag's text has been emitted to
       let closed = false;
       let expectValue = false;
-      for (let a = attrRE.exec(text); a; a = attrRE.exec(text)) {
-        const [at, ws, name, eq, close] = a;
+      for (let attribute = attrRE.exec(text); attribute; attribute = attrRE.exec(text)) {
+        const [attributeText, space, name, equals, close] = attribute;
         end = attrRE.lastIndex;
         if (close !== undefined) {
-          out.push({ kind: "tag", text: at });
+          out.push({ kind: "tag", text: attributeText });
           closed = true;
           break;
         }
-        if (ws !== undefined) out.push({ kind: "plain", text: at });
-        else if (eq !== undefined) {
-          out.push({ kind: "punct", text: at });
+        if (space !== undefined) out.push({ kind: "plain", text: attributeText });
+        else if (equals !== undefined) {
+          out.push({ kind: "punct", text: attributeText });
           expectValue = true;
           continue;
-        } else if (expectValue) out.push({ kind: "value", text: at });
-        else if (name !== undefined) out.push({ kind: "attr", text: at });
-        else out.push({ kind: "value", text: at });
+        } else if (expectValue) out.push({ kind: "value", text: attributeText });
+        else if (name !== undefined) out.push({ kind: "attr", text: attributeText });
+        else out.push({ kind: "value", text: attributeText });
         expectValue = false;
       }
       // An unterminated tag: whatever the attribute scan couldn't read is plain.
       if (!closed && end < text.length) out.push({ kind: "plain", text: text.slice(end) });
       tagRE.lastIndex = closed ? end : text.length;
-    } else out.push({ kind: "plain", text: t });
+    } else out.push({ kind: "plain", text: matched });
   }
   return merge(out);
 }
@@ -104,14 +104,14 @@ function form(text: string): Token[] {
       out.push({ kind: "punct", text: part });
       return;
     }
-    const i = part.indexOf("=");
-    if (i < 0) {
+    const equals = part.indexOf("=");
+    if (equals < 0) {
       if (part) out.push({ kind: "attr", text: part });
       return;
     }
-    if (i > 0) out.push({ kind: "attr", text: part.slice(0, i) });
+    if (equals > 0) out.push({ kind: "attr", text: part.slice(0, equals) });
     out.push({ kind: "punct", text: "=" });
-    if (i + 1 < part.length) out.push({ kind: "value", text: part.slice(i + 1) });
+    if (equals + 1 < part.length) out.push({ kind: "value", text: part.slice(equals + 1) });
   });
   return out;
 }
@@ -119,10 +119,10 @@ function form(text: string): Token[] {
 /** merge joins neighbouring plain tokens, so a run of unrecognised characters is one span. */
 function merge(tokens: Token[]): Token[] {
   const out: Token[] = [];
-  for (const t of tokens) {
+  for (const token of tokens) {
     const last = out.at(-1);
-    if (last && last.kind === "plain" && t.kind === "plain") last.text += t.text;
-    else out.push({ ...t });
+    if (last && last.kind === "plain" && token.kind === "plain") last.text += token.text;
+    else out.push({ ...token });
   }
   return out;
 }

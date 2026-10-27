@@ -5,17 +5,17 @@ import { fixtures } from "@/test/fixtures";
 import { BodyViewer } from "./BodyViewer";
 import { HeaderTable } from "./HeaderTable";
 
-/** enc base64-encodes s's UTF-8 bytes in chunks: spreading a long Uint8Array into String.fromCharCode overflows the call stack. */
-const enc = (s: string) => {
-  const bytes = new TextEncoder().encode(s);
-  let bin = "";
+/** encode base64-encodes text's UTF-8 bytes in chunks: spreading a long Uint8Array into String.fromCharCode overflows the call stack. */
+const encode = (text: string) => {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
   for (let i = 0; i < bytes.length; i += 0x8000)
-    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(bin);
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
 };
-const cap = (s: string) => ({
-  body: enc(s),
-  size: new TextEncoder().encode(s).length,
+const captureOf = (text: string) => ({
+  body: encode(text),
+  size: new TextEncoder().encode(text).length,
   captured: true,
 });
 
@@ -24,8 +24,9 @@ function inert(container: HTMLElement) {
   expect(
     container.querySelectorAll("script, img, iframe, object, embed, a, form, style, link"),
   ).toHaveLength(0);
-  for (const el of container.querySelectorAll("*")) {
-    for (const attr of el.getAttributeNames()) expect(attr.startsWith("on")).toBe(false);
+  for (const element of container.querySelectorAll("*")) {
+    for (const attribute of element.getAttributeNames())
+      expect(attribute.startsWith("on")).toBe(false);
   }
 }
 
@@ -44,16 +45,16 @@ const bodies: [string, string, string, string[]][] = [
   [
     "json with markup",
     "application/json",
-    enc(
+    encode(
       `{"<script>alert(1)</script>": "javascript:alert(2)", "x": "<img src=x onerror=alert(3)>"}`,
     ),
     ["Raw"],
   ],
-  ["text", "text/plain", enc("<script>alert(4)</script>\u202egnp.exe"), []],
+  ["text", "text/plain", encode("<script>alert(4)</script>\u202egnp.exe"), []],
   [
     "text with a NUL",
     "text/plain",
-    enc("<script>alert(5)</script>\u0000\u202egnp.exe"),
+    encode("<script>alert(5)</script>\u0000\u202egnp.exe"),
     ["Show as text"],
   ],
 ];
@@ -93,7 +94,7 @@ test.each(bodies)(
 test("bidi controls are shown, not obeyed", () => {
   const { container } = render(
     <BodyViewer
-      capture={cap("abc\u202edef")}
+      capture={captureOf("abc\u202edef")}
       contentType="text/plain"
       metadataOnly={false}
       label="b"
@@ -106,7 +107,7 @@ test("bidi controls are shown, not obeyed", () => {
 test("adjacent control characters merge into one revealed run", async () => {
   const { container, getByRole } = render(
     <BodyViewer
-      capture={cap("<script>alert(5)</script>\u0000\u202egnp.exe")}
+      capture={captureOf("<script>alert(5)</script>\u0000\u202egnp.exe")}
       contentType="text/plain"
       metadataOnly={false}
       label="b"
@@ -121,7 +122,7 @@ test("a very long single line stays plain text and renders", () => {
   const long = "A".repeat(300 * 1024);
   const { container } = render(
     <BodyViewer
-      capture={cap(long)}
+      capture={captureOf(long)}
       contentType="application/json"
       metadataOnly={false}
       label="b"
@@ -133,9 +134,9 @@ test("a very long single line stays plain text and renders", () => {
 });
 
 test("headers are text too", () => {
-  const h = fixtures.hostileHtml;
+  const call = fixtures.hostileHtml;
   const { container } = render(
-    <HeaderTable headers={h.requestHeaders} redacted={["Authorization"]} metadataOnly={false} />,
+    <HeaderTable headers={call.requestHeaders} redacted={["Authorization"]} metadataOnly={false} />,
   );
   inert(container);
   expect(container.textContent).toContain("</td><script>alert(6)</script>");

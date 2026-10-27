@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/Radiergummi/tsrelay/internal/authz"
-	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/sbom"
 )
 
@@ -17,7 +16,7 @@ func noSBOM(w http.ResponseWriter) bool {
 	if sbom.Available() {
 		return false
 	}
-	problem.New(http.StatusNotFound, problem.NotFound, "this build of tsrelay has no SBOM; build it with make build").Write(w)
+	notFound(w, "this build of tsrelay has no SBOM; build it with make build")
 	return true
 }
 
@@ -34,7 +33,7 @@ func (a *API) licenses(w http.ResponseWriter, r *http.Request, _ authz.Identity)
 func (a *API) licenseText(w http.ResponseWriter, r *http.Request, _ authz.Identity) {
 	text, ok := sbom.Text(r.PathValue("textId"))
 	if !ok {
-		problem.New(http.StatusNotFound, problem.NotFound, "no license text with that ID").Write(w)
+		notFound(w, "no license text with that ID")
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")

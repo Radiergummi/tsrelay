@@ -8,7 +8,6 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
-	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
 // Channels is GET /channels: the caller's channel patterns, and the
@@ -94,7 +93,7 @@ func (a *API) listChannels(w http.ResponseWriter, r *http.Request, id authz.Iden
 func (a *API) getChannel(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 	name := r.PathValue("name")
 	if !authz.ValidChannel(name) {
-		problem.New(http.StatusNotFound, problem.NotFound, "no such channel; names are dot-separated segments of a-z, 0-9 and -").Write(w)
+		notFound(w, "no such channel; names are dot-separated segments of a-z, 0-9 and -")
 		return
 	}
 	list, _, ok := a.scopedHooks(w, r, id)

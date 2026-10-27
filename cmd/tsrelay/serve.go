@@ -17,6 +17,7 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
 	"github.com/Radiergummi/tsrelay/internal/authz"
+	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
@@ -46,7 +47,7 @@ func newServeCmd(c *cli) *cobra.Command {
 	tags := listFlag{Values: []string{"tag:tsrelay"}}
 	fs.Var(&tags, "advertise-tags", "tags the relay node advertises (comma-separated)")
 	capName := fs.String("cap-name", "tsrelay.mazetti.me/cap/relay", "application capability carrying relay grants")
-	slugMode := fs.String("user-slug", string(hooks.SlugLocalPart), `how URL slugs derive from logins: "local-part" or "login"`)
+	slugMode := enumVar(fs, "user-slug", hooks.SlugLocalPart, "how URL slugs derive from logins: %s", hooks.SlugModes...)
 	overrides := mapFlag{}
 	fs.Var(overrides, "user-slug-override", "login=slug pairs that resolve slug collisions (repeatable)")
 	maxHooks := fs.Int("user-max-hooks", authz.DefaultLimits.MaxHooks, "hooks per user unless a grant allows more")
@@ -71,24 +72,15 @@ func newServeCmd(c *cli) *cobra.Command {
 	captureBodies := fs.Bool("capture-bodies", true, "keep bodies for the inspector; false records metadata and headers only, whatever hooks set")
 	redact := listFlag{}
 	fs.Var(&redact, "redact-headers", "headers whose values the inspector never keeps, in addition to the defaults (comma-separated)")
-	logFormat := fs.String("log-format", "json", `the log line format: "json" or "text"`)
-	logLevel := fs.String("log-level", "info", "debug, info, warn or error")
+	logFormat := enumVar(fs, "log-format", "json", "the log line format: %s", "json", "text")
+	logLevel := enumVar(fs, "log-level", "info", "the log level: %s", "debug", "info", "warn", "error")
 	verbose := fs.Bool("verbose-tailscale", false, "include tsnet's own logs")
 	updateCheck := fs.Bool("update-check", true, "check GitHub for a newer tsrelay release every 6 hours, and tell admins about it")
-	cmd.RegisterFlagCompletionFunc("user-slug", enum(string(hooks.SlugLocalPart), string(hooks.SlugLogin)))
-	cmd.RegisterFlagCompletionFunc("log-format", enum("json", "text"))
-	cmd.RegisterFlagCompletionFunc("log-level", enum("debug", "info", "warn", "error"))
-	cmd.RegisterFlagCompletionFunc("hook-attach-policy-default", enum(string(hooks.AttachTakeover), string(hooks.AttachReject)))
-	cmd.RegisterFlagCompletionFunc("hook-host-header-default", enum(string(hooks.HostPreserve), string(hooks.HostRewrite)))
+	completeEnums(cmd)
 
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		ctx := cmd.Context()
 		stderr := c.stderr
-		if *slugMode != string(hooks.SlugLocalPart) && *slugMode != string(hooks.SlugLogin) {
-			return usage(fmt.Sprintf("Unknown --user-slug %q", *slugMode),
-				fmt.Sprintf("Slugs derive from the login's local part (%s) or from the whole login (%s).", hooks.SlugLocalPart, hooks.SlugLogin),
-				"tsrelay serve --user-slug "+string(hooks.SlugLocalPart), "tsrelay serve --user-slug "+string(hooks.SlugLogin))
-		}
 		if *revalidate <= 0 {
 			return usage("--revalidate-interval must be positive", "It says how often attached tunnels are re-authorized.",
 				"tsrelay serve --revalidate-interval 1m")
@@ -140,10 +132,7 @@ func newServeCmd(c *cli) *cobra.Command {
 				return e
 			}
 		}
-		logger, err := newLogger(stderr, *logFormat, *logLevel)
-		if err != nil {
-			return err
-		}
+		logger := newLogger(stderr, logFormat.value, logLevel.value)
 		policy, err := policyFlags()
 		if err != nil {
 			return err
@@ -152,7 +141,7 @@ func newServeCmd(c *cli) *cobra.Command {
 		err = runRelay(ctx, logger, relayConfig{
 			hostname: *hostname, stateDir: *stateDir, tls: *useTLS, tags: tags.Values, verbose: *verbose,
 			cap:    peercap.Cap(*capName),
-			slugs:  hooks.SlugConfig{Mode: hooks.SlugMode(*slugMode), Overrides: overrides},
+			slugs:  hooks.SlugConfig{Mode: hooks.SlugMode(slugMode.value), Overrides: overrides},
 			limits: authz.Limits{MaxHooks: *maxHooks, MaxTunnels: *maxTunnels, MaxHookTTL: *maxTTL},
 			policy: policy,
 			server: server.Config{
@@ -277,7 +266,8 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 	cfg.server.BaseURL = scheme + "://" + cmp.Or(dnsName, cfg.hostname)
 	cfg.server.Version, cfg.server.Commit = version, commit
 	cfg.server.AllowedHosts = allowedHosts(dnsName, cfg.hostname, st.TailscaleIPs)
-	tel, err := telemetry.Setup(ctx, telemetry.Config{OTLP: cfg.otel, Version: version, Hostname: cfg.hostname, Logger: logger})
+	telemetry.LogErrors(logger)
+	tel, err := telemetry.Setup(ctx, telemetry.Config{OTLP: cfg.otel, Version: version, Hostname: cfg.hostname})
 	if err != nil {
 		return fmt.Errorf("--otel: %w", err)
 	}
@@ -378,11 +368,8 @@ func defaultStateDir() string {
 	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" || fileExists("/.dockerenv") {
 		return "/var/lib/tsrelay"
 	}
-	if d := os.Getenv("XDG_STATE_HOME"); d != "" {
-		return filepath.Join(d, "tsrelay")
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".local", "state", "tsrelay")
+	if d, err := client.StateHome(); err == nil {
+		return d
 	}
 	return "/var/lib/tsrelay"
 }
@@ -392,20 +379,14 @@ func fileExists(p string) bool {
 	return err == nil
 }
 
-func newLogger(w io.Writer, format, level string) (*slog.Logger, error) {
+// newLogger logs to w in format ("json" or "text") from level on; the
+// flags allow no other values.
+func newLogger(w io.Writer, format, level string) *slog.Logger {
 	var lvl slog.Level
-	if err := lvl.UnmarshalText([]byte(level)); err != nil {
-		e := usage(fmt.Sprintf("Unknown --log-level %q", level), "The levels are debug, info, warn and error.", "tsrelay serve --log-level info")
-		e.err = err
-		return nil, e
-	}
+	lvl.UnmarshalText([]byte(level))
 	opts := &slog.HandlerOptions{Level: lvl}
-	switch format {
-	case "json":
-		return slog.New(slog.NewJSONHandler(w, opts)), nil
-	case "text":
-		return slog.New(slog.NewTextHandler(w, opts)), nil
+	if format == "text" {
+		return slog.New(slog.NewTextHandler(w, opts))
 	}
-	return nil, usage(fmt.Sprintf("Unknown --log-format %q", format), "Logs are JSON lines (json) or logfmt-style text (text).",
-		"tsrelay serve --log-format json", "tsrelay serve --log-format text")
+	return slog.New(slog.NewJSONHandler(w, opts))
 }

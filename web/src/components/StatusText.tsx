@@ -24,8 +24,9 @@ export function StatusText({
   call: { outcome: string; status?: number | undefined };
   short?: boolean;
 }) {
-  const label = short ? (call.status ? String(call.status) : call.outcome) : outcomeLabel(call);
-  const relay = relayPhrase(call.status ?? 0);
+  const { outcome, status } = call;
+  const label = short ? (status ? String(status) : outcome) : outcomeLabel(call);
+  const relay = relayPhrase(status ?? 0);
   return (
     <span
       className={cn("font-mono tabular-nums", colours[statusClass(call)], relay && "font-semibold")}

@@ -3,7 +3,10 @@
 // the relay acts as HTTP/2 client and the developer machine as HTTP/2 server.
 package tunnel
 
-import "time"
+import (
+	"net/http"
+	"time"
+)
 
 const (
 	UpgradeToken = "tsrelay-tunnel/1"
@@ -30,6 +33,18 @@ const (
 	clientMaxStreams = 1000
 )
 
+// Headers the relay sets for the local application, which the client
+// passes on. Incoming headers with the Tsrelay- prefix are always removed
+// first, so senders cannot spoof them.
+const (
+	HeaderSenderNode   = "Tsrelay-Sender-Node"
+	HeaderSenderTags   = "Tsrelay-Sender-Tags"
+	HeaderSenderLogin  = "Tsrelay-Sender-Login"
+	HeaderSenderPublic = "Tsrelay-Sender-Public"
+	HeaderAppHook      = "Tsrelay-Hook" // the hook's slug and path
+	HeaderCallID       = "Tsrelay-Call-Id"
+)
+
 type ControlType string
 
 const (
@@ -41,6 +56,12 @@ const (
 	// ControlRevoked means the owner's grants no longer cover the hooks.
 	ControlRevoked ControlType = "revoked"
 )
+
+// DropsHooks reports whether a control message of type t takes its hooks
+// off the tunnel.
+func (t ControlType) DropsHooks() bool {
+	return t == ControlReplaced || t == ControlRevoked || t == ControlHookDeleted
+}
 
 type HookInfo struct {
 	ID        string `json:"id"`
@@ -69,4 +90,12 @@ type Control struct {
 	// of order. A client ignores one whose Seq is not above the last it saw
 	// for the hook on the same connection.
 	Seq uint64 `json:"seq,omitempty"`
+}
+
+// h2Only is HTTP/2 without TLS and with prior knowledge: both ends of a
+// tunnel know what they speak once the upgrade is done.
+func h2Only() *http.Protocols {
+	var p http.Protocols
+	p.SetUnencryptedHTTP2(true)
+	return &p
 }

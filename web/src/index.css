@@ -34,6 +34,8 @@
   --status-4xx: oklch(0.6 0.14 65);
   --status-5xx: oklch(0.56 0.2 27);
   --status-pending: oklch(0.55 0.01 60);
+  --warning: oklch(0.962 0.059 95.6);
+  --warning-foreground: oklch(0.414 0.112 45.9);
 }
 
 .dark {
@@ -60,6 +62,8 @@
   --status-4xx: oklch(0.8 0.13 75);
   --status-5xx: oklch(0.7 0.18 27);
   --status-pending: oklch(0.66 0.008 70);
+  --warning: oklch(0.279 0.077 45.6);
+  --warning-foreground: oklch(0.924 0.12 95.7);
 }
 
 @theme inline {
@@ -89,6 +93,11 @@
   --color-status-4xx: var(--status-4xx);
   --color-status-5xx: var(--status-5xx);
   --color-status-pending: var(--status-pending);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  /* The page's width, and where the hook page splits into list and call. */
+  --container-page: 1400px;
+  --breakpoint-split: 56.25rem;
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);

@@ -17,7 +17,7 @@ test("refuses inputs too large to diff", () => {
   expect(
     diffLines(
       big,
-      big.map((x) => x + "!"),
+      big.map((line) => line + "!"),
     ),
   ).toBeNull();
 });

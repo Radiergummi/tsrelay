@@ -23,7 +23,7 @@ const licenseSelect = () => screen.getByRole("combobox", { name: "License" });
 const options = () =>
   within(licenseSelect())
     .getAllByRole("option")
-    .map((o) => o.textContent);
+    .map((option) => option.textContent);
 
 test("filters by ecosystem", async () => {
   renderPage(sample);

@@ -15,16 +15,16 @@ test("tokens always join back to the input", () => {
   for (const [text, kind] of samples)
     expect(
       tokenize(text, kind)
-        .map((t) => t.text)
+        .map((token) => token.text)
         .join(""),
     ).toBe(text);
 });
 
 test("JSON keys, strings, numbers and literals", () => {
   const kinds = tokenize(`{"k": "v", "n": 12345678901234567890, "t": true}`, "json").filter(
-    (t) => t.kind !== "plain" && t.kind !== "punct",
+    ({ kind }) => kind !== "plain" && kind !== "punct",
   );
-  expect(kinds.map((t) => [t.kind, t.text])).toEqual([
+  expect(kinds.map(({ kind, text }) => [kind, text])).toEqual([
     ["key", `"k"`],
     ["string", `"v"`],
     ["key", `"n"`],
@@ -35,13 +35,21 @@ test("JSON keys, strings, numbers and literals", () => {
 });
 
 test("markup tags, attributes and values", () => {
-  const t = tokenize(`<a href="x">hi</a>`, "markup");
-  expect(t.filter((x) => x.kind === "tag").map((x) => x.text)).toEqual(["<a", ">", "</a", ">"]);
-  expect(t.find((x) => x.kind === "attr")?.text).toBe("href");
-  expect(t.find((x) => x.kind === "value")?.text).toBe(`"x"`);
+  const tokens = tokenize(`<a href="x">hi</a>`, "markup");
+  expect(tokens.filter((token) => token.kind === "tag").map((token) => token.text)).toEqual([
+    "<a",
+    ">",
+    "</a",
+    ">",
+  ]);
+  expect(tokens.find((token) => token.kind === "attr")?.text).toBe("href");
+  expect(tokens.find((token) => token.kind === "value")?.text).toBe(`"x"`);
 });
 
 test("a self-closing tag's slash and bracket are one token", () => {
-  const t = tokenize("<br/>", "markup");
-  expect(t.filter((x) => x.kind === "tag").map((x) => x.text)).toEqual(["<br", "/>"]);
+  const tokens = tokenize("<br/>", "markup");
+  expect(tokens.filter((token) => token.kind === "tag").map((token) => token.text)).toEqual([
+    "<br",
+    "/>",
+  ]);
 });

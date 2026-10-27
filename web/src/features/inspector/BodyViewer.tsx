@@ -1,5 +1,6 @@
 import { lazy, memo, Suspense, useMemo, useState } from "react";
 import { Link } from "react-router";
+import { paths } from "@/api/client";
 import type { Capture } from "@/api/schemas";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -48,10 +49,7 @@ export const BodyViewer = memo(function BodyViewer({
     return (
       <Note>
         {formatSize(capture.size)} body. Bodies aren't captured for this hook.{" "}
-        <Link
-          to={`/hooks/${encodeURIComponent(hookId)}/edit`}
-          className="text-primary hover:underline"
-        >
+        <Link to={`${paths.hook(hookId)}/edit`} className="text-primary hover:underline">
           Edit the hook
         </Link>{" "}
         to capture them.
@@ -121,10 +119,10 @@ function Captured({
         )}
         <span className="ml-auto flex items-center gap-1">
           {views
-            .filter((v) => v !== view)
-            .map((v) => (
-              <Button key={v} variant="ghost" size="xs" onClick={() => setView(v)}>
-                {names[v]}
+            .filter((other) => other !== view)
+            .map((other) => (
+              <Button key={other} variant="ghost" size="xs" onClick={() => setView(other)}>
+                {names[other]}
               </Button>
             ))}
           {body.text !== null && <CopyButton text={body.text} label={label} onHover />}

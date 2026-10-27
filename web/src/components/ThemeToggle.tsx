@@ -18,9 +18,9 @@ export function ThemeToggle() {
       aria-label={`Theme: ${theme}`}
       title={`Theme: ${theme}`}
       onClick={() => {
-        const t = next[theme];
-        saveTheme(t);
-        setTheme(t);
+        const nextTheme = next[theme];
+        saveTheme(nextTheme);
+        setTheme(nextTheme);
       }}
     >
       <Icon />

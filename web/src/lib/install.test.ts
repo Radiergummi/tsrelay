@@ -24,7 +24,7 @@ test("installCommand runs the relay's script for the platform", () => {
 });
 
 test("downloads cover the six release builds", () => {
-  expect(downloads.map((d) => `${d.os}/${d.arch}`).sort()).toEqual([
+  expect(downloads.map(({ os, arch }) => `${os}/${arch}`).sort()).toEqual([
     "darwin/amd64",
     "darwin/arm64",
     "linux/amd64",

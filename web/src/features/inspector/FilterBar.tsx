@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Ref } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type Ref } from "react";
 import type { Summary } from "@/api/schemas";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -15,7 +15,7 @@ export function FilterBar({
 }: {
   calls: Summary[];
   filters: Filters;
-  onChange: (f: Filters) => void;
+  onChange: (filters: Filters) => void;
   searchRef: Ref<HTMLInputElement>;
 }) {
   const counts = countByStatus(calls);
@@ -34,18 +34,15 @@ export function FilterBar({
       setPath(filters.path);
     }
   }, [filters.path]);
-  const latest = useRef({ filters, onChange });
-  // updates every render so the debounced write below always uses the
-  // latest filters/onChange, without resubscribing the timeout effect.
-  // oxlint-disable-next-line react/refs
-  latest.current = { filters, onChange };
+  // The debounced write uses the filters and onChange current when it fires.
+  const write = useEffectEvent((typedPath: string) => {
+    synced.current = typedPath;
+    onChange({ ...filters, path: typedPath });
+  });
   useEffect(() => {
     if (path === synced.current) return;
-    const t = setTimeout(() => {
-      synced.current = path;
-      latest.current.onChange({ ...latest.current.filters, path });
-    }, pathWriteDelay);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => write(path), pathWriteDelay);
+    return () => clearTimeout(timer);
   }, [path]);
   return (
     <div className="flex flex-col gap-2 pb-4">
@@ -53,18 +50,18 @@ export function FilterBar({
         className="m-0 flex min-w-0 flex-wrap gap-1 border-0 p-0"
         aria-label="Filter by status"
       >
-        {statusFilters.map((s) => (
+        {statusFilters.map((status) => (
           <button
-            key={s}
+            key={status}
             type="button"
-            aria-pressed={filters.status === s}
-            onClick={() => onChange({ ...filters, status: s })}
+            aria-pressed={filters.status === status}
+            onClick={() => onChange({ ...filters, status })}
             className={cn(
               "rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground",
-              filters.status === s && "bg-accent text-accent-foreground",
+              filters.status === status && "bg-accent text-accent-foreground",
             )}
           >
-            {s} <span className="tabular-nums">{counts[s]}</span>
+            {status} <span className="tabular-nums">{counts[status]}</span>
           </button>
         ))}
       </fieldset>
@@ -75,29 +72,29 @@ export function FilterBar({
           aria-label="Filter by path"
           placeholder="Path contains…  /"
           value={path}
-          onChange={(e) => setPath(e.target.value)}
+          onChange={(event) => setPath(event.target.value)}
           className="h-7"
         />
         <NativeSelect
           aria-label="Filter by method"
           value={filters.method}
-          onChange={(e) => onChange({ ...filters, method: e.target.value })}
+          onChange={(event) => onChange({ ...filters, method: event.target.value })}
           className="h-7 w-28"
         >
           <option value="">Any method</option>
-          {methodsOf(calls).map((m) => (
-            <option key={m}>{m}</option>
+          {methodsOf(calls).map((method) => (
+            <option key={method}>{method}</option>
           ))}
         </NativeSelect>
         <NativeSelect
           aria-label="Filter by sender"
           value={filters.sender}
-          onChange={(e) => onChange({ ...filters, sender: e.target.value })}
+          onChange={(event) => onChange({ ...filters, sender: event.target.value })}
           className="h-7 w-40"
         >
           <option value="">Any sender</option>
-          {sendersOf(calls).map((s) => (
-            <option key={s}>{s}</option>
+          {sendersOf(calls).map((sender) => (
+            <option key={sender}>{sender}</option>
           ))}
         </NativeSelect>
       </div>

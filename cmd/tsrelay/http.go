@@ -18,7 +18,6 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
-	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 	"github.com/spf13/cobra"
 	"tailscale.com/client/local"
@@ -58,7 +57,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 	public := fs.Bool("public", false, "make the hook reachable from the internet through the relay's Funnel")
 	settings := registerHookSettingFlags(fs, false)
 	cmd.RegisterFlagCompletionFunc("channel", c.completeChannels)
-	completeSettingFlags(cmd)
+	completeEnums(cmd)
 	cmd.Long += " Settings flags apply only when the hook is created."
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -100,7 +99,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 		key := client.StateKey(relayAPI.BaseURL, cwd, target)
 		req := hooks.CreateRequest{Channel: *channel, Ephemeral: *ephemeral, Settings: s, Public: *public}
 		c.hook = cmp.Or(*path, state.Path(key))
-		hook, created, err := ensureHook(ctx, relayAPI, *path, state.Path(key), req)
+		hook, created, err := relayAPI.EnsureHook(ctx, *path, state.Path(key), req)
 		if err != nil {
 			return exitWith(out.fail(err))
 		}
@@ -128,7 +127,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 			Recreate: func(ctx context.Context, gone api.Hook) (api.Hook, error) {
 				recreate := req
 				recreate.Public = gone.Public // as it was last, not as the flags first asked
-				h, _, err := ensureHook(ctx, relayAPI, gone.Path, "", recreate)
+				h, _, err := relayAPI.EnsureHook(ctx, gone.Path, "", recreate)
 				return h, err
 			},
 		}
@@ -257,7 +256,7 @@ func relayBase(ctx context.Context, relayFlag string, d deps) (string, error) {
 			Fixes:  []string{"Name the relay with --relay https://<relay host>, or set TSRELAY_RELAY"}}
 	case err != nil:
 		return "", &cliError{Title: "Can't ask Tailscale for your tailnet", Code: "tailscale_unavailable", err: err,
-			Reason: "tsrelay finds the relay by your tailnet's name, which the local Tailscale didn't give: " + sentence(errors.Unwrap(err).Error()),
+			Reason: "tsrelay finds the relay by your tailnet's name, which the local Tailscale didn't give: " + sentence(cmp.Or(errors.Unwrap(err), err).Error()),
 			Fixes:  []string{"tailscale up", "Name the relay with --relay https://tsrelay.<your tailnet>.ts.net"}}
 	}
 	return base, nil
@@ -287,48 +286,6 @@ func (c *cli) newRelayAPI(ctx context.Context) (*client.API, error) {
 	}}
 	c.base = base
 	return &client.API{BaseURL: base, HTTP: &checked}, nil
-}
-
-// ensureHook reuses the caller's hook at the wanted path or creates one. An
-// explicit name wins over the remembered path. A remembered path that can no
-// longer be created (e.g. another hook now overlaps it) falls back to a new
-// random path; an explicit name never does. created reports whether this
-// call made a new hook rather than reusing one that already existed.
-func ensureHook(ctx context.Context, c *client.API, explicit, remembered string, req hooks.CreateRequest) (h api.Hook, created bool, err error) {
-	want := explicit
-	if want == "" {
-		want = remembered
-	}
-	if want != "" {
-		existing, err := c.ListHooks(ctx)
-		if err != nil {
-			return api.Hook{}, false, err
-		}
-		for _, h := range existing {
-			if h.Path != want {
-				continue
-			}
-			switch {
-			case req.Channel != "" && h.Channel != req.Channel:
-				return api.Hook{}, false, &cliError{Title: fmt.Sprintf("Your hook %q is in channel %q, not %q", h.Path, h.Channel, req.Channel), Code: "hook_mismatch",
-					Reason: "tsrelay http reuses the hook at this path, and won't move it to another channel on its own.",
-					Fixes:  []string{fmt.Sprintf("tsrelay hooks update %s --channel %s", h.Path, req.Channel), "tsrelay hooks delete " + h.Path, "Pick another path with --path"}}
-			case !req.Ephemeral && h.Ephemeral:
-				return api.Hook{}, false, &cliError{Title: fmt.Sprintf("Your hook %q is ephemeral", h.Path), Code: "hook_mismatch",
-					Reason: "--ephemeral=false asks for a hook that outlives tsrelay, and tsrelay http won't change the hook it reuses on its own.",
-					Fixes:  []string{fmt.Sprintf("tsrelay hooks update %s --ephemeral=false", h.Path), "tsrelay hooks delete " + h.Path, "Pick another path with --path"}}
-			}
-			return h, false, nil
-		}
-	}
-	req.Path = want
-	h, err = c.CreateHook(ctx, req)
-	var p *problem.Problem
-	if err != nil && explicit == "" && remembered != "" && errors.As(err, &p) && p.Status == 422 {
-		req.Path = ""
-		h, err = c.CreateHook(ctx, req)
-	}
-	return h, err == nil, err
 }
 
 // openState loads the CLI's state: d.StatePath in tests, else

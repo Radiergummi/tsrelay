@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -131,7 +132,7 @@ func npmDir(root, name, version string) (string, error) {
 		}
 		return nil
 	})
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return "", fmt.Errorf("search %s for %s@%s: %w", root, name, version, err)
 	}
 	if found == "" {
@@ -163,7 +164,7 @@ type namedText struct{ name, text string }
 // nothing.
 func readTexts(dir string, stems []string) ([]namedText, error) {
 	entries, err := os.ReadDir(dir)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {

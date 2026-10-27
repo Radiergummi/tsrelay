@@ -6,17 +6,17 @@ export class FakeEventSource {
   closed = false;
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  private listeners: Record<string, ((e: MessageEvent) => void)[]> = {};
+  private listeners: Record<string, ((event: MessageEvent) => void)[]> = {};
 
   constructor(url: string) {
     this.url = url;
     FakeEventSource.instances.push(this);
   }
   static latest(): FakeEventSource | undefined {
-    return FakeEventSource.instances.filter((s) => !s.closed).at(-1);
+    return FakeEventSource.instances.filter((source) => !source.closed).at(-1);
   }
-  addEventListener(type: string, fn: (e: MessageEvent) => void) {
-    (this.listeners[type] ??= []).push(fn);
+  addEventListener(type: string, listener: (event: MessageEvent) => void) {
+    (this.listeners[type] ??= []).push(listener);
   }
   removeEventListener() {}
   close() {
@@ -30,7 +30,7 @@ export class FakeEventSource {
     this.onerror?.();
   }
   emit(type: string, data: unknown) {
-    for (const fn of this.listeners[type] ?? [])
-      fn(new MessageEvent(type, { data: JSON.stringify(data) }));
+    for (const listener of this.listeners[type] ?? [])
+      listener(new MessageEvent(type, { data: JSON.stringify(data) }));
   }
 }

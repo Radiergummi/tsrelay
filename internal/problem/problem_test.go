@@ -11,7 +11,7 @@ import (
 func TestWriteAndDecode(t *testing.T) {
 	rec := httptest.NewRecorder()
 	p := New(StatusTunnelUnavailable, TunnelUnavailable, "no tunnel is attached")
-	p.Errors = []map[string]string{{"field": "path"}}
+	p.Errors = FieldErrors{{Field: "path"}}
 	p.Write(rec)
 
 	resp := rec.Result()

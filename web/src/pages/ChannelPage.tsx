@@ -1,4 +1,5 @@
 import { Link, useParams, useSearchParams } from "react-router";
+import { paths } from "@/api/client";
 import { useChannel } from "@/api/queries";
 import type { Hook } from "@/api/schemas";
 import { EmptyState } from "@/components/PageState";
@@ -25,7 +26,7 @@ export function ChannelPage() {
   const all = isAdmin(me) && search.get("all") === "true";
   useAllEvents(all);
   const channel = useChannel(name, all);
-  const here = `/channels/${encodeURIComponent(name)}`;
+  const here = paths.channel(name);
   return (
     <section>
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
@@ -39,17 +40,17 @@ export function ChannelPage() {
         )}
       </div>
       <QueryView query={channel}>
-        {(c) => (
+        {({ canReceive, canSend, hooks }) => (
           <>
             <p className="mb-6 text-muted-foreground">
-              You {c.canReceive ? "may" : "may not"} receive on this channel, and{" "}
-              {c.canSend ? "may" : "may not"} send on it. Who else may send on it is up to the
-              tailnet policy.
+              You {canReceive ? "may" : "may not"} receive on this channel, and{" "}
+              {canSend ? "may" : "may not"} send on it. Who else may send on it is up to the tailnet
+              policy.
             </p>
-            {c.hooks.length === 0 ? (
+            {hooks.length === 0 ? (
               <EmptyState title={all ? "No hooks use this channel" : "You have no hooks here"} />
             ) : (
-              <ChannelHooks hooks={c.hooks} all={all} />
+              <ChannelHooks hooks={hooks} all={all} />
             )}
           </>
         )}
@@ -71,20 +72,17 @@ function ChannelHooks({ hooks, all }: { hooks: Hook[]; all: boolean }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {hooks.map((h) => (
-            <TableRow key={h.id}>
-              {all && <TableCell>{h.owner}</TableCell>}
+          {hooks.map((hook) => (
+            <TableRow key={hook.id}>
+              {all && <TableCell>{hook.owner}</TableCell>}
               <TableCell>
-                <Link
-                  to={`/hooks/${encodeURIComponent(h.id)}`}
-                  className="font-medium hover:underline"
-                >
-                  <Reveal text={h.path} />
+                <Link to={paths.hook(hook.id)} className="font-medium hover:underline">
+                  <Reveal text={hook.path} />
                 </Link>
               </TableCell>
-              <TableCell>{h.ephemeral ? "Ephemeral" : "Persistent"}</TableCell>
+              <TableCell>{hook.ephemeral ? "Ephemeral" : "Persistent"}</TableCell>
               <TableCell>
-                <TunnelText tunnel={h.tunnel} />
+                <TunnelText tunnel={hook.tunnel} />
               </TableCell>
             </TableRow>
           ))}

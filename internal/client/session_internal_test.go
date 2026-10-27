@@ -8,9 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/net/http2"
-
 	"github.com/Radiergummi/tsrelay/internal/api"
+	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
@@ -86,10 +85,11 @@ func TestSessionIgnoresUnknownControl(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go tunnel.Serve(ctx, sc, http.NotFoundHandler(), s.control)
-	conn, err := (&http2.Transport{}).NewClientConn(cc)
+	tun, err := tunnel.NewTunnel(cc, "t", authz.Identity{}, tunnel.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer tun.Close()
 	post := func(body string) {
 		t.Helper()
 		req, err := http.NewRequest(http.MethodPost, "http://tunnel/", strings.NewReader(body))
@@ -97,7 +97,7 @@ func TestSessionIgnoresUnknownControl(t *testing.T) {
 			t.Fatal(err)
 		}
 		req.Header.Set(tunnel.HeaderControl, "1")
-		resp, err := conn.RoundTrip(req)
+		resp, err := tun.RoundTrip(req)
 		if err != nil {
 			t.Fatal(err)
 		}

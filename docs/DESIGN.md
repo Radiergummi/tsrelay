@@ -238,7 +238,7 @@ Every authorization decision is made in one package, `internal/access`, from the
 1. The client sends `GET /tunnel?hook={id}&hook={id}…` with `Connection: Upgrade` and `Upgrade: tsrelay-tunnel/1`, using HTTP/1.1. Over TLS, the client offers only the `http/1.1` ALPN value so the connection can be taken over.
 2. The relay authorizes the request (§5.5). On failure it answers with an ordinary problem response (§7.4).
 3. On success the relay answers `101 Switching Protocols` and takes over the connection.
-4. **The roles reverse:** the relay becomes the HTTP/2 *client* (`http2.Transport.NewClientConn`), and the CLI becomes the HTTP/2 *server* (`http2.Server.ServeConn`).
+4. **The roles reverse:** the relay becomes the HTTP/2 *client* (`http.Transport.NewClientConn` on the taken-over connection), and the CLI becomes the HTTP/2 *server* (`http.Server` serving that one connection). Both speak unencrypted HTTP/2 with prior knowledge.
 
 The protocol version lives in the `Upgrade` token. An incompatible change gets a new token, and the relay can accept several during a transition.
 

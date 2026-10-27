@@ -1,10 +1,8 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/api"
@@ -71,7 +69,7 @@ func newHooksShowCmd(c *cli) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			found, err := resolveHooks(ctx, relayAPI, refs)
+			found, err := relayAPI.ResolveHooks(ctx, refs)
 			if err != nil {
 				return err
 			}
@@ -100,7 +98,7 @@ func newHooksCreateCmd(c *cli) *cobra.Command {
 	public := fs.Bool("public", false, "make the hook reachable from the internet through the relay's Funnel")
 	settings := registerHookSettingFlags(fs, false)
 	cmd.RegisterFlagCompletionFunc("channel", c.completeChannels)
-	completeSettingFlags(cmd)
+	completeEnums(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if *expiresIn < 0 {
@@ -145,7 +143,7 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 	public := fs.Bool("public", false, "make the hook reachable from the internet, or private again with --public=false")
 	settings := registerHookSettingFlags(fs, true)
 	cmd.RegisterFlagCompletionFunc("channel", c.completeChannels)
-	completeSettingFlags(cmd)
+	completeEnums(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		c.hook = args[0]
@@ -199,7 +197,7 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		found, err := resolveHooks(ctx, relayAPI, args)
+		found, err := relayAPI.ResolveHooks(ctx, args)
 		if err != nil {
 			return err
 		}
@@ -245,7 +243,7 @@ func newHooksDeleteCmd(c *cli) *cobra.Command {
 		}{[]api.Hook{}, []failure{}}
 		var failed error
 		for _, ref := range refs {
-			h, err := findHook(all, ref)
+			h, err := client.FindHook(all, ref)
 			if err == nil && slices.ContainsFunc(result.Deleted, func(d api.Hook) bool { return d.ID == h.ID }) {
 				continue
 			}
@@ -286,7 +284,7 @@ func newHooksRotateURLCmd(c *cli) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			found, err := resolveHooks(ctx, relayAPI, refs)
+			found, err := relayAPI.ResolveHooks(ctx, refs)
 			if err != nil {
 				return err
 			}
@@ -307,37 +305,6 @@ func newHooksRotateURLCmd(c *cli) *cobra.Command {
 			return nil
 		},
 	}
-}
-
-// resolveHooks finds the caller's hooks named by ID or path, in order. It
-// fails if any of them does not exist.
-func resolveHooks(ctx context.Context, c *client.API, refs []string) ([]api.Hook, error) {
-	all, err := c.ListHooks(ctx)
-	if err != nil {
-		return nil, err
-	}
-	found := make([]api.Hook, 0, len(refs))
-	for _, ref := range refs {
-		h, err := findHook(all, ref)
-		if err != nil {
-			return nil, err
-		}
-		found = append(found, h)
-	}
-	return found, nil
-}
-
-// findHook is the hook of all that ref names by ID or path.
-func findHook(all []api.Hook, ref string) (api.Hook, error) {
-	i := slices.IndexFunc(all, func(h api.Hook) bool { return h.ID == ref })
-	if i < 0 {
-		i = slices.IndexFunc(all, func(h api.Hook) bool { return h.Path == strings.Trim(ref, "/") })
-	}
-	if i < 0 {
-		return api.Hook{}, &cliError{Title: fmt.Sprintf("No hook %q", ref), Reason: "You have no hook with that ID or path.",
-			Fixes: []string{"tsrelay hooks list"}, Code: "no_such_hook"}
-	}
-	return all[i], nil
 }
 
 // optPtr is a PATCH field that sets *v, or leaves the field alone if v is nil.

@@ -1,4 +1,5 @@
 import { Link, useSearchParams } from "react-router";
+import { paths } from "@/api/client";
 import { useChannels, useHooks } from "@/api/queries";
 import type { Hook } from "@/api/schemas";
 import { EmptyState } from "@/components/PageState";
@@ -35,7 +36,7 @@ export function HooksPage() {
         <div className="flex items-center gap-4 text-muted-foreground">
           <ChannelFilter
             value={channel}
-            onChange={(c) => setSearch(c ? { channel: c } : {}, { replace: true })}
+            onChange={(picked) => setSearch(picked ? { channel: picked } : {}, { replace: true })}
           />
           <span>
             {me.hookCount} of {me.limits.maxHooks}
@@ -77,21 +78,27 @@ export function HooksPage() {
 }
 
 /** ChannelFilter picks one of the channels the viewer's hooks are in, or all of them. */
-function ChannelFilter({ value, onChange }: { value: string; onChange: (c: string) => void }) {
+function ChannelFilter({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (channel: string) => void;
+}) {
   const channels = useChannels(false);
-  const names = channels.data?.channels.map((c) => c.name) ?? [];
+  const names = channels.data?.channels.map(({ name }) => name) ?? [];
   if (value && !names.includes(value)) names.unshift(value);
   return (
     <NativeSelect
       aria-label="Channel"
       className="w-auto"
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(event) => onChange(event.target.value)}
     >
       <option value="">All channels</option>
-      {names.map((n) => (
-        <option key={n} value={n}>
-          {n}
+      {names.map((name) => (
+        <option key={name} value={name}>
+          {name}
         </option>
       ))}
     </NativeSelect>
@@ -114,41 +121,38 @@ function HooksTable({ hooks }: { hooks: Hook[] }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {hooks.map((h) => (
-            <TableRow key={h.id}>
+          {hooks.map((hook) => (
+            <TableRow key={hook.id}>
               <TableCell>
-                <Link
-                  to={`/hooks/${encodeURIComponent(h.id)}`}
-                  className="font-medium hover:underline"
-                >
-                  {h.path}
+                <Link to={paths.hook(hook.id)} className="font-medium hover:underline">
+                  {hook.path}
                 </Link>
-                {h.description && (
+                {hook.description && (
                   <div className="max-w-64 truncate text-muted-foreground">
-                    <Reveal text={h.description} />
+                    <Reveal text={hook.description} />
                   </div>
                 )}
               </TableCell>
               <TableCell>
-                <ChannelChip name={h.channel} />
+                <ChannelChip name={hook.channel} />
               </TableCell>
               <TableCell>
-                {h.ephemeral ? "Ephemeral" : "Persistent"}
-                {h.public && " · Public"}
+                {hook.ephemeral ? "Ephemeral" : "Persistent"}
+                {hook.public && " · Public"}
               </TableCell>
               <TableCell>
-                <TunnelText tunnel={h.tunnel} />
+                <TunnelText tunnel={hook.tunnel} />
               </TableCell>
               <TableCell>
-                <LastCall call={h.lastCall} />
+                <LastCall call={hook.lastCall} />
               </TableCell>
               <TableCell className="whitespace-nowrap">
-                {h.expiresAt ? absoluteTime(h.expiresAt) : "Never"}
+                {hook.expiresAt ? absoluteTime(hook.expiresAt) : "Never"}
               </TableCell>
               <TableCell>
                 <span className="flex items-center gap-1">
-                  <code className="max-w-72 truncate text-xs">{h.url}</code>
-                  <CopyButton text={h.url} label="hook URL" />
+                  <code className="max-w-72 truncate text-xs">{hook.url}</code>
+                  <CopyButton text={hook.url} label="hook URL" />
                 </span>
               </TableCell>
             </TableRow>

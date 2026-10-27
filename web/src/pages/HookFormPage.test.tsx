@@ -61,7 +61,7 @@ test("hints show the relay's defaults and maxima, and channels come from the gra
     expect(
       within(listbox)
         .getAllByRole("option")
-        .map((o) => o.textContent),
+        .map((option) => option.textContent),
     ).toEqual(["default", "prod"]),
   );
   expect(screen.getByText(/You own \d+ of 10 hooks/)).toBeInTheDocument();
@@ -205,9 +205,9 @@ test("editing prefills the hook and sends only what changed, resetting cleared f
     path: "/hooks/:id/edit",
     context: fixtures.me,
   });
-  const desc = await screen.findByLabelText("Description");
-  expect(desc).toHaveValue("has a tunnel");
-  await userEvent.clear(desc);
+  const description = await screen.findByLabelText("Description");
+  expect(description).toHaveValue("has a tunnel");
+  await userEvent.clear(description);
   await waitFor(() => expect(dryRun).toEqual({ description: null }));
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(patch).toEqual({ description: null }));
@@ -219,8 +219,8 @@ test("a failed refetch of the hook being edited keeps the unsaved edits", async 
     path: "/hooks/:id/edit",
     context: fixtures.me,
   });
-  const desc = await screen.findByLabelText("Description");
-  await userEvent.type(desc, " and more");
+  const description = await screen.findByLabelText("Description");
+  await userEvent.type(description, " and more");
   server.use(
     http.get("/hooks/:id", () =>
       HttpResponse.json({ status: 500, code: "internal", detail: "boom" }, { status: 500 }),
@@ -229,7 +229,7 @@ test("a failed refetch of the hook being edited keeps the unsaved edits", async 
   await act(() => client.refetchQueries({ queryKey: keys.hook(fixtures.hook.id) }));
   expect(client.getQueryState(keys.hook(fixtures.hook.id))?.status).toBe("error");
   // The query notifies the page on the next tick, after the refetch settles.
-  await act(() => new Promise((r) => setTimeout(r, 0)));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Description")).toHaveValue("has a tunnel and more");
 });

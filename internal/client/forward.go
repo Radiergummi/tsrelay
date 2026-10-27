@@ -92,12 +92,12 @@ func LogCalls(next http.Handler, log func(Call)) http.Handler {
 		sw := &statusWriter{ResponseWriter: w}
 		completed := false
 		defer func() {
-			sender := r.Header.Get("Tsrelay-Sender-Tags")
+			sender := r.Header.Get(tunnel.HeaderSenderTags)
 			if sender == "" {
-				sender = r.Header.Get("Tsrelay-Sender-Node")
+				sender = r.Header.Get(tunnel.HeaderSenderNode)
 			}
 			log(Call{Hook: r.Header.Get(tunnel.HeaderHook), Method: r.Method, Path: r.URL.Path, Status: sw.status,
-				Duration: time.Since(start), Sender: sender, CallID: r.Header.Get("Tsrelay-Call-Id"), Aborted: !completed})
+				Duration: time.Since(start), Sender: sender, CallID: r.Header.Get(tunnel.HeaderCallID), Aborted: !completed})
 		}()
 		next.ServeHTTP(sw, r)
 		completed = true

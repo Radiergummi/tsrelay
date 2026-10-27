@@ -168,7 +168,7 @@ func NewRouter(cfg RouterConfig) *Router {
 func catchAll(m *routeRecorder, fallback http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if negotiate.MidPath(r.URL.Path) {
-			problem.New(http.StatusNotFound, problem.NotFound, "not found").Write(w)
+			notFound(w, "not found")
 			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {

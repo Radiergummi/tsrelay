@@ -106,6 +106,18 @@ func (l *Lifecycle) Create(ctx context.Context, actor authz.Identity, req hooks.
 	return h, nil
 }
 
+// CheckCreate validates req as Create would, without creating or
+// announcing anything: the API's dry run.
+func (l *Lifecycle) CheckCreate(ctx context.Context, actor authz.Identity, req hooks.CreateRequest) (hooks.Hook, error) {
+	return l.cfg.Hooks.CheckCreate(ctx, actor, req)
+}
+
+// CheckUpdate validates req as Update would, without changing or
+// announcing anything: the API's dry run.
+func (l *Lifecycle) CheckUpdate(ctx context.Context, actor authz.Identity, id hooks.ID, req hooks.UpdateRequest) (hooks.Hook, []string, error) {
+	return l.cfg.Hooks.CheckUpdate(ctx, actor, id, req)
+}
+
 // Update applies req to the hook id on behalf of actor, as
 // hooks.Manager.Update does, and announces the change: in the audit log, as
 // a hook event, and to the tunnel serving the hook. An update that changes
@@ -174,22 +186,42 @@ func (l *Lifecycle) recheck(ctx context.Context, id hooks.ID) {
 	if l.cfg.Identify != nil {
 		if got, err := l.cfg.Identify(ctx, t.RemoteAddr); err == nil {
 			node = got
-			if got.IsUser() && got.UserID == t.Owner.UserID {
-				t.SetGrants(got.Grants)
-			}
+			l.RecordGrants(t, node)
 		}
 	}
-	h, ok := l.cfg.Hooks.Get(id)
-	if !ok {
-		return // deleted meanwhile; the delete detached it
-	}
-	if err := access.Serve(node, h.Access()); err != nil {
-		l.Revoke(ctx, t, []hooks.ID{id}, RevokeReason(err))
+	if revoked, reason := l.Reauthorize(t, node, []hooks.ID{id}); len(revoked) > 0 {
+		l.Revoke(ctx, t, revoked, reason)
 	}
 }
 
-// RevokeReason explains an access.Serve refusal in a revocation.
-func RevokeReason(err error) string {
+// RecordGrants records the grants of node, t's node as just identified, on
+// t if node still belongs to t's owner. Only a fresh identify may record
+// them: t.Identity() is a snapshot that a concurrent identify may outdate.
+func (l *Lifecycle) RecordGrants(t *tunnel.Tunnel, node authz.Identity) {
+	if node.IsUser() && node.UserID == t.Owner.UserID {
+		t.SetGrants(node.Grants)
+	}
+}
+
+// Reauthorize checks ids, served by t, against node and returns those of
+// ids node may no longer serve, and why. A deleted hook is skipped: its
+// deletion detaches it. The caller revokes.
+func (l *Lifecycle) Reauthorize(t *tunnel.Tunnel, node authz.Identity, ids []hooks.ID) (revoked []hooks.ID, reason string) {
+	for _, id := range ids {
+		h, ok := l.cfg.Hooks.Get(id)
+		if !ok {
+			continue
+		}
+		if err := access.Serve(node, h.Access()); err != nil {
+			revoked = append(revoked, id)
+			reason = revokeReason(err)
+		}
+	}
+	return revoked, reason
+}
+
+// revokeReason explains an access.Serve refusal in a revocation.
+func revokeReason(err error) string {
 	switch {
 	case errors.Is(err, access.ErrNotUser):
 		return "the node no longer belongs to a user"

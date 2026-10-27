@@ -14,6 +14,6 @@ export function licenseLabel({ id, name }: LicenseEntry): string {
  * licensesOf is a component's licenses, or one unknown license when none
  * was detected, so its text can still be found and opened.
  */
-export function licensesOf(c: LicenseComponent): LicenseEntry[] {
-  return c.licenses.length > 0 ? c.licenses : [{}];
+export function licensesOf({ licenses }: LicenseComponent): LicenseEntry[] {
+  return licenses.length > 0 ? licenses : [{}];
 }

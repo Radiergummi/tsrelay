@@ -11,8 +11,8 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/client"
-	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // completionTimeout bounds how long a completion waits for Tailscale and
@@ -156,9 +156,11 @@ func enum(values ...string) cobra.CompletionFunc {
 	return cobra.FixedCompletions(values, noCompletions)
 }
 
-// completeSettingFlags completes the enum flags registerHookSettingFlags
-// registered on cmd.
-func completeSettingFlags(cmd *cobra.Command) {
-	cmd.RegisterFlagCompletionFunc("attach-policy", enum(string(hooks.AttachTakeover), string(hooks.AttachReject)))
-	cmd.RegisterFlagCompletionFunc("host-header", enum(string(hooks.HostPreserve), string(hooks.HostRewrite)))
+// completeEnums completes each of cmd's enum flags with its values.
+func completeEnums(cmd *cobra.Command) {
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if e, ok := f.Value.(*enumFlag); ok {
+			cmd.RegisterFlagCompletionFunc(f.Name, enum(e.allowed...))
+		}
+	})
 }

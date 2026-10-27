@@ -1,16 +1,19 @@
 package tunnel
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"net/http"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/problem"
-	"golang.org/x/net/http2"
 )
 
 // NewHTTPClient returns a client suitable for Dial and for the relay API:
@@ -60,13 +63,21 @@ func Dial(ctx context.Context, hc *http.Client, endpoint string) (net.Conn, erro
 func Serve(ctx context.Context, conn net.Conn, h http.Handler, onControl func(Control)) {
 	stop := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stop()
-	srv := &http2.Server{
-		MaxConcurrentStreams: clientMaxStreams,
-		ReadIdleTimeout:      pingInterval,
-		PingTimeout:          pingInterval,
-	}
-	srv.ServeConn(conn, &http2.ServeConnOpts{
-		Context: ctx,
+	l := &oneConnListener{conns: make(chan net.Conn, 1), closed: make(chan struct{}), addr: conn.LocalAddr()}
+	l.conns <- conn
+	srv := &http.Server{
+		Protocols:   h2Only(),
+		HTTP2:       &http.HTTP2Config{MaxConcurrentStreams: clientMaxStreams, SendPingTimeout: pingInterval, PingTimeout: pingInterval},
+		BaseContext: func(net.Listener) context.Context { return ctx },
+		// Serve returns once the one connection is gone.
+		ConnState: func(_ net.Conn, s http.ConnState) {
+			if s == http.StateClosed {
+				l.Close()
+			}
+		},
+		// A dropped tunnel is reported through Client.OnState, not logged;
+		// a handler's recovered panic is, as nothing else reports it.
+		ErrorLog: log.New(panicsOnly{os.Stderr}, "", log.LstdFlags),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get(HeaderControl) == "" {
 				h.ServeHTTP(w, r)
@@ -82,5 +93,41 @@ func Serve(ctx context.Context, conn net.Conn, h http.Handler, onControl func(Co
 			}
 			w.WriteHeader(http.StatusNoContent)
 		}),
-	})
+	}
+	_ = srv.Serve(l)
 }
+
+// panicsOnly passes on to w only the server's reports of a recovered
+// handler panic, which log one message, stack included, per Write.
+type panicsOnly struct{ w io.Writer }
+
+func (p panicsOnly) Write(b []byte) (int, error) {
+	if bytes.Contains(b, []byte("panic serving")) {
+		return p.w.Write(b)
+	}
+	return len(b), nil
+}
+
+// oneConnListener hands out the one conn in conns, then blocks until closed.
+type oneConnListener struct {
+	conns  chan net.Conn
+	closed chan struct{}
+	close  sync.Once
+	addr   net.Addr
+}
+
+func (l *oneConnListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-l.conns:
+		return c, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *oneConnListener) Close() error {
+	l.close.Do(func() { close(l.closed) })
+	return nil
+}
+
+func (l *oneConnListener) Addr() net.Addr { return l.addr }

@@ -35,7 +35,7 @@ const off: LiveSnapshot = { status: "off" };
 export function useLiveStatus(): LiveSnapshot {
   const stream = useContext(Live);
   return useSyncExternalStore(
-    (fn) => stream?.subscribe(fn) ?? (() => {}),
+    (listener) => stream?.subscribe(listener) ?? (() => {}),
     () => stream?.snapshot() ?? off,
   );
 }

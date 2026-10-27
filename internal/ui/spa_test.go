@@ -33,7 +33,7 @@ func serve(fsys fstest.MapFS, method, path string, header ...string) (*http.Resp
 		req.Header.Set(header[i], header[i+1])
 	}
 	rec := httptest.NewRecorder()
-	New(nil, fsys).Fallback().ServeHTTP(rec, req)
+	New(fsys).Fallback().ServeHTTP(rec, req)
 	resp := rec.Result()
 	b, _ := io.ReadAll(resp.Body)
 	return resp, string(b)

@@ -51,6 +51,41 @@ func (f *rateLimitFlag) Set(s string) error {
 
 func (f *rateLimitFlag) Type() string { return "perSecond/burst" }
 
+// enumFlag is a flag.Value that takes only one of allowed, so a bad value
+// is explained like any other invalid flag value.
+type enumFlag struct {
+	value   string
+	allowed []string
+}
+
+// enumVar defines an enum flag with the given default and allowed values.
+// usage holds one %s, where the help lists the allowed values.
+func enumVar[T ~string](fs *pflag.FlagSet, name string, value T, usage string, allowed ...T) *enumFlag {
+	f := &enumFlag{value: string(value)}
+	for _, a := range allowed {
+		f.allowed = append(f.allowed, string(a))
+	}
+	fs.Var(f, name, fmt.Sprintf(usage, f.choices()))
+	return f
+}
+
+func (f *enumFlag) String() string { return f.value }
+
+// Set takes s in any case: the allowed values are all lowercase.
+func (f *enumFlag) Set(s string) error {
+	s = strings.ToLower(s)
+	if !slices.Contains(f.allowed, s) {
+		return fmt.Errorf("must be %s", f.choices())
+	}
+	f.value = s
+	return nil
+}
+
+// choices lists the allowed values: "a" or "b", or "a", "b" or "c".
+func (f *enumFlag) choices() string { return hooks.Choices(f.allowed) }
+
+func (f *enumFlag) Type() string { return "enum" }
+
 type durationFlag struct {
 	name string
 	v    *time.Duration
@@ -84,8 +119,8 @@ func registerPolicyFlags(fs *pflag.FlagSet) func() (hooks.Policy, error) {
 	fs.Var(rateDef, "hook-rate-limit-default", `calls per hook as "perSecond/burst"`)
 	rateMax := &rateLimitFlag{v: m.RateLimit}
 	fs.Var(rateMax, "hook-rate-limit-max", `largest rate limit a hook may set, as "perSecond/burst" (default: no maximum)`)
-	attach := fs.String("hook-attach-policy-default", string(d.AttachPolicy), `what a second tunnel for a hook does: "takeover" or "reject"`)
-	host := fs.String("hook-host-header-default", string(d.HostHeader), `the Host header the local app sees: "preserve" or "rewrite"`)
+	attach := enumVar(fs, "hook-attach-policy-default", d.AttachPolicy, "what a second tunnel for a hook does: %s", hooks.AttachPolicies...)
+	host := enumVar(fs, "hook-host-header-default", d.HostHeader, "the Host header the local app sees: %s", hooks.HostHeaders...)
 	capture := fs.Bool("hook-capture-default", d.Capture, "keep request and response bodies for the inspector for hooks that don't set capture; off by default (metadata is always recorded)")
 
 	return func() (hooks.Policy, error) {
@@ -103,8 +138,8 @@ func registerPolicyFlags(fs *pflag.FlagSet) func() (hooks.Policy, error) {
 		}
 		p := hooks.Policy{
 			Defaults: hooks.Effective{
-				AttachPolicy:    hooks.AttachPolicy(*attach),
-				HostHeader:      hooks.HostHeader(*host),
+				AttachPolicy:    hooks.AttachPolicy(attach.value),
+				HostHeader:      hooks.HostHeader(host.value),
 				HoldTimeout:     hooks.Duration(*holdDef),
 				ResponseTimeout: hooks.Duration(*respDef),
 				IdleTimeout:     hooks.Duration(*idleDef),
@@ -207,8 +242,8 @@ func registerHookSettingFlags(fs *pflag.FlagSet, forUpdate bool) func() (hooks.S
 	body := fs.Int64("max-body-bytes", 0, fmt.Sprintf("largest request body in bytes; 0 means unlimited (default: %s)", unsetDefault))
 	var rate rateLimitFlag
 	fs.Var(&rate, "rate-limit", fmt.Sprintf(`calls per second and burst, as "perSecond/burst" (default: %s)`, unsetDefault))
-	attach := fs.String("attach-policy", "", fmt.Sprintf(`what a second tunnel does: "takeover" or "reject" (default: %s)`, unsetDefault))
-	host := fs.String("host-header", "", fmt.Sprintf(`the Host header the local app sees: "preserve" or "rewrite" (default: %s)`, unsetDefault))
+	attach := enumVar(fs, "attach-policy", "", fmt.Sprintf("what a second tunnel does: %%s (default: %s)", unsetDefault), hooks.AttachPolicies...)
+	host := enumVar(fs, "host-header", "", fmt.Sprintf("the Host header the local app sees: %%s (default: %s)", unsetDefault), hooks.HostHeaders...)
 	capture := fs.Bool("capture", true, fmt.Sprintf("keep request and response bodies for the inspector, which relays don't by default; --capture=false records metadata only (default: %s)", unsetDefault))
 	for _, name := range hookSettingFlagNames {
 		fs.Lookup(name).DefValue = "" // help already states the one true default above
@@ -236,9 +271,9 @@ func registerHookSettingFlags(fs *pflag.FlagSet, forUpdate bool) func() (hooks.S
 			case "rate-limit":
 				s.RateLimit = new(rate.v)
 			case "attach-policy":
-				s.AttachPolicy = new(hooks.AttachPolicy(*attach))
+				s.AttachPolicy = new(hooks.AttachPolicy(attach.value))
 			case "host-header":
-				s.HostHeader = new(hooks.HostHeader(*host))
+				s.HostHeader = new(hooks.HostHeader(host.value))
 			case "capture":
 				s.Capture = new(*capture)
 			}

@@ -1,17 +1,19 @@
 /** Bodies above this show their first part only; captures are 64 KiB by default. */
 const hexLimit = 64 * 1024;
 
-const hex = (b: number) => b.toString(16).padStart(2, "0");
+const hex = (byte: number) => byte.toString(16).padStart(2, "0");
 
 /** HexView shows bytes as offset, hex and ASCII columns, 16 bytes a line. */
 export function HexView({ bytes }: { bytes: Uint8Array }) {
   const shown = bytes.subarray(0, hexLimit);
   const lines: string[] = [];
-  for (let off = 0; off < shown.length; off += 16) {
-    const row = shown.subarray(off, off + 16);
-    const h = [...row].map(hex).join(" ").padEnd(47, " ");
-    const a = [...row].map((b) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : ".")).join("");
-    lines.push(`${off.toString(16).padStart(8, "0")}  ${h}  ${a}`);
+  for (let offset = 0; offset < shown.length; offset += 16) {
+    const row = shown.subarray(offset, offset + 16);
+    const hexColumn = [...row].map(hex).join(" ").padEnd(47, " ");
+    const asciiColumn = [...row]
+      .map((byte) => (byte >= 0x20 && byte < 0x7f ? String.fromCharCode(byte) : "."))
+      .join("");
+    lines.push(`${offset.toString(16).padStart(8, "0")}  ${hexColumn}  ${asciiColumn}`);
   }
   return (
     <div>

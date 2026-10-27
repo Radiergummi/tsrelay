@@ -33,10 +33,10 @@ export function CliPage() {
       <div>
         <h2 className="mb-2 font-medium">Direct downloads</h2>
         <ul className="grid gap-1 sm:grid-cols-2">
-          {downloads.map((d) => (
-            <li key={`${d.os}/${d.arch}`}>
-              <a href={`/download/${d.os}/${d.arch}`} className="text-primary hover:underline">
-                {d.label}
+          {downloads.map(({ os, arch, label }) => (
+            <li key={`${os}/${arch}`}>
+              <a href={`/download/${os}/${arch}`} className="text-primary hover:underline">
+                {label}
               </a>
             </li>
           ))}

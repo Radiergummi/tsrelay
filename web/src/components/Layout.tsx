@@ -28,7 +28,7 @@ export function Layout() {
       query={me}
       pending={
         <Page>
-          <main className="mx-auto w-full max-w-[1400px] px-6 py-6">
+          <main className="mx-auto w-full max-w-page px-6 py-6">
             <TableSkeleton />
           </main>
         </Page>
@@ -54,7 +54,7 @@ function Viewer({ viewer }: { viewer: Me }) {
       <Page me={viewer}>
         <Header me={viewer} />
         <LiveBar />
-        <main className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6">
+        <main className="mx-auto w-full max-w-page px-4 py-6 sm:px-6">
           {open ? <Outlet context={viewer} /> : <NoAccessPage me={viewer} />}
         </main>
       </Page>

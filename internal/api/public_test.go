@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"net"
 	"net/http"
 	"strings"
@@ -53,12 +52,7 @@ func TestPublicNeedsGrant(t *testing.T) {
 	e := newEnv(t)
 	var p problem.Problem
 	resp := e.call(moritz, "POST", "/hooks", map[string]any{"path": "cb", "public": true}, &p)
-	// p.Errors is `any` (problem.Problem carries arbitrary error detail), so
-	// decode it into the concrete shape hooks.ValidationError serializes as.
-	var errs hooks.ValidationError
-	b, _ := json.Marshal(p.Errors)
-	_ = json.Unmarshal(b, &errs)
-	if resp.StatusCode != 422 || len(errs) != 1 || errs[0].Field != "public" {
+	if resp.StatusCode != 422 || len(p.Errors) != 1 || p.Errors[0].Field != "public" {
 		t.Fatalf("got %d %+v", resp.StatusCode, p)
 	}
 }

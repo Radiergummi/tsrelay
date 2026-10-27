@@ -1,4 +1,5 @@
 import { Link, useNavigate } from "react-router";
+import { paths } from "@/api/client";
 import { useRotatePublicUrl } from "@/api/mutations";
 import type { Hook, Me } from "@/api/schemas";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -31,7 +32,7 @@ export function HookHeader({
         <p className="text-muted-foreground">
           {hook.ephemeral ? "Ephemeral" : "Persistent"}
           {hook.public && (
-            <span className="ml-1 rounded-sm bg-amber-100 px-1.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+            <span className="ml-1 rounded-sm bg-warning px-1.5 text-xs text-warning-foreground">
               Public
             </span>
           )}{" "}
@@ -83,7 +84,7 @@ export function HookHeader({
               Send test request
             </Button>
             <Link
-              to={`/hooks/${encodeURIComponent(hook.id)}/edit`}
+              to={`${paths.hook(hook.id)}/edit`}
               className={buttonVariants({ variant: "outline", size: "sm" })}
             >
               Edit

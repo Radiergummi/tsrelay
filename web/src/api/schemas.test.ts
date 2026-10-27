@@ -6,7 +6,7 @@ import { fixtures } from "@/test/fixtures";
 test("the captured API responses parse", () => {
   expect(fixtures.me.capName).toBe("tsrelay.mazetti.me/cap/relay");
   expect(fixtures.me.policy.defaults.holdTimeout).toBe("30s");
-  expect(fixtures.hooks.find((h) => h.path === "payments/done")?.lastCall).toBeDefined();
+  expect(fixtures.hooks.find(({ path }) => path === "payments/done")?.lastCall).toBeDefined();
   expect(fixtures.callJson.replay).toEqual({ allowed: true, reason: "" });
   expect(fixtures.callPending.replay?.allowed).toBe(false);
   expect(fixtures.callAdmin.replay).toBeUndefined();

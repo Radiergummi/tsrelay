@@ -121,7 +121,7 @@ func TestOverRealTailnet(t *testing.T) {
 	}
 	connected := make(chan struct{}, 4)
 	tc := &tunnel.Client{
-		Hooks: []string{hook.ID},
+		List: func() []string { return []string{hook.ID} },
 		Dial: func(ctx context.Context, ids []string, a tunnel.Attach) (net.Conn, error) {
 			return tunnel.Dial(ctx, hc, relayAPI.TunnelURL(a, ids...))
 		},

@@ -1,65 +1,66 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { callReturned, hookDeleted, hookSaved } from "./cache";
 import { paths, request, requestVoid } from "./client";
-import * as s from "./schemas";
+import * as schemas from "./schemas";
 
 export function useCreateHook() {
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: s.HookRequest) => request(s.hook, "POST", paths.hooks(), body),
-    onSuccess: (h) => hookSaved(qc, h),
+    mutationFn: (body: schemas.HookRequest) => request(schemas.hook, "POST", paths.hooks(), body),
+    onSuccess: (hook) => hookSaved(queryClient, hook),
   });
 }
 
 export function useUpdateHook(id: string) {
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: s.HookRequest) => request(s.hook, "PATCH", paths.hook(id), body),
-    onSuccess: (h) => hookSaved(qc, h),
+    mutationFn: (body: schemas.HookRequest) => request(schemas.hook, "PATCH", paths.hook(id), body),
+    onSuccess: (hook) => hookSaved(queryClient, hook),
   });
 }
 
 /** useRotatePublicUrl gives a public hook a new public URL; the old one stops working. */
 export function useRotatePublicUrl(hookId: string) {
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => request(s.hook, "POST", paths.rotatePublicUrl(hookId)),
-    onSuccess: (h) => hookSaved(qc, h),
+    mutationFn: () => request(schemas.hook, "POST", paths.rotatePublicUrl(hookId)),
+    onSuccess: (hook) => hookSaved(queryClient, hook),
   });
 }
 
 export function useDeleteHook() {
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => requestVoid("DELETE", paths.hook(id)),
-    onSuccess: (_, id) => hookDeleted(qc, id),
+    onSuccess: (_, id) => hookDeleted(queryClient, id),
   });
 }
 
 /** useReplay replays a call; it resolves to the new call. */
 export function useReplay(hookId: string) {
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (callId: string) => request(s.call, "POST", paths.replay(hookId, callId)),
-    onSuccess: (c) => callReturned(qc, c),
+    mutationFn: (callId: string) => request(schemas.call, "POST", paths.replay(hookId, callId)),
+    onSuccess: (call) => callReturned(queryClient, call),
   });
 }
 
 /** useTestRequest sends a test request; it resolves to the new call. */
 export function useTestRequest(hookId: string) {
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (req: s.TestRequest) => request(s.call, "POST", paths.test(hookId), req),
-    onSuccess: (c) => callReturned(qc, c),
+    mutationFn: (body: schemas.TestRequest) =>
+      request(schemas.call, "POST", paths.test(hookId), body),
+    onSuccess: (call) => callReturned(queryClient, call),
   });
 }
 
 /** dryRunHook validates a create (no editingId) or an update without saving. */
 export function dryRunHook(
-  body: s.HookRequest,
+  body: schemas.HookRequest,
   editingId: string | undefined,
   signal: AbortSignal,
-): Promise<s.Hook> {
+): Promise<schemas.Hook> {
   const path = (editingId ? paths.hook(editingId) : paths.hooks()) + "?dryRun=true";
-  return request(s.hook, editingId ? "PATCH" : "POST", path, body, signal);
+  return request(schemas.hook, editingId ? "PATCH" : "POST", path, body, signal);
 }

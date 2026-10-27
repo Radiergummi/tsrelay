@@ -16,40 +16,40 @@ const maxDepth = 256;
  */
 export function parseJSON(text: string): JNode | null {
   let i = 0;
-  const ws = () => {
+  const skipSpace = () => {
     while (i < text.length && " \t\n\r".includes(text[i]!)) i++;
   };
   const fail = (): never => {
     throw new SyntaxError();
   };
-  const str = (): string => {
+  const readString = (): string => {
     // eslint-disable-next-line no-control-regex -- JSON strings forbid literal control characters.
-    const m = /"(?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"/y;
-    m.lastIndex = i;
-    const r = m.exec(text) ?? fail();
-    i = m.lastIndex;
-    return JSON.parse(r[0]) as string;
+    const pattern = /"(?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"/y;
+    pattern.lastIndex = i;
+    const match = pattern.exec(text) ?? fail();
+    i = pattern.lastIndex;
+    return JSON.parse(match[0]) as string;
   };
   const value = (depth: number): JNode => {
     if (depth > maxDepth) fail();
-    ws();
-    const c = text[i];
-    if (c === "{") {
+    skipSpace();
+    const character = text[i];
+    if (character === "{") {
       i++;
       const entries: [string, JNode][] = [];
-      ws();
+      skipSpace();
       if (text[i] === "}") {
         i++;
         return { type: "object", entries };
       }
       for (;;) {
-        ws();
+        skipSpace();
         if (text[i] !== '"') fail();
-        const k = str();
-        ws();
+        const key = readString();
+        skipSpace();
         if (text[i++] !== ":") fail();
-        entries.push([k, value(depth + 1)]);
-        ws();
+        entries.push([key, value(depth + 1)]);
+        skipSpace();
         if (text[i] === ",") i++;
         else if (text[i] === "}") {
           i++;
@@ -57,17 +57,17 @@ export function parseJSON(text: string): JNode | null {
         } else fail();
       }
     }
-    if (c === "[") {
+    if (character === "[") {
       i++;
       const items: JNode[] = [];
-      ws();
+      skipSpace();
       if (text[i] === "]") {
         i++;
         return { type: "array", items };
       }
       for (;;) {
         items.push(value(depth + 1));
-        ws();
+        skipSpace();
         if (text[i] === ",") i++;
         else if (text[i] === "]") {
           i++;
@@ -75,17 +75,17 @@ export function parseJSON(text: string): JNode | null {
         } else fail();
       }
     }
-    if (c === '"') return { type: "string", value: str() };
-    const m = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/y;
-    m.lastIndex = i;
-    const r = m.exec(text) ?? fail();
-    i = m.lastIndex;
-    return /^[tfn]/.test(r[0]) ? { type: "literal", raw: r[0] } : { type: "number", raw: r[0] };
+    if (character === '"') return { type: "string", value: readString() };
+    const pattern = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/y;
+    pattern.lastIndex = i;
+    const [raw] = pattern.exec(text) ?? fail();
+    i = pattern.lastIndex;
+    return /^[tfn]/.test(raw) ? { type: "literal", raw } : { type: "number", raw };
   };
   try {
-    const v = value(0);
-    ws();
-    return i === text.length ? v : null;
+    const root = value(0);
+    skipSpace();
+    return i === text.length ? root : null;
   } catch {
     return null;
   }

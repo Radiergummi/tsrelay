@@ -22,7 +22,7 @@ func TestInject(t *testing.T) {
 	got := make(chan seen, 1)
 	e.attach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
-		got <- seen{r.Method, r.URL.RequestURI(), string(b), r.Header.Get(HeaderSenderLogin), r.Header.Get("X-Forwarded-For"), r.Header.Get("X-Custom")}
+		got <- seen{r.Method, r.URL.RequestURI(), string(b), r.Header.Get(tunnel.HeaderSenderLogin), r.Header.Get("X-Forwarded-For"), r.Header.Get("X-Custom")}
 		w.WriteHeader(http.StatusAccepted)
 		io.WriteString(w, "accepted")
 	}), tunnel.Options{})

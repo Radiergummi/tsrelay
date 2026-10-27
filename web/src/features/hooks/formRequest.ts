@@ -1,9 +1,10 @@
-import type { Effective, FieldError, Hook } from "@/api/schemas";
+import type { Effective, FieldError, Hook, HookRequest } from "@/api/schemas";
+import { parseDuration } from "@/lib/duration";
 
 export type FieldType = "text" | "bool" | "int" | "duration" | "ratelimit" | "time";
 
 /** fieldTypes are the form's fields in order, with how each is sent. */
-export const fieldTypes: Record<string, FieldType> = {
+export const fieldTypes = {
   path: "text",
   channel: "text",
   description: "text",
@@ -18,113 +19,127 @@ export const fieldTypes: Record<string, FieldType> = {
   "settings.maxBodyBytes": "int",
   "settings.rateLimit": "ratelimit",
   "settings.capture": "bool",
-};
+} as const satisfies Record<string, FieldType>;
 
-const durationRE = /^(\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+$/;
+/** FieldName is one of the form's fields; a dotted name nests in the request. */
+export type FieldName = keyof typeof fieldTypes;
+
+/** FormValues are the form's texts, per field. */
+export type FormValues = Record<FieldName, string>;
 
 /** fieldValue converts a field's text to its API value: undefined for an empty field, or an error. */
 export function fieldValue(raw: string, type: FieldType): { value?: unknown; error?: string } {
-  const s = raw.trim();
-  if (s === "") return { value: undefined };
+  const text = raw.trim();
+  if (text === "") return { value: undefined };
   switch (type) {
     case "bool":
-      return { value: s === "true" };
+      return { value: text === "true" };
     case "int":
-      return /^\d+$/.test(s) ? { value: Number(s) } : { error: "must be a whole number of bytes" };
+      return /^\d+$/.test(text)
+        ? { value: Number(text) }
+        : { error: "must be a whole number of bytes" };
     case "duration":
-      return durationRE.test(s)
-        ? { value: s }
+      return parseDuration(text) !== null
+        ? { value: text }
         : { error: "must be a duration like 30s, 2m or 1h30m" };
     case "ratelimit": {
-      const m = /^(\d+(?:\.\d+)?)\s*\/\s*(\d+)$/.exec(s);
-      return m
-        ? { value: { perSecond: Number(m[1]), burst: Number(m[2]) } }
+      const match = /^(\d+(?:\.\d+)?)\s*\/\s*(\d+)$/.exec(text);
+      return match
+        ? { value: { perSecond: Number(match[1]), burst: Number(match[2]) } }
         : { error: "needs calls per second and a whole-number burst" };
     }
     default:
-      return { value: s };
+      return { value: text };
   }
 }
 
 /**
- * formRequest builds the API body from [name, text, type] triples. Dotted
- * names nest. An empty field is left out when creating, so the relay
+ * formRequest builds the API body from the fields' texts, in form order.
+ * Dotted names nest. An empty field is left out when creating, so the relay
  * default applies. Editing (initial holds the form's starting texts) sends
  * only the fields that changed, as the PATCH is partial: a cleared one as
  * null, which resets it.
  */
 export function formRequest(
-  fields: [string, string, FieldType][],
-  initial?: Record<string, string>,
-): { body: Record<string, unknown>; errors: FieldError[] } {
+  values: Partial<FormValues>,
+  initial?: FormValues,
+): { body: HookRequest; errors: FieldError[] } {
   const body: Record<string, unknown> = {};
   const errors: FieldError[] = [];
-  for (const [name, raw, type] of fields) {
-    if (initial && raw.trim() === initial[name]?.trim()) continue;
-    const r = fieldValue(raw, type);
-    if (r.error) {
-      errors.push({ field: name, message: r.error });
+  for (const name of Object.keys(fieldTypes) as FieldName[]) {
+    const raw = values[name];
+    if (raw === undefined || (initial && raw.trim() === initial[name].trim())) continue;
+    const { value: converted, error } = fieldValue(raw, fieldTypes[name]);
+    if (error) {
+      errors.push({ field: name, message: error });
       continue;
     }
-    let value = r.value;
+    let value = converted;
     if (value === undefined) {
       if (!initial) continue;
       value = null;
     }
     const keys = name.split(".");
-    let obj = body;
-    for (const k of keys.slice(0, -1)) obj = (obj[k] ??= {}) as Record<string, unknown>;
-    obj[keys.at(-1)!] = value;
+    let parent = body;
+    for (const key of keys.slice(0, -1)) parent = (parent[key] ??= {}) as Record<string, unknown>;
+    parent[keys.at(-1)!] = value;
   }
-  return { body, errors };
+  // The dotted names nest exactly as HookRequest does.
+  return { body: body as HookRequest, errors };
 }
 
 /** initialValues are the form's starting texts: the hook's own values, with relay defaults left empty. */
-export function initialValues(h: Hook | undefined): Record<string, string> {
-  const v: Record<string, string> = Object.fromEntries(Object.keys(fieldTypes).map((k) => [k, ""]));
-  v["ephemeral"] = "false";
-  v["public"] = "false";
-  if (!h) return v;
-  const s = h.settings;
-  Object.assign(v, {
-    path: h.path,
-    channel: h.channel,
-    description: h.description ?? "",
-    ephemeral: String(h.ephemeral),
-    public: String(h.public ?? false),
-    expiresAt: h.expiresAt ? new Date(h.expiresAt).toISOString().replace(/\.000Z$/, "Z") : "",
-    "settings.attachPolicy": s.attachPolicy ?? "",
-    "settings.hostHeader": s.hostHeader ?? "",
-    "settings.holdTimeout": s.holdTimeout ?? "",
-    "settings.responseTimeout": s.responseTimeout ?? "",
-    "settings.idleTimeout": s.idleTimeout ?? "",
-    "settings.maxBodyBytes": s.maxBodyBytes === undefined ? "" : String(s.maxBodyBytes),
-    "settings.rateLimit": s.rateLimit ? `${s.rateLimit.perSecond}/${s.rateLimit.burst}` : "",
-    "settings.capture": s.capture === undefined ? "" : String(s.capture),
-  });
-  return v;
+export function initialValues(hook: Hook | undefined): FormValues {
+  const {
+    attachPolicy,
+    hostHeader,
+    holdTimeout,
+    responseTimeout,
+    idleTimeout,
+    maxBodyBytes,
+    rateLimit,
+    capture,
+  } = hook?.settings ?? {};
+  return {
+    path: hook?.path ?? "",
+    channel: hook?.channel ?? "",
+    description: hook?.description ?? "",
+    ephemeral: String(hook?.ephemeral ?? false),
+    public: String(hook?.public ?? false),
+    expiresAt: hook?.expiresAt
+      ? new Date(hook.expiresAt).toISOString().replace(/\.000Z$/, "Z")
+      : "",
+    "settings.attachPolicy": attachPolicy ?? "",
+    "settings.hostHeader": hostHeader ?? "",
+    "settings.holdTimeout": holdTimeout ?? "",
+    "settings.responseTimeout": responseTimeout ?? "",
+    "settings.idleTimeout": idleTimeout ?? "",
+    "settings.maxBodyBytes": maxBodyBytes === undefined ? "" : String(maxBodyBytes),
+    "settings.rateLimit": rateLimit ? `${rateLimit.perSecond}/${rateLimit.burst}` : "",
+    "settings.capture": capture === undefined ? "" : String(capture),
+  };
 }
 
 /** effectiveSettings are the delivery settings values would give: each valid override, else the relay default. */
-export function effectiveSettings(values: Record<string, string>, defaults: Effective): Effective {
-  const e: Record<string, unknown> = { ...defaults };
-  for (const k of Object.keys(defaults)) {
-    const r = fieldValue(values[`settings.${k}`] ?? "", fieldTypes[`settings.${k}`]!);
-    if (r.value !== undefined) e[k] = r.value;
+export function effectiveSettings(values: FormValues, defaults: Effective): Effective {
+  const effective: Record<string, unknown> = { ...defaults };
+  for (const setting of Object.keys(defaults) as (keyof Effective)[]) {
+    const { value } = fieldValue(values[`settings.${setting}`], fieldTypes[`settings.${setting}`]);
+    if (value !== undefined) effective[setting] = value;
   }
-  return e as Effective;
+  return effective as Effective;
 }
 
 /** parseHeaders turns "Name: value" lines into the API's header object. A line without a colon is a header with an empty value. */
 export function parseHeaders(text: string): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
+  const headers: Record<string, string[]> = {};
   for (const line of text.split("\n")) {
-    const t = line.trim();
-    if (!t) continue;
-    const i = t.indexOf(":");
-    const name = (i < 0 ? t : t.slice(0, i)).trim();
-    const value = i < 0 ? "" : t.slice(i + 1).trim();
-    (out[name] ??= []).push(value);
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const colon = trimmed.indexOf(":");
+    const name = (colon < 0 ? trimmed : trimmed.slice(0, colon)).trim();
+    const value = colon < 0 ? "" : trimmed.slice(colon + 1).trim();
+    (headers[name] ??= []).push(value);
   }
-  return out;
+  return headers;
 }

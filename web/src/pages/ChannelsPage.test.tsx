@@ -18,8 +18,8 @@ test("shows the viewer's patterns and their hooks' channels with the patterns co
     `/hooks/${fixtures.idle.id}`,
   );
   expect(within(row).getByText("prod", { selector: "code" })).toBeInTheDocument();
-  const def = screen.getByRole("link", { name: "default" }).closest("tr")!;
-  expect(within(def).getAllByRole("link")).toHaveLength(4); // the chip and three hooks
+  const defaultRow = screen.getByRole("link", { name: "default" }).closest("tr")!;
+  expect(within(defaultRow).getAllByRole("link")).toHaveLength(4); // the chip and three hooks
   expect(screen.getByText("You receive on").nextSibling).toHaveTextContent("defaultprodstaging.*");
   expect(screen.getByText("You send on").nextSibling).toHaveTextContent("none");
 });

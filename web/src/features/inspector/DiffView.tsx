@@ -15,7 +15,7 @@ function responseLines(call: Call): string[] {
   const last: Attempt | undefined = call.attempts.at(-1);
   const lines = [
     outcomeLabel(call),
-    ...headerLines(last?.responseHeaders).map(([k, v]) => `${k}: ${v}`),
+    ...headerLines(last?.responseHeaders).map(([name, value]) => `${name}: ${value}`),
     "",
   ];
   if (!last) return lines;
@@ -28,21 +28,21 @@ function responseLines(call: Call): string[] {
 }
 
 /** pretty indents parsed JSON, keeping number literals and duplicate keys as captured. */
-function pretty(n: JNode, indent = ""): string {
+function pretty(node: JNode, indent = ""): string {
   const inner = indent + "  ";
-  switch (n.type) {
+  switch (node.type) {
     case "string":
-      return JSON.stringify(n.value);
+      return JSON.stringify(node.value);
     case "number":
     case "literal":
-      return n.raw;
+      return node.raw;
     case "array":
-      return n.items.length
-        ? `[\n${n.items.map((v) => inner + pretty(v, inner)).join(",\n")}\n${indent}]`
+      return node.items.length
+        ? `[\n${node.items.map((item) => inner + pretty(item, inner)).join(",\n")}\n${indent}]`
         : "[]";
     case "object":
-      return n.entries.length
-        ? `{\n${n.entries.map(([k, v]) => `${inner}${JSON.stringify(k)}: ${pretty(v, inner)}`).join(",\n")}\n${indent}}`
+      return node.entries.length
+        ? `{\n${node.entries.map(([key, value]) => `${inner}${JSON.stringify(key)}: ${pretty(value, inner)}`).join(",\n")}\n${indent}}`
         : "{}";
   }
 }
@@ -59,10 +59,10 @@ const mark = { same: "  ", add: "+ ", del: "- " };
  * Memoized, like BodyViewer: call is stable across the inspector's re-renders.
  */
 export const DiffView = memo(function DiffView({ call }: { call: Call }) {
-  const original = useCall(call.hookId, call.replayOf);
+  const originalQuery = useCall(call.hookId, call.replayOf);
   return (
     <QueryView
-      query={original}
+      query={originalQuery}
       pending={<Skeleton className="h-24 w-full" />}
       gone={
         <p className="text-muted-foreground">
@@ -70,7 +70,7 @@ export const DiffView = memo(function DiffView({ call }: { call: Call }) {
         </p>
       }
     >
-      {(o) => <Diff original={o} call={call} />}
+      {(original) => <Diff original={original} call={call} />}
     </QueryView>
   );
 });
@@ -86,14 +86,10 @@ function Diff({ original, call }: { original: Call; call: Call }) {
         <span className="text-status-2xx">+</span> this replay
       </p>
       <pre className="max-h-[60vh] overflow-auto rounded-md border bg-muted/40 py-2 text-xs leading-relaxed">
-        {lines.map((l, i) => (
-          <div
-            key={i}
-            data-op={l.op}
-            className={`px-3 break-all whitespace-pre-wrap ${style[l.op]}`}
-          >
-            {mark[l.op]}
-            <Reveal text={l.text} />
+        {lines.map(({ op, text }, i) => (
+          <div key={i} data-op={op} className={`px-3 break-all whitespace-pre-wrap ${style[op]}`}>
+            {mark[op]}
+            <Reveal text={text} />
           </div>
         ))}
       </pre>
