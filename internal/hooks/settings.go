@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/problem"
@@ -52,6 +54,19 @@ const (
 
 // HostHeaders lists every HostHeader.
 var HostHeaders = []HostHeader{HostPreserve, HostRewrite}
+
+// Choices lists values for a message: "a" or "b", or "a", "b" or "c".
+func Choices[T ~string](values []T) string {
+	quoted := make([]string, len(values))
+	for i, v := range values {
+		quoted[i] = strconv.Quote(string(v))
+	}
+	last := len(quoted) - 1
+	if last == 0 {
+		return quoted[0]
+	}
+	return strings.Join(quoted[:last], ", ") + " or " + quoted[last]
+}
 
 type RateLimit struct {
 	PerSecond float64 `json:"perSecond"`
@@ -172,10 +187,10 @@ func (p Policy) Validate(s Settings) problem.FieldErrors {
 		errs = append(errs, problem.FieldError{Field: "settings." + field, Message: fmt.Sprintf(format, args...)})
 	}
 	if v := s.AttachPolicy; v != nil && !slices.Contains(AttachPolicies, *v) {
-		add("attachPolicy", "must be %q or %q", AttachTakeover, AttachReject)
+		add("attachPolicy", "must be %s", Choices(AttachPolicies))
 	}
 	if v := s.HostHeader; v != nil && !slices.Contains(HostHeaders, *v) {
-		add("hostHeader", "must be %q or %q", HostPreserve, HostRewrite)
+		add("hostHeader", "must be %s", Choices(HostHeaders))
 	}
 	checkDur := func(field string, v *Duration, max Duration, allowZero bool) {
 		switch {

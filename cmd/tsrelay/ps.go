@@ -68,7 +68,9 @@ func newStopCmd(c *cli) *cobra.Command {
 	}
 	cmd.ValidArgsFunction = c.completeBackground(-1)
 	all := cmd.Flags().BoolP("all", "a", false, "stop every background tunnel")
-	cmd.Args = func(_ *cobra.Command, refs []string) error {
+	// The checks read --all, so they run in RunE: cobra runs Args before
+	// the root's PersistentPreRunE applies the environment's defaults.
+	cmd.RunE = func(cmd *cobra.Command, refs []string) error {
 		switch {
 		case *all && len(refs) > 0:
 			return usage("Both --all and a tunnel given", "tsrelay stop stops the tunnels named, or with --all every one.",
@@ -77,9 +79,6 @@ func newStopCmd(c *cli) *cobra.Command {
 			return usage("No background tunnel given", "tsrelay stop takes the ID or a hook of a background tunnel, or --all.",
 				"tsrelay ps", "tsrelay stop --all")
 		}
-		return nil
-	}
-	cmd.RunE = func(cmd *cobra.Command, refs []string) error {
 		dir, err := openRunDir()
 		if err != nil {
 			return err

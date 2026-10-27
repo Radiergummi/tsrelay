@@ -489,7 +489,11 @@ func TestRecheckFallsBackToLastGrants(t *testing.T) {
 	}
 
 	l, _, tun, ids, controls := recheckEnv(t, receiver)
-	l.cfg.Identify = fail
+	// Grants a concurrent identify records meanwhile outlive the failed one.
+	l.cfg.Identify = func(ctx context.Context, addr string) (authz.Identity, error) {
+		tun.SetGrants(devOnly.Grants)
+		return fail(ctx, addr)
+	}
 	moveTo(t, l, ids[1], "prod")
 	if c := next(t, controls); c.Type != tunnel.ControlHookUpdated {
 		t.Fatalf("control = %+v, want only hook-updated", c)
@@ -497,6 +501,9 @@ func TestRecheckFallsBackToLastGrants(t *testing.T) {
 	noControl(t, controls)
 	if cur, ok := l.Lookup(ids[1]); !ok || cur != tun {
 		t.Fatal("a hook the last known grants cover was detached")
+	}
+	if g := tun.Identity().Grants; !slices.Equal(g.Patterns[authz.RoleReceiver], []string{"dev"}) {
+		t.Fatalf("tunnel grants = %+v, want the concurrently recorded ones", g)
 	}
 }
 

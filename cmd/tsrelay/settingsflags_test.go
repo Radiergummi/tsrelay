@@ -59,6 +59,13 @@ func TestPolicyFlags(t *testing.T) {
 	}
 }
 
+func TestEnumFlagIgnoresCase(t *testing.T) {
+	p, err := policyFrom(t, "--hook-attach-policy-default=REJECT")
+	if err != nil || p.Defaults.AttachPolicy != hooks.AttachReject {
+		t.Fatalf("policy = %+v, %v; want reject", p.Defaults, err)
+	}
+}
+
 func TestPolicyFlagErrors(t *testing.T) {
 	cases := map[string][]string{
 		"hook-response-timeout-max": {"--hook-response-timeout-max=1m"}, // below the 2m default

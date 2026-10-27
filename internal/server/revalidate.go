@@ -67,5 +67,6 @@ func (s *Server) check(ctx context.Context, t *tunnel.Tunnel, hookIDs []hooks.ID
 		delete(s.identifyFailures, t)
 		return hookIDs, "the node could not be identified"
 	}
+	s.tunnels.RecordGrants(t, id)
 	return s.tunnels.Reauthorize(t, id, hookIDs)
 }

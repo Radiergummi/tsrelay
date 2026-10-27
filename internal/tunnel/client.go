@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -73,8 +75,9 @@ func Serve(ctx context.Context, conn net.Conn, h http.Handler, onControl func(Co
 				l.Close()
 			}
 		},
-		// A dropped tunnel is reported through Client.OnState, not logged.
-		ErrorLog: log.New(io.Discard, "", 0),
+		// A dropped tunnel is reported through Client.OnState, not logged;
+		// a handler's recovered panic is, as nothing else reports it.
+		ErrorLog: log.New(panicsOnly{os.Stderr}, "", log.LstdFlags),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get(HeaderControl) == "" {
 				h.ServeHTTP(w, r)
@@ -92,6 +95,17 @@ func Serve(ctx context.Context, conn net.Conn, h http.Handler, onControl func(Co
 		}),
 	}
 	_ = srv.Serve(l)
+}
+
+// panicsOnly passes on to w only the server's reports of a recovered
+// handler panic, which log one message, stack included, per Write.
+type panicsOnly struct{ w io.Writer }
+
+func (p panicsOnly) Write(b []byte) (int, error) {
+	if bytes.Contains(b, []byte("panic serving")) {
+		return p.w.Write(b)
+	}
+	return len(b), nil
 }
 
 // oneConnListener hands out the one conn in conns, then blocks until closed.

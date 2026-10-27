@@ -19,18 +19,24 @@ type NoHookError struct{ Ref string }
 
 func (e *NoHookError) Error() string { return fmt.Sprintf("no hook %q", e.Ref) }
 
-// HookMismatchError means the caller's hook at the wanted path is not what
-// EnsureHook was asked for, and EnsureHook won't change it on its own.
-type HookMismatchError struct {
-	Hook  api.Hook
-	Field string // "channel" or "ephemeral"
-	Want  string // for "channel": the channel asked for
+// ChannelMismatchError means the caller's hook at the wanted path is in
+// another channel than EnsureHook was asked for, and EnsureHook won't move
+// it on its own.
+type ChannelMismatchError struct {
+	Hook api.Hook
+	Want string // the channel asked for
 }
 
-func (e *HookMismatchError) Error() string {
-	if e.Field == "channel" {
-		return fmt.Sprintf("hook %q is in channel %q, not %q", e.Hook.Path, e.Hook.Channel, e.Want)
-	}
+func (e *ChannelMismatchError) Error() string {
+	return fmt.Sprintf("hook %q is in channel %q, not %q", e.Hook.Path, e.Hook.Channel, e.Want)
+}
+
+// EphemeralMismatchError means the caller's hook at the wanted path is
+// ephemeral while EnsureHook was asked for a lasting one, and EnsureHook
+// won't change it on its own.
+type EphemeralMismatchError struct{ Hook api.Hook }
+
+func (e *EphemeralMismatchError) Error() string {
 	return fmt.Sprintf("hook %q is ephemeral", e.Hook.Path)
 }
 
@@ -82,9 +88,9 @@ func (c *API) EnsureHook(ctx context.Context, explicit, remembered string, req h
 			}
 			switch {
 			case req.Channel != "" && h.Channel != req.Channel:
-				return api.Hook{}, false, &HookMismatchError{Hook: h, Field: "channel", Want: req.Channel}
+				return api.Hook{}, false, &ChannelMismatchError{Hook: h, Want: req.Channel}
 			case !req.Ephemeral && h.Ephemeral:
-				return api.Hook{}, false, &HookMismatchError{Hook: h, Field: "ephemeral"}
+				return api.Hook{}, false, &EphemeralMismatchError{Hook: h}
 			}
 			return h, false, nil
 		}

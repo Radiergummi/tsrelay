@@ -57,6 +57,9 @@ type Telemetry struct {
 	shutdown []func(context.Context) error
 }
 
+// Setup builds the providers cfg asks for. It leaves the process-wide SDK
+// error handler alone: a caller that exports (cfg.OTLP) routes SDK errors
+// with LogErrors, or OTel's default handler logs every one.
 func Setup(ctx context.Context, cfg Config) (*Telemetry, error) {
 	res, err := resource.Merge(resource.Default(), resource.NewSchemaless(
 		semconv.ServiceName("tsrelay"),

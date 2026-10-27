@@ -49,11 +49,12 @@ func TestEnsureHook(t *testing.T) {
 	if _, _, err := c.EnsureHook(ctx, "taken", "", hooks.CreateRequest{}); !errors.As(err, &p) || p.Status != http.StatusUnprocessableEntity {
 		t.Errorf("explicit path refused: %v, want the 422, not a random path", err)
 	}
-	var hm *HookMismatchError
-	if _, _, err := c.EnsureHook(ctx, "cb", "", hooks.CreateRequest{Channel: "prod"}); !errors.As(err, &hm) || hm.Field != "channel" || hm.Want != "prod" {
+	var cm *ChannelMismatchError
+	if _, _, err := c.EnsureHook(ctx, "cb", "", hooks.CreateRequest{Channel: "prod"}); !errors.As(err, &cm) || cm.Want != "prod" {
 		t.Errorf("other channel: %v, want a channel mismatch", err)
 	}
-	if _, _, err := c.EnsureHook(ctx, "eph", "", hooks.CreateRequest{}); !errors.As(err, &hm) || hm.Field != "ephemeral" {
+	var em *EphemeralMismatchError
+	if _, _, err := c.EnsureHook(ctx, "eph", "", hooks.CreateRequest{}); !errors.As(err, &em) {
 		t.Errorf("persistent wanted: %v, want an ephemeral mismatch", err)
 	}
 }

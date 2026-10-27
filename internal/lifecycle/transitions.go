@@ -186,6 +186,7 @@ func (l *Lifecycle) recheck(ctx context.Context, id hooks.ID) {
 	if l.cfg.Identify != nil {
 		if got, err := l.cfg.Identify(ctx, t.RemoteAddr); err == nil {
 			node = got
+			l.RecordGrants(t, node)
 		}
 	}
 	if revoked, reason := l.Reauthorize(t, node, []hooks.ID{id}); len(revoked) > 0 {
@@ -193,14 +194,19 @@ func (l *Lifecycle) recheck(ctx context.Context, id hooks.ID) {
 	}
 }
 
-// Reauthorize checks ids, served by t, against node, t's node as just
-// identified: it records node's grants on t if node still belongs to t's
-// owner, and returns those of ids node may no longer serve, and why. A
-// deleted hook is skipped: its deletion detaches it. The caller revokes.
-func (l *Lifecycle) Reauthorize(t *tunnel.Tunnel, node authz.Identity, ids []hooks.ID) (revoked []hooks.ID, reason string) {
+// RecordGrants records the grants of node, t's node as just identified, on
+// t if node still belongs to t's owner. Only a fresh identify may record
+// them: t.Identity() is a snapshot that a concurrent identify may outdate.
+func (l *Lifecycle) RecordGrants(t *tunnel.Tunnel, node authz.Identity) {
 	if node.IsUser() && node.UserID == t.Owner.UserID {
 		t.SetGrants(node.Grants)
 	}
+}
+
+// Reauthorize checks ids, served by t, against node and returns those of
+// ids node may no longer serve, and why. A deleted hook is skipped: its
+// deletion detaches it. The caller revokes.
+func (l *Lifecycle) Reauthorize(t *tunnel.Tunnel, node authz.Identity, ids []hooks.ID) (revoked []hooks.ID, reason string) {
 	for _, id := range ids {
 		h, ok := l.cfg.Hooks.Get(id)
 		if !ok {

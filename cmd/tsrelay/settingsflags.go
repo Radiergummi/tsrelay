@@ -71,7 +71,9 @@ func enumVar[T ~string](fs *pflag.FlagSet, name string, value T, usage string, a
 
 func (f *enumFlag) String() string { return f.value }
 
+// Set takes s in any case: the allowed values are all lowercase.
 func (f *enumFlag) Set(s string) error {
+	s = strings.ToLower(s)
 	if !slices.Contains(f.allowed, s) {
 		return fmt.Errorf("must be %s", f.choices())
 	}
@@ -80,17 +82,7 @@ func (f *enumFlag) Set(s string) error {
 }
 
 // choices lists the allowed values: "a" or "b", or "a", "b" or "c".
-func (f *enumFlag) choices() string {
-	quoted := make([]string, len(f.allowed))
-	for i, a := range f.allowed {
-		quoted[i] = strconv.Quote(a)
-	}
-	last := len(quoted) - 1
-	if last == 0 {
-		return quoted[0]
-	}
-	return strings.Join(quoted[:last], ", ") + " or " + quoted[last]
-}
+func (f *enumFlag) choices() string { return hooks.Choices(f.allowed) }
 
 func (f *enumFlag) Type() string { return "enum" }
 

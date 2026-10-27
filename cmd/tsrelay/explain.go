@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/client"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
@@ -112,15 +113,22 @@ func (c *cli) explain(err error) *cliError {
 	var p *problem.Problem
 	var ue *client.UnreachableError
 	var nh *client.NoHookError
-	var hm *client.HookMismatchError
+	var cm *client.ChannelMismatchError
+	var em *client.EphemeralMismatchError
 	switch {
 	case errors.As(err, &ce):
 		return ce
 	case errors.As(err, &nh):
 		return &cliError{Title: fmt.Sprintf("No hook %q", nh.Ref), Reason: "You have no hook with that ID or path.",
 			Fixes: []string{"tsrelay hooks list"}, Code: "no_such_hook", err: err}
-	case errors.As(err, &hm):
-		return explainMismatch(hm)
+	case errors.As(err, &cm):
+		return explainMismatch(cm, cm.Hook, fmt.Sprintf("Your hook %q is in channel %q, not %q", cm.Hook.Path, cm.Hook.Channel, cm.Want),
+			"tsrelay http reuses the hook at this path, and won't move it to another channel on its own.",
+			fmt.Sprintf("tsrelay hooks update %s --channel %s", cm.Hook.Path, cm.Want))
+	case errors.As(err, &em):
+		return explainMismatch(em, em.Hook, fmt.Sprintf("Your hook %q is ephemeral", em.Hook.Path),
+			"--ephemeral=false asks for a hook that outlives tsrelay, and tsrelay http won't change the hook it reuses on its own.",
+			fmt.Sprintf("tsrelay hooks update %s --ephemeral=false", em.Hook.Path))
 	case errors.As(err, &ue):
 		return c.explainUnreachable(ue)
 	case errors.As(err, &p):
@@ -137,17 +145,11 @@ func (c *cli) explain(err error) *cliError {
 	return ce
 }
 
-// explainMismatch explains why tsrelay http won't reuse the hook at a path.
-func explainMismatch(hm *client.HookMismatchError) *cliError {
-	h := hm.Hook
-	if hm.Field == "channel" {
-		return &cliError{Title: fmt.Sprintf("Your hook %q is in channel %q, not %q", h.Path, h.Channel, hm.Want), Code: "hook_mismatch", err: hm,
-			Reason: "tsrelay http reuses the hook at this path, and won't move it to another channel on its own.",
-			Fixes:  []string{fmt.Sprintf("tsrelay hooks update %s --channel %s", h.Path, hm.Want), "tsrelay hooks delete " + h.Path, "Pick another path with --path"}}
-	}
-	return &cliError{Title: fmt.Sprintf("Your hook %q is ephemeral", h.Path), Code: "hook_mismatch", err: hm,
-		Reason: "--ephemeral=false asks for a hook that outlives tsrelay, and tsrelay http won't change the hook it reuses on its own.",
-		Fixes:  []string{fmt.Sprintf("tsrelay hooks update %s --ephemeral=false", h.Path), "tsrelay hooks delete " + h.Path, "Pick another path with --path"}}
+// explainMismatch explains why tsrelay http won't reuse hook, the one at
+// its path; update is the command that makes it fit.
+func explainMismatch(err error, hook api.Hook, title, reason, update string) *cliError {
+	return &cliError{Title: title, Reason: reason, Code: "hook_mismatch", err: err,
+		Fixes: []string{update, "tsrelay hooks delete " + hook.Path, "Pick another path with --path"}}
 }
 
 // explainProblem explains a relay refusal; the relay's detail says what
