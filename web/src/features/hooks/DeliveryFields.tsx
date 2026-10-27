@@ -3,6 +3,7 @@ import type { Me } from "@/api/schemas";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
+  chip,
   RadioCard,
   RadioChip,
   RadioGroup,
@@ -11,6 +12,7 @@ import {
 } from "@/components/ui/radio-group";
 import { humanDuration, parseDuration } from "@/lib/duration";
 import { formatSize } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { Field } from "./Field";
 import type { FieldName, FormValues } from "./formRequest";
 
@@ -392,7 +394,10 @@ function BodySizeSetting({
             <button
               type="button"
               aria-pressed={raw === "0"}
-              className="inline-flex h-7 items-center rounded-full border border-input px-2.5 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+              className={cn(
+                chip,
+                "aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground",
+              )}
               onClick={() => {
                 setText("");
                 form.set(field)(raw === "0" ? "" : "0");

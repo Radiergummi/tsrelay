@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Ref } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type Ref } from "react";
 import type { Summary } from "@/api/schemas";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -34,17 +34,14 @@ export function FilterBar({
       setPath(filters.path);
     }
   }, [filters.path]);
-  const latest = useRef({ filters, onChange });
-  // updates every render so the debounced write below always uses the
-  // latest filters/onChange, without resubscribing the timeout effect.
-  // oxlint-disable-next-line react/refs
-  latest.current = { filters, onChange };
+  // The debounced write uses the filters and onChange current when it fires.
+  const write = useEffectEvent((p: string) => {
+    synced.current = p;
+    onChange({ ...filters, path: p });
+  });
   useEffect(() => {
     if (path === synced.current) return;
-    const t = setTimeout(() => {
-      synced.current = path;
-      latest.current.onChange({ ...latest.current.filters, path });
-    }, pathWriteDelay);
+    const t = setTimeout(() => write(path), pathWriteDelay);
     return () => clearTimeout(t);
   }, [path]);
   return (

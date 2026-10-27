@@ -1,4 +1,5 @@
 import { Input } from "@/components/ui/input";
+import { chip } from "@/components/ui/radio-group";
 import { humanSpan, parseDuration } from "@/lib/duration";
 import { fromLocalInput, localInputValue, rfc3339 } from "@/lib/format";
 import type { FieldControl } from "./Field";
@@ -37,8 +38,6 @@ export function ExpiryField({
   ]
     .filter(Boolean)
     .join(" · ");
-  const chip =
-    "inline-flex h-7 items-center rounded-full border border-input px-2.5 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50";
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">

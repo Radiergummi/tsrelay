@@ -32,7 +32,7 @@ export function HookHeader({
         <p className="text-muted-foreground">
           {hook.ephemeral ? "Ephemeral" : "Persistent"}
           {hook.public && (
-            <span className="ml-1 rounded-sm bg-amber-100 px-1.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+            <span className="ml-1 rounded-sm bg-warning px-1.5 text-xs text-warning-foreground">
               Public
             </span>
           )}{" "}

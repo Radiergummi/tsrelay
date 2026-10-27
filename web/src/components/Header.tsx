@@ -9,7 +9,7 @@ const navClass = (isActive: boolean) =>
 export function Header({ me }: { me: Me }) {
   return (
     <header className="border-b">
-      <div className="mx-auto flex h-12 max-w-[1400px] items-center gap-6 px-4 sm:px-6">
+      <div className="mx-auto flex h-12 max-w-page items-center gap-6 px-4 sm:px-6">
         <Link to={isReceiver(me) ? "/hooks" : "/admin"} className="font-medium tracking-tight">
           tsrelay
         </Link>

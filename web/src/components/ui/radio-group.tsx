@@ -7,6 +7,12 @@ import { cn } from "@/lib/utils";
 
 const focus = "outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
 
+/** chip is RadioChip's pill shape, for buttons that sit among chips. */
+const chip = cn(
+  "inline-flex h-7 items-center rounded-full border border-input px-2.5 text-sm hover:bg-muted",
+  focus,
+);
+
 function RadioGroup({ className, ...props }: RadioGroupPrimitive.Props<string>) {
   return (
     <RadioGroupPrimitive
@@ -55,8 +61,8 @@ function RadioChip({ className, inherited, ...props }: Radio.Root.Props & { inhe
       data-slot="radio-chip"
       data-inherited={inherited || undefined}
       className={cn(
-        "inline-flex h-7 cursor-default items-center gap-1 rounded-full border border-input px-2.5 text-sm whitespace-nowrap select-none hover:bg-muted data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground data-inherited:data-checked:border-dashed data-inherited:data-checked:border-foreground/40 data-inherited:data-checked:bg-muted data-inherited:data-checked:text-foreground",
-        focus,
+        chip,
+        "cursor-default gap-1 whitespace-nowrap select-none data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground data-inherited:data-checked:border-dashed data-inherited:data-checked:border-foreground/40 data-inherited:data-checked:bg-muted data-inherited:data-checked:text-foreground",
         className,
       )}
       {...props}
@@ -79,4 +85,4 @@ function RadioCard({ className, ...props }: Radio.Root.Props) {
   );
 }
 
-export { RadioCard, RadioChip, RadioGroup, Segment, SegmentedControl };
+export { chip, RadioCard, RadioChip, RadioGroup, Segment, SegmentedControl };
