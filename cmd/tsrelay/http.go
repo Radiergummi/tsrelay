@@ -57,7 +57,7 @@ func newHTTPCmd(c *cli) *cobra.Command {
 	public := fs.Bool("public", false, "make the hook reachable from the internet through the relay's Funnel")
 	settings := registerHookSettingFlags(fs, false)
 	cmd.RegisterFlagCompletionFunc("channel", c.completeChannels)
-	completeSettingFlags(cmd)
+	completeEnums(cmd)
 	cmd.Long += " Settings flags apply only when the hook is created."
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()

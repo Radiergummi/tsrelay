@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -200,7 +201,7 @@ func (c *cli) explainUnreachable(ue *client.UnreachableError) *cliError {
 		return &cliError{Title: "The relay's certificate isn't trusted", Code: "relay_tls", err: ue,
 			Reason: fmt.Sprintf("Verifying %s (from %s) failed: %s.", ue.Base, from, cv.Err),
 			Fixes:  []string{"Check that the URL names the relay's tailnet host", relayFix}}
-	case strings.Contains(cause.Error(), "server gave HTTP response to HTTPS client"):
+	case errors.Is(cause, http.ErrSchemeMismatch):
 		return &cliError{Title: "The relay doesn't speak HTTPS", Code: "relay_tls", err: ue,
 			Reason: fmt.Sprintf("%s answered in plain HTTP (the URL came from %s); it may run with --tls=false.", ue.Base, from),
 			Fixes:  []string{cmdPath + " --relay " + strings.Replace(ue.Base, "https://", "http://", 1)}}

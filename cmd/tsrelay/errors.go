@@ -168,8 +168,16 @@ func flagSample(f *pflag.Flag) string {
 	return ""
 }
 
-// flagFixes suggests cmd with a sample value for f, then its help.
+// flagFixes suggests cmd with a sample value for f, then its help, or cmd
+// with each value of an enum flag.
 func flagFixes(cmd *cobra.Command, f *pflag.Flag) []string {
+	if e, ok := f.Value.(*enumFlag); ok {
+		fixes := make([]string, len(e.allowed))
+		for i, v := range e.allowed {
+			fixes[i] = cmd.CommandPath() + " --" + f.Name + " " + v
+		}
+		return fixes
+	}
 	help := cmd.CommandPath() + " --help"
 	if s := flagSample(f); s != "" {
 		return []string{cmd.CommandPath() + " --" + f.Name + s, help}
@@ -215,6 +223,8 @@ func (c *cli) flagError(cmd *cobra.Command, err error) error {
 			reason = "--" + f.Name + " takes a duration such as 30s, 5m or 1h."
 		case "int", "int64":
 			reason = "--" + f.Name + " takes a whole number."
+		case "enum":
+			reason = "--" + f.Name + " takes " + f.Value.(*enumFlag).choices() + "."
 		default:
 			reason = sentence(errors.Unwrap(iv).Error())
 		}

@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/netip"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -134,5 +135,21 @@ func TestServeRejectsMeaninglessValues(t *testing.T) {
 		if code, out := serveExit(t, arg); code != 2 || !strings.Contains(out, want) {
 			t.Errorf("%s: exit %d, stderr %q", arg, code, out)
 		}
+	}
+}
+
+// A relative XDG_STATE_HOME is invalid (XDG Base Directory spec) and
+// ignored, by serve as by the CLI's own state.
+func TestDefaultStateDirIgnoresRelativeXDG(t *testing.T) {
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_STATE_HOME", "relative")
+	if fileExists("/.dockerenv") {
+		t.Skip("in a container, the state dir is /var/lib/tsrelay")
+	}
+	if got, want := defaultStateDir(), filepath.Join(home, ".local", "state", "tsrelay"); got != want {
+		t.Fatalf("defaultStateDir() = %q, want %q", got, want)
 	}
 }

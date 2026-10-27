@@ -64,8 +64,6 @@ func TestPolicyFlagErrors(t *testing.T) {
 		"hook-response-timeout-max": {"--hook-response-timeout-max=1m"}, // below the 2m default
 		"hook-idle-timeout-default": {"--hook-idle-timeout-default=-1s"},
 		"hook-hold-timeout-max":     {"--hook-hold-timeout-max=-1s"},
-		"attachPolicy":              {"--hook-attach-policy-default=steal"},
-		"hostHeader":                {"--hook-host-header-default=keep"},
 		// An unlimited default body size is not allowed under a maximum.
 		"hook-max-body-bytes-default": {"--hook-max-body-bytes-max=1024"},
 		"hook-max-body-bytes-max":     {"--hook-max-body-bytes-max=-1"},
@@ -78,8 +76,10 @@ func TestPolicyFlagErrors(t *testing.T) {
 	fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
 	fs.SetOutput(new(nopWriter))
 	registerPolicyFlags(fs)
-	if err := fs.Parse([]string{"--hook-rate-limit-default=fast"}); err == nil {
-		t.Error("an unparseable rate limit must fail at parse time")
+	for _, arg := range []string{"--hook-rate-limit-default=fast", "--hook-attach-policy-default=steal", "--hook-host-header-default=keep"} {
+		if err := fs.Parse([]string{arg}); err == nil {
+			t.Errorf("%s must fail at parse time", arg)
+		}
 	}
 }
 

@@ -98,7 +98,7 @@ func newHooksCreateCmd(c *cli) *cobra.Command {
 	public := fs.Bool("public", false, "make the hook reachable from the internet through the relay's Funnel")
 	settings := registerHookSettingFlags(fs, false)
 	cmd.RegisterFlagCompletionFunc("channel", c.completeChannels)
-	completeSettingFlags(cmd)
+	completeEnums(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if *expiresIn < 0 {
@@ -143,7 +143,7 @@ func newHooksUpdateCmd(c *cli) *cobra.Command {
 	public := fs.Bool("public", false, "make the hook reachable from the internet, or private again with --public=false")
 	settings := registerHookSettingFlags(fs, true)
 	cmd.RegisterFlagCompletionFunc("channel", c.completeChannels)
-	completeSettingFlags(cmd)
+	completeEnums(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		c.hook = args[0]
