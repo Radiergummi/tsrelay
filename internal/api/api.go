@@ -35,9 +35,19 @@ import (
 	"tailscale.com/tailcfg"
 )
 
+// HookReader is what the API reads of the hook store; a *hooks.Manager.
+type HookReader interface {
+	Get(id hooks.ID) (hooks.Hook, bool)
+	List(user tailcfg.UserID) []hooks.Hook
+	ListAll() []hooks.Hook
+	Policy() hooks.Policy
+	Effective(h hooks.Hook) hooks.Effective
+	Slug(login string) (string, error)
+}
+
 type API struct {
 	Identifier    identify.Identifier
-	Hooks         *hooks.Manager
+	Hooks         HookReader // changes go through Tunnels, which announces them
 	Tunnels       *lifecycle.Lifecycle
 	Inspect       *inspect.Inspector
 	Relay         *relay.Handler // delivers replays and test requests
@@ -275,7 +285,7 @@ func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 	}
 	create := a.Tunnels.Create
 	if dry {
-		create = a.Hooks.CheckCreate
+		create = a.Tunnels.CheckCreate
 	}
 	h, err := create(r.Context(), id, req)
 	var ve hooks.ValidationError
@@ -331,7 +341,7 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 	}
 	update := a.Tunnels.Update
 	if dry {
-		update = a.Hooks.CheckUpdate
+		update = a.Tunnels.CheckUpdate
 	}
 	h, _, err := update(r.Context(), id, hooks.ID(r.PathValue("id")), req)
 	var ve hooks.ValidationError

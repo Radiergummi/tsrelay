@@ -106,6 +106,18 @@ func (l *Lifecycle) Create(ctx context.Context, actor authz.Identity, req hooks.
 	return h, nil
 }
 
+// CheckCreate validates req as Create would, without creating or
+// announcing anything: the API's dry run.
+func (l *Lifecycle) CheckCreate(ctx context.Context, actor authz.Identity, req hooks.CreateRequest) (hooks.Hook, error) {
+	return l.cfg.Hooks.CheckCreate(ctx, actor, req)
+}
+
+// CheckUpdate validates req as Update would, without changing or
+// announcing anything: the API's dry run.
+func (l *Lifecycle) CheckUpdate(ctx context.Context, actor authz.Identity, id hooks.ID, req hooks.UpdateRequest) (hooks.Hook, []string, error) {
+	return l.cfg.Hooks.CheckUpdate(ctx, actor, id, req)
+}
+
 // Update applies req to the hook id on behalf of actor, as
 // hooks.Manager.Update does, and announces the change: in the audit log, as
 // a hook event, and to the tunnel serving the hook. An update that changes

@@ -56,11 +56,19 @@ var (
 	errShuttingDown  = errors.New("the relay is shutting down")
 )
 
+// HookReader is what the relay reads of the hook store; a *hooks.Manager.
+type HookReader interface {
+	Get(id hooks.ID) (hooks.Hook, bool)
+	Route(slug, rest string) (hooks.Hook, int, bool)
+	RoutePublic(token string) (hooks.Hook, bool)
+	Effective(h hooks.Hook) hooks.Effective
+}
+
 // Handler serves callbacks. Each call uses the effective settings of its
 // hook at the time the call arrives, so updates apply from the next call.
 type Handler struct {
 	Identifier identify.Identifier
-	Hooks      *hooks.Manager
+	Hooks      HookReader
 	Tunnels    *lifecycle.Lifecycle
 	Audit      *audit.Logger
 	HoldQueue  int                // calls per hook that may wait for a tunnel; 0 means DefaultHoldQueue
