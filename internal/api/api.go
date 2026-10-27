@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -469,6 +470,23 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// InspectTarget is the page of the call an inspect link the CLI printed
+// names, and false if the call is gone or the caller may not see it.
+func (a *API) InspectTarget(r *http.Request) (string, bool) {
+	id, err := a.Identifier.Identify(r.Context(), r.RemoteAddr)
+	if err != nil {
+		return "", false
+	}
+	c, ok := a.Inspect.Get(r.PathValue("callID"))
+	if !ok {
+		return "", false
+	}
+	if _, _, visible := a.VisibleHook(c.HookID, id); !visible {
+		return "", false
+	}
+	return "/hooks/" + url.PathEscape(string(c.HookID)) + "/calls/" + url.PathEscape(c.ID), true
 }
 
 // notFound answers 404 with detail, such as "hook not found".

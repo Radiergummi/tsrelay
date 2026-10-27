@@ -99,11 +99,11 @@ func New(cfg Config, id identify.Identifier, mgr *hooks.Manager, al *audit.Logge
 		}
 		a.Tracer = s.tel.Tracer.Tracer(telemetry.ScopeName)
 	}
-	u := ui.New(a, web.Dist)
+	u := ui.New(web.Dist)
 	a.HTML = u.Index()
 	s.router = api.NewRouter(api.RouterConfig{
 		API:           a,
-		Inspect:       u.Inspect(),
+		Inspect:       u.Inspect(a.InspectTarget),
 		Fallback:      u.Fallback(),
 		ReleaseAssets: cfg.ReleaseAssets,
 		AllowedHosts:  cfg.AllowedHosts,
