@@ -15,6 +15,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"github.com/Radiergummi/tsrelay/internal/tunnel/tunneltest"
 )
 
 // fakeRelay accepts tunnels; reject, if set, answers the first N attempts.
@@ -49,9 +50,13 @@ func newFakeRelay(t *testing.T, rejectStatus int, rejections int32) *fakeRelay {
 	return f
 }
 
+// client serves h1, and like its owner in the CLI, drops the hooks the
+// relay takes away.
 func (f *fakeRelay) client(states chan<- bool) *tunnel.Client {
+	list := tunneltest.NewHooks("h1")
 	return &tunnel.Client{
-		Hooks: []string{"h1"},
+		List:      list.List,
+		OnControl: list.Follow,
 		Dial: func(ctx context.Context, hooks []string, _ tunnel.Attach) (net.Conn, error) {
 			return tunnel.Dial(ctx, tunnel.NewHTTPClient(nil), f.srv.URL+"/?hook="+hooks[0])
 		},
@@ -108,7 +113,7 @@ func TestClientReconnects(t *testing.T) {
 func TestClientBacksOffAfterInstantDrops(t *testing.T) {
 	var dials atomic.Int32
 	c := &tunnel.Client{
-		Hooks: []string{"h1"},
+		List: func() []string { return []string{"h1"} },
 		Dial: func(context.Context, []string, tunnel.Attach) (net.Conn, error) {
 			dials.Add(1)
 			conn, relay := net.Pipe()
@@ -196,13 +201,14 @@ func TestClientSessionAndResume(t *testing.T) {
 	}
 }
 
-// Revoked hooks are dropped like replaced ones and reported through
-// OnControl, so the CLI stops instead of reattaching them.
+// Revoked hooks are reported through OnControl, so the owner drops them
+// and the client stops instead of reattaching them.
 func TestClientDropsRevokedHooks(t *testing.T) {
 	f := newFakeRelay(t, 0, 0)
 	c := f.client(make(chan bool, 16))
 	controls := make(chan tunnel.Control, 1)
-	c.OnControl = func(ctl tunnel.Control) { controls <- ctl }
+	drop := c.OnControl
+	c.OnControl = func(ctl tunnel.Control) { drop(ctl); controls <- ctl }
 	_, done := run(t, c)
 	tun := recv(t, f.tunnels)
 	if err := tun.Send(context.Background(), tunnel.Control{Type: tunnel.ControlRevoked, Hooks: []tunnel.HookInfo{{ID: "h1"}}}); err != nil {
@@ -225,7 +231,6 @@ func TestClientList(t *testing.T) {
 	c := f.client(make(chan bool, 16))
 	var mu sync.Mutex
 	list := []string{"h1"}
-	c.Hooks = nil
 	c.List = func() []string { mu.Lock(); defer mu.Unlock(); return slices.Clone(list) }
 	dials := make(chan []string, 4)
 	dial := c.Dial

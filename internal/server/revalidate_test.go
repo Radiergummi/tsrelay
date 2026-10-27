@@ -15,6 +15,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
+	"github.com/Radiergummi/tsrelay/internal/tunnel/tunneltest"
 )
 
 func receive[T any](t testing.TB, ch <-chan T) T {
@@ -35,13 +36,14 @@ func (e *env) startClient(hookIDs ...string) (controls chan tunnel.Control, done
 	controls, done = make(chan tunnel.Control, 8), make(chan error, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	e.t.Cleanup(cancel)
+	list := tunneltest.NewHooks(hookIDs...)
 	tc := &tunnel.Client{
-		Hooks: hookIDs,
+		List: list.List,
 		Dial: func(ctx context.Context, hs []string, a tunnel.Attach) (net.Conn, error) {
 			return tunnel.Dial(ctx, e.api.HTTP, e.api.TunnelURL(a, hs...))
 		},
 		Handler:    http.NotFoundHandler(),
-		OnControl:  func(c tunnel.Control) { controls <- c },
+		OnControl:  func(c tunnel.Control) { list.Follow(c); controls <- c },
 		MinBackoff: time.Millisecond,
 	}
 	go func() { done <- tc.Run(ctx) }()

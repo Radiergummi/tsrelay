@@ -7,8 +7,6 @@ import (
 	"math/rand/v2"
 	"net"
 	"net/http"
-	"slices"
-	"sync"
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/ids"
@@ -22,13 +20,11 @@ var ErrNoHooks = errors.New("tunnel: no hooks left to serve (taken over by anoth
 var errTunnelLost = errors.New("tunnel lost")
 
 // Client keeps a tunnel attached, redialing with exponential backoff and
-// full jitter. Hooks the relay reports as replaced, revoked or deleted are
-// dropped from later attach attempts.
+// full jitter.
 type Client struct {
-	Hooks []string
-	// List, if set, is the hooks to dial instead of Hooks, owned by the
-	// caller: it is asked before every dial, and the caller follows the
-	// control messages that take hooks away (OnControl).
+	// List is the hooks to dial, owned by the caller: it is asked before
+	// every dial, and the caller follows the control messages that take
+	// hooks away (OnControl). Run ends once it is empty.
 	List func() []string
 	// Target is the local target reported to the relay for display.
 	Target     string
@@ -38,23 +34,17 @@ type Client struct {
 	OnState    func(connected bool, err error)
 	MinBackoff time.Duration
 	MaxBackoff time.Duration
-
-	mu    sync.Mutex
-	hooks []string
 }
 
 // Run returns nil when ctx is done, ErrNoHooks when no hooks remain, or the
 // relay's 4xx refusal, which retrying would not fix.
 func (c *Client) Run(ctx context.Context) error {
-	c.mu.Lock()
-	c.hooks = slices.Clone(c.Hooks)
-	c.mu.Unlock()
 	minB := cmp.Or(c.MinBackoff, 250*time.Millisecond)
 	maxB := cmp.Or(c.MaxBackoff, 30*time.Second)
 	backoff := minB
 	attach := Attach{Session: ids.New("s_"), Target: c.Target}
 	for {
-		hooks := c.current()
+		hooks := c.List()
 		if len(hooks) == 0 {
 			return ErrNoHooks
 		}
@@ -63,7 +53,7 @@ func (c *Client) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
-			if len(c.current()) == 0 { // Dial removed the last hook
+			if len(c.List()) == 0 { // Dial removed the last hook
 				return ErrNoHooks
 			}
 			var p *problem.Problem
@@ -80,11 +70,11 @@ func (c *Client) Run(ctx context.Context) error {
 		attach.Resume = true
 		c.state(true, nil)
 		served := time.Now()
-		Serve(ctx, conn, c.Handler, c.handleControl)
+		Serve(ctx, conn, c.Handler, c.OnControl)
 		if ctx.Err() != nil {
 			return nil
 		}
-		if len(c.current()) == 0 {
+		if len(c.List()) == 0 {
 			return ErrNoHooks
 		}
 		c.state(false, errTunnelLost)
@@ -98,28 +88,6 @@ func (c *Client) Run(ctx context.Context) error {
 			return nil
 		}
 		backoff = min(backoff*2, maxB)
-	}
-}
-
-func (c *Client) current() []string {
-	if c.List != nil {
-		return c.List()
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return slices.Clone(c.hooks)
-}
-
-func (c *Client) handleControl(ctl Control) {
-	if c.List == nil && (ctl.Type == ControlReplaced || ctl.Type == ControlRevoked || ctl.Type == ControlHookDeleted) {
-		c.mu.Lock()
-		for _, h := range ctl.Hooks {
-			c.hooks = slices.DeleteFunc(c.hooks, func(id string) bool { return id == h.ID })
-		}
-		c.mu.Unlock()
-	}
-	if c.OnControl != nil {
-		c.OnControl(ctl)
 	}
 }
 
