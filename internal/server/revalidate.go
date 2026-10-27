@@ -4,9 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/hooks"
-	"github.com/Radiergummi/tsrelay/internal/lifecycle"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
@@ -69,21 +67,5 @@ func (s *Server) check(ctx context.Context, t *tunnel.Tunnel, hookIDs []hooks.ID
 		delete(s.identifyFailures, t)
 		return hookIDs, "the node could not be identified"
 	}
-	if id.IsUser() && id.UserID == t.Owner.UserID {
-		t.SetGrants(id.Grants)
-	}
-	var revoked []hooks.ID
-	var reason string
-	for _, hid := range hookIDs {
-		// A deleted hook is skipped: its deletion detaches it.
-		h, ok := s.hooks.Get(hid)
-		if !ok {
-			continue
-		}
-		if err := access.Serve(id, h.Access()); err != nil {
-			revoked = append(revoked, hid)
-			reason = lifecycle.RevokeReason(err)
-		}
-	}
-	return revoked, reason
+	return s.tunnels.Reauthorize(t, id, hookIDs)
 }

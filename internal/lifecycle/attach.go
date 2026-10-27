@@ -145,7 +145,7 @@ func (tk *Ticket) Attach(ctx context.Context, t *tunnel.Tunnel, onEnd func(lifet
 		}
 		if err := access.Serve(tk.owner, cur.Access()); err != nil {
 			revoked = append(revoked, h.ID)
-			reason = RevokeReason(err)
+			reason = revokeReason(err)
 			continue
 		}
 		live = append(live, h.ID)

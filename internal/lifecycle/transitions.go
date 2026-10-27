@@ -174,22 +174,36 @@ func (l *Lifecycle) recheck(ctx context.Context, id hooks.ID) {
 	if l.cfg.Identify != nil {
 		if got, err := l.cfg.Identify(ctx, t.RemoteAddr); err == nil {
 			node = got
-			if got.IsUser() && got.UserID == t.Owner.UserID {
-				t.SetGrants(got.Grants)
-			}
 		}
 	}
-	h, ok := l.cfg.Hooks.Get(id)
-	if !ok {
-		return // deleted meanwhile; the delete detached it
-	}
-	if err := access.Serve(node, h.Access()); err != nil {
-		l.Revoke(ctx, t, []hooks.ID{id}, RevokeReason(err))
+	if revoked, reason := l.Reauthorize(t, node, []hooks.ID{id}); len(revoked) > 0 {
+		l.Revoke(ctx, t, revoked, reason)
 	}
 }
 
-// RevokeReason explains an access.Serve refusal in a revocation.
-func RevokeReason(err error) string {
+// Reauthorize checks ids, served by t, against node, t's node as just
+// identified: it records node's grants on t if node still belongs to t's
+// owner, and returns those of ids node may no longer serve, and why. A
+// deleted hook is skipped: its deletion detaches it. The caller revokes.
+func (l *Lifecycle) Reauthorize(t *tunnel.Tunnel, node authz.Identity, ids []hooks.ID) (revoked []hooks.ID, reason string) {
+	if node.IsUser() && node.UserID == t.Owner.UserID {
+		t.SetGrants(node.Grants)
+	}
+	for _, id := range ids {
+		h, ok := l.cfg.Hooks.Get(id)
+		if !ok {
+			continue
+		}
+		if err := access.Serve(node, h.Access()); err != nil {
+			revoked = append(revoked, id)
+			reason = revokeReason(err)
+		}
+	}
+	return revoked, reason
+}
+
+// revokeReason explains an access.Serve refusal in a revocation.
+func revokeReason(err error) string {
 	switch {
 	case errors.Is(err, access.ErrNotUser):
 		return "the node no longer belongs to a user"
