@@ -95,13 +95,11 @@ type Handler struct {
 // Held returns how many calls are currently waiting for a tunnel.
 func (h *Handler) Held() int64 { return h.heldTotal.Load() }
 
-type publicKey struct{}
-
 // ServePublic serves a call that arrived from the internet through Funnel
 // at /+{token}/…: no sender is identified, and the hook's token alone
 // routes the call. r.RemoteAddr must be the internet client's address.
 func (h *Handler) ServePublic(w http.ResponseWriter, r *http.Request) {
-	h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), publicKey{}, true)))
+	h.serve(w, r, true, nil)
 }
 
 // maxPathBytes caps a call's escaped path, as servers cap a request line,
@@ -109,13 +107,17 @@ func (h *Handler) ServePublic(w http.ResponseWriter, r *http.Request) {
 // keep megabytes per call.
 const maxPathBytes = 8 << 10
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) { h.serve(w, r, false, nil) }
+
+// serve serves a call: from the internet if public, or built by Inject if
+// inj is set.
+func (h *Handler) serve(w http.ResponseWriter, r *http.Request, public bool, inj *injection) {
 	if len(r.URL.EscapedPath()) > maxPathBytes {
 		problem.New(http.StatusRequestURITooLong, problem.PathTooLong,
 			fmt.Sprintf("the path is longer than %d bytes", maxPathBytes)).Write(w)
 		return
 	}
-	c := h.newCall(w, r)
+	c := h.newCall(w, r, public, inj)
 	defer c.end()
 	if err := c.deliver(); err != nil {
 		c.fail(err)
@@ -248,10 +250,6 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest, hook hooks.Hook, eff hooks.
 		proto = "https"
 	}
 	out.Header.Set("X-Forwarded-Proto", proto)
-	// Only the connection may say where a call came from: every
-	// X-Forwarded-* a sender supplied is gone above.
-	out.Header.Del("X-Real-Ip")
-	out.Header.Del("Forwarded")
 	stripTsrelay(out.Header)
 	stripTsrelay(out.Trailer)
 	if eff.HostHeader == hooks.HostRewrite {

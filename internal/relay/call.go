@@ -71,11 +71,10 @@ var errNoHook = refuse(http.StatusNotFound, problem.HookNotFound, "no hook at th
 // errSenderGone ends a call whose sender went away: nobody is left to answer.
 var errSenderGone = errors.New("the sender went away")
 
-func (h *Handler) newCall(w http.ResponseWriter, r *http.Request) *call {
+func (h *Handler) newCall(w http.ResponseWriter, r *http.Request, public bool, inj *injection) *call {
 	c := &call{h: h, start: time.Now(), id: ids.New("c_"), kind: inspect.KindSender, parent: r.Context()}
 	w.Header().Set(HeaderCallID, c.id)
-	c.inj, _ = r.Context().Value(injectKey{}).(*injection) // nil for sender calls
-	c.public = r.Context().Value(publicKey{}) != nil       // through ServePublic
+	c.inj, c.public = inj, public
 	c.internet = c.public || c.inj != nil && c.inj.public
 	c.logPath = r.URL.Path
 	if c.public {
@@ -190,7 +189,7 @@ func (c *call) route() error {
 	// hook.
 	refused := c.inj == nil && !c.public && !access.Send(c.sender, hook.Access())
 	c.eff = c.h.effective(hook, c.public)
-	c.record = c.h.startRecord(c.r, c.id, c.start, c.kind, c.replayOf, hook, c.sender, refused, c.internet, 1+segs, c.eff.Capture)
+	c.record = c.startRecord(refused)
 	c.trace.event("routed")
 	if c.record != nil {
 		c.body.capture, c.rec.capture = c.record.reqBuf, c.record.respBuf

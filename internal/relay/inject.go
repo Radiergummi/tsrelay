@@ -17,9 +17,7 @@ import (
 // deleted, or its path moved, before the call was routed.
 var ErrNotRouted = errors.New("relay: the call did not reach the hook")
 
-type injectKey struct{}
-
-// injection marks a request built by Inject. ServeHTTP delivers it without
+// injection marks a request built by Inject. serve delivers it without
 // identifying or authorizing a sender, and fills in callID.
 type injection struct {
 	hook     hooks.ID
@@ -67,7 +65,7 @@ func (h *Handler) Inject(ctx context.Context, in Injection) (inspect.Call, error
 	}
 	u.RawQuery = in.Query
 	inj := &injection{hook: in.Hook.ID, kind: in.Kind, replayOf: in.ReplayOf, sender: in.Sender, public: in.Public}
-	req, err := http.NewRequestWithContext(context.WithValue(ctx, injectKey{}, inj), in.Method, u.String(), bytes.NewReader(in.Body))
+	req, err := http.NewRequestWithContext(ctx, in.Method, u.String(), bytes.NewReader(in.Body))
 	if err != nil {
 		return inspect.Call{}, err
 	}
@@ -76,7 +74,7 @@ func (h *Handler) Inject(ctx context.Context, in Injection) (inspect.Call, error
 		req.Header = http.Header{}
 	}
 	req.Host, req.RemoteAddr, req.TLS = in.From.Host, in.From.RemoteAddr, in.From.TLS
-	serveInjected(h, &discard{header: http.Header{}}, req)
+	serveInjected(h, &discard{header: http.Header{}}, req, inj)
 	c, ok := h.Inspect.Get(inj.callID)
 	if !ok {
 		return inspect.Call{}, ErrNotRouted
@@ -84,18 +82,18 @@ func (h *Handler) Inject(ctx context.Context, in Injection) (inspect.Call, error
 	return c, nil
 }
 
-// serveInjected runs ServeHTTP and swallows exactly http.ErrAbortHandler: a
+// serveInjected serves r as inj and swallows exactly http.ErrAbortHandler: a
 // tunnel that fails mid-response makes the reverse proxy panic with it
 // (ctx carries http.ServerContextKey, as a real call's does), but the
 // outcome is already recorded by then, so Inject must return the call
 // instead of the panic escaping into the API's own request handling.
-func serveInjected(h *Handler, w http.ResponseWriter, r *http.Request) {
+func serveInjected(h *Handler, w http.ResponseWriter, r *http.Request, inj *injection) {
 	defer func() {
 		if p := recover(); p != nil && p != http.ErrAbortHandler {
 			panic(p)
 		}
 	}()
-	h.ServeHTTP(w, r)
+	h.serve(w, r, false, inj)
 }
 
 // discard is the ResponseWriter of an injected call: the inspector records
