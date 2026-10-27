@@ -288,16 +288,14 @@ func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		create = a.Tunnels.CheckCreate
 	}
 	h, err := create(r.Context(), id, req)
-	var ve hooks.ValidationError
+	var ve problem.FieldErrors
 	switch {
 	case errors.Is(err, hooks.ErrForbidden):
 		a.Audit.Log(r.Context(), audit.AuthzDeny, audit.Actor(id), slog.String("action", "hook.create"), slog.String("reason", "no receiver role"))
 		problem.New(http.StatusForbidden, problem.Forbidden, "creating hooks requires the receiver role, and only users (not tagged nodes) can own hooks").Write(w)
 		return
 	case errors.As(err, &ve):
-		p := problem.New(http.StatusUnprocessableEntity, problem.Invalid, ve.Error())
-		p.Errors = ve
-		p.Write(w)
+		problem.InvalidFields(problem.Invalid, ve).Write(w)
 		return
 	case err != nil:
 		a.Audit.Slog().Error("hook.create failed", "error", err)
@@ -315,7 +313,7 @@ func (a *API) createHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 func (a *API) getHook(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 	h, _, ok := a.visibleHook(r, id)
 	if !ok {
-		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
+		notFound(w, "hook not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, a.HookJSON(h, id))
@@ -344,23 +342,17 @@ func (a *API) updateHook(w http.ResponseWriter, r *http.Request, id authz.Identi
 		update = a.Tunnels.CheckUpdate
 	}
 	h, _, err := update(r.Context(), id, hooks.ID(r.PathValue("id")), req)
-	var ve hooks.ValidationError
+	var ve problem.FieldErrors
 	switch {
 	case errors.Is(err, hooks.ErrNotFound):
-		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
+		notFound(w, "hook not found")
 		return
 	case errors.As(err, &ve):
-		p := problem.New(http.StatusUnprocessableEntity, problem.Invalid, ve.Error())
-		p.Errors = ve
-		p.Write(w)
+		problem.InvalidFields(problem.Invalid, ve).Write(w)
 		return
 	case err != nil:
 		a.Audit.Slog().Error("hook.update failed", "error", err)
 		problem.New(http.StatusInternalServerError, problem.Internal, "could not save the hook").Write(w)
-		return
-	}
-	if dry {
-		writeJSON(w, http.StatusOK, a.HookJSON(h, id))
 		return
 	}
 	writeJSON(w, http.StatusOK, a.HookJSON(h, id))
@@ -378,7 +370,7 @@ func (a *API) rotatePublicURL(w http.ResponseWriter, r *http.Request, id authz.I
 	h, err := a.Tunnels.RotatePublicToken(r.Context(), id, cur.ID)
 	switch {
 	case errors.Is(err, hooks.ErrNotFound):
-		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
+		notFound(w, "hook not found")
 		return
 	case errors.Is(err, hooks.ErrNotPublic):
 		problem.New(http.StatusConflict, problem.NotPublic, "the hook is not public; make it public first").Write(w)
@@ -449,7 +441,7 @@ func writeAccessError(w http.ResponseWriter, err error, what string) {
 		problem.New(http.StatusForbidden, problem.Forbidden, what).Write(w)
 		return
 	}
-	problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
+	notFound(w, "hook not found")
 }
 
 // HookJSON is h as the API shows it to viewer: URL, effective settings,
@@ -477,4 +469,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// notFound answers 404 with detail, such as "hook not found".
+func notFound(w http.ResponseWriter, detail string) {
+	problem.New(http.StatusNotFound, problem.NotFound, detail).Write(w)
 }

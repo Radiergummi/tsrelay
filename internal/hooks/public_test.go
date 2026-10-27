@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Radiergummi/tsrelay/internal/identify"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
 var (
@@ -52,7 +53,7 @@ func TestCreatePublic(t *testing.T) {
 func TestCreatePublicNeedsGrant(t *testing.T) {
 	m := newPublicManager(t)
 	_, err := m.Create(context.Background(), plainOwner, CreateRequest{Path: "cb", Public: true})
-	var ve ValidationError
+	var ve problem.FieldErrors
 	if !errors.As(err, &ve) || len(ve) != 1 || ve[0].Field != "public" {
 		t.Fatalf("err = %v, want a field error on public", err)
 	}
@@ -68,7 +69,7 @@ func TestPublicScopedToChannel(t *testing.T) {
 		t.Fatalf("public in dev: %v", err)
 	}
 	_, err := m.Create(ctx, devOnly, CreateRequest{Path: "b", Channel: "prod", Public: true})
-	var ve ValidationError
+	var ve problem.FieldErrors
 	if !errors.As(err, &ve) || len(ve) != 1 || ve[0].Field != "public" {
 		t.Fatalf("public in prod: err = %v, want a field error on public", err)
 	}
@@ -109,7 +110,7 @@ func TestUpdatePublicNeedsGrantAndValue(t *testing.T) {
 	ctx := context.Background()
 	h, _ := m.Create(ctx, plainOwner, CreateRequest{Path: "cb"})
 	_, _, err := m.Update(ctx, plainOwner, h.ID, UpdateRequest{Public: Opt[bool]{Set: true, Value: new(true)}})
-	var ve ValidationError
+	var ve problem.FieldErrors
 	if !errors.As(err, &ve) || ve[0].Field != "public" {
 		t.Fatalf("err = %v, want a field error on public", err)
 	}

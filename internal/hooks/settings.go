@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
 // Duration is a time.Duration that reads and writes JSON as "30s".
@@ -157,10 +159,10 @@ func (p Policy) Resolve(s Settings) Effective {
 }
 
 // Validate checks a hook's overrides against the policy's maxima.
-func (p Policy) Validate(s Settings) ValidationError {
-	var errs ValidationError
+func (p Policy) Validate(s Settings) problem.FieldErrors {
+	var errs problem.FieldErrors
 	add := func(field, format string, args ...any) {
-		errs = append(errs, FieldError{Field: "settings." + field, Message: fmt.Sprintf(format, args...)})
+		errs = append(errs, problem.FieldError{Field: "settings." + field, Message: fmt.Sprintf(format, args...)})
 	}
 	if v := s.AttachPolicy; v != nil && *v != AttachTakeover && *v != AttachReject {
 		add("attachPolicy", "must be %q or %q", AttachTakeover, AttachReject)

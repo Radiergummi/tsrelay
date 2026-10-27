@@ -10,6 +10,7 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"github.com/Radiergummi/tsrelay/internal/identify"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
 var (
@@ -28,9 +29,9 @@ func newManager(t *testing.T, dir string) *Manager {
 
 func fieldErr(t *testing.T, err error, field string) string {
 	t.Helper()
-	var ve ValidationError
+	var ve problem.FieldErrors
 	if !errors.As(err, &ve) {
-		t.Fatalf("err = %v (%T), want ValidationError", err, err)
+		t.Fatalf("err = %v (%T), want problem.FieldErrors", err, err)
 	}
 	for _, fe := range ve {
 		if fe.Field == field {

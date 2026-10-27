@@ -9,6 +9,7 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/authz"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
 // Opt is a JSON field of a partial update: absent leaves the value alone,
@@ -137,11 +138,11 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 		return Hook{}, nil, ErrNotFound
 	}
 	h := cur
-	var errs ValidationError
+	var errs problem.FieldErrors
 
 	if req.Path.Set {
 		if req.Path.Value == nil {
-			errs = append(errs, FieldError{"path", "cannot be null"})
+			errs = append(errs, problem.FieldError{Field: "path", Message: "cannot be null"})
 		} else {
 			h.Path = *req.Path.Value
 			errs = append(errs, validateHookPath(h.Path, m.ownedLocked(owner.UserID), id)...)
@@ -162,7 +163,7 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 	}
 	if req.Ephemeral.Set {
 		if req.Ephemeral.Value == nil {
-			errs = append(errs, FieldError{"ephemeral", "cannot be null"})
+			errs = append(errs, problem.FieldError{Field: "ephemeral", Message: "cannot be null"})
 		} else {
 			h.Ephemeral = *req.Ephemeral.Value
 		}
@@ -170,7 +171,7 @@ func (m *Manager) update(ctx context.Context, owner authz.Identity, id ID, req U
 	if req.Public.Set {
 		switch {
 		case req.Public.Value == nil:
-			errs = append(errs, FieldError{"public", "cannot be null"})
+			errs = append(errs, problem.FieldError{Field: "public", Message: "cannot be null"})
 		case *req.Public.Value && !cur.Public:
 			h.Public, h.PublicToken = true, newPublicToken()
 		case !*req.Public.Value:

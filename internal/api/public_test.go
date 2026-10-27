@@ -54,8 +54,8 @@ func TestPublicNeedsGrant(t *testing.T) {
 	var p problem.Problem
 	resp := e.call(moritz, "POST", "/hooks", map[string]any{"path": "cb", "public": true}, &p)
 	// p.Errors is `any` (problem.Problem carries arbitrary error detail), so
-	// decode it into the concrete shape hooks.ValidationError serializes as.
-	var errs hooks.ValidationError
+	// decode it into the concrete shape problem.FieldErrors serializes as.
+	var errs problem.FieldErrors
 	b, _ := json.Marshal(p.Errors)
 	_ = json.Unmarshal(b, &errs)
 	if resp.StatusCode != 422 || len(errs) != 1 || errs[0].Field != "public" {

@@ -17,6 +17,7 @@ import (
 	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/identify"
 	"github.com/Radiergummi/tsrelay/internal/inspect"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
 )
 
@@ -289,7 +290,7 @@ func TestUpdateNotifies(t *testing.T) {
 	if _, changed, err := l.Update(context.Background(), receiver, id, hooks.UpdateRequest{}); err != nil || len(changed) != 0 {
 		t.Fatalf("empty Update = %v, %v", changed, err)
 	}
-	var ve hooks.ValidationError
+	var ve problem.FieldErrors
 	if _, _, err := l.Update(context.Background(), receiver, id, hooks.UpdateRequest{Path: hooks.Opt[string]{Set: true}}); !errors.As(err, &ve) {
 		t.Fatalf("Update with a null path = %v", err)
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/access"
 	"github.com/Radiergummi/tsrelay/internal/authz"
+	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
 // ErrNotPublic means a public-only operation was asked of a private hook.
@@ -24,11 +25,11 @@ func newPublicToken() string {
 }
 
 // validatePublic checks that grants let the owner make hooks public in channel.
-func validatePublic(grants authz.Effective, channel string) []FieldError {
+func validatePublic(grants authz.Effective, channel string) []problem.FieldError {
 	if access.MayPublish(grants, channel) {
 		return nil
 	}
-	return []FieldError{{"public", fmt.Sprintf("your grants do not allow public hooks in channel %q", channel)}}
+	return []problem.FieldError{{Field: "public", Message: fmt.Sprintf("your grants do not allow public hooks in channel %q", channel)}}
 }
 
 // RoutePublic finds the public hook with token. Like Route, it scans every

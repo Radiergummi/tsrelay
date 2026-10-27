@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Radiergummi/tsrelay/internal/hooks"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 )
 
@@ -36,7 +35,7 @@ func TestUnknownFieldIsUnsupported(t *testing.T) {
 				t.Fatalf("status %d, Tsrelay-Error %q, want 422 %s", resp.StatusCode, resp.Header.Get("Tsrelay-Error"), problem.UnsupportedField)
 			}
 			errs, _ := json.Marshal(p.Errors)
-			want, _ := json.Marshal([]hooks.FieldError{{Field: tc.field, Message: "not supported by this relay"}})
+			want, _ := json.Marshal([]problem.FieldError{{Field: tc.field, Message: "not supported by this relay"}})
 			if string(errs) != string(want) {
 				t.Fatalf("errors = %s, want %s", errs, want)
 			}

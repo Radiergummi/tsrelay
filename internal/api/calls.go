@@ -27,7 +27,7 @@ type CallList struct {
 func (a *API) listCalls(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 	h, _, ok := a.visibleHook(r, id)
 	if !ok {
-		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
+		notFound(w, "hook not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, CallList{Calls: a.Inspect.List(h.ID)})
@@ -39,12 +39,12 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request, id authz.Identit
 func (a *API) getCall(w http.ResponseWriter, r *http.Request, id authz.Identity) {
 	h, lvl, ok := a.visibleHook(r, id)
 	if !ok {
-		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
+		notFound(w, "hook not found")
 		return
 	}
 	c, ok := a.Inspect.Get(r.PathValue("callID"))
 	if !ok || c.HookID != h.ID {
-		problem.New(http.StatusNotFound, problem.NotFound, "call not found").Write(w)
+		notFound(w, "call not found")
 		return
 	}
 	out := CallJSON{Call: c}
@@ -132,7 +132,7 @@ func (a *API) replayCall(w http.ResponseWriter, r *http.Request, id authz.Identi
 	}
 	orig, ok := a.Inspect.Get(r.PathValue("callID"))
 	if !ok || orig.HookID != h.ID {
-		problem.New(http.StatusNotFound, problem.NotFound, "call not found").Write(w)
+		notFound(w, "call not found")
 		return
 	}
 	if p := ReplayRefusal(orig); p != nil {
@@ -161,14 +161,14 @@ func (a *API) testCall(w http.ResponseWriter, r *http.Request, id authz.Identity
 	if !decodeRequest(w, r, &req, 1<<20) {
 		return
 	}
-	var errs hooks.ValidationError
+	var errs problem.FieldErrors
 	method := cmp.Or(req.Method, http.MethodPost)
 	if !httpguts.ValidHeaderFieldName(method) { // a method is a token, like a header name
-		errs = append(errs, hooks.FieldError{Field: "method", Message: fmt.Sprintf("%q is not a valid HTTP method", method)})
+		errs = append(errs, problem.FieldError{Field: "method", Message: fmt.Sprintf("%q is not a valid HTTP method", method)})
 	}
 	u, err := url.Parse(cmp.Or(req.Path, "/"))
 	if err != nil || u.Scheme != "" || u.Host != "" || !strings.HasPrefix(u.Path, "/") {
-		errs = append(errs, hooks.FieldError{Field: "path", Message: "must be a path starting with /, optionally with a query string"})
+		errs = append(errs, problem.FieldError{Field: "path", Message: "must be a path starting with /, optionally with a query string"})
 	}
 	for k, vs := range req.Headers {
 		valid := httpguts.ValidHeaderFieldName(k)
@@ -176,13 +176,11 @@ func (a *API) testCall(w http.ResponseWriter, r *http.Request, id authz.Identity
 			valid = valid && httpguts.ValidHeaderFieldValue(v)
 		}
 		if !valid {
-			errs = append(errs, hooks.FieldError{Field: "headers." + k, Message: "is not a valid header"})
+			errs = append(errs, problem.FieldError{Field: "headers." + k, Message: "is not a valid header"})
 		}
 	}
 	if len(errs) > 0 {
-		p := problem.New(http.StatusUnprocessableEntity, problem.Invalid, errs.Error())
-		p.Errors = errs
-		p.Write(w)
+		problem.InvalidFields(problem.Invalid, errs).Write(w)
 		return
 	}
 	a.inject(w, r, relay.Injection{
@@ -199,7 +197,7 @@ func (a *API) inject(w http.ResponseWriter, r *http.Request, in relay.Injection)
 	c, err := a.Relay.Inject(r.Context(), in)
 	switch {
 	case errors.Is(err, relay.ErrNotRouted):
-		problem.New(http.StatusNotFound, problem.NotFound, "hook not found").Write(w)
+		notFound(w, "hook not found")
 	case err != nil:
 		a.Audit.Slog().Error("delivering a replay or test request failed", "error", err)
 		problem.New(http.StatusInternalServerError, problem.Internal, "could not deliver the call").Write(w)

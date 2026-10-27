@@ -89,17 +89,46 @@ func StatusText(code int) string {
 
 // Problem is an RFC 9457 problem document.
 type Problem struct {
-	Type   string `json:"type"`
-	Title  string `json:"title"`
-	Status int    `json:"status"`
-	Detail string `json:"detail,omitempty"`
-	Code   string `json:"code"`
-	Errors any    `json:"errors,omitempty"`
-	Hook   string `json:"hook,omitempty"` // for a refused tunnel attach, the hook it was refused for
+	Type   string      `json:"type"`
+	Title  string      `json:"title"`
+	Status int         `json:"status"`
+	Detail string      `json:"detail,omitempty"`
+	Code   string      `json:"code"`
+	Errors FieldErrors `json:"errors,omitempty"`
+	Hook   string      `json:"hook,omitempty"` // for a refused tunnel attach, the hook it was refused for
 }
 
 func New(status int, code, detail string) *Problem {
 	return &Problem{Type: typeBase + code, Title: StatusText(status), Status: status, Detail: detail, Code: code}
+}
+
+// InvalidFields is the 422 answer, with code, to a request that is
+// well-formed but not acceptable, naming each rejected field.
+func InvalidFields(code string, errs FieldErrors) *Problem {
+	p := New(http.StatusUnprocessableEntity, code, errs.Error())
+	p.Errors = errs
+	return p
+}
+
+// FieldError describes why one field of a request was rejected. An empty
+// Field means the request as a whole.
+type FieldError struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
+}
+
+// FieldErrors is returned when a request is well-formed but not acceptable.
+type FieldErrors []FieldError
+
+func (e FieldErrors) Error() string {
+	msgs := make([]string, len(e))
+	for i, fe := range e {
+		msgs[i] = fe.Message
+		if fe.Field != "" {
+			msgs[i] = fe.Field + ": " + fe.Message
+		}
+	}
+	return strings.Join(msgs, "; ")
 }
 
 func (p *Problem) Error() string { return p.Code + ": " + p.Detail }
