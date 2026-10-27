@@ -3,7 +3,10 @@
 // the relay acts as HTTP/2 client and the developer machine as HTTP/2 server.
 package tunnel
 
-import "time"
+import (
+	"net/http"
+	"time"
+)
 
 const (
 	UpgradeToken = "tsrelay-tunnel/1"
@@ -81,4 +84,12 @@ type Control struct {
 	// of order. A client ignores one whose Seq is not above the last it saw
 	// for the hook on the same connection.
 	Seq uint64 `json:"seq,omitempty"`
+}
+
+// h2Only is HTTP/2 without TLS and with prior knowledge: both ends of a
+// tunnel know what they speak once the upgrade is done.
+func h2Only() *http.Protocols {
+	var p http.Protocols
+	p.SetUnencryptedHTTP2(true)
+	return &p
 }

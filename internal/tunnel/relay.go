@@ -15,7 +15,6 @@ import (
 
 	"github.com/Radiergummi/tsrelay/internal/authz"
 	"golang.org/x/net/http/httpguts"
-	"golang.org/x/net/http2"
 )
 
 // ErrOverloaded is returned by RoundTrip when the tunnel's concurrency limit
@@ -64,7 +63,7 @@ type Tunnel struct {
 	// only. It may be empty.
 	Target string
 
-	cc   *http2.ClientConn
+	cc   *http.ClientConn
 	conn *watchedConn
 	sem  chan struct{}
 
@@ -78,13 +77,14 @@ func NewTunnel(conn net.Conn, id string, owner authz.Identity, opts Options) (*T
 		opts.Concurrency = DefaultConcurrency
 	}
 	wc := &watchedConn{Conn: conn, done: make(chan struct{})}
-	tr := &http2.Transport{
-		AllowHTTP:          true,
+	tr := &http.Transport{
+		Protocols:          h2Only(),
 		DisableCompression: true, // bodies must pass through byte for byte
-		ReadIdleTimeout:    pingInterval,
-		PingTimeout:        pingInterval,
+		HTTP2:              &http.HTTP2Config{SendPingTimeout: pingInterval, PingTimeout: pingInterval},
+		// The connection is already open: the tunnel's, taken over by Accept.
+		DialContext: func(context.Context, string, string) (net.Conn, error) { return wc, nil },
 	}
-	cc, err := tr.NewClientConn(wc)
+	cc, err := tr.NewClientConn(context.Background(), "http", "tunnel:80")
 	if err != nil {
 		wc.Close()
 		return nil, err

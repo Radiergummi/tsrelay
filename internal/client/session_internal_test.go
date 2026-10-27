@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/net/http2"
-
 	"github.com/Radiergummi/tsrelay/internal/api"
 	"github.com/Radiergummi/tsrelay/internal/problem"
 	"github.com/Radiergummi/tsrelay/internal/tunnel"
@@ -86,7 +84,10 @@ func TestSessionIgnoresUnknownControl(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go tunnel.Serve(ctx, sc, http.NotFoundHandler(), s.control)
-	conn, err := (&http2.Transport{}).NewClientConn(cc)
+	var h2 http.Protocols
+	h2.SetUnencryptedHTTP2(true)
+	tr := &http.Transport{Protocols: &h2, DialContext: func(context.Context, string, string) (net.Conn, error) { return cc, nil }}
+	conn, err := tr.NewClientConn(ctx, "http", "tunnel:80")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -53,7 +53,7 @@ func (e *env) spanNamed(rec *tracetest.SpanRecorder, name string) sdktrace.ReadO
 func attr(s sdktrace.ReadOnlySpan, key string) (string, bool) {
 	for _, a := range s.Attributes() {
 		if string(a.Key) == key {
-			return a.Value.Emit(), true
+			return a.Value.String(), true
 		}
 	}
 	return "", false
@@ -443,8 +443,8 @@ func TestRefusedAttachSpan(t *testing.T) {
 		t.Error("a refused attach recorded hook IDs")
 	}
 	for _, a := range attach.Attributes() {
-		if strings.Contains(a.Value.Emit(), "nope_12345") {
-			t.Errorf("attribute %s leaked the bogus hook ID: %s", a.Key, a.Value.Emit())
+		if strings.Contains(a.Value.String(), "nope_12345") {
+			t.Errorf("attribute %s leaked the bogus hook ID: %s", a.Key, a.Value.String())
 		}
 	}
 }
