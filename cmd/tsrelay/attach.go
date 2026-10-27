@@ -45,7 +45,7 @@ func newAttachCmd(c *cli) *cobra.Command {
 			return exitWith(out.fail(err))
 		}
 		out.inspectBase = relayAPI.BaseURL
-		found, err := resolveHooks(ctx, relayAPI, refs)
+		found, err := relayAPI.ResolveHooks(ctx, refs)
 		if err != nil {
 			return exitWith(out.fail(err))
 		}
