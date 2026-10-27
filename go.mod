@@ -1,6 +1,6 @@
 module github.com/Radiergummi/tsrelay
 
-go 1.27.1
+go 1.27.3
 
 ignore ./web/node_modules
 
@@ -29,7 +29,7 @@ require (
 	golang.org/x/net v0.61.0
 	golang.org/x/sys v0.49.0
 	golang.org/x/time v0.16.0
-	tailscale.com v1.104.1
+	tailscale.com v1.104.2
 )
 
 require (
@@ -166,7 +166,7 @@ require (
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
-	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
+	github.com/xo/terminfo v1.0.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.47.0 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
