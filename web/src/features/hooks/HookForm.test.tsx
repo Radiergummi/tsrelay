@@ -225,3 +225,17 @@ test("the preview shows every effective setting, marking the defaults, and follo
   expect(preview).toHaveTextContent("Channeldefault via default");
   expect(preview).toHaveTextContent("Lifetimepersistent, no expiry");
 });
+
+test("each invalid field shows its error, though neither changes the request", async () => {
+  render();
+  await openDelivery();
+  await userEvent.click(radio("Idle timeout", "custom…"));
+  const idle = screen.getByLabelText("Idle timeout, custom");
+  await userEvent.type(idle, "soon");
+  await waitFor(() => expect(idle).toHaveAccessibleDescription(/must be a duration/));
+  await userEvent.click(radio("Response timeout", "custom…"));
+  const response = screen.getByLabelText("Response timeout, custom");
+  await userEvent.type(response, "later");
+  await waitFor(() => expect(response).toHaveAccessibleDescription(/must be a duration/));
+  expect(idle).toHaveAccessibleDescription(/must be a duration/);
+});

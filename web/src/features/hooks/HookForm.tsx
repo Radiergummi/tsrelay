@@ -1,10 +1,10 @@
 import { ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ApiError, fieldMessage, formMessage, paths } from "@/api/client";
+import { paths } from "@/api/client";
 import { dryRunHook, useCreateHook, useUpdateHook } from "@/api/mutations";
 import { useChannels } from "@/api/queries";
-import type { Effective, FieldError, Hook, Me } from "@/api/schemas";
+import type { Effective, Hook, Me } from "@/api/schemas";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Combobox } from "@/components/ui/combobox";
@@ -13,10 +13,17 @@ import { Segment, SegmentedControl } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { allowingPattern, channelChoices, matchChannel, validChannel } from "@/lib/channels";
 import { toast } from "@/lib/toast";
+import { useProblemErrors } from "@/lib/useProblemErrors";
 import { DeliveryFields } from "./DeliveryFields";
 import { ExpiryField } from "./ExpiryField";
 import { Field } from "./Field";
-import { effectiveSettings, fieldTypes, formRequest, initialValues } from "./formRequest";
+import {
+  effectiveSettings,
+  fieldTypes,
+  formRequest,
+  initialValues,
+  type FieldName,
+} from "./formRequest";
 import { HookPreview } from "./HookPreview";
 
 const dryRunDelay = 400;
@@ -29,8 +36,9 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   const editing = hook !== undefined;
   const [initial] = useState(() => initialValues(hook));
   const [values, setValues] = useState(initial);
-  const [errors, setErrors] = useState<FieldError[]>([]);
-  const [formError, setFormError] = useState("");
+  const { errors, formError, show, fail, capture, message } = useProblemErrors((f) =>
+    Object.hasOwn(fieldTypes, f),
+  );
   // The last dry run that passed, keyed by the body it validated.
   const [dry, setDry] = useState<{ key: string; hook: Hook }>();
   // Delivery starts shut unless the hook overrides a default, and opens
@@ -40,7 +48,8 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   ).length;
   const [delivery, setDelivery] = useState(overrides > 0);
   if (!delivery && errors.some((e) => e.field.startsWith("settings."))) setDelivery(true);
-  const dirty = useRef(false);
+  // Nothing is validated until the first change.
+  const [dirty, setDirty] = useState(false);
   const navigate = useNavigate();
   const create = useCreateHook();
   const update = useUpdateHook(hook?.id ?? "");
@@ -67,7 +76,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
 
   const build = () => {
     const r = formRequest(
-      Object.entries(fieldTypes).map(([n, t]) => [n, values[n] ?? "", t]),
+      (Object.keys(fieldTypes) as FieldName[]).map((n) => [n, values[n], fieldTypes[n]]),
       editing ? initial : undefined,
     );
     if (!validChannel(channel))
@@ -79,73 +88,61 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
       r.errors.push({ field: "channel", message: "none of your receive patterns allows it" });
     return r;
   };
-  const { body } = build();
+  const { body, errors: local } = build();
   const key = JSON.stringify(body);
+  // Two different invalid fields can leave the body the same.
+  const localKey = JSON.stringify(local);
+
+  // Shows the local errors, or else dry-runs the body, whose key is ran: a
+  // change since would have cancelled this run.
+  const validate = useEffectEvent((ran: string, signal: AbortSignal) => {
+    if (local.length) return show(local);
+    dryRunHook(body, hook?.id, signal).then(
+      (h) => {
+        setDry({ key: ran, hook: h });
+        show([]);
+      },
+      (err) => {
+        if (signal.aborted || capture(err)) return;
+        fail(err instanceof Error ? err.message : String(err));
+      },
+    );
+  });
 
   useEffect(() => {
-    if (!dirty.current) return;
-    const { errors: local } = build();
-    if (local.length) {
-      setErrors(local);
-      setFormError("");
+    if (!dirty) return;
+    const ctrl = new AbortController();
+    if (localKey !== "[]") {
+      validate(key, ctrl.signal);
       return;
     }
-    const ctrl = new AbortController();
-    const t = setTimeout(() => {
-      dryRunHook(body, hook?.id, ctrl.signal).then(
-        (h) => {
-          setDry({ key, hook: h });
-          setErrors([]);
-          setFormError("");
-        },
-        (err) => {
-          if (ctrl.signal.aborted) return;
-          apply(err);
-        },
-      );
-    }, dryRunDelay);
+    const t = setTimeout(() => validate(key, ctrl.signal), dryRunDelay);
     return () => {
       clearTimeout(t);
       ctrl.abort();
     };
-    // build reads values, and body and key follow from them.
-    // oxlint-disable-next-line react/exhaustive-deps
-  }, [values]);
+  }, [dirty, key, localKey]);
 
-  function apply(err: unknown) {
-    if (err instanceof ApiError && err.status === 422) {
-      setErrors(err.fieldErrors);
-      setFormError(formMessage(err, (f) => Object.hasOwn(fieldTypes, f)));
-    } else {
-      setFormError(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  // A failed save other than a 422 is already toasted (makeQueryClient).
-  function applySaveError(err: unknown) {
-    if (err instanceof ApiError && err.status === 422) apply(err);
-  }
-
-  const set = (name: string) => (value: string) => {
-    dirty.current = true;
+  const set = (name: FieldName) => (value: string) => {
+    setDirty(true);
     setValues((v) => ({ ...v, [name]: value }));
   };
-  const err = (name: string) => fieldMessage(errors, name);
-  const text = (name: string) => ({
+  const err = (name: FieldName) => message(name);
+  const text = (name: FieldName) => ({
     value: values[name] ?? "",
     onChange: (e: { target: { value: string } }) => set(name)(e.target.value),
   });
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const { errors: local } = build();
-    if (local.length) return setErrors(local);
+    if (local.length) return show(local);
     const onSuccess = (h: Hook) => {
       toast.success(editing ? "Saved" : `Created ${h.path}`);
       navigate(paths.hook(h.id));
     };
-    if (editing) update.mutate(body, { onSuccess, onError: applySaveError });
-    else create.mutate(body, { onSuccess, onError: applySaveError });
+    // A failed save other than a 422 is already toasted (makeQueryClient).
+    if (editing) update.mutate(body, { onSuccess, onError: capture });
+    else create.mutate(body, { onSuccess, onError: capture });
   }
 
   // The preview shows the dry run's hook while it matches the form, and
@@ -284,7 +281,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
           <Field
             label="Expires at"
             error={err("expiresAt")}
-            hint={`In your time zone, ${Intl.DateTimeFormat().resolvedOptions().timeZone}.`}
+            hint={`In your time zone, ${new Intl.DateTimeFormat().resolvedOptions().timeZone}.`}
           >
             {(c) => (
               <ExpiryField

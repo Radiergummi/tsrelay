@@ -1,10 +1,10 @@
-import type { Effective, FieldError, Hook } from "@/api/schemas";
+import type { Effective, FieldError, Hook, HookRequest } from "@/api/schemas";
 import { parseDuration } from "@/lib/duration";
 
 export type FieldType = "text" | "bool" | "int" | "duration" | "ratelimit" | "time";
 
 /** fieldTypes are the form's fields in order, with how each is sent. */
-export const fieldTypes: Record<string, FieldType> = {
+export const fieldTypes = {
   path: "text",
   channel: "text",
   description: "text",
@@ -19,7 +19,13 @@ export const fieldTypes: Record<string, FieldType> = {
   "settings.maxBodyBytes": "int",
   "settings.rateLimit": "ratelimit",
   "settings.capture": "bool",
-};
+} as const satisfies Record<string, FieldType>;
+
+/** FieldName is one of the form's fields; a dotted name nests in the request. */
+export type FieldName = keyof typeof fieldTypes;
+
+/** FormValues are the form's texts, per field. */
+export type FormValues = Record<FieldName, string>;
 
 /** fieldValue converts a field's text to its API value: undefined for an empty field, or an error. */
 export function fieldValue(raw: string, type: FieldType): { value?: unknown; error?: string } {
@@ -53,9 +59,9 @@ export function fieldValue(raw: string, type: FieldType): { value?: unknown; err
  * null, which resets it.
  */
 export function formRequest(
-  fields: [string, string, FieldType][],
-  initial?: Record<string, string>,
-): { body: Record<string, unknown>; errors: FieldError[] } {
+  fields: [FieldName, string, FieldType][],
+  initial?: FormValues,
+): { body: HookRequest; errors: FieldError[] } {
   const body: Record<string, unknown> = {};
   const errors: FieldError[] = [];
   for (const [name, raw, type] of fields) {
@@ -75,23 +81,20 @@ export function formRequest(
     for (const k of keys.slice(0, -1)) obj = (obj[k] ??= {}) as Record<string, unknown>;
     obj[keys.at(-1)!] = value;
   }
-  return { body, errors };
+  // The dotted names nest exactly as HookRequest does.
+  return { body: body as HookRequest, errors };
 }
 
 /** initialValues are the form's starting texts: the hook's own values, with relay defaults left empty. */
-export function initialValues(h: Hook | undefined): Record<string, string> {
-  const v: Record<string, string> = Object.fromEntries(Object.keys(fieldTypes).map((k) => [k, ""]));
-  v["ephemeral"] = "false";
-  v["public"] = "false";
-  if (!h) return v;
-  const s = h.settings;
-  Object.assign(v, {
-    path: h.path,
-    channel: h.channel,
-    description: h.description ?? "",
-    ephemeral: String(h.ephemeral),
-    public: String(h.public ?? false),
-    expiresAt: h.expiresAt ? new Date(h.expiresAt).toISOString().replace(/\.000Z$/, "Z") : "",
+export function initialValues(h: Hook | undefined): FormValues {
+  const s = h?.settings ?? {};
+  return {
+    path: h?.path ?? "",
+    channel: h?.channel ?? "",
+    description: h?.description ?? "",
+    ephemeral: String(h?.ephemeral ?? false),
+    public: String(h?.public ?? false),
+    expiresAt: h?.expiresAt ? new Date(h.expiresAt).toISOString().replace(/\.000Z$/, "Z") : "",
     "settings.attachPolicy": s.attachPolicy ?? "",
     "settings.hostHeader": s.hostHeader ?? "",
     "settings.holdTimeout": s.holdTimeout ?? "",
@@ -100,15 +103,14 @@ export function initialValues(h: Hook | undefined): Record<string, string> {
     "settings.maxBodyBytes": s.maxBodyBytes === undefined ? "" : String(s.maxBodyBytes),
     "settings.rateLimit": s.rateLimit ? `${s.rateLimit.perSecond}/${s.rateLimit.burst}` : "",
     "settings.capture": s.capture === undefined ? "" : String(s.capture),
-  });
-  return v;
+  };
 }
 
 /** effectiveSettings are the delivery settings values would give: each valid override, else the relay default. */
-export function effectiveSettings(values: Record<string, string>, defaults: Effective): Effective {
+export function effectiveSettings(values: FormValues, defaults: Effective): Effective {
   const e: Record<string, unknown> = { ...defaults };
-  for (const k of Object.keys(defaults)) {
-    const r = fieldValue(values[`settings.${k}`] ?? "", fieldTypes[`settings.${k}`]!);
+  for (const k of Object.keys(defaults) as (keyof Effective)[]) {
+    const r = fieldValue(values[`settings.${k}`], fieldTypes[`settings.${k}`]);
     if (r.value !== undefined) e[k] = r.value;
   }
   return e as Effective;

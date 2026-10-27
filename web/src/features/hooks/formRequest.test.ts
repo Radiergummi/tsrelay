@@ -7,6 +7,8 @@ import {
   formRequest,
   initialValues,
   parseHeaders,
+  type FieldName,
+  type FieldType,
 } from "./formRequest";
 
 test("field values by type", () => {
@@ -27,7 +29,7 @@ test("field values by type", () => {
 });
 
 test("creating leaves empty fields out", () => {
-  const fields: [string, string, "text" | "duration"][] = [
+  const fields: [FieldName, string, FieldType][] = [
     ["path", "cb", "text"],
     ["description", "", "text"],
     ["settings.holdTimeout", "45s", "duration"],
@@ -44,12 +46,13 @@ test("creating leaves empty fields out", () => {
 
 test("editing sends only the changed fields, and null for a cleared one", () => {
   const initial = {
+    ...initialValues(undefined),
     path: "cb",
     description: "old",
     "settings.holdTimeout": "10m",
     "settings.idleTimeout": "",
   };
-  const fields: [string, string, "text" | "duration"][] = [
+  const fields: [FieldName, string, FieldType][] = [
     ["path", "cb", "text"],
     ["description", "", "text"],
     ["settings.holdTimeout", "10m", "duration"],

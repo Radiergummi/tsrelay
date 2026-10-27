@@ -12,12 +12,13 @@ import {
 import { humanDuration, parseDuration } from "@/lib/duration";
 import { formatSize } from "@/lib/format";
 import { Field } from "./Field";
+import type { FieldName, FormValues } from "./formRequest";
 
 /** Form is how a delivery field reads and writes the form's texts; "" is the relay default. */
 export interface Form {
-  values: Record<string, string>;
-  set: (name: string) => (value: string) => void;
-  err: (name: string) => string | undefined;
+  values: FormValues;
+  set: (name: FieldName) => (value: string) => void;
+  err: (name: FieldName) => string | undefined;
 }
 
 /** durationPresets are the one-click choices per duration (issue #25). */
@@ -190,7 +191,7 @@ function Setting({
   children,
 }: {
   form: Form;
-  name: string;
+  name: FieldName;
   label: string;
   shown: string;
   hint?: ReactNode;
@@ -247,7 +248,7 @@ function DurationSetting({
   max: string | undefined;
   hint: string;
 }) {
-  const field = `settings.${name}`;
+  const field = `settings.${name}` as const;
   const raw = form.values[field] ?? "";
   const maxMs = max ? parseDuration(max) : null;
   const dfltMs = parseDuration(dflt) ?? 0;
@@ -417,7 +418,7 @@ function ChoiceSetting({
   choices,
 }: {
   form: Form;
-  name: string;
+  name: FieldName;
   label: string;
   dflt: string;
   choices: [value: string, title: string, about: ReactNode][];
