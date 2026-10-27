@@ -41,7 +41,7 @@ function AllHooks({ hooks }: { hooks: Hook[] }) {
   const list = [...hooks].sort(
     (a, b) => a.owner.localeCompare(b.owner) || a.path.localeCompare(b.path),
   );
-  const tunnels = new Set(list.flatMap((h) => (h.tunnel ? [h.tunnel.id] : []))).size;
+  const tunnels = new Set(list.flatMap(({ tunnel }) => (tunnel ? [tunnel.id] : []))).size;
   return (
     <section>
       <div className="mb-4 flex items-baseline justify-between">
@@ -64,28 +64,28 @@ function AllHooks({ hooks }: { hooks: Hook[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {list.map((h) => (
-              <TableRow key={h.id}>
-                <TableCell>{h.owner}</TableCell>
+            {list.map((hook) => (
+              <TableRow key={hook.id}>
+                <TableCell>{hook.owner}</TableCell>
                 <TableCell>
-                  <Link to={paths.hook(h.id)} className="font-medium hover:underline">
-                    <Reveal text={h.path} />
+                  <Link to={paths.hook(hook.id)} className="font-medium hover:underline">
+                    <Reveal text={hook.path} />
                   </Link>
                 </TableCell>
                 <TableCell>
-                  <ChannelChip name={h.channel} all />
+                  <ChannelChip name={hook.channel} all />
                 </TableCell>
                 <TableCell>
-                  <TunnelText tunnel={h.tunnel} />
+                  <TunnelText tunnel={hook.tunnel} />
                 </TableCell>
                 <TableCell>
-                  <LastCall call={h.lastCall} withRequest={false} />
+                  <LastCall call={hook.lastCall} withRequest={false} />
                 </TableCell>
                 <TableCell>
                   <DeleteHookDialog
-                    hook={h}
+                    hook={hook}
                     trigger={
-                      <Button variant="ghost" size="icon-sm" aria-label={`Delete ${h.path}`}>
+                      <Button variant="ghost" size="icon-sm" aria-label={`Delete ${hook.path}`}>
                         <Trash2 />
                       </Button>
                     }

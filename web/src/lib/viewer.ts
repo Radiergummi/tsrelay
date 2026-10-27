@@ -15,4 +15,4 @@ export const mayStream = (me: Me) =>
  * owns decides whether owner-only controls appear. The server enforces
  * ownership on every request; this only keeps the UI honest about it.
  */
-export const owns = (me: Me, h: Hook) => isUser(me) && h.owner === me.login;
+export const owns = (me: Me, hook: Hook) => isUser(me) && hook.owner === me.login;

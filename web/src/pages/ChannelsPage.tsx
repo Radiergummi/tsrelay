@@ -44,13 +44,13 @@ export function ChannelsPage() {
         )}
       </div>
       <QueryView query={channels}>
-        {(c) => (
+        {(data) => (
           <>
-            <Patterns channels={c} />
-            {c.channels.length === 0 ? (
+            <Patterns channels={data} />
+            {data.channels.length === 0 ? (
               <EmptyState title={all ? "No hooks use a channel yet" : "You have no hooks yet"} />
             ) : (
-              <ChannelsTable channels={c} all={all} />
+              <ChannelsTable channels={data} all={all} />
             )}
           </>
         )}
@@ -59,12 +59,12 @@ export function ChannelsPage() {
   );
 }
 
-function Patterns({ channels }: { channels: Channels }) {
+function Patterns({ channels: { receive, send } }: { channels: Channels }) {
   const list = (patterns: string[]) =>
     patterns.length ? (
-      patterns.map((p) => (
-        <code key={p} className="mr-2 text-xs">
-          {p}
+      patterns.map((pattern) => (
+        <code key={pattern} className="mr-2 text-xs">
+          {pattern}
         </code>
       ))
     ) : (
@@ -73,9 +73,9 @@ function Patterns({ channels }: { channels: Channels }) {
   return (
     <dl className="mb-6 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
       <dt className="text-muted-foreground">You receive on</dt>
-      <dd>{list(channels.receive)}</dd>
+      <dd>{list(receive)}</dd>
       <dt className="text-muted-foreground">You send on</dt>
-      <dd>{list(channels.send)}</dd>
+      <dd>{list(send)}</dd>
     </dl>
   );
 }
@@ -92,28 +92,28 @@ function ChannelsTable({ channels, all }: { channels: Channels; all: boolean }) 
           </TableRow>
         </TableHeader>
         <TableBody>
-          {channels.channels.map((c) => (
-            <TableRow key={c.name}>
+          {channels.channels.map((channel) => (
+            <TableRow key={channel.name}>
               <TableCell>
-                <ChannelChip name={c.name} />
+                <ChannelChip name={channel.name} />
               </TableCell>
               <TableCell>
-                {c.hooks ? (
+                {channel.hooks ? (
                   <span className="flex flex-wrap gap-x-3">
-                    {c.hooks.map((h) => (
-                      <Link key={h.id} to={paths.hook(h.id)} className="hover:underline">
-                        <Reveal text={h.path} />
+                    {channel.hooks.map((hook) => (
+                      <Link key={hook.id} to={paths.hook(hook.id)} className="hover:underline">
+                        <Reveal text={hook.path} />
                       </Link>
                     ))}
                   </span>
                 ) : (
-                  c.hookCount
+                  channel.hookCount
                 )}
               </TableCell>
               {!all && (
                 <TableCell>
-                  {c.receive.length ? (
-                    <code className="text-xs">{c.receive.join(", ")}</code>
+                  {channel.receive.length ? (
+                    <code className="text-xs">{channel.receive.join(", ")}</code>
                   ) : (
                     <span className="text-muted-foreground">no longer granted</span>
                   )}

@@ -45,7 +45,7 @@ test("duration presets above the relay's maximum are hidden, and the default is 
   await openDelivery();
   const hold = within(group("Hold timeout"))
     .getAllByRole("radio")
-    .map((r) => r.textContent);
+    .map((element) => element.textContent);
   expect(hold).toEqual(["off", "10 s", "30 sdefault", "custom…"]);
   expect(radio("Hold timeout", /30 s/)).toHaveAttribute("aria-checked", "true");
   expect(radio("Response timeout", "30 min")).toBeInTheDocument();
@@ -150,7 +150,7 @@ test("the channel says which pattern allows it, and flags one no pattern allows"
     expect(
       within(listbox)
         .getAllByRole("option")
-        .map((o) => o.textContent),
+        .map((option) => option.textContent),
     ).toEqual(["default", "prod", "staging.eu"]),
   );
   await userEvent.type(channel, "staging.us");
@@ -173,13 +173,15 @@ test("expiry quick picks stay within maxHookTtl, which also takes away never", a
   const me = { ...fixtures.me, limits: { ...fixtures.me.limits, maxHookTtl: "168h0m0s" } };
   const saved = render(me);
   const picks = () =>
-    screen.getAllByRole("button", { name: /^(Expire in|Never)/ }).map((b) => b.textContent);
+    screen
+      .getAllByRole("button", { name: /^(Expire in|Never)/ })
+      .map((button) => button.textContent);
   expect(picks()).toEqual(["1 h", "1 d", "7 d"]);
   expect(screen.getByText("never expires · your grants allow at most 7 d")).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Expire in 1 d" }));
   expect(screen.getByText("in 1 d · your grants allow at most 7 d")).toBeInTheDocument();
-  const at = Date.parse((screen.getByLabelText("Expires at") as HTMLInputElement).value);
-  expect(at - Date.now()).toBeGreaterThan(23.9 * 3_600_000);
+  const expiresAt = Date.parse((screen.getByLabelText("Expires at") as HTMLInputElement).value);
+  expect(expiresAt - Date.now()).toBeGreaterThan(23.9 * 3_600_000);
   // The limit is for persistent hooks.
   await userEvent.click(radio("Kind", "Ephemeral"));
   expect(picks()).toEqual(["1 h", "1 d", "7 d", "30 d", "never"]);
@@ -188,9 +190,9 @@ test("expiry quick picks stay within maxHookTtl, which also takes away never", a
   await waitFor(() => expect(saved.body).toEqual({ ephemeral: true, public: false }));
 });
 
-const tz = process.env["TZ"];
+const timeZone = process.env["TZ"];
 afterEach(() => {
-  process.env["TZ"] = tz;
+  process.env["TZ"] = timeZone;
 });
 
 test("expiry is shown in local time and stored in UTC", async () => {

@@ -29,12 +29,12 @@ export function ExpiryField({
   onChange: (value: string) => void;
   maxTTL: string | undefined;
 }) {
-  const maxMs = parseDuration(maxTTL ?? "0s") || null; // "0s" means no limit
+  const maxMilliseconds = parseDuration(maxTTL ?? "0s") || null; // "0s" means no limit
   // oxlint-disable-next-line react/purity -- a coarse span, recomputed on every change, needs no ticking
   const left = value ? Date.parse(value) - Date.now() : null;
   const readout = [
     left === null ? "never expires" : left > 0 ? `in ${humanSpan(left)}` : "in the past",
-    maxMs !== null && `your grants allow at most ${humanSpan(maxMs)}`,
+    maxMilliseconds !== null && `your grants allow at most ${humanSpan(maxMilliseconds)}`,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -48,22 +48,22 @@ export function ExpiryField({
           aria-invalid={control["aria-invalid"]}
           aria-describedby={control["aria-describedby"]}
           value={value ? localInputValue(value) : ""}
-          onChange={(e) => onChange(fromLocalInput(e.target.value))}
+          onChange={(event) => onChange(fromLocalInput(event.target.value))}
         />
         {picks
-          .filter(([, ms]) => maxMs === null || ms <= maxMs)
-          .map(([label, ms]) => (
+          .filter(([, milliseconds]) => maxMilliseconds === null || milliseconds <= maxMilliseconds)
+          .map(([label, milliseconds]) => (
             <button
               key={label}
               type="button"
               className={chip}
               aria-label={`Expire in ${label}`}
-              onClick={() => onChange(fromNow(ms))}
+              onClick={() => onChange(fromNow(milliseconds))}
             >
               {label}
             </button>
           ))}
-        {maxMs === null && (
+        {maxMilliseconds === null && (
           <button
             type="button"
             className={chip}
@@ -81,5 +81,6 @@ export function ExpiryField({
   );
 }
 
-/** fromNow is ms from now, to the minute, rounded down so a quick pick stays within maxHookTtl. */
-const fromNow = (ms: number) => rfc3339(new Date(Math.floor((Date.now() + ms) / 60_000) * 60_000));
+/** fromNow is milliseconds from now, to the minute, rounded down so a quick pick stays within maxHookTtl. */
+const fromNow = (milliseconds: number) =>
+  rfc3339(new Date(Math.floor((Date.now() + milliseconds) / 60_000) * 60_000));

@@ -4,7 +4,7 @@ import type { ChannelDetail, Channels, Hook } from "@/api/schemas";
 import { matchChannel, validChannel } from "@/lib/channels";
 import { fixtures } from "./fixtures";
 
-const byId = (list: { id: string }[], id: unknown) => list.find((x) => x.id === id);
+const byId = (list: { id: string }[], id: unknown) => list.find((item) => item.id === id);
 const calls = [
   fixtures.callJson,
   fixtures.callReplay,
@@ -22,24 +22,24 @@ const notFound = () =>
   );
 
 const scoped = (request: Request) => {
-  const q = new URL(request.url).searchParams;
-  return q.get("all") === "true" ? fixtures.hooksAll : fixtures.hooks;
+  const params = new URL(request.url).searchParams;
+  return params.get("all") === "true" ? fixtures.hooksAll : fixtures.hooks;
 };
 const receive = fixtures.me.roles["receiver"] ?? [];
 
 /** channels is GET /channels as the relay answers it for the dev user's hooks (all: every user's, counted). */
 function channels(list: Hook[], all: boolean): Channels {
-  const names = [...new Set(list.map((h) => h.channel))].sort();
+  const names = [...new Set(list.map((hook) => hook.channel))].sort();
   return {
     receive,
     send: [],
     channels: names.map((name) => {
-      const inIt = list.filter((h) => h.channel === name);
+      const inIt = list.filter((hook) => hook.channel === name);
       return {
         name,
         hookCount: inIt.length,
         ...(all ? {} : { hooks: inIt }),
-        receive: receive.filter((p) => matchChannel(p, name)),
+        receive: receive.filter((pattern) => matchChannel(pattern, name)),
       };
     }),
   };
@@ -51,7 +51,7 @@ export const handlers = [
   http.get("/hooks", ({ request }) => {
     const channel = new URL(request.url).searchParams.get("channel");
     return HttpResponse.json({
-      hooks: scoped(request).filter((h) => !channel || h.channel === channel),
+      hooks: scoped(request).filter((hook) => !channel || hook.channel === channel),
     });
   }),
   http.get("/channels", ({ request }) =>
@@ -68,17 +68,17 @@ export const handlers = [
       );
     return HttpResponse.json({
       name,
-      canReceive: receive.some((p) => matchChannel(p, name)),
+      canReceive: receive.some((pattern) => matchChannel(pattern, name)),
       canSend: false,
-      hooks: scoped(request).filter((h) => h.channel === name),
+      hooks: scoped(request).filter((hook) => hook.channel === name),
     } satisfies ChannelDetail);
   }),
   http.get("/hooks/:id", ({ params }) => {
-    const h = byId(
+    const hook = byId(
       [fixtures.hook, fixtures.idle, fixtures.busy, fixtures.hostile, fixtures.theirs],
       params.id,
     );
-    return h ? HttpResponse.json(h) : notFound();
+    return hook ? HttpResponse.json(hook) : notFound();
   }),
   http.get("/hooks/:id/calls", ({ params }) => {
     if (params.id === fixtures.hook.id) return HttpResponse.json({ calls: fixtures.calls });
@@ -114,8 +114,8 @@ export const handlers = [
     return HttpResponse.json({ calls: [] });
   }),
   http.get("/hooks/:id/calls/:callId", ({ params }) => {
-    const c = byId([...calls, ...hostileCalls], params.callId);
-    return c ? HttpResponse.json(c) : notFound();
+    const call = byId([...calls, ...hostileCalls], params.callId);
+    return call ? HttpResponse.json(call) : notFound();
   }),
 ];
 

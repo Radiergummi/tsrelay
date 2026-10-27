@@ -20,30 +20,30 @@ test("a problem response becomes an ApiError with its field errors", async () =>
       ),
     ),
   );
-  const err = await request(hook, "POST", paths.hooks(), { path: "a/b/c/d/e/f/g/h/i" }).catch(
-    (e) => e,
+  const error = await request(hook, "POST", paths.hooks(), { path: "a/b/c/d/e/f/g/h/i" }).catch(
+    (thrown) => thrown,
   );
-  expect(err).toBeInstanceOf(ApiError);
-  expect(err.status).toBe(422);
-  expect(err.code).toBe("invalid");
-  expect(fieldMessage(err.fieldErrors, "path")).toBe("must be at most 8 segments");
-  expect(err.message).toBe("path: must be at most 8 segments");
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error.status).toBe(422);
+  expect(error.code).toBe("invalid");
+  expect(fieldMessage(error.fieldErrors, "path")).toBe("must be at most 8 segments");
+  expect(error.message).toBe("path: must be at most 8 segments");
 });
 
 test("a non-JSON error keeps its text", async () => {
   server.use(http.get("/", () => new HttpResponse("bad gateway\n", { status: 502 })));
-  const err = await request(hook, "GET", paths.me).catch((e) => e);
-  expect(err).toBeInstanceOf(ApiError);
-  expect(err.status).toBe(502);
-  expect(err.message).toBe("bad gateway");
+  const error = await request(hook, "GET", paths.me).catch((thrown) => thrown);
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error.status).toBe(502);
+  expect(error.message).toBe("bad gateway");
 });
 
 test("an unreachable relay is an ApiError with status 0", async () => {
   server.use(http.get("/", () => HttpResponse.error()));
-  const err = await request(hook, "GET", paths.me).catch((e) => e);
-  expect(err).toBeInstanceOf(ApiError);
-  expect(err.status).toBe(0);
-  expect(err.message).toMatch(/not reachable/);
+  const error = await request(hook, "GET", paths.me).catch((thrown) => thrown);
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error.status).toBe(0);
+  expect(error.message).toMatch(/not reachable/);
 });
 
 test("requestVoid accepts 204, and paths escape IDs", async () => {
@@ -61,7 +61,7 @@ test("formMessage is the message only when some field error has no slot of its o
       detail: "it went wrong",
       fieldErrors: fields.map((field) => ({ field, message: `${field} is wrong` })),
     });
-  const slots = (f: string) => f === "path";
+  const slots = (field: string) => field === "path";
   expect(formMessage(unprocessable(["path"]), slots)).toBe("");
   expect(formMessage(unprocessable(["path", "ttl"]), slots)).toBe("it went wrong");
   expect(formMessage(unprocessable([]), slots)).toBe("it went wrong");
@@ -70,8 +70,8 @@ test("formMessage is the message only when some field error has no slot of its o
 test("a bodyless write still declares JSON", async () => {
   let type: string | null = null;
   server.use(
-    http.post("/hooks/h_1/rotate-public-url", ({ request: r }) => {
-      type = r.headers.get("Content-Type");
+    http.post("/hooks/h_1/rotate-public-url", ({ request: received }) => {
+      type = received.headers.get("Content-Type");
       return new HttpResponse(null, { status: 204 });
     }),
   );

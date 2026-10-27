@@ -5,36 +5,36 @@ import type { DecodedBody } from "./bytes";
 const curlSets = new Set(["Content-Length", "Connection", "Transfer-Encoding"]);
 
 /**
- * shellQuote quotes s for a POSIX shell: single quotes keep every byte
+ * shellQuote quotes text for a POSIX shell: single quotes keep every byte
  * literal, and a single quote inside is closed, escaped and reopened. A
  * carriage return becomes a command substitution that has printf produce
  * it at run time, so the command never holds a raw CR (clipboards and
  * terminals turn those into line feeds).
  */
-export function shellQuote(s: string): string {
+export function shellQuote(text: string): string {
   let out = "'";
-  for (const ch of s) {
-    if (ch === "'") out += `'"'"'`;
-    else if (ch === "\r") out += `'"$(printf '\\r')"'`;
-    else out += ch;
+  for (const character of text) {
+    if (character === "'") out += `'"'"'`;
+    else if (character === "\r") out += `'"$(printf '\\r')"'`;
+    else out += character;
   }
   return out + "'";
 }
 
-/** headerLines lists h one value per line, sorted by name. */
-export function headerLines(h: Record<string, string[]> | undefined): [string, string][] {
-  return Object.keys(h ?? {})
+/** headerLines lists headers one value per line, sorted by name. */
+export function headerLines(headers: Record<string, string[]> | undefined): [string, string][] {
+  return Object.keys(headers ?? {})
     .sort()
-    .flatMap((name) => h![name]!.map((v): [string, string] => [name, v]));
+    .flatMap((name) => headers![name]!.map((value): [string, string] => [name, value]));
 }
 
 /** printfEscape writes bytes for printf's %b: printable ASCII as it is, everything else as \0ooo. */
 function printfEscape(bytes: Uint8Array): string {
   let out = "";
-  for (const b of bytes) {
-    if (b === 0x5c) out += "\\\\";
-    else if (b >= 0x20 && b < 0x7f) out += String.fromCharCode(b);
-    else out += "\\0" + b.toString(8).padStart(3, "0");
+  for (const byte of bytes) {
+    if (byte === 0x5c) out += "\\\\";
+    else if (byte >= 0x20 && byte < 0x7f) out += String.fromCharCode(byte);
+    else out += "\\0" + byte.toString(8).padStart(3, "0");
   }
   return out;
 }
@@ -58,18 +58,19 @@ export function curlCommand(
   headers: Record<string, string[]> | undefined,
   body: DecodedBody,
 ): string {
-  const pipe = body.bytes.length > 0 && (body.binary || terminalControl.test(body.text!));
-  let cmd =
-    (pipe ? `printf '%b' ${shellQuote(printfEscape(body.bytes))} | ` : "") +
+  const { bytes, text, binary } = body;
+  const pipe = bytes.length > 0 && (binary || terminalControl.test(text!));
+  let command =
+    (pipe ? `printf '%b' ${shellQuote(printfEscape(bytes))} | ` : "") +
     `curl -g -X ${shellQuote(method)} ${shellQuote(url)}`;
-  if (Object.keys(headers ?? {}).some((k) => k.toLowerCase() === "accept-encoding"))
-    cmd += " --compressed";
+  if (Object.keys(headers ?? {}).some((name) => name.toLowerCase() === "accept-encoding"))
+    command += " --compressed";
   for (const [name, value] of headerLines(headers)) {
-    if (!curlSets.has(name)) cmd += ` \\\n  -H ${shellQuote(`${name}: ${value}`)}`;
+    if (!curlSets.has(name)) command += ` \\\n  -H ${shellQuote(`${name}: ${value}`)}`;
   }
-  if (pipe) cmd += " \\\n  --data-binary @-";
-  else if (body.bytes.length > 0) cmd += ` \\\n  --data-binary ${shellQuote(body.text!)}`;
-  return cmd;
+  if (pipe) command += " \\\n  --data-binary @-";
+  else if (bytes.length > 0) command += ` \\\n  --data-binary ${shellQuote(text!)}`;
+  return command;
 }
 
 /**
@@ -82,22 +83,19 @@ export function curlTargets(
   call: Call,
   body: DecodedBody,
 ): { label: string; command: string }[] {
-  const rest = call.path + (call.query ? `?${call.query}` : "");
+  const { method, path, query, requestHeaders } = call;
+  const rest = path + (query ? `?${query}` : "");
   const out: { label: string; command: string }[] = [];
-  if (hook.tunnel?.target) {
+  const target = hook.tunnel?.target;
+  if (target) {
     out.push({
       label: "local target",
-      command: curlCommand(
-        call.method,
-        hook.tunnel.target.replace(/\/$/, "") + rest,
-        call.requestHeaders,
-        body,
-      ),
+      command: curlCommand(method, target.replace(/\/$/, "") + rest, requestHeaders, body),
     });
   }
   out.push({
     label: "hook URL",
-    command: curlCommand(call.method, hook.url + rest, call.requestHeaders, body),
+    command: curlCommand(method, hook.url + rest, requestHeaders, body),
   });
   return out;
 }

@@ -36,18 +36,18 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   const editing = hook !== undefined;
   const [initial] = useState(() => initialValues(hook));
   const [values, setValues] = useState(initial);
-  const { errors, formError, show, fail, capture, message } = useProblemErrors((f) =>
-    Object.hasOwn(fieldTypes, f),
+  const { errors, formError, show, fail, capture, message } = useProblemErrors((field) =>
+    Object.hasOwn(fieldTypes, field),
   );
   // The last dry run that passed, keyed by the body it validated.
-  const [dry, setDry] = useState<{ key: string; hook: Hook }>();
+  const [dryRun, setDryRun] = useState<{ key: string; hook: Hook }>();
   // Delivery starts shut unless the hook overrides a default, and opens
   // (and stays open) when one of its fields has an error.
   const overrides = Object.entries(values).filter(
-    ([k, v]) => k.startsWith("settings.") && v !== "",
+    ([name, value]) => name.startsWith("settings.") && value !== "",
   ).length;
   const [delivery, setDelivery] = useState(overrides > 0);
-  if (!delivery && errors.some((e) => e.field.startsWith("settings."))) setDelivery(true);
+  if (!delivery && errors.some(({ field }) => field.startsWith("settings."))) setDelivery(true);
   // Nothing is validated until the first change.
   const [dirty, setDirty] = useState(false);
   const navigate = useNavigate();
@@ -57,14 +57,16 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   const { defaults } = me.policy;
   const patterns = useMemo(() => me.roles["receiver"] ?? [], [me]);
   const channels = useMemo(() => {
-    const out = channelChoices(patterns);
-    for (const c of inUse ?? [])
-      if (!out.includes(c.name) && allowingPattern(patterns, c.name)) out.push(c.name);
-    return out;
+    const choices = channelChoices(patterns);
+    for (const { name } of inUse ?? [])
+      if (!choices.includes(name) && allowingPattern(patterns, name)) choices.push(name);
+    return choices;
   }, [patterns, inUse]);
   const channel = values.channel.trim() || "default";
   const pattern = allowingPattern(patterns, channel);
-  const canPublishHere = me.publicPatterns.some((p) => matchChannel(p, channel));
+  const canPublishHere = me.publicPatterns.some((publicPattern) =>
+    matchChannel(publicPattern, channel),
+  );
   const canPublish = canPublishHere && (me.funnel ?? false);
 
   // The hook's URL is base followed by its path. A new hook has no URL
@@ -75,15 +77,15 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   const tilde = base.indexOf("/~") + 1;
 
   const build = () => {
-    const r = formRequest(values, editing ? initial : undefined);
+    const request = formRequest(values, editing ? initial : undefined);
     if (!validChannel(channel))
-      r.errors.push({
+      request.errors.push({
         field: "channel",
         message: "must be dot-separated segments of a-z, 0-9 and -, at most 64 characters",
       });
     else if (!pattern)
-      r.errors.push({ field: "channel", message: "none of your receive patterns allows it" });
-    return r;
+      request.errors.push({ field: "channel", message: "none of your receive patterns allows it" });
+    return request;
   };
   const { body, errors: local } = build();
   // Two different invalid fields can leave the body the same, so the key
@@ -96,42 +98,42 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   const validate = useEffectEvent((ran: string, signal: AbortSignal) => {
     if (invalid) return show(local);
     dryRunHook(body, hook?.id, signal).then(
-      (h) => {
-        setDry({ key: ran, hook: h });
+      (validated) => {
+        setDryRun({ key: ran, hook: validated });
         show([]);
       },
-      (err) => {
-        if (signal.aborted || capture(err)) return;
-        fail(err instanceof Error ? err.message : String(err));
+      (error) => {
+        if (signal.aborted || capture(error)) return;
+        fail(error instanceof Error ? error.message : String(error));
       },
     );
   });
 
   useEffect(() => {
     if (!dirty) return;
-    const ctrl = new AbortController();
-    const t = setTimeout(() => validate(key, ctrl.signal), invalid ? 0 : dryRunDelay);
+    const controller = new AbortController();
+    const timer = setTimeout(() => validate(key, controller.signal), invalid ? 0 : dryRunDelay);
     return () => {
-      clearTimeout(t);
-      ctrl.abort();
+      clearTimeout(timer);
+      controller.abort();
     };
   }, [dirty, key, invalid]);
 
   const set = (name: FieldName) => (value: string) => {
     setDirty(true);
-    setValues((v) => ({ ...v, [name]: value }));
+    setValues((previous) => ({ ...previous, [name]: value }));
   };
   const text = (name: FieldName) => ({
     value: values[name],
-    onChange: (e: { target: { value: string } }) => set(name)(e.target.value),
+    onChange: (event: { target: { value: string } }) => set(name)(event.target.value),
   });
 
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (invalid) return show(local);
-    const onSuccess = (h: Hook) => {
-      toast.success(editing ? "Saved" : `Created ${h.path}`);
-      navigate(paths.hook(h.id));
+  function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (local.length) return show(local);
+    const onSuccess = (saved: Hook) => {
+      toast.success(editing ? "Saved" : `Created ${saved.path}`);
+      navigate(paths.hook(saved.id));
     };
     // A failed save other than a 422 is already toasted (makeQueryClient).
     if (editing) update.mutate(body, { onSuccess, onError: capture });
@@ -141,7 +143,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
   // The preview shows the dry run's hook while it matches the form, and
   // what the form would give otherwise: before the first dry run, and
   // while the next one is pending or failed.
-  const current = dry?.key === key ? dry.hook : undefined;
+  const current = dryRun?.key === key ? dryRun.hook : undefined;
   const effective: Effective = current?.effective ?? effectiveSettings(values, defaults);
   const path = values.path.trim();
   const ephemeral = values["ephemeral"] === "true";
@@ -177,7 +179,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
               </>
             }
           >
-            {(c) => (
+            {(control) => (
               <div className="flex min-w-0">
                 <span className="flex items-center rounded-l-lg border border-r-0 border-input bg-muted px-2 font-mono text-xs whitespace-nowrap text-muted-foreground">
                   <span className="hidden sm:inline">{base.slice(0, tilde)}</span>
@@ -185,9 +187,9 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
                 </span>
                 <Input
                   {...text("path")}
-                  id={c.id}
-                  aria-invalid={c["aria-invalid"]}
-                  aria-describedby={c["aria-describedby"]}
+                  id={control.id}
+                  aria-invalid={control["aria-invalid"]}
+                  aria-describedby={control["aria-describedby"]}
                   className="rounded-l-none font-mono"
                   placeholder={editing ? undefined : "three random words"}
                   autoComplete="off"
@@ -234,11 +236,11 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
                     : "The internet reaches the hook at a secret URL, through the relay's Funnel."
             }
           >
-            {(c) => (
+            {(control) => (
               <SegmentedControl
-                aria-labelledby={c["aria-labelledby"]}
-                aria-describedby={c["aria-describedby"]}
-                aria-invalid={c["aria-invalid"]}
+                aria-labelledby={control["aria-labelledby"]}
+                aria-describedby={control["aria-describedby"]}
+                aria-invalid={control["aria-invalid"]}
                 value={values["public"] ?? "false"}
                 onValueChange={set("public")}
               >
@@ -258,11 +260,11 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
             error={message("ephemeral")}
             hint="Ephemeral hooks are deleted once no tunnel has been attached for a while."
           >
-            {(c) => (
+            {(control) => (
               <SegmentedControl
-                aria-labelledby={c["aria-labelledby"]}
-                aria-describedby={c["aria-describedby"]}
-                aria-invalid={c["aria-invalid"]}
+                aria-labelledby={control["aria-labelledby"]}
+                aria-describedby={control["aria-describedby"]}
+                aria-invalid={control["aria-invalid"]}
                 value={values["ephemeral"] ?? "false"}
                 onValueChange={set("ephemeral")}
               >
@@ -276,9 +278,9 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
             error={message("expiresAt")}
             hint={`In your time zone, ${new Intl.DateTimeFormat().resolvedOptions().timeZone}.`}
           >
-            {(c) => (
+            {(control) => (
               <ExpiryField
-                control={c}
+                control={control}
                 value={values.expiresAt}
                 onChange={set("expiresAt")}
                 maxTTL={ephemeral ? undefined : me.limits.maxHookTtl}
@@ -319,7 +321,7 @@ export function HookForm({ me, hook }: { me: Me; hook?: Hook }) {
         ephemeral={ephemeral}
         expiresAt={values.expiresAt}
         effective={effective}
-        inherited={(k) => values[`settings.${k}`] === ""}
+        inherited={(setting) => values[`settings.${setting}`] === ""}
       />
 
       <div className="flex gap-2">

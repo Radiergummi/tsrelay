@@ -13,17 +13,18 @@ function typing(target: EventTarget | null): boolean {
  */
 export function useShortcuts(map: Record<string, () => void>, enabled = true): void {
   // Runs the latest handlers, without resubscribing the listener.
-  const onKey = useEffectEvent((e: KeyboardEvent) => {
-    if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || modalOpen()) return;
-    const fn = map[e.key];
-    if (fn) {
-      e.preventDefault();
-      fn();
+  const onKey = useEffectEvent((event: KeyboardEvent) => {
+    const { ctrlKey, metaKey, altKey, target, key } = event;
+    if (ctrlKey || metaKey || altKey || typing(target) || modalOpen()) return;
+    const handler = map[key];
+    if (handler) {
+      event.preventDefault();
+      handler();
     }
   });
   useEffect(() => {
     if (!enabled) return;
-    const listener = (e: KeyboardEvent) => onKey(e);
+    const listener = (event: KeyboardEvent) => onKey(event);
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
   }, [enabled]);

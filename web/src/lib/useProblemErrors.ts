@@ -15,17 +15,17 @@ export function useProblemErrors(shown: (field: string) => boolean) {
     errors,
     formError,
     /** show replaces the errors, with no form-level message. */
-    show: (errs: FieldError[]) => {
-      setErrors(errs);
+    show: (fieldErrors: FieldError[]) => {
+      setErrors(fieldErrors);
       setFormError("");
     },
     /** fail shows message at the form level, keeping the field errors. */
     fail: setFormError,
-    /** capture shows err if it is a 422, and reports whether it was. */
-    capture: (err: unknown): boolean => {
-      if (!(err instanceof ApiError && err.status === 422)) return false;
-      setErrors(err.fieldErrors);
-      setFormError(formMessage(err, shown));
+    /** capture shows error if it is a 422, and reports whether it was. */
+    capture: (error: unknown): boolean => {
+      if (!(error instanceof ApiError && error.status === 422)) return false;
+      setErrors(error.fieldErrors);
+      setFormError(formMessage(error, shown));
       return true;
     },
     message: (field: string) => fieldMessage(errors, field),

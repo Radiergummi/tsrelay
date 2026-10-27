@@ -10,8 +10,8 @@ const dark = () => window.matchMedia("(prefers-color-scheme: dark)");
 
 export function storedTheme(): Theme {
   try {
-    const t = localStorage.getItem(themeKey);
-    return t === "light" || t === "dark" ? t : "system";
+    const stored = localStorage.getItem(themeKey);
+    return stored === "light" || stored === "dark" ? stored : "system";
   } catch {
     return "system";
   }

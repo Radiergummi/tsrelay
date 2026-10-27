@@ -11,36 +11,36 @@ export function Attempts({ attempts }: { attempts: Attempt[] }) {
     );
   return (
     <ol className="space-y-3">
-      {attempts.map((a, i) => (
-        <li key={a.id} className="border-l-2 border-border pl-3">
+      {attempts.map((attempt, i) => (
+        <li key={attempt.id} className="border-l-2 border-border pl-3">
           <div className="flex flex-wrap items-baseline gap-x-3">
             <span className="font-medium">Attempt {i + 1}</span>
-            {a.status ? (
-              <StatusText call={{ outcome: "ok", status: a.status }} />
+            {attempt.status ? (
+              <StatusText call={{ outcome: "ok", status: attempt.status }} />
             ) : (
-              <span className="text-status-5xx">{a.error ?? "no response"}</span>
+              <span className="text-status-5xx">{attempt.error ?? "no response"}</span>
             )}
-            <span className="text-muted-foreground">{absoluteTime(a.startedAt)}</span>
+            <span className="text-muted-foreground">{absoluteTime(attempt.startedAt)}</span>
           </div>
           <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-4 text-xs">
             <dt className="text-muted-foreground">Node</dt>
-            <dd>{a.node ?? "—"}</dd>
+            <dd>{attempt.node ?? "—"}</dd>
             <dt className="text-muted-foreground">Tunnel</dt>
-            <dd className="font-mono">{a.tunnelId ?? "—"}</dd>
+            <dd className="font-mono">{attempt.tunnelId ?? "—"}</dd>
             <dt className="text-muted-foreground">Waited for a tunnel</dt>
-            <dd>{formatDuration(a.waitedForMs)}</dd>
+            <dd>{formatDuration(attempt.waitedForMs)}</dd>
             <dt className="text-muted-foreground">Time to first byte</dt>
-            <dd>{formatDuration(a.ttfbMs)}</dd>
+            <dd>{formatDuration(attempt.ttfbMs)}</dd>
             <dt className="text-muted-foreground">Duration</dt>
-            <dd>{formatDuration(a.durationMs)}</dd>
+            <dd>{formatDuration(attempt.durationMs)}</dd>
             <dt className="text-muted-foreground">Bytes in / out</dt>
             <dd>
-              {formatSize(a.bytesIn)} / {formatSize(a.bytesOut)}
+              {formatSize(attempt.bytesIn)} / {formatSize(attempt.bytesOut)}
             </dd>
-            {a.error && (
+            {attempt.error && (
               <>
                 <dt className="text-muted-foreground">Error</dt>
-                <dd className="font-mono">{a.error}</dd>
+                <dd className="font-mono">{attempt.error}</dd>
               </>
             )}
           </dl>

@@ -11,18 +11,20 @@ import { Toaster } from "@/components/ui/toast";
  */
 export function renderWithProviders(
   ui: ReactElement,
-  opts: { route?: string; path?: string; client?: QueryClient; context?: unknown } = {},
+  {
+    route = "/",
+    path = "/",
+    client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    }),
+    context,
+  }: { route?: string; path?: string; client?: QueryClient; context?: unknown } = {},
 ) {
-  const client =
-    opts.client ??
-    new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  const leaf = { path: opts.path ?? "/", element: ui };
+  const leaf = { path, element: ui };
   const tree =
-    opts.context === undefined
-      ? [leaf]
-      : [{ element: <Outlet context={opts.context} />, children: [leaf] }];
+    context === undefined ? [leaf] : [{ element: <Outlet context={context} />, children: [leaf] }];
   const router = createMemoryRouter([...tree, { path: "*", element: <p>elsewhere</p> }], {
-    initialEntries: [opts.route ?? "/"],
+    initialEntries: [route],
   });
   const result = render(
     <QueryClientProvider client={client}>

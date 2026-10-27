@@ -27,8 +27,9 @@ export function QueryView<T>({
   error?: ComponentType<{ error: unknown }>;
   children: (data: T) => ReactNode;
 }): ReactNode {
-  if (query.isPending) return pending;
-  if (gone !== undefined && isGone(query.error)) return gone;
-  if (query.data === undefined) return <Failed error={query.error} />;
-  return children(query.data);
+  const { isPending, error, data } = query;
+  if (isPending) return pending;
+  if (gone !== undefined && isGone(error)) return gone;
+  if (data === undefined) return <Failed error={error} />;
+  return children(data);
 }

@@ -26,33 +26,33 @@ export const keys = {
 };
 
 /** refreshHookLists refetches what a hook change can alter: the lists, the channels and the entry document's hook count. */
-function refreshHookLists(qc: QueryClient): void {
-  void qc.invalidateQueries({ queryKey: keys.allHooks });
-  void qc.invalidateQueries({ queryKey: keys.allChannels });
-  void qc.invalidateQueries({ queryKey: keys.me });
+function refreshHookLists(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ queryKey: keys.allHooks });
+  void queryClient.invalidateQueries({ queryKey: keys.allChannels });
+  void queryClient.invalidateQueries({ queryKey: keys.me });
 }
 
 /** hookSaved caches a hook the relay just answered with (create, update, rotate). */
-export function hookSaved(qc: QueryClient, hook: Hook): void {
-  qc.setQueryData(keys.hook(hook.id), hook);
-  refreshHookLists(qc);
+export function hookSaved(queryClient: QueryClient, hook: Hook): void {
+  queryClient.setQueryData(keys.hook(hook.id), hook);
+  refreshHookLists(queryClient);
 }
 
 /** hookChanged refetches a hook that changed elsewhere (or was deleted). */
-export function hookChanged(qc: QueryClient, id: string): void {
-  void qc.invalidateQueries({ queryKey: keys.hook(id) });
-  refreshHookLists(qc);
+export function hookChanged(queryClient: QueryClient, id: string): void {
+  void queryClient.invalidateQueries({ queryKey: keys.hook(id) });
+  refreshHookLists(queryClient);
 }
 
 /** hookDeleted drops a hook the viewer deleted, with its calls. */
-export function hookDeleted(qc: QueryClient, id: string): void {
-  qc.removeQueries({ queryKey: keys.hook(id) });
-  qc.removeQueries({ queryKey: keys.calls(id) });
-  refreshHookLists(qc);
+export function hookDeleted(queryClient: QueryClient, id: string): void {
+  queryClient.removeQueries({ queryKey: keys.hook(id) });
+  queryClient.removeQueries({ queryKey: keys.calls(id) });
+  refreshHookLists(queryClient);
 }
 
-const newer = (s: Summary, last: Summary | undefined) =>
-  !last || last.id === s.id || Date.parse(s.receivedAt) >= Date.parse(last.receivedAt);
+const newer = (call: Summary, last: Summary | undefined) =>
+  !last || last.id === call.id || Date.parse(call.receivedAt) >= Date.parse(last.receivedAt);
 
 /**
  * fold puts a call summary into the cached list and the hook's lastCall. The
@@ -60,40 +60,40 @@ const newer = (s: Summary, last: Summary | undefined) =>
  * policy.callsPerHook). A list being fetched is refetched instead, since the
  * answer in flight may predate the call and would overwrite it.
  */
-function fold(qc: QueryClient, s: Summary): void {
-  const key = keys.calls(s.hookId);
-  if (qc.getQueryState(key)?.fetchStatus === "fetching") {
-    void qc.invalidateQueries({ queryKey: key });
+function fold(queryClient: QueryClient, call: Summary): void {
+  const key = keys.calls(call.hookId);
+  if (queryClient.getQueryState(key)?.fetchStatus === "fetching") {
+    void queryClient.invalidateQueries({ queryKey: key });
   } else {
-    const cap = qc.getQueryData<Me>(keys.me)?.policy.callsPerHook;
-    qc.setQueryData<Summary[]>(key, (list) => {
+    const cap = queryClient.getQueryData<Me>(keys.me)?.policy.callsPerHook;
+    queryClient.setQueryData<Summary[]>(key, (list) => {
       if (!list) return list;
-      const rest = list.filter((c) => c.id !== s.id);
-      const sorted = [s, ...rest].sort(
+      const rest = list.filter(({ id }) => id !== call.id);
+      const sorted = [call, ...rest].sort(
         (a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt),
       );
       return cap === undefined ? sorted : sorted.slice(0, cap);
     });
   }
-  const withLast = (h: Hook): Hook =>
-    h.id === s.hookId && newer(s, h.lastCall) ? { ...h, lastCall: s } : h;
-  qc.setQueriesData<Hook[]>({ queryKey: keys.allHooks }, (list) => list?.map(withLast));
-  qc.setQueryData<Hook>(keys.hook(s.hookId), (h) => (h ? withLast(h) : h));
+  const withLast = (hook: Hook): Hook =>
+    hook.id === call.hookId && newer(call, hook.lastCall) ? { ...hook, lastCall: call } : hook;
+  queryClient.setQueriesData<Hook[]>({ queryKey: keys.allHooks }, (list) => list?.map(withLast));
+  queryClient.setQueryData<Hook>(keys.hook(call.hookId), (hook) => (hook ? withLast(hook) : hook));
 }
 
 /** callRecorded folds in a call the event stream reported, and refreshes the call if it's open. */
-export function callRecorded(qc: QueryClient, s: Summary): void {
-  fold(qc, s);
-  void qc.invalidateQueries({ queryKey: keys.call(s.hookId, s.id) });
+export function callRecorded(queryClient: QueryClient, call: Summary): void {
+  fold(queryClient, call);
+  void queryClient.invalidateQueries({ queryKey: keys.call(call.hookId, call.id) });
 }
 
 /** callReturned caches a call a replay or test answered with, whole, and folds it in. */
-export function callReturned(qc: QueryClient, c: Call): void {
-  qc.setQueryData(keys.call(c.hookId, c.id), c);
-  fold(qc, summary.parse(c));
+export function callReturned(queryClient: QueryClient, call: Call): void {
+  queryClient.setQueryData(keys.call(call.hookId, call.id), call);
+  fold(queryClient, summary.parse(call));
 }
 
 /** resync refetches whatever is on screen, after events may have been missed. */
-export function resync(qc: QueryClient): void {
-  void qc.invalidateQueries({ type: "active" });
+export function resync(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ type: "active" });
 }

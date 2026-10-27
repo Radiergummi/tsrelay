@@ -30,9 +30,9 @@ function Node({ node, depth }: { node: JNode; depth: number }) {
             [ {node.items.length} items
           </summary>
           <ul className="border-l pl-4">
-            {node.items.map((v, i) => (
+            {node.items.map((item, i) => (
               <li key={i}>
-                <Node node={v} depth={depth + 1} />
+                <Node node={item} depth={depth + 1} />
               </li>
             ))}
           </ul>
@@ -47,13 +47,13 @@ function Node({ node, depth }: { node: JNode; depth: number }) {
             {"{"} {node.entries.length} keys
           </summary>
           <ul className="border-l pl-4">
-            {node.entries.map(([k, v], i) => (
+            {node.entries.map(([key, value], i) => (
               <li key={i}>
                 <span className="text-primary">
-                  <Reveal text={JSON.stringify(k)} />
+                  <Reveal text={JSON.stringify(key)} />
                 </span>
                 <span className="text-muted-foreground">: </span>
-                <Node node={v} depth={depth + 1} />
+                <Node node={value} depth={depth + 1} />
               </li>
             ))}
           </ul>

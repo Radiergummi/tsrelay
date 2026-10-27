@@ -38,28 +38,28 @@ export function TestRequestDialog({
     (field) => field === "method" || field === "path" || field.startsWith("headers."),
   );
   const test = useTestRequest(hook.id);
-  const headerErr =
+  const headerError =
     errors
-      .filter((e) => e.field.startsWith("headers."))
-      .map((e) => `${e.field.slice(8)} ${e.message}`)
+      .filter(({ field }) => field.startsWith("headers."))
+      .map((error) => `${error.field.slice(8)} ${error.message}`)
       .join("; ") || undefined;
   // The dialog shuts as soon as the request is sent: the call shows in the
   // list as pending, and may wait out the hold timeout for a tunnel, so its
   // outcome is only toasted. Only a 422, which the relay answers before
   // delivering, brings the dialog back.
-  const send = (e: React.FormEvent) => {
-    e.preventDefault();
+  const send = (event: React.FormEvent) => {
+    event.preventDefault();
     fail("");
     onOpenChange(false);
     test.mutate(
       { method, path, headers: parseHeaders(headers), body },
       {
-        onSuccess: (c) => {
+        onSuccess: (call) => {
           show([]);
-          toast.success(`Sent: ${outcomeLabel(c)}`);
+          toast.success(`Sent: ${outcomeLabel(call)}`);
         },
-        onError: (x) => {
-          if (capture(x)) onOpenChange(true);
+        onError: (error) => {
+          if (capture(error)) onOpenChange(true);
           // A non-422 failure already shows as a toast (the query client's MutationCache).
           else show([]);
         },
@@ -85,20 +85,23 @@ export function TestRequestDialog({
           )}
           <div className="grid grid-cols-[7rem_1fr] gap-3">
             <Field label="Method" error={message("method")}>
-              <Input value={method} onChange={(e) => setMethod(e.target.value.toUpperCase())} />
+              <Input
+                value={method}
+                onChange={(event) => setMethod(event.target.value.toUpperCase())}
+              />
             </Field>
             <Field
               label="Path"
               error={message("path")}
               hint="Below the hook's URL; a query string is allowed."
             >
-              <Input value={path} onChange={(e) => setPath(e.target.value)} />
+              <Input value={path} onChange={(event) => setPath(event.target.value)} />
             </Field>
           </div>
-          <Field label="Headers" error={headerErr} hint="One Name: value per line.">
+          <Field label="Headers" error={headerError} hint="One Name: value per line.">
             <Textarea
               value={headers}
-              onChange={(e) => setHeaders(e.target.value)}
+              onChange={(event) => setHeaders(event.target.value)}
               rows={3}
               placeholder="Content-Type: application/json"
               className="font-mono text-xs"
@@ -107,7 +110,7 @@ export function TestRequestDialog({
           <Field label="Body">
             <Textarea
               value={body}
-              onChange={(e) => setBody(e.target.value)}
+              onChange={(event) => setBody(event.target.value)}
               rows={5}
               className="font-mono text-xs"
             />

@@ -13,12 +13,12 @@ import { HookPage } from "./HookPage";
 
 function open(hookId: string, route = `/hooks/${hookId}`, me = fixtures.me) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const ui = (
+  const page = (
     <LiveProvider client={client} user>
       <HookPage />
     </LiveProvider>
   );
-  const rendered = renderWithProviders(ui, {
+  const rendered = renderWithProviders(page, {
     route,
     path: "/hooks/:id/calls?/:callId?",
     context: me,
@@ -52,7 +52,9 @@ test("another user's hook path and description are shown with control characters
   open(fixtures.theirs.id, `/hooks/${fixtures.theirs.id}`, fixtures.meAdmin);
   expect(await screen.findByRole("heading", { name: "a⟨U+202E⟩b" })).toBeInTheDocument();
   expect(
-    screen.getByText((_, el) => el?.tagName === "P" && el.textContent === "c⟨U+2066⟩d"),
+    screen.getByText(
+      (_, element) => element?.tagName === "P" && element.textContent === "c⟨U+2066⟩d",
+    ),
   ).toBeInTheDocument();
 });
 

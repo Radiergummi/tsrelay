@@ -63,18 +63,18 @@ test("editing sends only the changed fields, and null for a cleared one", () => 
 });
 
 test("initial values come from the hook, with relay defaults left empty", () => {
-  const v = initialValues(fixtures.hook);
-  expect(v["path"]).toBe("payments/done");
-  expect(v["settings.holdTimeout"]).toBe("");
+  const values = initialValues(fixtures.hook);
+  expect(values["path"]).toBe("payments/done");
+  expect(values["settings.holdTimeout"]).toBe("");
   expect(initialValues(undefined)["ephemeral"]).toBe("false");
 });
 
 test("effective settings are the valid overrides over the relay defaults", () => {
-  const v = initialValues(undefined);
-  v["settings.holdTimeout"] = "2m";
-  v["settings.idleTimeout"] = "soon";
-  v["settings.capture"] = "false";
-  expect(effectiveSettings(v, fixtures.me.policy.defaults)).toEqual({
+  const values = initialValues(undefined);
+  values["settings.holdTimeout"] = "2m";
+  values["settings.idleTimeout"] = "soon";
+  values["settings.capture"] = "false";
+  expect(effectiveSettings(values, fixtures.me.policy.defaults)).toEqual({
     ...fixtures.me.policy.defaults,
     holdTimeout: "2m",
     capture: false,

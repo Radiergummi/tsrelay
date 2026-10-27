@@ -43,14 +43,15 @@ export function DeliveryFields({
   appHost: string | undefined;
 }) {
   const { defaults, max } = policy;
-  const rate = (r: { perSecond: number; burst: number }) => `${r.perSecond}/s, burst ${r.burst}`;
+  const rate = ({ perSecond, burst }: { perSecond: number; burst: number }) =>
+    `${perSecond}/s, burst ${burst}`;
   return (
     <div className="space-y-5">
       <DurationSetting
         form={form}
         name="holdTimeout"
         label="Hold timeout"
-        dflt={defaults.holdTimeout}
+        relayDefault={defaults.holdTimeout}
         max={max.holdTimeout}
         hint="How long calls wait for a tunnel; off fails them at once."
       />
@@ -58,7 +59,7 @@ export function DeliveryFields({
         form={form}
         name="responseTimeout"
         label="Response timeout"
-        dflt={defaults.responseTimeout}
+        relayDefault={defaults.responseTimeout}
         max={max.responseTimeout}
         hint="Until your app's response headers arrive."
       />
@@ -66,11 +67,11 @@ export function DeliveryFields({
         form={form}
         name="idleTimeout"
         label="Idle timeout"
-        dflt={defaults.idleTimeout}
+        relayDefault={defaults.idleTimeout}
         max={max.idleTimeout}
         hint="Longest pause in body traffic."
       />
-      <BodySizeSetting form={form} dflt={defaults.maxBodyBytes} max={max.maxBodyBytes} />
+      <BodySizeSetting form={form} relayDefault={defaults.maxBodyBytes} max={max.maxBodyBytes} />
       <Setting
         form={form}
         name="settings.rateLimit"
@@ -78,49 +79,54 @@ export function DeliveryFields({
         shown={rate(defaults.rateLimit)}
         hint={`Calls above the rate get 429 with Retry-After.${max.rateLimit ? ` At most ${rate(max.rateLimit)}.` : ""}`}
       >
-        {(c) => {
+        {(control) => {
           const raw = form.values["settings.rateLimit"];
           const [perSecond = "", burst = ""] = raw ? raw.split("/") : [];
           // Clearing a half while the other is at its default resets.
-          const { perSecond: dp, burst: db } = defaults.rateLimit;
-          const put = (p: string, b: string) =>
+          const { perSecond: defaultPerSecond, burst: defaultBurst } = defaults.rateLimit;
+          const put = (nextPerSecond: string, nextBurst: string) =>
             form.set("settings.rateLimit")(
-              (p === "" && b === String(db)) || (b === "" && p === String(dp)) ? "" : `${p}/${b}`,
+              (nextPerSecond === "" && nextBurst === String(defaultBurst)) ||
+                (nextBurst === "" && nextPerSecond === String(defaultPerSecond))
+                ? ""
+                : `${nextPerSecond}/${nextBurst}`,
             );
           return (
             <fieldset
-              aria-labelledby={c["aria-labelledby"]}
-              aria-describedby={c["aria-describedby"]}
+              aria-labelledby={control["aria-labelledby"]}
+              aria-describedby={control["aria-describedby"]}
               className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2"
             >
               <span className="flex items-center gap-2 text-sm">
                 {/* The rate takes the field's id, so the field's label points at it. */}
                 <Input
-                  id={c.id}
+                  id={control.id}
                   type="number"
                   min={0}
                   step="any"
                   className="w-24"
-                  aria-invalid={c["aria-invalid"]}
+                  aria-invalid={control["aria-invalid"]}
                   value={perSecond}
-                  placeholder={String(dp)}
-                  onChange={(e) => put(e.target.value, burst || String(db))}
+                  placeholder={String(defaultPerSecond)}
+                  onChange={(event) => put(event.target.value, burst || String(defaultBurst))}
                 />
-                <label htmlFor={c.id}>per second</label>
+                <label htmlFor={control.id}>per second</label>
               </span>
               <span className="flex items-center gap-2 text-sm">
                 <Input
-                  id={`${c.id}-burst`}
+                  id={`${control.id}-burst`}
                   type="number"
                   min={0}
                   step={1}
                   className="w-24"
-                  aria-invalid={c["aria-invalid"]}
+                  aria-invalid={control["aria-invalid"]}
                   value={burst}
-                  placeholder={String(db)}
-                  onChange={(e) => put(perSecond || String(dp), e.target.value)}
+                  placeholder={String(defaultBurst)}
+                  onChange={(event) =>
+                    put(perSecond || String(defaultPerSecond), event.target.value)
+                  }
                 />
-                <label htmlFor={`${c.id}-burst`}>burst</label>
+                <label htmlFor={`${control.id}-burst`}>burst</label>
               </span>
             </fieldset>
           );
@@ -130,7 +136,7 @@ export function DeliveryFields({
         form={form}
         name="settings.attachPolicy"
         label="Attach policy"
-        dflt={defaults.attachPolicy}
+        relayDefault={defaults.attachPolicy}
         choices={[
           ["takeover", "Take over", "A new tunnel replaces the attached one."],
           ["reject", "Reject", "A new tunnel is refused while one is attached."],
@@ -140,13 +146,13 @@ export function DeliveryFields({
         form={form}
         name="settings.hostHeader"
         label="Host header"
-        dflt={defaults.hostHeader}
+        relayDefault={defaults.hostHeader}
         choices={[
-          ["preserve", "Relay's host", <code key="h">{relayHost}</code>],
+          ["preserve", "Relay's host", <code key="host">{relayHost}</code>],
           [
             "rewrite",
             "Its own host",
-            appHost ? <code key="h">{appHost}</code> : "Your app's, such as localhost:3000",
+            appHost ? <code key="host">{appHost}</code> : "Your app's, such as localhost:3000",
           ],
         ]}
       />
@@ -156,11 +162,11 @@ export function DeliveryFields({
         hint="Bodies are kept for the inspector only if capture is on, and replay needs them. Metadata is always recorded."
         aside={form.values["settings.capture"] ? <CustomBadge /> : null}
       >
-        {(c) => (
+        {(control) => (
           <SegmentedControl
-            aria-labelledby={c["aria-labelledby"]}
-            aria-describedby={c["aria-describedby"]}
-            aria-invalid={c["aria-invalid"]}
+            aria-labelledby={control["aria-labelledby"]}
+            aria-describedby={control["aria-describedby"]}
+            aria-invalid={control["aria-invalid"]}
             value={form.values["settings.capture"]}
             onValueChange={form.set("settings.capture")}
           >
@@ -239,57 +245,65 @@ function DurationSetting({
   form,
   name,
   label,
-  dflt,
+  relayDefault,
   max,
   hint,
 }: {
   form: Form;
   name: keyof typeof durationPresets;
   label: string;
-  dflt: string;
+  relayDefault: string;
   max: string | undefined;
   hint: string;
 }) {
   const field = `settings.${name}` as const;
   const raw = form.values[field];
-  const maxMs = max ? parseDuration(max) : null;
-  const dfltMs = parseDuration(dflt) ?? 0;
+  const maxMilliseconds = max ? parseDuration(max) : null;
+  const defaultMilliseconds = parseDuration(relayDefault) ?? 0;
   const presets = durationPresets[name]
-    .map((go) => ({ go, ms: parseDuration(go)! }))
-    .filter((p) => (maxMs === null || p.ms <= maxMs) && p.ms !== dfltMs);
-  presets.push({ go: dflt, ms: dfltMs });
-  presets.sort((a, b) => a.ms - b.ms);
-  const rawMs = raw ? parseDuration(raw) : dfltMs;
-  const [custom, setCustom] = useState(() => !presets.some((p) => p.ms === rawMs));
-  const say = (ms: number) => (ms === 0 ? "off" : humanDuration(ms));
-  const echo = raw && rawMs !== null ? `= ${say(rawMs)}` : "";
+    .map((go) => ({ go, milliseconds: parseDuration(go)! }))
+    .filter(
+      ({ milliseconds }) =>
+        (maxMilliseconds === null || milliseconds <= maxMilliseconds) &&
+        milliseconds !== defaultMilliseconds,
+    );
+  presets.push({ go: relayDefault, milliseconds: defaultMilliseconds });
+  presets.sort((a, b) => a.milliseconds - b.milliseconds);
+  const rawMilliseconds = raw ? parseDuration(raw) : defaultMilliseconds;
+  const [custom, setCustom] = useState(
+    () => !presets.some(({ milliseconds }) => milliseconds === rawMilliseconds),
+  );
+  const say = (milliseconds: number) => (milliseconds === 0 ? "off" : humanDuration(milliseconds));
+  const echo = raw && rawMilliseconds !== null ? `= ${say(rawMilliseconds)}` : "";
   return (
     <Setting
       form={form}
       name={field}
       label={label}
-      shown={say(dfltMs)}
+      shown={say(defaultMilliseconds)}
       onReset={() => setCustom(false)}
-      hint={`${hint}${max ? ` At most ${humanDuration(maxMs ?? 0)}; longer presets are hidden.` : ""}`}
+      hint={`${hint}${max ? ` At most ${humanDuration(maxMilliseconds ?? 0)}; longer presets are hidden.` : ""}`}
     >
-      {(c) => (
+      {(control) => (
         <div className="space-y-2">
           <RadioGroup
-            aria-labelledby={c["aria-labelledby"]}
-            aria-describedby={c["aria-describedby"]}
-            aria-invalid={c["aria-invalid"]}
-            value={custom ? "custom" : String(rawMs)}
-            onValueChange={(v) => {
-              if (v === "custom") return setCustom(true);
+            aria-labelledby={control["aria-labelledby"]}
+            aria-describedby={control["aria-describedby"]}
+            aria-invalid={control["aria-invalid"]}
+            value={custom ? "custom" : String(rawMilliseconds)}
+            onValueChange={(value) => {
+              if (value === "custom") return setCustom(true);
               setCustom(false);
-              const chosen = presets.find((p) => String(p.ms) === v)!;
-              form.set(field)(chosen.ms === dfltMs ? "" : chosen.go);
+              const chosen = presets.find(({ milliseconds }) => String(milliseconds) === value)!;
+              form.set(field)(chosen.milliseconds === defaultMilliseconds ? "" : chosen.go);
             }}
           >
-            {presets.map((p) => (
-              <RadioChip key={p.ms} value={String(p.ms)} inherited={raw === ""}>
-                {say(p.ms)}
-                {p.ms === dfltMs && <span className="text-xs opacity-70">default</span>}
+            {presets.map(({ milliseconds }) => (
+              <RadioChip key={milliseconds} value={String(milliseconds)} inherited={raw === ""}>
+                {say(milliseconds)}
+                {milliseconds === defaultMilliseconds && (
+                  <span className="text-xs opacity-70">default</span>
+                )}
               </RadioChip>
             ))}
             <RadioChip value="custom">custom…</RadioChip>
@@ -299,11 +313,11 @@ function DurationSetting({
               <Input
                 className="w-32 font-mono"
                 aria-label={`${label}, custom`}
-                aria-describedby={c["aria-describedby"]}
-                aria-invalid={c["aria-invalid"]}
-                placeholder={dflt}
+                aria-describedby={control["aria-describedby"]}
+                aria-invalid={control["aria-invalid"]}
+                placeholder={relayDefault}
                 value={raw}
-                onChange={(e) => form.set(field)(e.target.value)}
+                onChange={(event) => form.set(field)(event.target.value)}
                 autoComplete="off"
               />
               <span className="text-xs text-muted-foreground" aria-live="polite">
@@ -326,41 +340,43 @@ const units: [string, number][] = [
 /** BodySizeSetting is a number and a unit, stored as bytes, with "unlimited" (0) unless the relay has a maximum. */
 function BodySizeSetting({
   form,
-  dflt,
+  relayDefault,
   max,
 }: {
   form: Form;
-  dflt: number;
+  relayDefault: number;
   max: number | undefined;
 }) {
   const field = "settings.maxBodyBytes";
   const raw = form.values[field];
   const [unit, setUnit] = useState(() => {
-    const n = raw ? Number(raw) : dflt;
-    return [...units].reverse().find(([, size]) => n >= size && n % size === 0)?.[1] ?? 1 << 20;
+    const bytes = raw ? Number(raw) : relayDefault;
+    return (
+      [...units].reverse().find(([, size]) => bytes >= size && bytes % size === 0)?.[1] ?? 1 << 20
+    );
   });
   // The typed text, kept while it still says what raw does, so "1." survives.
   const [text, setText] = useState("");
   const derived = raw === "" || raw === "0" ? "" : String(Number((Number(raw) / unit).toFixed(3)));
   const shown = text !== "" && toBytes(text, unit) === raw ? text : derived;
-  const put = (t: string, size: number) => {
-    setText(t);
-    form.set(field)(t === "" ? "" : toBytes(t, size));
+  const put = (typed: string, size: number) => {
+    setText(typed);
+    form.set(field)(typed === "" ? "" : toBytes(typed, size));
   };
-  const show = (n: number) => (n > 0 ? formatSize(n) : "unlimited");
+  const show = (bytes: number) => (bytes > 0 ? formatSize(bytes) : "unlimited");
   return (
     <Setting
       form={form}
       name={field}
       label="Max body size"
       onReset={() => setText("")}
-      shown={show(dflt)}
+      shown={show(relayDefault)}
       hint={max ? `At most ${formatSize(max)} on this relay.` : "This relay has no maximum."}
     >
-      {(c) => (
+      {(control) => (
         <fieldset
-          aria-labelledby={c["aria-labelledby"]}
-          aria-describedby={c["aria-describedby"]}
+          aria-labelledby={control["aria-labelledby"]}
+          aria-describedby={control["aria-describedby"]}
           className="flex min-w-0 flex-wrap items-center gap-2"
         >
           <Input
@@ -369,17 +385,19 @@ function BodySizeSetting({
             step="any"
             className="w-28"
             aria-label="Size"
-            aria-invalid={c["aria-invalid"]}
+            aria-invalid={control["aria-invalid"]}
             value={shown}
-            placeholder={dflt > 0 ? String(Number((dflt / unit).toFixed(3))) : "unlimited"}
-            onChange={(e) => put(e.target.value, unit)}
+            placeholder={
+              relayDefault > 0 ? String(Number((relayDefault / unit).toFixed(3))) : "unlimited"
+            }
+            onChange={(event) => put(event.target.value, unit)}
           />
           <NativeSelect
             aria-label="Unit"
             className="w-20"
             value={unit}
-            onChange={(e) => {
-              const size = Number(e.target.value);
+            onChange={(event) => {
+              const size = Number(event.target.value);
               setUnit(size);
               if (shown !== "") put(shown, size);
             }}
@@ -412,40 +430,40 @@ function BodySizeSetting({
   );
 }
 
-const toBytes = (t: string, size: number) => String(Math.round(Number(t) * size));
+const toBytes = (typed: string, size: number) => String(Math.round(Number(typed) * size));
 
 /** ChoiceSetting is a set of radio cards, the default one marked; picking it resets. */
 function ChoiceSetting({
   form,
   name,
   label,
-  dflt,
+  relayDefault,
   choices,
 }: {
   form: Form;
   name: FieldName;
   label: string;
-  dflt: string;
+  relayDefault: string;
   choices: [value: string, title: string, about: ReactNode][];
 }) {
   const raw = form.values[name];
-  const title = (v: string) => choices.find(([c]) => c === v)?.[1] ?? v;
+  const titleOf = (value: string) => choices.find(([choice]) => choice === value)?.[1] ?? value;
   return (
-    <Setting form={form} name={name} label={label} shown={title(dflt)}>
-      {(c) => (
+    <Setting form={form} name={name} label={label} shown={titleOf(relayDefault)}>
+      {(control) => (
         <RadioGroup
-          aria-labelledby={c["aria-labelledby"]}
-          aria-describedby={c["aria-describedby"]}
-          aria-invalid={c["aria-invalid"]}
+          aria-labelledby={control["aria-labelledby"]}
+          aria-describedby={control["aria-describedby"]}
+          aria-invalid={control["aria-invalid"]}
           className="grid gap-2 sm:grid-cols-2"
-          value={raw || dflt}
-          onValueChange={(v) => form.set(name)(v === dflt ? "" : v)}
+          value={raw || relayDefault}
+          onValueChange={(value) => form.set(name)(value === relayDefault ? "" : value)}
         >
-          {choices.map(([value, t, about]) => (
+          {choices.map(([value, title, about]) => (
             <RadioCard key={value} value={value}>
               <span className="flex items-center gap-2 font-medium">
-                {t}
-                {value === dflt && (
+                {title}
+                {value === relayDefault && (
                   <span className="text-xs font-normal text-muted-foreground">default</span>
                 )}
               </span>

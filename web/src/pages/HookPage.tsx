@@ -36,7 +36,7 @@ export function HookPage() {
       query={hook}
       gone={<EmptyState title="There is no hook with this ID, or it is not yours." />}
     >
-      {(h) => <Loaded hook={h} me={me} owner={owner} callId={callId} />}
+      {(loaded) => <Loaded hook={loaded} me={me} owner={owner} callId={callId} />}
     </QueryView>
   );
 }
@@ -58,7 +58,7 @@ function Loaded({
   const query = params.toString();
   const filters = useMemo(() => readFilters(new URLSearchParams(query)), [query]);
   const visible = useMemo(
-    () => (calls.data ?? []).filter((c) => matches(c, filters)),
+    () => (calls.data ?? []).filter((call) => matches(call, filters)),
     [calls.data, filters],
   );
   const navigate = useNavigate();
@@ -66,17 +66,17 @@ function Loaded({
   const [testing, setTesting] = useState(false);
   const [help, setHelp] = useState(false);
   const base = paths.hook(hookId);
-  const qs = query ? `?${query}` : "";
+  const queryString = query ? `?${query}` : "";
   const select = (id: string | undefined, replace = true) =>
-    navigate((id ? paths.call(hookId, id) : base) + qs, { replace });
-  const at = visible.findIndex((c) => c.id === callId);
+    navigate((id ? paths.call(hookId, id) : base) + queryString, { replace });
+  const selectedIndex = visible.findIndex((call) => call.id === callId);
 
   useShortcuts({
     j: () => {
-      if (visible.length) select(visible[Math.min(at + 1, visible.length - 1)]!.id);
+      if (visible.length) select(visible[Math.min(selectedIndex + 1, visible.length - 1)]!.id);
     },
     k: () => {
-      if (visible.length) select(visible[Math.max(at - 1, 0)]!.id);
+      if (visible.length) select(visible[Math.max(selectedIndex - 1, 0)]!.id);
     },
     Enter: () => {
       if (!callId && visible[0]) select(visible[0].id);
@@ -99,7 +99,7 @@ function Loaded({
           <FilterBar
             calls={calls.data ?? []}
             filters={filters}
-            onChange={(f) => setParams(writeFilters(f, params), { replace: true })}
+            onChange={(changed) => setParams(writeFilters(changed, params), { replace: true })}
             searchRef={search}
           />
           <QueryView query={calls}>
@@ -110,7 +110,12 @@ function Loaded({
                 </p>
               ) : (
                 <div className="max-h-[calc(100vh-16rem)] overflow-y-auto">
-                  <CallList calls={visible} hookId={hookId} selected={callId} search={qs} />
+                  <CallList
+                    calls={visible}
+                    hookId={hookId}
+                    selected={callId}
+                    search={queryString}
+                  />
                 </div>
               )
             }
@@ -120,7 +125,7 @@ function Loaded({
           {callId ? (
             <>
               <Link
-                to={base + qs}
+                to={base + queryString}
                 className="mb-3 inline-block text-primary hover:underline split:hidden"
               >
                 ← Back to calls

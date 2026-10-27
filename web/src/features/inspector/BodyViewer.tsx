@@ -119,10 +119,10 @@ function Captured({
         )}
         <span className="ml-auto flex items-center gap-1">
           {views
-            .filter((v) => v !== view)
-            .map((v) => (
-              <Button key={v} variant="ghost" size="xs" onClick={() => setView(v)}>
-                {names[v]}
+            .filter((other) => other !== view)
+            .map((other) => (
+              <Button key={other} variant="ghost" size="xs" onClick={() => setView(other)}>
+                {names[other]}
               </Button>
             ))}
           {body.text !== null && <CopyButton text={body.text} label={label} onHover />}

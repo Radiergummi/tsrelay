@@ -5,23 +5,26 @@ import { fixtures } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";
 import { BodyViewer } from "./BodyViewer";
 
-const ct = (c: { requestHeaders?: Record<string, string[]> | undefined }) =>
-  c.requestHeaders?.["Content-Type"]?.[0];
+const contentTypeOf = ({
+  requestHeaders,
+}: {
+  requestHeaders?: Record<string, string[]> | undefined;
+}) => requestHeaders?.["Content-Type"]?.[0];
 
-/** textMatching finds the smallest element whose own text (joined across its children) matches re: Highlighted and HexView split a body's text across many sibling spans, so the usual string/regex matchers (which look at a node's own text node children) never see it whole. */
-function textMatching(re: RegExp) {
+/** textMatching finds the smallest element whose own text (joined across its children) matches pattern: Highlighted and HexView split a body's text across many sibling spans, so the usual string/regex matchers (which look at a node's own text node children) never see it whole. */
+function textMatching(pattern: RegExp) {
   return (_: string, element: Element | null) => {
-    if (!element || !re.test(element.textContent ?? "")) return false;
-    return [...element.children].every((child) => !re.test(child.textContent ?? ""));
+    if (!element || !pattern.test(element.textContent ?? "")) return false;
+    return [...element.children].every((child) => !pattern.test(child.textContent ?? ""));
   };
 }
 
 test("JSON shows as a tree with exact numbers, with a raw toggle", async () => {
-  const c = fixtures.callJson;
+  const call = fixtures.callJson;
   render(
     <BodyViewer
-      capture={c.requestBody}
-      contentType={ct(c)}
+      capture={call.requestBody}
+      contentType={contentTypeOf(call)}
       metadataOnly={false}
       label="request body"
       hookId="h_1"

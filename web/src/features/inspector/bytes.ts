@@ -1,21 +1,21 @@
 import type { Capture } from "@/api/schemas";
 
-export function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+export function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
   return out;
 }
 
-/** trimPartialRune drops an incomplete UTF-8 sequence at the end of b (a capture cut mid-character). */
-export function trimPartialRune(b: Uint8Array): Uint8Array {
-  for (let i = 1; i < 4 && i <= b.length; i++) {
-    const byte = b[b.length - i]!;
+/** trimPartialRune drops an incomplete UTF-8 sequence at the end of bytes (a capture cut mid-character). */
+export function trimPartialRune(bytes: Uint8Array): Uint8Array {
+  for (let i = 1; i < 4 && i <= bytes.length; i++) {
+    const byte = bytes[bytes.length - i]!;
     if ((byte & 0xc0) === 0x80) continue; // a continuation byte
-    const need = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
-    return need > i ? b.subarray(0, b.length - i) : b;
+    const sequenceLength = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
+    return sequenceLength > i ? bytes.subarray(0, bytes.length - i) : bytes;
   }
-  return b;
+  return bytes;
 }
 
 export interface DecodedBody {
@@ -29,9 +29,9 @@ export interface DecodedBody {
 
 const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
-export function decodeBody(c: Capture): DecodedBody {
-  let bytes = c.body ? base64ToBytes(c.body) : new Uint8Array();
-  if (c.truncated) bytes = trimPartialRune(bytes);
+export function decodeBody({ body, truncated }: Capture): DecodedBody {
+  let bytes = body ? base64ToBytes(body) : new Uint8Array();
+  if (truncated) bytes = trimPartialRune(bytes);
   let text: string | null;
   try {
     text = utf8.decode(bytes);
@@ -45,24 +45,25 @@ export function decodeBody(c: Capture): DecodedBody {
 export type BodyKind = "json" | "markup" | "form" | "text";
 
 export function bodyKind(contentType: string | undefined): BodyKind {
-  const mt = (contentType ?? "").split(";")[0]!.trim().toLowerCase();
-  if (mt === "application/json" || mt.endsWith("+json")) return "json";
+  const mediaType = (contentType ?? "").split(";")[0]!.trim().toLowerCase();
+  if (mediaType === "application/json" || mediaType.endsWith("+json")) return "json";
   if (
-    mt === "text/html" ||
-    mt === "application/xhtml+xml" ||
-    mt.endsWith("/xml") ||
-    mt.endsWith("+xml")
+    mediaType === "text/html" ||
+    mediaType === "application/xhtml+xml" ||
+    mediaType.endsWith("/xml") ||
+    mediaType.endsWith("+xml")
   )
     return "markup";
-  if (mt === "application/x-www-form-urlencoded") return "form";
+  if (mediaType === "application/x-www-form-urlencoded") return "form";
   return "text";
 }
 
 export function headerValue(
-  h: Record<string, string[]> | undefined,
+  headers: Record<string, string[]> | undefined,
   name: string,
 ): string | undefined {
   const want = name.toLowerCase();
-  for (const [k, v] of Object.entries(h ?? {})) if (k.toLowerCase() === want) return v[0];
+  for (const [key, values] of Object.entries(headers ?? {}))
+    if (key.toLowerCase() === want) return values[0];
   return undefined;
 }

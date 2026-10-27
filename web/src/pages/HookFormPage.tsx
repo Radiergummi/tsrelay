@@ -32,7 +32,7 @@ function Edit({ id }: { id: string }) {
   const notYours = <EmptyState title="There is no hook with this ID, or it is not yours." />;
   return (
     <QueryView query={hook} gone={notYours}>
-      {(h) => (owns(me, h) ? <HookForm me={me} hook={h} /> : notYours)}
+      {(loaded) => (owns(me, loaded) ? <HookForm me={me} hook={loaded} /> : notYours)}
     </QueryView>
   );
 }

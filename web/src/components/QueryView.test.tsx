@@ -8,8 +8,8 @@ const apiError = (status: number) =>
   new ApiError({ status, code: "x", title: "", detail: `answered ${status}`, fieldErrors: [] });
 
 // Only the fields QueryView reads; the rest of a query result doesn't matter here.
-const query = (q: { isPending?: boolean; data?: string; error?: unknown }) =>
-  ({ isPending: false, data: undefined, error: null, ...q }) as UseQueryResult<string>;
+const query = (state: { isPending?: boolean; data?: string; error?: unknown }) =>
+  ({ isPending: false, data: undefined, error: null, ...state }) as UseQueryResult<string>;
 
 const show = (data: string) => <p>data: {data}</p>;
 

@@ -23,9 +23,9 @@ export function Highlighted({ text, kind }: { text: string; kind: BodyKind }) {
     text.length > highlightLimit ? [{ kind: "plain" as const, text }] : tokenize(text, kind);
   return (
     <pre className="max-h-[60vh] overflow-auto rounded-md border bg-muted/40 p-3 text-xs leading-relaxed break-all whitespace-pre-wrap">
-      {tokens.map((t, i) => (
-        <span key={i} className={colour[t.kind]}>
-          <Reveal text={t.text} />
+      {tokens.map((token, i) => (
+        <span key={i} className={colour[token.kind]}>
+          <Reveal text={token.text} />
         </span>
       ))}
     </pre>

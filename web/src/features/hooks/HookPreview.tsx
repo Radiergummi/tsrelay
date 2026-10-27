@@ -28,23 +28,29 @@ export function HookPreview({
   inherited: (setting: keyof Effective) => boolean;
   className?: string;
 }) {
-  const dur = (go: string) => {
-    const ms = parseDuration(go) ?? 0;
-    return ms === 0 ? "off" : humanDuration(ms);
+  const duration = (go: string) => {
+    const milliseconds = parseDuration(go) ?? 0;
+    return milliseconds === 0 ? "off" : humanDuration(milliseconds);
   };
+  const {
+    holdTimeout,
+    responseTimeout,
+    idleTimeout,
+    maxBodyBytes,
+    rateLimit,
+    attachPolicy,
+    hostHeader,
+    capture,
+  } = effective;
   const rows: [string, keyof Effective, string][] = [
-    ["Hold", "holdTimeout", dur(effective.holdTimeout)],
-    ["Response", "responseTimeout", dur(effective.responseTimeout)],
-    ["Idle", "idleTimeout", dur(effective.idleTimeout)],
-    [
-      "Body",
-      "maxBodyBytes",
-      effective.maxBodyBytes > 0 ? `≤ ${formatSize(effective.maxBodyBytes)}` : "unlimited",
-    ],
-    ["Rate", "rateLimit", `${effective.rateLimit.perSecond}/s, burst ${effective.rateLimit.burst}`],
-    ["Attach", "attachPolicy", effective.attachPolicy === "reject" ? "reject" : "take over"],
-    ["Host", "hostHeader", effective.hostHeader === "rewrite" ? "its own host" : "relay's host"],
-    ["Capture", "capture", effective.capture ? "on" : "off"],
+    ["Hold", "holdTimeout", duration(holdTimeout)],
+    ["Response", "responseTimeout", duration(responseTimeout)],
+    ["Idle", "idleTimeout", duration(idleTimeout)],
+    ["Body", "maxBodyBytes", maxBodyBytes > 0 ? `≤ ${formatSize(maxBodyBytes)}` : "unlimited"],
+    ["Rate", "rateLimit", `${rateLimit.perSecond}/s, burst ${rateLimit.burst}`],
+    ["Attach", "attachPolicy", attachPolicy === "reject" ? "reject" : "take over"],
+    ["Host", "hostHeader", hostHeader === "rewrite" ? "its own host" : "relay's host"],
+    ["Capture", "capture", capture ? "on" : "off"],
   ];
   return (
     <aside
@@ -99,13 +105,13 @@ function Row({ name, children }: { name: string; children: ReactNode }) {
 function lifetime(ephemeral: boolean, expiresAt: string): string {
   const kind = ephemeral ? "ephemeral" : "persistent";
   if (!expiresAt) return `${kind}, no expiry`;
-  const at = new Date(expiresAt);
-  const sameYear = at.getFullYear() === new Date().getFullYear();
-  const date = at.toLocaleDateString(undefined, {
+  const expiry = new Date(expiresAt);
+  const sameYear = expiry.getFullYear() === new Date().getFullYear();
+  const date = expiry.toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",
     year: sameYear ? undefined : "numeric",
   });
-  const left = at.getTime() - Date.now();
+  const left = expiry.getTime() - Date.now();
   return `${kind}, until ${date} (${left > 0 ? humanSpan(left) : "past"})`;
 }
