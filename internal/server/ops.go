@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/pprof"
-	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/Radiergummi/tsrelay/internal/audit"
@@ -23,43 +23,44 @@ import (
 type Ops struct {
 	Pprof bool // serve net/http/pprof under /debug/pprof/; set before serving
 	srv   atomic.Pointer[Server]
+	once  sync.Once
+	mux   *http.ServeMux
 }
 
 // Ready marks the relay as up: tsnet joined, the store loaded, s serving.
 func (o *Ops) Ready(s *Server) { o.srv.Store(s) }
 
 func (o *Ops) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s := o.srv.Load()
-	switch p := r.URL.Path; {
-	case p == "/healthz":
-		io.WriteString(w, "ok\n")
-	case strings.HasPrefix(p, "/debug/pprof/") && o.Pprof:
-		servePprof(w, r)
-	case p != "/readyz" && p != "/metrics":
-		http.NotFound(w, r)
-	case s == nil:
-		http.Error(w, "not ready", http.StatusServiceUnavailable)
-	case p == "/metrics":
-		s.tel.Metrics.ServeHTTP(w, r)
-	default:
-		io.WriteString(w, "ok\n")
+	o.once.Do(o.route)
+	o.mux.ServeHTTP(w, r)
+}
+
+func (o *Ops) route() {
+	o.mux = http.NewServeMux()
+	o.mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "ok\n") })
+	o.mux.HandleFunc("/readyz", o.ready(func(w http.ResponseWriter, _ *http.Request, _ *Server) { io.WriteString(w, "ok\n") }))
+	o.mux.HandleFunc("/metrics", o.ready(func(w http.ResponseWriter, r *http.Request, s *Server) { s.tel.Metrics.ServeHTTP(w, r) }))
+	if o.Pprof {
+		// Registered here, never through http.DefaultServeMux, which other
+		// packages may also register on. The index also serves the named
+		// profiles, such as heap or goroutine.
+		o.mux.HandleFunc("/debug/pprof/", pprof.Index)
+		o.mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		o.mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		o.mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		o.mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 	}
 }
 
-// servePprof routes to net/http/pprof explicitly, never through
-// http.DefaultServeMux, which other packages may also register on.
-func servePprof(w http.ResponseWriter, r *http.Request) {
-	switch name := strings.TrimPrefix(r.URL.Path, "/debug/pprof/"); name {
-	case "cmdline":
-		pprof.Cmdline(w, r)
-	case "profile":
-		pprof.Profile(w, r)
-	case "symbol":
-		pprof.Symbol(w, r)
-	case "trace":
-		pprof.Trace(w, r)
-	default:
-		pprof.Index(w, r) // the index, and named profiles such as heap or goroutine
+// ready answers 503 until Ready was called, and with h after.
+func (o *Ops) ready(h func(http.ResponseWriter, *http.Request, *Server)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s := o.srv.Load()
+		if s == nil {
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			return
+		}
+		h(w, r, s)
 	}
 }
 

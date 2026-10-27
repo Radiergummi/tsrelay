@@ -124,7 +124,8 @@ func TestOTLPOnExports(t *testing.T) {
 func TestSetupUnreachableCollector(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:1") // nothing listens
 	var logs bytes.Buffer
-	tel := Must(Setup(context.Background(), Config{OTLP: true, Logger: slog.New(slog.NewTextHandler(&logs, nil))}))
+	LogErrors(slog.New(slog.NewTextHandler(&logs, nil)))
+	tel := Must(Setup(context.Background(), Config{OTLP: true}))
 	for range 3 {
 		_, span := tel.Tracer.Tracer(ScopeName).Start(context.Background(), "x")
 		span.End()

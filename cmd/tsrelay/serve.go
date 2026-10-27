@@ -277,7 +277,8 @@ func runRelay(ctx context.Context, logger *slog.Logger, cfg relayConfig) error {
 	cfg.server.BaseURL = scheme + "://" + cmp.Or(dnsName, cfg.hostname)
 	cfg.server.Version, cfg.server.Commit = version, commit
 	cfg.server.AllowedHosts = allowedHosts(dnsName, cfg.hostname, st.TailscaleIPs)
-	tel, err := telemetry.Setup(ctx, telemetry.Config{OTLP: cfg.otel, Version: version, Hostname: cfg.hostname, Logger: logger})
+	telemetry.LogErrors(logger)
+	tel, err := telemetry.Setup(ctx, telemetry.Config{OTLP: cfg.otel, Version: version, Hostname: cfg.hostname})
 	if err != nil {
 		return fmt.Errorf("--otel: %w", err)
 	}
